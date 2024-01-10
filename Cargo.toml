@@ -8,16 +8,16 @@ dotenvy = { version = "*" }
 lazy_static = { version = "*" }
 poise = { version = "*" }
 rand = { version = "*" }
-reqwest = { version = "*", features = ["json"] }
+reqwest = { version = "*", default_features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "*", features = ["derive"] }
 serde_json = { version = "*" }
 serenity = { version = "*", default_features = false, features = ["builder", "client", "chrono", "collector", "gateway", "model", "rustls_backend", "utils", "voice",] }
 songbird = { version = "*", features = ["builtin-queue", "yt-dlp"] }
 sqlx = { version = "*", features = ["offline", "runtime-tokio-rustls", "sqlite"] }
-tokio = { version = "*", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "*", features = ["macros", "rt-multi-thread"] }
 urlencoding = { version = "*" }
 
 [profile.release]
 codegen-units = 1
-lto = "thin"
+lto = "fat"
 strip = "symbols"
