@@ -1,3 +1,5 @@
-node_modules
+migrations
+target
+Cargo.lock
+database.sqlite
 .env
-config.json

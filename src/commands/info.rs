@@ -1,7 +1,4 @@
-use crate::types::{
-    Context,
-    Error,
-};
+use crate::types::{Context, Error};
 use poise::serenity_prelude as serenity;
 
 /// Get server information
@@ -12,9 +9,18 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Leak other users private data
 #[poise::command(slash_command, prefix_command)]
-pub async fn user_info(ctx: Context<'_>, #[description = "Target"]#[rest] user: Option<serenity::User>) -> Result<(), Error> {
+pub async fn user_info(
+    ctx: Context<'_>,
+    #[description = "Target"]
+    #[rest]
+    user: Option<serenity::User>,
+) -> Result<(), Error> {
     let target = user.as_ref().unwrap_or_else(|| ctx.author());
-    let response = format!("{}'s account was created at {}", target.name, target.created_at());
+    let response = format!(
+        "{}'s account was created at {}",
+        target.name,
+        target.created_at()
+    );
     ctx.say(response).await?;
     Ok(())
 }
