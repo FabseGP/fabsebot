@@ -7,7 +7,7 @@ use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::Colour;
 use poise::Event;
 use serenity::model::{
-    application::interaction::{Interaction, InteractionResponseType},
+    application::interaction::Interaction,
     channel::{Channel, Message, ReactionType},
     gateway::Activity,
     prelude::{ChannelId, GuildId},

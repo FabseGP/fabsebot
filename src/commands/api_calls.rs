@@ -1,7 +1,7 @@
 use crate::types::{Context, Error};
 use crate::utils::random_number;
 
-use reqwest::blocking::{multipart, Client};
+use reqwest::{multipart, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::model::Timestamp;
@@ -12,7 +12,7 @@ use std::{
 };
 use urlencoding::encode;
 
-const query: &str = "
+const QUERY: &str = "
 query ($id: Int) { # Define which variables will be used in the query (id)
   Media (id: $id, type: ANIME) { # Insert our variables into the query arguments (id) (type: ANIME is hard-coded in the query)
     id
@@ -34,15 +34,17 @@ pub async fn anilist_anime(
     anime: String,
 ) -> Result<(), Error> {
     let client = Client::new();
-    let json = json!({"query": query, "variables": {"id": 15125}});
-    let resp = client.post("https://graphql.anilist.co/")
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .body(json.to_string())
-                .send()
-                .unwrap()
-                .text();
-    let result: serde_json::Value = serde_json::from_str(&resp.unwrap()).unwrap();
+    let json = json!({"query": QUERY, "variables": {"id": 15125}});
+    let resp = client
+        .post("https://graphql.anilist.co/")
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .body(json.to_string())
+        .send()
+        .await
+        .unwrap()
+        .text();
+    let result: serde_json::Value = serde_json::from_str(&resp.await.unwrap()).unwrap();
     ctx.send(|e| {
         e.embed(|a| {
             a.title("Anime")
@@ -220,16 +222,17 @@ pub async fn imgur(
         .post(url)
         .header("Authorization", format!("Bearer {}", token))
         .form(&[("image", image), ("album", album_id.to_string())])
-        .send()?;
-    if request_url.status().is_success() {
-        let imgur_response: ImgurResponse = request_url.json()?;
-        let imgur_link = imgur_response.data.link;
-        ctx.send(|m| m.content(format!("image url: {}", imgur_link)))
-            .await?;
-    } else {
-        ctx.send(|m| m.content("imgur has broken up with you"))
-            .await?;
-    }
+        .send()
+        .await;
+    //    if request_url.status().is_success() {
+    let imgur_response: ImgurResponse = request_url?.json().await?;
+    let imgur_link = imgur_response.data.link;
+    ctx.send(|m| m.content(format!("image url: {}", imgur_link)))
+        .await?;
+    //  } else {
+    //    ctx.send(|m| m.content("imgur has broken up with you"))
+    //         .await?;
+    //  }
     Ok(())
 }
 
@@ -325,43 +328,45 @@ pub async fn picsur(
             })
             .to_string(),
         )
-        .send()?;
-    if request_auth.status().is_success() {
-        let upload_url = "https://fileshare.benzone.work/api/image/upload";
-        let romanian_auth: RomanianAuth = request_auth.json()?;
-        let token = romanian_auth.data.jwt_token;
-        let target = reqwest::get(&image).await?;
-        let download = target.bytes().await?;
-        let filename = image.split('/').last().unwrap_or("downloaded_file.txt");
-        let path = Path::new(".").join(filename);
-        let mut file = File::create(&path)?;
-        copy(&mut download.as_ref(), &mut file)?;
-        let file = File::open(&path)?;
-        let response_upload = client
-            .post(upload_url)
-            .header("Authorization", format!("Bearer {}", token))
-            .multipart(multipart::Form::new().part(
-                "image",
-                multipart::Part::reader(file).file_name(format!("upload_{}.png", Timestamp::now())),
-            ))
-            .send()?;
-        if response_upload.status().is_success() {
-            let romanian_upload: RomanianUpload = response_upload.json()?;
-            let image_url = format!(
-                "https://fileshare.benzone.work/i/{}",
-                romanian_upload.data.id
-            );
-            ctx.send(|m| m.content(format!("image url: {}", image_url)))
-                .await?;
-        } else {
-            ctx.send(|m| m.content("romania have ceased to exist"))
-                .await?;
-        }
-        remove_file(&path)?;
-    } else {
-        ctx.send(|m| m.content("these dammed romanians are keeping us out!"))
-            .await?;
-    }
+        .send()
+        .await;
+    //    if request_auth.status().is_success() {
+    let upload_url = "https://fileshare.benzone.work/api/image/upload";
+    let romanian_auth: RomanianAuth = request_auth?.json().await?;
+    let token = romanian_auth.data.jwt_token;
+    let target = reqwest::get(&image).await?;
+    let download = target.bytes().await?;
+    let filename = image.split('/').last().unwrap_or("downloaded_file.txt");
+    let path = Path::new(".").join(filename);
+    let mut file = File::create(&path)?;
+    copy(&mut download.as_ref(), &mut file)?;
+    let file = File::open(&path)?;
+    let response_upload = client
+        .post(upload_url)
+        .header("Authorization", format!("Bearer {}", token))
+        //  .multipart(multipart::Form::new().part(
+        //    "image",
+        //      multipart::Part::reader(file).file_name(format!("upload_{}.png", Timestamp::now())),
+        //   ))
+        .send()
+        .await;
+    // if response_upload.status().is_success() {
+    let romanian_upload: RomanianUpload = response_upload?.json().await?;
+    let image_url = format!(
+        "https://fileshare.benzone.work/i/{}",
+        romanian_upload.data.id
+    );
+    ctx.send(|m| m.content(format!("image url: {}", image_url)))
+        .await?;
+    // } else {
+    //     ctx.send(|m| m.content("romania have ceased to exist"))
+    //         .await?;
+    // }
+    remove_file(&path)?;
+    //  } else {
+    //      ctx.send(|m| m.content("these dammed romanians are keeping us out!"))
+    //          .await?;
+    //  }
     Ok(())
 }
 
