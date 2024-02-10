@@ -39,12 +39,12 @@ pub async fn start() {
             misc::quote(),
             misc::sensei_status(),
             misc::troll(),
-            music::add_queue(),
-            music::join_voice(),
-            music::leave_voice(),
-            music::play_song(),
-            music::skip_song(),
-            music::stop_song(),
+            //            music::add_queue(),
+            //            music::join_voice(),
+            //            music::leave_voice(),
+            //            music::play_song(),
+            //            music::skip_song(),
+            //            music::stop_song(),
         ],
         prefix_options: poise::PrefixFrameworkOptions {
             prefix: Some("!".into()),
@@ -90,9 +90,10 @@ pub async fn start() {
         | serenity::GatewayIntents::MESSAGE_CONTENT
         | serenity::GatewayIntents::GUILD_VOICE_STATES;
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let _ = Client::builder(&token, intents).register_songbird().await;
+    let _ = Client::builder(&token, intents) /*.register_songbird()*/
+        .await;
     let framework = poise::Framework::builder()
-        .client_settings(|c| c.register_songbird())
+        //.client_settings(|c| c.register_songbird())
         .token(token)
         .intents(intents)
         .options(options)
