@@ -157,6 +157,7 @@ pub async fn webhook_message<S: ToString>(
         .iter()
         .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
     {
+//        println!("url: {:?}", existing_webhook.url());
         let _ = existing_webhook
             .execute(&ctx.http, false, |w| {
                 w.username(name).avatar_url(url).content(output)

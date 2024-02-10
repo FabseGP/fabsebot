@@ -12,39 +12,46 @@ use std::{
 };
 use urlencoding::encode;
 
-#[derive(Deserialize, Debug, Serialize)]
-struct BallResponse {
-    reading: String,
-}
-
-/// When you need a wise opinion
-#[poise::command(slash_command, prefix_command)]
-pub async fn eightball(
-    ctx: Context<'_>,
-    #[description = "Your question"]
-    #[rest]
-    question: String,
-) -> Result<(), Error> {
-    let encoded_input = encode(&question);
-    let request_url = format!(
-        "https://eightballapi.com/api/biased?question={query}&lucky=false",
-        query = encoded_input
-    );
-    let request = reqwest::get(request_url).await?;
-    let judging: BallResponse = request.json().await.expect("Error while parsing json");
-    if !judging.reading.is_empty() {
-        ctx.send(|e| {
-            e.embed(|w| {
-                w.title(question)
-                    .color(0x33d17a)
-                    .field("", &judging.reading, true)
-            })
-        })
-        .await?;
-    } else {
-        ctx.send(|m| m.content("sometimes riding a giraffe is what you need"))
-            .await?;
+const query: &str = "
+query ($id: Int) { # Define which variables will be used in the query (id)
+  Media (id: $id, type: ANIME) { # Insert our variables into the query arguments (id) (type: ANIME is hard-coded in the query)
+    id
+    title {
+      romaji
+      english
+      native
     }
+  }
+}
+";
+
+/// When the other bot sucks
+#[poise::command(slash_command, prefix_command)]
+pub async fn anilist_anime(
+    ctx: Context<'_>,
+    #[description = "Anime to search"]
+    #[rest]
+    anime: String,
+) -> Result<(), Error> {
+    let client = Client::new();
+    let json = json!({"query": query, "variables": {"id": 15125}});
+    let resp = client.post("https://graphql.anilist.co/")
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .body(json.to_string())
+                .send()
+                .unwrap()
+                .text();
+    let result: serde_json::Value = serde_json::from_str(&resp.unwrap()).unwrap();
+    ctx.send(|e| {
+        e.embed(|a| {
+            a.title("Anime")
+                .color(0x33d17a)
+                .field("Output:", &result, false)
+        })
+    })
+    .await?;
+    println!("{:#}", result);
     Ok(())
 }
 
@@ -63,6 +70,42 @@ pub async fn bored(ctx: Context<'_>) -> Result<(), Error> {
         ctx.send(|m| m.content(&data.activity)).await?;
     } else {
         ctx.send(|m| m.content("don't be bored or kill yourself"))
+            .await?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize, Debug, Serialize)]
+struct EightBallResponse {
+    reading: String,
+}
+
+/// When you need a wise opinion
+#[poise::command(slash_command, prefix_command)]
+pub async fn eightball(
+    ctx: Context<'_>,
+    #[description = "Your question"]
+    #[rest]
+    question: String,
+) -> Result<(), Error> {
+    let encoded_input = encode(&question);
+    let request_url = format!(
+        "https://eightballapi.com/api/biased?question={query}&lucky=false",
+        query = encoded_input
+    );
+    let request = reqwest::get(request_url).await?;
+    let judging: EightBallResponse = request.json().await.expect("Error while parsing json");
+    if !judging.reading.is_empty() {
+        ctx.send(|e| {
+            e.embed(|w| {
+                w.title(question)
+                    .color(0x33d17a)
+                    .field("", &judging.reading, true)
+            })
+        })
+        .await?;
+    } else {
+        ctx.send(|m| m.content("sometimes riding a giraffe is what you need"))
             .await?;
     }
     Ok(())
