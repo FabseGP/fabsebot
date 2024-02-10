@@ -107,6 +107,30 @@ pub async fn event_handler(
                             Colour(0x00b0f4),
                         )
                         .await;
+                    } else if (new_message.content.contains("<@701838215757299772>")
+                        || content == "harsh g")
+                        && !content.contains("!user")
+                    {
+                        embed_builder(
+                            ctx,
+                            new_message,
+                            "don't be harsh on me",
+                            "https://media1.tenor.com/m/JYSs-svHAaMAAAAC/sunglasses-men-in-black.gif",
+                            Colour(0x00b0f4),
+                        )
+                        .await;
+                    } else if (new_message.content.contains("<@749949941975089213>")
+                        || content == "bread")
+                        && !content.contains("!user")
+                    {
+                        embed_builder(
+                            ctx,
+                            new_message,
+                            "not expired",
+                            "https://media1.tenor.com/m/wmmJSYZqcPIAAAAC/lets-get-this-bread-praise-the-loaf.gif",
+                            Colour(0x00b0f4),
+                        )
+                        .await;
                     } else if (new_message.content.contains("<@287809220210851851>")
                         || content == "ant1hero"
                         || content == "antihero")
@@ -162,7 +186,10 @@ pub async fn event_handler(
                                 .await?;
                             webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "fr, useless rice cooker").await;
                         }
-                        "rin_willbeatu" => {
+                        "test" => {
+                            webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "no, it isn't friday yet").await;
+                        }
+                        "rin_willbeatu" | "<@1014524859532980255>" => {
                             new_message
                                 .react(&ctx.http, emoji_react("fabseman_willbeatu"))
                                 .await?;

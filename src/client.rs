@@ -15,8 +15,9 @@ pub async fn start() {
         },
         commands: vec![
             animanga::anime_scene(),
-            api_calls::eightball(),
+            api_calls::anilist_anime(),
             api_calls::bored(),
+            api_calls::eightball(),
             api_calls::gif(),
             api_calls::imgbb(),
             api_calls::imgur(),
