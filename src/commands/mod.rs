@@ -4,4 +4,4 @@ pub mod funny;
 pub mod games;
 pub mod info;
 pub mod misc;
-//pub mod music;
+pub mod music;

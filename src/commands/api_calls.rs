@@ -3,10 +3,10 @@ use crate::utils::random_number;
 
 use poise::serenity_prelude::CreateEmbed;
 use poise::CreateReply;
-use reqwest::{multipart, Client};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use serenity::model::Timestamp;
+
 use std::{
     fs::{remove_file, File},
     io::copy,
@@ -69,7 +69,7 @@ struct BoredResponse {
 pub async fn bored(ctx: Context<'_>) -> Result<(), Error> {
     let request_url = "https://www.boredapi.com/api/activity";
     let request = reqwest::get(request_url).await?;
-    let data: BoredResponse = request.json().await.expect("Error while parsing json");
+    let data: BoredResponse = request.json().await.unwrap();
     if !data.activity.is_empty() {
         ctx.send(CreateReply::default().content(&data.activity))
             .await?;
@@ -99,7 +99,7 @@ pub async fn eightball(
         query = encoded_input
     );
     let request = reqwest::get(request_url).await?;
-    let judging: EightBallResponse = request.json().await.expect("Error while parsing json");
+    let judging: EightBallResponse = request.json().await.unwrap();
     if !judging.reading.is_empty() {
         ctx.send(
             CreateReply::default().embed(CreateEmbed::new().title(question).color(0x33d17a).field(
@@ -140,7 +140,7 @@ pub async fn gif(
         key = "AIzaSyD-XwC-iyuRIZQrcaBzCuTLfAvEGh3DPwo"
     );
     let request = reqwest::get(request_url).await?;
-    let urls: GifResponse = request.json().await.expect("Error while parsing json");
+    let urls: GifResponse = request.json().await.unwrap();
     if !urls.results.is_empty() {
         ctx.send(CreateReply::default().content(&urls.results[random_number(30)].url))
             .await?;
@@ -180,7 +180,7 @@ pub async fn imgbb(
         url = image
     );
     let request = reqwest::get(request_url).await?;
-    let upload: CrapResponse = request.json().await.expect("Error while parsing json");
+    let upload: CrapResponse = request.json().await.unwrap();
     if !upload.data.url.is_empty() {
         ctx.send(CreateReply::default().content(format!("image url: {}", &upload.data.url)))
             .await?;
@@ -251,7 +251,7 @@ pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
     let request_url =
         "https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
     let request = reqwest::get(request_url).await?;
-    let data: JokeResponse = request.json().await.expect("Error while parsing json");
+    let data: JokeResponse = request.json().await.unwrap();
     if !data.joke.is_empty() {
         ctx.send(CreateReply::default().content(&data.joke)).await?;
     } else {
@@ -406,7 +406,7 @@ pub async fn translate(
         .header("accept", "application/json")
         .send()
         .await?;
-    let data: Vec<TranslateResponse> = request.json().await.expect("Error while parsing json");
+    let data: Vec<TranslateResponse> = request.json().await.unwrap();
     if !data[2].source_language.is_empty() {
         ctx.send(
             CreateReply::default().embed(
@@ -449,7 +449,7 @@ pub async fn urban(
         search = encoded_input
     );
     let request = reqwest::get(request_url).await?;
-    let data: UrbanResponse = request.json().await.expect("Error while parsing json");
+    let data: UrbanResponse = request.json().await.unwrap();
     if !data.list.is_empty() {
         ctx.send(
             CreateReply::default().embed(

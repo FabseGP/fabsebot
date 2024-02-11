@@ -51,7 +51,7 @@ pub async fn anime_scene(
         input = encoded_input
     );
     let request = reqwest::get(request_url).await?;
-    let scene: MoeResponse = request.json().await.expect("Error while parsing json");
+    let scene: MoeResponse = request.json().await.unwrap();
     if !scene.result.is_empty() {
         ctx.send(
             CreateReply::default().embed(
