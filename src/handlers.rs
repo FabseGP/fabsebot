@@ -3,15 +3,13 @@ use crate::utils::{
     dead_chat, embed_builder, emoji_react, random_number, spoiler_message, webhook_message,
 };
 
-use poise::serenity_prelude as serenity;
-use poise::serenity_prelude::Colour;
-use poise::Event;
-use serenity::model::{
-    application::interaction::Interaction,
-    channel::{Channel, Message, ReactionType},
-    gateway::Activity,
-    prelude::{ChannelId, GuildId},
-    user::OnlineStatus,
+use poise::serenity_prelude::{self as serenity, Colour, FullEvent};
+use serenity::{
+    gateway::ActivityData,
+    model::{
+        prelude::{ChannelId, GuildId},
+        user::OnlineStatus,
+    },
 };
 use std::{
     sync::Arc,
@@ -25,22 +23,22 @@ lazy_static::lazy_static! {
 
 pub async fn event_handler(
     ctx: &serenity::Context,
-    event: &Event<'_>,
+    event: &FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
     _data: &Data,
 ) -> Result<(), Error> {
     match event {
-        Event::Ready { data_about_bot } => {
+        FullEvent::Ready { data_about_bot } => {
             println!("Logged in as {}", data_about_bot.user.name);
-            let activity = Activity::listening("I can't stop this feeling");
+            let activity = ActivityData::listening("YMCA");
             let status = OnlineStatus::Online;
-            ctx.set_presence(Some(activity), status).await;
+            ctx.set_presence(Some(activity), status);
         }
-        Event::Message { new_message } => {
+        FullEvent::Message { new_message } => {
             let content = new_message.content.to_lowercase();
             if new_message.author.bot {
-            } else if new_message.guild_id == Some(GuildId(1069629692216365077))
-                || new_message.guild_id == Some(GuildId(1103723321683611698))
+            } else if new_message.guild_id == Some(GuildId::new(1069629692216365077))
+                || new_message.guild_id == Some(GuildId::new(1103723321683611698))
             {
                 if new_message.channel_id != 1136989445992751264
                     && new_message.channel_id != 1136997211025199166
@@ -52,7 +50,7 @@ pub async fn event_handler(
                         && !new_message.attachments.is_empty()
                     {
                         spoiler_message(ctx, new_message, new_message.content.to_string()).await;
-                    } else if content.contains(&ctx.cache.current_user_id().to_string()) {
+                    } else if content.contains(&ctx.cache.current_user().to_string()) {
                         embed_builder(
                             ctx,
                             new_message,
@@ -205,7 +203,7 @@ pub async fn event_handler(
                         }
                         _ => {}
                     }
-                    if new_message.channel_id == ChannelId(1103728998372102154) {
+                    if new_message.channel_id == ChannelId::new(1103728998372102154) {
                         let mut timestamp_lock = LAST_MESSAGE_TIMESTAMP.lock().await;
                         *timestamp_lock = Some(Instant::now());
                     }
@@ -222,7 +220,7 @@ pub async fn event_handler(
                         let new_last_timestamp = last_timestamp + Duration::from_secs(3600);
                         let mut timestamp_lock = LAST_MESSAGE_TIMESTAMP.lock().await;
                         *timestamp_lock = Some(new_last_timestamp);
-                        let channel_id = ChannelId(1103728998372102154);
+                        let channel_id = ChannelId::new(1103728998372102154);
                         dead_chat(ctx, channel_id).await?;
                     }
                 }

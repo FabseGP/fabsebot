@@ -1,5 +1,7 @@
 use crate::types::{Context, Error};
 
+use poise::serenity_prelude::CreateEmbed;
+use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use urlencoding::encode;
@@ -51,20 +53,36 @@ pub async fn anime_scene(
     let request = reqwest::get(request_url).await?;
     let scene: MoeResponse = request.json().await.expect("Error while parsing json");
     if !scene.result.is_empty() {
-        ctx.send(|e| {
-            e.embed(|a| {
-                a.title(&scene.result[0].anilist.title)
-                    .field("Episode", scene.result[0].episode.unwrap_or_default(), true)
-                    .field("From", scene.result[0].from.unwrap_or_default(), true)
-                    .field("To", scene.result[0].to.unwrap_or_default(), true)
-                    .color(0x57e389)
-            })
-        })
+        ctx.send(
+            CreateReply::default().embed(
+                CreateEmbed::new()
+                    .title(&scene.result[0].anilist.title.to_string())
+                    .field(
+                        "Episode",
+                        scene.result[0].episode.unwrap_or_default().to_string(),
+                        true,
+                    )
+                    .field(
+                        "From",
+                        scene.result[0].from.unwrap_or_default().to_string(),
+                        true,
+                    )
+                    .field(
+                        "To",
+                        scene.result[0].to.unwrap_or_default().to_string(),
+                        true,
+                    )
+                    .color(0x57e389),
+            ),
+        )
         .await?;
-        ctx.send(|m| m.content(&scene.result[0].video)).await?;
-    } else {
-        ctx.send(|m| m.content("why are you hallucinating, that scene never happened"))
+        ctx.send(CreateReply::default().content(&scene.result[0].video))
             .await?;
+    } else {
+        ctx.send(
+            CreateReply::default().content("why are you hallucinating, that scene never happened"),
+        )
+        .await?;
     }
     Ok(())
 }

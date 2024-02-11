@@ -1,6 +1,10 @@
 use crate::types::{Context, Error};
 
-use songbird::input::Restartable;
+use songbird::{
+    events::{Event, EventContext, EventHandler as VoiceEventHandler, TrackEvent},
+    input::YoutubeDl,
+    SerenityInit,
+};
 
 /// Add songs to the queue
 #[poise::command(slash_command, prefix_command)]
@@ -14,14 +18,14 @@ pub async fn add_queue(
         .clone();
     if let Some(handler_lock) = manager.get(ctx.guild_id().unwrap()) {
         let mut handler = handler_lock.lock().await;
-        let source = match Restartable::ytdl(track, true).await {
+        let source = match ytdl(track, true).await {
             Ok(source) => source,
             Err(_why) => {
                 ctx.say("Couldn't fetch the song").await?;
                 return Ok(());
             }
         };
-        handler.enqueue_source(source.into());
+        handler.enqueue_input(source.into());
         ctx.say(format!(
             "Added song to queue: position {}",
             handler.queue().len()
@@ -45,16 +49,13 @@ pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
     let connect_to = match channel_id {
         Some(channel) => channel,
         None => {
-            return Ok(ctx.say("Not in a voice channel").await.map(|_| {})?);
+            ctx.say("Not in a voice channel");
+            return Ok(());
         }
     };
     let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
     let _ = manager.join(guild_id, connect_to).await;
-    let voice_channel = connect_to
-        .name(ctx.serenity_context().cache.clone())
-        .await
-        .unwrap();
-    ctx.say(format!("Joined {}", voice_channel)).await?;
+    ctx.say("Never gonna give you up!").await?;
     Ok(())
 }
 
@@ -80,6 +81,13 @@ pub async fn play_song(
     ctx: Context<'_>,
     #[description = "YouTube link"] track: String,
 ) -> Result<(), Error> {
+    let do_search = !track.starts_with("http");
+    let http_client = {
+        let data = ctx.data.read().await;
+        data.get::<HttpKey>()
+            .cloned()
+            .expect("Guaranteed to exist in the typemap.")
+    };
     let manager = songbird::get(ctx.serenity_context())
         .await
         .expect("rip singing bird")
@@ -98,7 +106,7 @@ pub async fn play_song(
             .title
             .clone()
             .unwrap_or_else(|| "Unknown Title".to_string());
-        handler.enqueue_source(source);
+        handler.enqueue_input(source);
         ctx.say(format!("Playing \"{}\"", title)).await?;
     } else {
         ctx.say("Not in a voice channel").await?;
