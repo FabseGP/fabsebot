@@ -1,19 +1,17 @@
 use crate::types::{Context, Error};
 
-use poise::serenity_prelude::CreateEmbed;
+use poise::serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder};
 use poise::CreateReply;
 use serenity::{async_trait, http::Http, model::prelude::ChannelId};
 use songbird::{
-    events::{Event, EventContext, EventHandler as VoiceEventHandler, TrackEvent},
+    events::{Event, EventContext, EventHandler as VoiceEventHandler},
     input::{Compose, YoutubeDl},
-    SerenityInit,
 };
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
 };
 
 struct TrackEndNotifier {
@@ -160,8 +158,51 @@ pub async fn play_song(
         let mut src = YoutubeDl::new(reqwest::Client::new(), url.clone());
         let metadata = src.aux_metadata().await;
         let _ = handler.enqueue_input(src.into()).await;
-        ctx.send(CreateReply::default().embed(CreateEmbed::new().title("Playing song")))
-            .await?;
+        match metadata {
+            Ok(m) => {
+                let artist = &m.artist;
+                let thumbnail = &m.thumbnail;
+                let title = &m.title;
+                let source_url = &m.source_url;
+                let duration = &m.duration;
+                ctx.send(CreateReply::default().embed(|| -> CreateEmbed {
+                    let mut e = CreateEmbed::new();
+                    e = e
+                        .colour(0xED333B)
+                        .field("Added by: ", ctx.author().to_string(), false);
+                    if let Some(artist) = artist {
+                        e = e.field("Artist: ", format!("{:?}", artist), true)
+                    }
+                    if let Some(duration) = duration {
+                        e = e.field("Duration: ", format!("{:?}", duration), true);
+                    }
+                    if let Some(url) = source_url {
+                        e = e.url(url);
+                    }
+                    if let Some(title) = title {
+                        match source_url {
+                            Some(u) => {
+                                e = e.description(
+                                    MessageBuilder::new().push_named_link_safe(title, u).build(),
+                                );
+                            }
+                            None => {
+                                e = e.description(MessageBuilder::new().push_safe(title).build());
+                            }
+                        }
+                    }
+                    if let Some(url) = thumbnail {
+                        e = e.thumbnail(url);
+                    };
+                    e
+                }()))
+                .await?;
+            }
+            Err(_) => {
+                ctx.say("like you, nothing is known about this song")
+                    .await?;
+            }
+        }
     } else {
         ctx.say("bruh, I'm not even in a voice channel").await?;
     }
