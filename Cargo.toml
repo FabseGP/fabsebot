@@ -1,9 +1,7 @@
-cargo-features = ["edition2024"]
-
 [package]
 name = "fabsebot_supremacy"
-version = "0.1.0"
-edition = "2024"
+version = "0.2.0"
+edition = "2021"
 
 [dependencies]
 dotenvy = { version = "0.15.7" }
@@ -16,6 +14,7 @@ serde_json = { version = "1.0.0" }
 serenity = { version = "0.12.0", default-features = false, features = ["builder", "chrono", "client", "collector", "gateway", "model", "rustls_backend", "utils", "voice",] }
 songbird = { version = "0.4.0", features = ["builtin-queue"] }
 sqlx = { version = "0.7.0", features = ["runtime-tokio-rustls", "sqlite"] }
+symphonia = { version = "0.5.2", features = ["aac", "mp3", "isomp4", "alac"] }
 tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
 urlencoding = { version = "2.1.0" }
 

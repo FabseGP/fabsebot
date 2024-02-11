@@ -92,7 +92,7 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
     for attachment in &message.attachments {
         let target = &attachment.url;
         let response = reqwest::get(target).await;
-        let download = response.expect("couldn't download file").bytes().await;
+        let download = response.unwrap().bytes().await;
         let filename = format!("SPOILER_{}", &attachment.filename);
         let file = File::create(filename.clone());
         let download_bytes = match download {
@@ -101,7 +101,7 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
                 continue;
             }
         };
-        let _ = file.expect("file not found").write_all(&download_bytes);
+        let _ = file.unwrap().write_all(&download_bytes);
         if index == 0 {
             webhook_file(
                 ctx,
@@ -175,7 +175,7 @@ pub async fn webhook_message(
             .create_webhook(channel_id, &webhook_info, None)
             .await;
         let _ = new_webhook
-            .expect("rip webhooks")
+            .unwrap()
             .execute(
                 &ctx.http,
                 false,
@@ -229,7 +229,7 @@ pub async fn webhook_file(
                         .username(name)
                         .avatar_url(url)
                         .content(text)
-                        .add_file(attachment.expect("rip file")),
+                        .add_file(attachment.unwrap()),
                 )
                 .await;
         } else {
@@ -239,7 +239,7 @@ pub async fn webhook_file(
                 .await;
 
             let _ = new_webhook
-                .expect("rip webhooks")
+                .unwrap()
                 .execute(
                     &ctx.http,
                     false,
@@ -247,7 +247,7 @@ pub async fn webhook_file(
                         .username(name)
                         .avatar_url(url)
                         .content(text)
-                        .add_file(attachment.expect("rip file")),
+                        .add_file(attachment.unwrap()),
                 )
                 .await;
         }
@@ -262,7 +262,7 @@ pub async fn webhook_file(
                 ExecuteWebhook::new()
                     .username(name)
                     .avatar_url(url)
-                    .add_file(attachment.expect("rip file")),
+                    .add_file(attachment.unwrap()),
             )
             .await;
     } else {
@@ -271,14 +271,14 @@ pub async fn webhook_file(
             .create_webhook(channel_id, &webhook_info, None)
             .await;
         let _ = new_webhook
-            .expect("rip webhooks")
+            .unwrap()
             .execute(
                 &ctx.http,
                 false,
                 ExecuteWebhook::new()
                     .username(name)
                     .avatar_url(url)
-                    .add_file(attachment.expect("rip file")),
+                    .add_file(attachment.unwrap()),
             )
             .await;
     }
