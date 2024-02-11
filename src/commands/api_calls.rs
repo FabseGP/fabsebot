@@ -1,6 +1,8 @@
 use crate::types::{Context, Error};
 use crate::utils::random_number;
 
+use poise::serenity_prelude::CreateEmbed;
+use poise::CreateReply;
 use reqwest::{multipart, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -45,13 +47,13 @@ pub async fn anilist_anime(
         .unwrap()
         .text();
     let result: serde_json::Value = serde_json::from_str(&resp.await.unwrap()).unwrap();
-    ctx.send(|e| {
-        e.embed(|a| {
-            a.title("Anime")
-                .color(0x33d17a)
-                .field("Output:", &result, false)
-        })
-    })
+    ctx.send(CreateReply::default().embed(
+        CreateEmbed::new().title("Anime").color(0x33d17a).field(
+            "Output:",
+            &result.to_string(),
+            false,
+        ),
+    ))
     .await?;
     println!("{:#}", result);
     Ok(())
@@ -69,9 +71,10 @@ pub async fn bored(ctx: Context<'_>) -> Result<(), Error> {
     let request = reqwest::get(request_url).await?;
     let data: BoredResponse = request.json().await.expect("Error while parsing json");
     if !data.activity.is_empty() {
-        ctx.send(|m| m.content(&data.activity)).await?;
+        ctx.send(CreateReply::default().content(&data.activity))
+            .await?;
     } else {
-        ctx.send(|m| m.content("don't be bored or kill yourself"))
+        ctx.send(CreateReply::default().content("don't be bored or kill yourself"))
             .await?;
     }
     Ok(())
@@ -98,16 +101,16 @@ pub async fn eightball(
     let request = reqwest::get(request_url).await?;
     let judging: EightBallResponse = request.json().await.expect("Error while parsing json");
     if !judging.reading.is_empty() {
-        ctx.send(|e| {
-            e.embed(|w| {
-                w.title(question)
-                    .color(0x33d17a)
-                    .field("", &judging.reading, true)
-            })
-        })
+        ctx.send(
+            CreateReply::default().embed(CreateEmbed::new().title(question).color(0x33d17a).field(
+                "",
+                &judging.reading,
+                true,
+            )),
+        )
         .await?;
     } else {
-        ctx.send(|m| m.content("sometimes riding a giraffe is what you need"))
+        ctx.send(CreateReply::default().content("sometimes riding a giraffe is what you need"))
             .await?;
     }
     Ok(())
@@ -139,10 +142,11 @@ pub async fn gif(
     let request = reqwest::get(request_url).await?;
     let urls: GifResponse = request.json().await.expect("Error while parsing json");
     if !urls.results.is_empty() {
-        ctx.send(|m| m.content(&urls.results[random_number(30)].url))
+        ctx.send(CreateReply::default().content(&urls.results[random_number(30)].url))
             .await?;
     } else {
-        ctx.send(|m| m.content("life is not gifing")).await?;
+        ctx.send(CreateReply::default().content("life is not gifing"))
+            .await?;
     }
     Ok(())
 }
@@ -178,10 +182,10 @@ pub async fn imgbb(
     let request = reqwest::get(request_url).await?;
     let upload: CrapResponse = request.json().await.expect("Error while parsing json");
     if !upload.data.url.is_empty() {
-        ctx.send(|m| m.content(format!("image url: {}", &upload.data.url)))
+        ctx.send(CreateReply::default().content(format!("image url: {}", &upload.data.url)))
             .await?;
     } else {
-        ctx.send(|m| m.content("your image is too perfect for imgbb"))
+        ctx.send(CreateReply::default().content("your image is too perfect for imgbb"))
             .await?;
     }
     Ok(())
@@ -227,7 +231,7 @@ pub async fn imgur(
     //    if request_url.status().is_success() {
     let imgur_response: ImgurResponse = request_url?.json().await?;
     let imgur_link = imgur_response.data.link;
-    ctx.send(|m| m.content(format!("image url: {}", imgur_link)))
+    ctx.send(CreateReply::default().content(format!("image url: {}", imgur_link)))
         .await?;
     //  } else {
     //    ctx.send(|m| m.content("imgur has broken up with you"))
@@ -249,7 +253,7 @@ pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
     let request = reqwest::get(request_url).await?;
     let data: JokeResponse = request.json().await.expect("Error while parsing json");
     if !data.joke.is_empty() {
-        ctx.send(|m| m.content(&data.joke)).await?;
+        ctx.send(CreateReply::default().content(&data.joke)).await?;
     } else {
         let roasts = [
             "your life",
@@ -259,7 +263,7 @@ pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
             "I don't like you",
             "you smell",
         ];
-        ctx.send(|m| m.content(roasts[random_number(roasts.len())]))
+        ctx.send(CreateReply::default().content(roasts[random_number(roasts.len())]))
             .await?;
     }
     Ok(())
@@ -282,7 +286,8 @@ pub async fn memegen(
         right = encoded_topr,
         bottom = encoded_bottom
     );
-    ctx.send(|m| m.content(request_url)).await?;
+    ctx.send(CreateReply::default().content(request_url))
+        .await?;
     Ok(())
 }
 
@@ -356,7 +361,7 @@ pub async fn picsur(
         "https://fileshare.benzone.work/i/{}",
         romanian_upload.data.id
     );
-    ctx.send(|m| m.content(format!("image url: {}", image_url)))
+    ctx.send(CreateReply::default().content(format!("image url: {}", image_url)))
         .await?;
     // } else {
     //     ctx.send(|m| m.content("romania have ceased to exist"))
@@ -403,17 +408,18 @@ pub async fn translate(
         .await?;
     let data: Vec<TranslateResponse> = request.json().await.expect("Error while parsing json");
     if !data[2].source_language.is_empty() {
-        ctx.send(|e| {
-            e.embed(|t| {
-                t.title(format!("Translation from {} to {}", source, target))
+        ctx.send(
+            CreateReply::default().embed(
+                CreateEmbed::new()
+                    .title(format!("Translation from {} to {}", source, target))
                     .color(0x33d17a)
                     .field("Original:", sentence, false)
-                    .field("Translation:", &data[2].translated_text, false)
-            })
-        })
+                    .field("Translation:", &data[2].translated_text, false),
+            ),
+        )
         .await?;
     } else {
-        ctx.send(|m| m.content("invalid syntax, pls follow this template: '!translate da,en text', here translating from danish to english")).await?;
+        ctx.send(CreateReply::default().content("invalid syntax, pls follow this template: '!translate da,en text', here translating from danish to english")).await?;
     }
     Ok(())
 }
@@ -445,9 +451,10 @@ pub async fn urban(
     let request = reqwest::get(request_url).await?;
     let data: UrbanResponse = request.json().await.expect("Error while parsing json");
     if !data.list.is_empty() {
-        ctx.send(|e| {
-            e.embed(|u| {
-                u.title(&data.list[0].word)
+        ctx.send(
+            CreateReply::default().embed(
+                CreateEmbed::new()
+                    .title(&data.list[0].word)
                     .color(0xEFFF00)
                     .field(
                         "Definition:",
@@ -458,12 +465,12 @@ pub async fn urban(
                         "Example:",
                         &data.list[0].example.replace(['[', ']'], ""),
                         false,
-                    )
-            })
-        })
+                    ),
+            ),
+        )
         .await?;
     } else {
-        ctx.send(|m| m.content(format!("like you, {} don't exist", input)))
+        ctx.send(CreateReply::default().content(format!("like you, {} don't exist", input)))
             .await?;
     }
     Ok(())

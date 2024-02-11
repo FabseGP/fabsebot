@@ -1,8 +1,9 @@
 use crate::types::{Context, Error};
 use crate::utils::random_number;
 
-use poise::serenity_prelude as serenity;
-use serenity::{model::Timestamp, user::User};
+use poise::serenity_prelude::{self as serenity, CreateEmbed};
+use poise::CreateReply;
+use serenity::model::Timestamp;
 
 /// Send a birthday wish to a user
 #[poise::command(slash_command, prefix_command)]
@@ -10,7 +11,7 @@ pub async fn birthday(
     ctx: Context<'_>,
     #[description = "User to congratulate"]
     #[rest]
-    user: Option<User>,
+    user: Option<serenity::User>,
 ) -> Result<(), Error> {
     let target = user.as_ref().unwrap_or_else(|| ctx.author());
     let avatar_url = target
@@ -22,15 +23,16 @@ pub async fn birthday(
     let target_nick = nickname
         .as_ref()
         .map_or_else(|| target.name.clone(), |n| n.clone());
-    ctx.send(|e| {
-        e.embed(|b| {
-            b.title(format!("HAPPY BIRTHDAY {}!", target_nick))
+    ctx.send(
+        CreateReply::default().embed(
+            CreateEmbed::new()
+                .title(format!("HAPPY BIRTHDAY {}!", target_nick))
                 .thumbnail(avatar_url)
                 .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
                 .color(0xFF5733)
-                .timestamp(Timestamp::now())
-        })
-    })
+                .timestamp(Timestamp::now()),
+        ),
+    )
     .await?;
     Ok(())
 }
@@ -38,7 +40,8 @@ pub async fn birthday(
 /// Was fabseman here?
 #[poise::command(slash_command, prefix_command)]
 pub async fn fabseman(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.send(|m| m.content("fabseman was here!")).await?;
+    ctx.send(CreateReply::default().content("fabseman was here!"))
+        .await?;
     Ok(())
 }
 
@@ -71,17 +74,20 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
 /// Wise xsensei saying
 #[poise::command(slash_command, prefix_command)]
 pub async fn sensei_status(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.send(|m| m.content(format!("day: {} of reading dogshit", random_number(0))))
-        .await?;
+    ctx.send(
+        CreateReply::default().content(format!("day: {} of reading dogshit", random_number(0))),
+    )
+    .await?;
     Ok(())
 }
 
 /// Do you dare?
 #[poise::command(slash_command, prefix_command)]
 pub async fn troll(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.send(|m| {
-        m.content(
-            r#"
+    ctx.send(
+        CreateReply::default()
+            .content(
+                r#"
 ```
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣤⣤⡴⠶⠶⠶⠶⠶⠶⠶⠶⢶⣦⣤⣤⣀⣀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⡴⠶⠛⠋⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠙⠛⠷⠶⢦⣤⣀⡀
@@ -102,9 +108,9 @@ pub async fn troll(ctx: Context<'_>) -> Result<(), Error> {
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠶⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡴⠞⠋⠁
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠳⠶⠶⠶⠶⠶⠖⠛⠋⠁
 ```"#,
-        )
-        .ephemeral(true)
-    })
+            )
+            .ephemeral(true),
+    )
     .await?;
     Ok(())
 }

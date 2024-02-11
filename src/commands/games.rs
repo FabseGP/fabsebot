@@ -1,5 +1,8 @@
 use crate::types::{Context, Error};
 
+
+use poise::CreateReply;
+
 /// Get rekt by an another user in rps
 #[poise::command(slash_command, prefix_command)]
 pub async fn rps(
@@ -8,16 +11,19 @@ pub async fn rps(
 ) -> Result<(), Error> {
     match choice.as_str() {
         "rock" => {
-            ctx.send(|m| m.content("I choose paper, noob!")).await?;
+            ctx.send(CreateReply::default().content("I choose paper, noob!"))
+                .await?;
         }
         "paper" => {
-            ctx.send(|m| m.content("I choose scissor, noob!")).await?;
+            ctx.send(CreateReply::default().content("I choose scissor, noob!"))
+                .await?;
         }
         "scissor" => {
-            ctx.send(|m| m.content("I choose rock, noob!")).await?;
+            ctx.send(CreateReply::default().content("I choose rock, noob!"))
+                .await?;
         }
         _ => {
-            ctx.send(|m| m.content("your lack of intelligence is baffling"))
+            ctx.send(CreateReply::default().content("your lack of intelligence is baffling"))
                 .await?;
         }
     }

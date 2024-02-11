@@ -1,6 +1,6 @@
-use crate::commands::*;
+use crate::commands::{animanga, api_calls, funny, games, info, misc};
 use crate::handlers::event_handler;
-use crate::types::{BotStorage, Data};
+use crate::types::Data;
 
 use poise::serenity_prelude as serenity;
 use serenity::client::Client;
@@ -41,7 +41,7 @@ pub async fn start() {
             misc::troll(),
             //            music::add_queue(),
             //            music::join_voice(),
-            //            music::leave_voice(),
+            //           music::leave_voice(),
             //            music::play_song(),
             //            music::skip_song(),
             //            music::stop_song(),
@@ -80,28 +80,32 @@ pub async fn start() {
         .await
         .expect("Couldn't run database migrations");
     let intents = serenity::GatewayIntents::non_privileged()
-        | serenity::GatewayIntents::GUILD_MESSAGES
-        | serenity::GatewayIntents::GUILD_MESSAGE_REACTIONS
-        | serenity::GatewayIntents::GUILD_MESSAGE_TYPING
-        | serenity::GatewayIntents::GUILD_MEMBERS
         | serenity::GatewayIntents::DIRECT_MESSAGES
         | serenity::GatewayIntents::DIRECT_MESSAGE_REACTIONS
         | serenity::GatewayIntents::DIRECT_MESSAGE_TYPING
-        | serenity::GatewayIntents::MESSAGE_CONTENT
-        | serenity::GatewayIntents::GUILD_VOICE_STATES;
+        | serenity::GatewayIntents::GUILDS
+        | serenity::GatewayIntents::GUILD_EMOJIS_AND_STICKERS
+        | serenity::GatewayIntents::GUILD_MEMBERS
+        | serenity::GatewayIntents::GUILD_MESSAGES
+        | serenity::GatewayIntents::GUILD_MESSAGE_REACTIONS
+        | serenity::GatewayIntents::GUILD_MESSAGE_TYPING
+        | serenity::GatewayIntents::GUILD_PRESENCES
+        | serenity::GatewayIntents::GUILD_SCHEDULED_EVENTS
+        | serenity::GatewayIntents::GUILD_VOICE_STATES
+        | serenity::GatewayIntents::MESSAGE_CONTENT;
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let _ = Client::builder(&token, intents) /*.register_songbird()*/
-        .await;
     let framework = poise::Framework::builder()
-        //.client_settings(|c| c.register_songbird())
-        .token(token)
-        .intents(intents)
         .options(options)
         .setup(move |_ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(_ctx, &framework.options().commands).await?;
                 Ok(Data {})
             })
-        });
-    framework.run().await.unwrap();
+        })
+        .build();
+    let client = Client::builder(&token, intents)
+        .framework(framework)
+        .register_songbird()
+        .await;
+    client.unwrap().start().await.unwrap();
 }

@@ -1,26 +1,22 @@
-use poise::serenity_prelude as serenity;
+use poise::serenity_prelude::{self as serenity, CreateEmbed, CreateMessage, ExecuteWebhook};
+
 use rand::Rng;
 use serenity::{
-    builder::CreateButton,
-    model::{
-        application::{
-            component::ButtonStyle,
-            interaction::{Interaction, InteractionResponseType},
-        },
-        channel::{Channel, Message, ReactionType},
-        id::EmojiId,
-        prelude::{AttachmentType, ChannelId, GuildId},
-        Timestamp,
-    },
-    utils::{Colour, MessageBuilder},
+    builder::CreateAttachment,
+    json::json,
+    model::{channel::ReactionType, colour::Colour, id::EmojiId, prelude::ChannelId, Timestamp},
 };
-use std::{fs, fs::File, io::Write};
+use std::{fs, fs::File, io::Write, path::Path};
 
 pub async fn dead_chat(
     ctx: &serenity::Context,
     channel_id: ChannelId,
 ) -> Result<(), serenity::Error> {
     let dead_gifs = [
+        "https://media1.tenor.com/m/k6k3vCBIYlYAAAAC/dead-chat.gif",
+        "https://media1.tenor.com/m/t_DmbWvjTKMAAAAd/dead-chat-discord.gif",
+        "https://media1.tenor.com/m/8JHVRggIIl4AAAAd/hello-chat-dead-chat.gif",
+        "https://media1.tenor.com/m/BDJsAenz_SUAAAAd/chat-dead-chat.gif",
         "https://media.tenor.com/PFyQ24Kux9UAAAAC/googas-wet.gif",
         "https://media.tenor.com/71DeLT3bO0AAAAAM/dead-chat-dead-chat-skeleton.gif",
         "https://media.tenor.com/yjAObClgNM4AAAAM/dead-chat-xd-dead-chat.gif",
@@ -46,23 +42,25 @@ pub async fn dead_chat(
     Ok(())
 }
 
-pub async fn embed_builder<S: ToString>(
+pub async fn embed_builder(
     ctx: &serenity::Context,
     message: &serenity::Message,
-    title: S,
-    url: S,
+    title: &str,
+    url: &str,
     colour: Colour,
 ) {
     let _ = message
         .channel_id
-        .send_message(&ctx.http, |e| {
-            e.embed(|b| {
-                b.title(title)
+        .send_message(
+            &ctx.http,
+            CreateMessage::default().embed(
+                CreateEmbed::new()
+                    .title(title)
                     .image(url)
                     .color(colour)
-                    .timestamp(Timestamp::now())
-            })
-        })
+                    .timestamp(Timestamp::now()),
+            ),
+        )
         .await;
 }
 
@@ -73,7 +71,7 @@ pub fn emoji_react(emoji: &str) -> ReactionType {
     };
     ReactionType::Custom {
         animated: false,
-        id: EmojiId(id),
+        id: EmojiId::new(id),
         name: Some(emoji.to_string()),
     }
 }
@@ -133,14 +131,18 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
     let _ = message.delete(&ctx).await;
 }
 
-pub async fn webhook_message<S: ToString>(
+pub async fn webhook_message(
     ctx: &serenity::Context,
     message: &serenity::Message,
-    name: S,
+    name: &str,
     url: &str,
-    output: S,
+    output: &str,
 ) {
     let channel_id = message.channel_id;
+    let webhook_info = json!({
+        "name": "test",
+        "avatar": url
+    });
     let existing_webhooks = match channel_id.webhooks(&ctx.http).await {
         Ok(webhooks) => webhooks,
         Err(err) => {
@@ -150,43 +152,58 @@ pub async fn webhook_message<S: ToString>(
     };
     if existing_webhooks.len() >= 15 {
         for webhook in &existing_webhooks {
-            let _ = (ctx.http).delete_webhook(webhook.id.into()).await;
+            let _ = (ctx.http).delete_webhook(webhook.id.into(), None).await;
         }
     }
     if let Some(existing_webhook) = existing_webhooks
         .iter()
         .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
     {
-//        println!("url: {:?}", existing_webhook.url());
         let _ = existing_webhook
-            .execute(&ctx.http, false, |w| {
-                w.username(name).avatar_url(url).content(output)
-            })
+            .execute(
+                &ctx.http,
+                false,
+                ExecuteWebhook::new()
+                    .username(name)
+                    .avatar_url(url)
+                    .content(output),
+            )
             .await;
     } else {
-        let new_webhook = message
-            .channel_id
-            .create_webhook_with_avatar(ctx, "fabsemanbots", url)
+        let new_webhook = ctx
+            .http
+            .create_webhook(channel_id, &webhook_info, None)
             .await;
         let _ = new_webhook
             .expect("rip webhooks")
-            .execute(&ctx.http, false, |w| {
-                w.username(name).avatar_url(url).content(output)
-            })
+            .execute(
+                &ctx.http,
+                false,
+                ExecuteWebhook::new()
+                    .username(name)
+                    .avatar_url(url)
+                    .content(output),
+            )
             .await;
     }
 }
 
-pub async fn webhook_file<S: ToString>(
+pub async fn webhook_file(
     ctx: &serenity::Context,
     message: &serenity::Message,
-    name: S,
+    name: &str,
     url: &str,
-    text: S,
+    text: &str,
     path: String,
     mode: i32,
 ) {
     let channel_id = message.channel_id;
+    let webhook_info = json!({
+        "name": "test",
+        "avatar": url
+    });
+    let attachment =
+        CreateAttachment::path(<std::string::String as AsRef<Path>>::as_ref(&path)).await;
     let existing_webhooks = match channel_id.webhooks(&ctx.http).await {
         Ok(webhooks) => webhooks,
         Err(err) => {
@@ -196,7 +213,7 @@ pub async fn webhook_file<S: ToString>(
     };
     if existing_webhooks.len() >= 15 {
         for webhook in &existing_webhooks {
-            let _ = (ctx.http).delete_webhook(webhook.id.into()).await;
+            let _ = (ctx.http).delete_webhook(webhook.id.into(), None).await;
         }
     }
     if mode == 0 {
@@ -205,26 +222,33 @@ pub async fn webhook_file<S: ToString>(
             .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
         {
             let _ = existing_webhook
-                .execute(&ctx.http, false, |w| {
-                    w.username(name)
+                .execute(
+                    &ctx.http,
+                    false,
+                    ExecuteWebhook::new()
+                        .username(name)
                         .avatar_url(url)
                         .content(text)
-                        .add_file(AttachmentType::Path(path.as_ref()))
-                })
+                        .add_file(attachment.expect("rip file")),
+                )
                 .await;
         } else {
-            let new_webhook = message
-                .channel_id
-                .create_webhook_with_avatar(ctx, "fabsemanbots", url)
+            let new_webhook = ctx
+                .http
+                .create_webhook(channel_id, &webhook_info, None)
                 .await;
+
             let _ = new_webhook
                 .expect("rip webhooks")
-                .execute(&ctx.http, false, |w| {
-                    w.username(name)
+                .execute(
+                    &ctx.http,
+                    false,
+                    ExecuteWebhook::new()
+                        .username(name)
                         .avatar_url(url)
                         .content(text)
-                        .add_file(AttachmentType::Path(path.as_ref()))
-                })
+                        .add_file(attachment.expect("rip file")),
+                )
                 .await;
         }
     } else if let Some(existing_webhook) = existing_webhooks
@@ -232,24 +256,30 @@ pub async fn webhook_file<S: ToString>(
         .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
     {
         let _ = existing_webhook
-            .execute(&ctx.http, false, |w| {
-                w.username(name)
+            .execute(
+                &ctx.http,
+                false,
+                ExecuteWebhook::new()
+                    .username(name)
                     .avatar_url(url)
-                    .add_file(AttachmentType::Path(path.as_ref()))
-            })
+                    .add_file(attachment.expect("rip file")),
+            )
             .await;
     } else {
-        let new_webhook = message
-            .channel_id
-            .create_webhook_with_avatar(ctx, "fabsemanbots", url)
+        let new_webhook = ctx
+            .http
+            .create_webhook(channel_id, &webhook_info, None)
             .await;
         let _ = new_webhook
             .expect("rip webhooks")
-            .execute(&ctx.http, false, |w| {
-                w.username(name)
+            .execute(
+                &ctx.http,
+                false,
+                ExecuteWebhook::new()
+                    .username(name)
                     .avatar_url(url)
-                    .add_file(AttachmentType::Path(path.as_ref()))
-            })
+                    .add_file(attachment.expect("rip file")),
+            )
             .await;
     }
 }

@@ -1,5 +1,6 @@
 use crate::types::{Context, Error};
 use poise::serenity_prelude as serenity;
+use poise::CreateReply;
 
 /// Get server information
 #[poise::command(slash_command, prefix_command)]
@@ -21,6 +22,6 @@ pub async fn user_info(
         target.name,
         target.created_at()
     );
-    ctx.say(response).await?;
+    ctx.send(CreateReply::default().content(response)).await?;
     Ok(())
 }
