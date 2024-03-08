@@ -152,7 +152,7 @@ pub async fn webhook_message(
     };
     if existing_webhooks.len() >= 15 {
         for webhook in &existing_webhooks {
-            let _ = (ctx.http).delete_webhook(webhook.id.into(), None).await;
+            let _ = (ctx.http).delete_webhook(webhook.id, None).await;
         }
     }
     if let Some(existing_webhook) = existing_webhooks
@@ -213,7 +213,7 @@ pub async fn webhook_file(
     };
     if existing_webhooks.len() >= 15 {
         for webhook in &existing_webhooks {
-            let _ = (ctx.http).delete_webhook(webhook.id.into(), None).await;
+            let _ = (ctx.http).delete_webhook(webhook.id, None).await;
         }
     }
     if mode == 0 {

@@ -269,7 +269,7 @@ pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// When there aren't not enough memes
+/// When there aren't enough memes
 #[poise::command(slash_command, prefix_command)]
 pub async fn memegen(
     ctx: Context<'_>,
