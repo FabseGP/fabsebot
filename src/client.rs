@@ -9,9 +9,17 @@ use std::env;
 
 pub async fn start() {
     dotenvy::dotenv().unwrap();
+    let sql_user = env::var("MARIADB_USER").unwrap();
+    let sql_password = env::var("MARIADB_PASSWORD").unwrap();
+    let sql_database = env::var("MARIADB_DATABASE").unwrap();
     let database = sqlx::mysql::MySqlPoolOptions::new()
         .max_connections(5)
-        .connect("mariadb://fabsedata:fabseVault110802@localhost/company")
+        .connect(&format!(
+            "mariadb://{username}:{password}@localhost/{database}",
+            username = sql_user,
+            password = sql_password,
+            database = sql_database
+        ))
         .await
         .expect("Couldn't connect to database");
     sqlx::migrate!("./migrations").run(&database).await.unwrap();
