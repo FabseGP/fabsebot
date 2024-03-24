@@ -11,6 +11,7 @@ use serenity::{
         user::OnlineStatus,
     },
 };
+use sqlx::Row;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -169,15 +170,6 @@ pub async fn event_handler(
                             &response,
                         )
                         .await;
-                    } else if content == "add todo" {
-                        sqlx::query!(
-                            "INSERT INTO todo (task, user_id) VALUES (?, ?)",
-                            "get a car",
-                            "1",
-                        )
-                        .execute(&data.db)
-                        .await
-                        .unwrap();
                     }
                     match content.as_str() {
                         "fabse" | "fabseman" => {
@@ -212,11 +204,19 @@ pub async fn event_handler(
                         }
                         _ => {}
                     }
-                    if new_message.channel_id == ChannelId::new(1103728998372102154) {
+                    if new_message.channel_id == ChannelId::new(1103728998372102154)
+                        || new_message.channel_id == ChannelId::new(1146385698279137331)
+                    {
                         let mut timestamp_lock = LAST_MESSAGE_TIMESTAMP.lock().await;
                         *timestamp_lock = Some(Instant::now());
                     }
                 }
+                let guild_id_str = new_message.guild_id.map(|id| id.to_string());
+                let duration =
+                    sqlx::query("SELECT dead_chat_rate FROM guild_settings WHERE guild_id = ?")
+                        .bind(guild_id_str);
+                let duration_row = duration.fetch_one(&data.db).await?;
+                let dead_chat_rate: u64 = duration_row.get("dead_chat_rate");
                 let last_timestamp;
                 {
                     let timestamp_lock = LAST_MESSAGE_TIMESTAMP.lock().await;
@@ -225,11 +225,13 @@ pub async fn event_handler(
                 if let Some(last_timestamp) = last_timestamp {
                     let current_timestamp = Instant::now();
                     let elapsed_time = current_timestamp.duration_since(last_timestamp);
-                    if elapsed_time >= Duration::from_secs(3600) {
-                        let new_last_timestamp = last_timestamp + Duration::from_secs(3600);
+                    if elapsed_time >= Duration::from_secs(dead_chat_rate * 60) {
+                        let new_last_timestamp =
+                            last_timestamp + Duration::from_secs(dead_chat_rate);
                         let mut timestamp_lock = LAST_MESSAGE_TIMESTAMP.lock().await;
                         *timestamp_lock = Some(new_last_timestamp);
-                        let channel_id = ChannelId::new(1103728998372102154);
+                        //   let channel_id = ChannelId::new(1103728998372102154);
+                        let channel_id = ChannelId::new(1146385698279137331);
                         dead_chat(ctx, channel_id).await?;
                     }
                 }

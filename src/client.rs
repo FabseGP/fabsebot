@@ -1,4 +1,4 @@
-use crate::commands::{animanga, api_calls, funny, games, info, misc, music};
+use crate::commands::{animanga, api_calls, funny, games, info, misc, music, settings};
 use crate::handlers::event_handler;
 use crate::types::Data;
 
@@ -60,6 +60,7 @@ pub async fn start() {
                 music::play_song(),
                 music::skip_song(),
                 music::stop_song(),
+                settings::dead_chat(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("!".into()),
