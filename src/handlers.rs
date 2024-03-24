@@ -211,20 +211,18 @@ pub async fn event_handler(
                         *timestamp_lock = Some(Instant::now());
                     }
                 }
-                let guild_id_str = new_message.guild_id.map(|id| id.to_string());
-                let duration =
+                let settings_row =
                     sqlx::query("SELECT dead_chat_rate FROM guild_settings WHERE guild_id = ?")
-                        .bind(guild_id_str);
-                let duration_row = duration.fetch_one(&data.db).await?;
-                let dead_chat_rate: u64 = duration_row.get("dead_chat_rate");
-                let last_timestamp;
-                {
-                    let timestamp_lock = LAST_MESSAGE_TIMESTAMP.lock().await;
-                    last_timestamp = *timestamp_lock;
-                }
+                        .bind(new_message.guild_id.map(|id| id.to_string()))
+                        .fetch_optional(&data.db)
+                        .await?;
+                let dead_chat_rate: u64 = match settings_row {
+                    Some(row) => row.get("dead_chat_rate"),
+                    None => 60,
+                };
+                let last_timestamp = *LAST_MESSAGE_TIMESTAMP.lock().await;
                 if let Some(last_timestamp) = last_timestamp {
-                    let current_timestamp = Instant::now();
-                    let elapsed_time = current_timestamp.duration_since(last_timestamp);
+                    let elapsed_time = Instant::now().duration_since(last_timestamp);
                     if elapsed_time >= Duration::from_secs(dead_chat_rate * 60) {
                         let new_last_timestamp =
                             last_timestamp + Duration::from_secs(dead_chat_rate);
