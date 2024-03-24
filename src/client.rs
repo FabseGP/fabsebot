@@ -9,6 +9,12 @@ use std::env;
 
 pub async fn start() {
     dotenvy::dotenv().unwrap();
+    let database = sqlx::mysql::MySqlPoolOptions::new()
+        .max_connections(5)
+        .connect("mariadb://fabsedata:fabseVault110802@localhost/company")
+        .await
+        .expect("Couldn't connect to database");
+    sqlx::migrate!("./migrations").run(&database).await.unwrap();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             event_handler: |_ctx, event, _framework, _data| {
@@ -70,20 +76,10 @@ pub async fn start() {
         .setup(move |_ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(_ctx, &framework.options().commands).await?;
-                Ok(Data {})
+                Ok(Data { db: database })
             })
         })
         .build();
-    let database = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect_with(
-            sqlx::sqlite::SqliteConnectOptions::new()
-                .filename("database.sqlite")
-                .create_if_missing(true),
-        )
-        .await
-        .unwrap();
-    sqlx::migrate!("./migrations").run(&database).await.unwrap();
     let intents = GatewayIntents::non_privileged()
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::DIRECT_MESSAGE_REACTIONS

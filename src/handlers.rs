@@ -25,7 +25,7 @@ pub async fn event_handler(
     ctx: &serenity::Context,
     event: &FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
-    _data: &Data,
+    data: &Data,
 ) -> Result<(), Error> {
     match event {
         FullEvent::Ready { data_about_bot } => {
@@ -169,6 +169,15 @@ pub async fn event_handler(
                             &response,
                         )
                         .await;
+                    } else if content == "add todo" {
+                        sqlx::query!(
+                            "INSERT INTO todo (task, user_id) VALUES (?, ?)",
+                            "get a car",
+                            "1",
+                        )
+                        .execute(&data.db)
+                        .await
+                        .unwrap();
                     }
                     match content.as_str() {
                         "fabse" | "fabseman" => {
