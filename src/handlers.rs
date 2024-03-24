@@ -212,13 +212,13 @@ pub async fn event_handler(
                     }
                 }
                 let settings_row =
-                    sqlx::query("SELECT dead_chat_rate FROM guild_settings WHERE guild_id = ?")
+                    sqlx::query("SELECT dead_chat_rate, dead_chat_channel FROM guild_settings WHERE guild_id = ?")
                         .bind(new_message.guild_id.map(|id| id.to_string()))
                         .fetch_optional(&data.db)
                         .await?;
-                let dead_chat_rate: u64 = match settings_row {
-                    Some(row) => row.get("dead_chat_rate"),
-                    None => 60,
+                let (dead_chat_rate, dead_chat_channel) = match settings_row {
+                    Some(row) => (row.get("dead_chat_rate"), row.get("dead_chat_channel")),
+                    None => (60, 0),
                 };
                 let last_timestamp = *LAST_MESSAGE_TIMESTAMP.lock().await;
                 if let Some(last_timestamp) = last_timestamp {
@@ -228,8 +228,7 @@ pub async fn event_handler(
                             last_timestamp + Duration::from_secs(dead_chat_rate);
                         let mut timestamp_lock = LAST_MESSAGE_TIMESTAMP.lock().await;
                         *timestamp_lock = Some(new_last_timestamp);
-                        //   let channel_id = ChannelId::new(1103728998372102154);
-                        let channel_id = ChannelId::new(1146385698279137331);
+                        let channel_id = ChannelId::new(dead_chat_channel);
                         dead_chat(ctx, channel_id).await?;
                     }
                 }

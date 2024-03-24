@@ -7,19 +7,21 @@ use poise::CreateReply;
 pub async fn dead_chat(
     ctx: Context<'_>,
     #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: u8,
+    #[description = "Channel to send dead chat gifs to"] channel: serenity::model::channel::Channel,
 ) -> Result<(), Error> {
     let mut conn = ctx.data().db.acquire().await?;
     sqlx::query!(
-        "REPLACE INTO guild_settings (guild_id, dead_chat_rate) VALUES (?, ?)",
+        "REPLACE INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)",
         ctx.guild_id().unwrap().get(),
-        occurrence
+        occurrence,
+        channel.id().to_string()
     )
     .execute(&mut *conn)
     .await
     .unwrap();
     ctx.send(CreateReply::default().content(format!(
-        "Dead chat gifs will only be sent every {} minute(s)... probably",
-        occurrence,
+        "Dead chat gifs will only be sent every {} minute(s) in {}... probably",
+        occurrence, channel
     )))
     .await?;
     Ok(())
