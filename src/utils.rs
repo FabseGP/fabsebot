@@ -78,11 +78,7 @@ pub fn emoji_react(emoji: &str) -> ReactionType {
 
 pub fn random_number(count: usize) -> usize {
     let mut rng = rand::thread_rng();
-    if count == 0 {
-        rng.gen_range(0..1000)
-    } else {
-        rng.gen_range(0..count)
-    }
+    rng.gen_range(0..count)
 }
 
 pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Message, text: String) {
@@ -140,7 +136,7 @@ pub async fn webhook_message(
 ) {
     let channel_id = message.channel_id;
     let webhook_info = json!({
-        "name": "test",
+        "name": name,
         "avatar": url
     });
     let existing_webhooks = match channel_id.webhooks(&ctx.http).await {

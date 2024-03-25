@@ -1,6 +1,5 @@
 use crate::types::{Context, Error};
 
-
 use poise::serenity_prelude::{self as serenity, CreateMessage};
 use poise::CreateReply;
 
@@ -56,9 +55,12 @@ pub async fn user_misuse(
     #[description = "Target"] user: poise::serenity_prelude::User,
     #[description = "Message to send"]
     #[rest]
-    message: String,
+    _message: String,
 ) -> Result<(), Error> {
-    let avatar_url = user.avatar_url();
-    let name = user.name;
+    let _avatar_url = user.avatar_url();
+    let _name = user.name;
+    let _channel_id = ctx.channel_id();
+    ctx.send(CreateReply::default().content("thou can't be trusted with this power"))
+        .await?;
     Ok(())
 }

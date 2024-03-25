@@ -25,8 +25,8 @@ pub async fn start() {
     sqlx::migrate!("./migrations").run(&database).await.unwrap();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            event_handler: |_ctx, event, _framework, _data| {
-                Box::pin(event_handler(_ctx, event, _framework, _data))
+            event_handler: |ctx, event, framework, data| {
+                Box::pin(event_handler(ctx, event, framework, data))
             },
             commands: vec![
                 animanga::anime_scene(),
@@ -38,7 +38,6 @@ pub async fn start() {
                 api_calls::imgur(),
                 api_calls::joke(),
                 api_calls::memegen(),
-                api_calls::picsur(),
                 api_calls::translate(),
                 api_calls::urban(),
                 funny::anonymous(),
@@ -51,10 +50,8 @@ pub async fn start() {
                 misc::birthday(),
                 misc::fabseman(),
                 misc::help(),
-                misc::quote(),
                 misc::sensei_status(),
                 misc::troll(),
-                music::add_queue(),
                 music::join_voice(),
                 music::leave_voice(),
                 music::play_song(),

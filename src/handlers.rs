@@ -3,7 +3,7 @@ use crate::utils::{
     dead_chat, embed_builder, emoji_react, random_number, spoiler_message, webhook_message,
 };
 
-use poise::serenity_prelude::{self as serenity, Colour, FullEvent};
+use poise::serenity_prelude::{self as serenity, Colour, CreateEmbed, CreateMessage, FullEvent};
 use serenity::{
     gateway::ActivityData,
     model::{prelude::ChannelId, user::OnlineStatus},
@@ -174,9 +174,6 @@ pub async fn event_handler(
                         .await?;
                     webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "fr, useless rice cooker").await;
                 }
-                "test" => {
-                    webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "no, it isn't friday yet").await;
-                }
                 "rin_willbeatu" | "<@1014524859532980255>" => {
                     new_message
                         .react(&ctx.http, emoji_react("fabseman_willbeatu"))
@@ -201,9 +198,9 @@ pub async fn event_handler(
             .await?;
             let (dead_chat_rate, dead_chat_channel) = match settings_row {
                 Some(row) => (row.get("dead_chat_rate"), row.get("dead_chat_channel")),
-                None => (60, 0),
+                None => (60, 1069629692937764937),
             };
-            if new_message.channel_id == ChannelId::new(dead_chat_channel) {
+            if new_message.channel_id == ChannelId::new(1069629692937764937) {
                 let mut timestamp_lock = LAST_MESSAGE_TIMESTAMP.lock().await;
                 *timestamp_lock = Some(Instant::now());
             }
@@ -218,6 +215,22 @@ pub async fn event_handler(
                     dead_chat(ctx, channel_id).await?;
                 }
             }
+        }
+        FullEvent::GuildScheduledEventCreate { event } => {
+            let channel = ChannelId::new(1069629692937764937);
+            let _ = channel
+                .send_message(
+                    &ctx.http,
+                    CreateMessage::default().embed(
+                        CreateEmbed::new()
+                            .title(&event.name)
+                            .field("Creator", event.creator_id.unwrap().to_string(), false)
+                            .field("Start time: ", event.start_time.to_string(), true)
+                            .field("Channel id: ", event.channel_id.unwrap().to_string(), true)
+                            .field("Description: ", event.description.as_ref().unwrap(), false),
+                    ),
+                )
+                .await?;
         }
         _ => {}
     }

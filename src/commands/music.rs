@@ -4,29 +4,6 @@ use poise::serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder}
 use poise::CreateReply;
 use songbird::input::{Compose, YoutubeDl};
 
-/// Add songs to the queue
-#[poise::command(slash_command, prefix_command)]
-pub async fn add_queue(
-    ctx: Context<'_>,
-    #[description = "YouTube link"] url: String,
-) -> Result<(), Error> {
-    let guild_id = ctx.guild_id().unwrap();
-    let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
-    if let Some(handler_lock) = manager.get(guild_id) {
-        let mut handler = handler_lock.lock().await;
-        let src = YoutubeDl::new(reqwest::Client::new(), url);
-        handler.enqueue_input(src.into()).await;
-        ctx.say(format!(
-            "Added song to queue: Position {}",
-            handler.queue().len()
-        ))
-        .await?;
-    } else {
-        ctx.say("Bruh, I'm not even in a voice channel").await?;
-    }
-    Ok(())
-}
-
 /// Join your current voice channel
 #[poise::command(slash_command, prefix_command)]
 pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
@@ -65,17 +42,24 @@ pub async fn leave_voice(ctx: Context<'_>) -> Result<(), Error> {
     }
     Ok(())
 }
-/// Play song in the current voice channel
+
+/// Play song / add song to queue in the current voice channel
 #[poise::command(slash_command, prefix_command)]
 pub async fn play_song(
     ctx: Context<'_>,
-    #[description = "YouTube link"] url: String,
+    #[description = "Link to the song or query to search"]
+    #[rest]
+    url: String,
 ) -> Result<(), Error> {
     let guild_id = ctx.guild_id().unwrap();
     let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
-        let mut src = YoutubeDl::new(reqwest::Client::new(), url.clone());
+        let mut src = if url.starts_with("http") {
+            YoutubeDl::new(reqwest::Client::new(), url.clone())
+        } else {
+            YoutubeDl::new_search(reqwest::Client::new(), url.clone())
+        };
         let metadata = src.aux_metadata().await;
         handler.enqueue_input(src.into()).await;
         match metadata {

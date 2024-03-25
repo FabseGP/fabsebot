@@ -7,11 +7,6 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use std::{
-    fs::{remove_file, File},
-    io::copy,
-    path::Path,
-};
 use urlencoding::encode;
 
 const QUERY: &str = "
@@ -33,7 +28,7 @@ pub async fn anilist_anime(
     ctx: Context<'_>,
     #[description = "Anime to search"]
     #[rest]
-    anime: String,
+    _anime: String,
 ) -> Result<(), Error> {
     let client = Client::new();
     let json = json!({"query": QUERY, "variables": {"id": 15125}});
@@ -291,6 +286,7 @@ pub async fn memegen(
     Ok(())
 }
 
+/*
 #[derive(Debug, Deserialize)]
 struct RomanianAuth {
     data: PicsurAuth,
@@ -374,6 +370,7 @@ pub async fn picsur(
     //  }
     Ok(())
 }
+*/
 
 #[derive(Deserialize, Debug, Serialize)]
 struct TranslateResponse {

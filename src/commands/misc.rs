@@ -1,5 +1,4 @@
 use crate::types::{Context, Error};
-use crate::utils::random_number;
 
 use poise::serenity_prelude::{self as serenity, CreateEmbed};
 use poise::CreateReply;
@@ -65,17 +64,12 @@ pub async fn help(
     Ok(())
 }
 
-/// Have your precious words portrayed
-#[poise::command(slash_command, prefix_command)]
-pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
-    Ok(())
-}
-
 /// Wise xsensei saying
 #[poise::command(slash_command, prefix_command)]
 pub async fn sensei_status(ctx: Context<'_>) -> Result<(), Error> {
     ctx.send(
-        CreateReply::default().content(format!("day: {} of reading dogshit", random_number(0))),
+        CreateReply::default()
+            .content(format!("day: {} of reading dogshit", rand::random::<i64>())),
     )
     .await?;
     Ok(())
