@@ -56,7 +56,7 @@ pub async fn anime_scene(
         ctx.send(
             CreateReply::default().embed(
                 CreateEmbed::new()
-                    .title(&scene.result[0].anilist.title.to_string())
+                    .title(scene.result[0].anilist.title.to_string())
                     .field(
                         "Episode",
                         scene.result[0].episode.unwrap_or_default().to_string(),

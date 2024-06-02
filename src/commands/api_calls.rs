@@ -45,7 +45,7 @@ pub async fn anilist_anime(
     ctx.send(CreateReply::default().embed(
         CreateEmbed::new().title("Anime").color(0x33d17a).field(
             "Output:",
-            &result.to_string(),
+            result.to_string(),
             false,
         ),
     ))
@@ -455,12 +455,12 @@ pub async fn urban(
                     .color(0xEFFF00)
                     .field(
                         "Definition:",
-                        &data.list[0].definition.replace(['[', ']'], ""),
+                        data.list[0].definition.replace(['[', ']'], ""),
                         false,
                     )
                     .field(
                         "Example:",
-                        &data.list[0].example.replace(['[', ']'], ""),
+                        data.list[0].example.replace(['[', ']'], ""),
                         false,
                     ),
             ),

@@ -34,12 +34,12 @@ pub async fn event_handler(
         FullEvent::Message { new_message } => {
             let content = new_message.content.to_lowercase();
             if new_message.author.bot {
-            } else if (new_message.channel_id == 1103729117184139325)
-                && (new_message.author.id == 1014524859532980255
-                    || new_message.author.id == 538731291970109471)
-                && !new_message.attachments.is_empty()
-            {
+            } else if new_message.channel_id == 1103729117184139325 {
                 spoiler_message(ctx, new_message, &new_message.content).await;
+            } else if new_message.author.id == 1014524859532980255 {
+                if content == "pgo-end" {
+                    std::process::exit(0);
+                }
             } else if content.contains(&ctx.cache.current_user().to_string()) {
                 embed_builder(
                     ctx,
@@ -49,9 +49,7 @@ pub async fn event_handler(
                     Colour(0x00b0f4),
                 )
                 .await;
-            } else if new_message.content.contains("<@1014524859532980255>")
-                && !content.contains("!user")
-            {
+            } else if content.contains("<@1014524859532980255>") && !content.contains("!user") {
                 let fabse_life_gifs = [
                     "https://media1.tenor.com/m/hcjOU7y8RgMAAAAd/pokemon-psyduck.gif",
                     "https://media1.tenor.com/m/z0ZTwNfJJDAAAAAC/psyduck-psyduck-x.gif",
@@ -67,8 +65,7 @@ pub async fn event_handler(
                     Colour(0xf8e45c),
                 )
                 .await;
-                //embed_builder(&ctx, new_message, "one fabseman coming up", "https://media.tenor.com/rdkYJPdWkyAAAAAC/psychokwak-psyduck.gif", Colour(0xf8e45c)).await;
-            } else if (new_message.content.contains("<@409113157550997515>")
+            } else if (content.contains("<@409113157550997515>")
                 || content == "nito"
                 || content == "denito")
                 && !content.contains("!user")
@@ -81,7 +78,7 @@ pub async fn event_handler(
                     Colour(0x00b0f4),
                 )
                 .await;
-            } else if (new_message.content.contains("<@1110757956775051294>")
+            } else if (content.contains("<@1110757956775051294>")
                 || content == "kato"
                 || content == "kachooow"
                 || content == "kachoow")
@@ -95,8 +92,7 @@ pub async fn event_handler(
                     Colour(0x00b0f4),
                 )
                 .await;
-            } else if (new_message.content.contains("<@701838215757299772>")
-                || content == "harsh g")
+            } else if (content.contains("<@701838215757299772>") || content == "harsh g")
                 && !content.contains("!user")
             {
                 embed_builder(
@@ -107,7 +103,7 @@ pub async fn event_handler(
                     Colour(0x00b0f4),
                 )
                 .await;
-            } else if (new_message.content.contains("<@749949941975089213>") || content == "bread")
+            } else if (content.contains("<@749949941975089213>") || content == "bread")
                 && !content.contains("!user")
             {
                 embed_builder(
@@ -118,7 +114,7 @@ pub async fn event_handler(
                             Colour(0x00b0f4),
                         )
                         .await;
-            } else if (new_message.content.contains("<@287809220210851851>")
+            } else if (content.contains("<@287809220210851851>")
                 || content == "ant1hero"
                 || content == "antihero")
                 && !content.contains("!user")
@@ -148,7 +144,7 @@ pub async fn event_handler(
                     .react(&ctx.http, emoji_react("fabseman_willbeatu"))
                     .await?;
             } else if content.contains("kurukuru_seseren") {
-                let count = new_message.content.matches("kurukuru_seseren").count();
+                let count = content.matches("kurukuru_seseren").count();
                 let response = "<a:kurukuru_seseren:1153742599220375634>".repeat(count);
                 webhook_message(
                     ctx,
