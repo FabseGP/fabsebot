@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 urlencoding = "2"
 
 [profile.release]
-panic = "abort"
 codegen-units = 1
 lto = "thin"
+panic = "abort"
 strip = true

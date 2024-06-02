@@ -81,8 +81,8 @@ pub fn random_number(count: usize) -> usize {
     rng.gen_range(0..count)
 }
 
-pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Message, text: String) {
-    let avatar_url = message.author.avatar_url().unwrap_or_default().to_string();
+pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Message, text: &str) {
+    let avatar_url = message.author.avatar_url().unwrap_or_default();
     let username = &message.author_nick(&ctx.http).await.unwrap_or_default();
     let mut index = 0;
     for attachment in &message.attachments {
@@ -90,7 +90,7 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
         let response = reqwest::get(target).await;
         let download = response.unwrap().bytes().await;
         let filename = format!("SPOILER_{}", &attachment.filename);
-        let file = File::create(filename.clone());
+        let file = File::create(&filename);
         let download_bytes = match download {
             Ok(bytes) => bytes,
             Err(_e) => {
@@ -99,30 +99,12 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
         };
         let _ = file.unwrap().write_all(&download_bytes);
         if index == 0 {
-            webhook_file(
-                ctx,
-                message,
-                username,
-                &avatar_url,
-                &text,
-                filename.to_string(),
-                0,
-            )
-            .await;
+            webhook_file(ctx, message, username, &avatar_url, text, &filename, 0).await;
             index = 1;
         } else {
-            webhook_file(
-                ctx,
-                message,
-                username,
-                &avatar_url,
-                &text,
-                filename.to_string(),
-                1,
-            )
-            .await;
+            webhook_file(ctx, message, username, &avatar_url, text, &filename, 1).await;
         }
-        let _ = fs::remove_file(filename);
+        let _ = fs::remove_file(&filename);
     }
     let _ = message.delete(&ctx).await;
 }
@@ -190,7 +172,7 @@ pub async fn webhook_file(
     name: &str,
     url: &str,
     text: &str,
-    path: String,
+    path: &str,
     mode: i32,
 ) {
     let channel_id = message.channel_id;
@@ -198,8 +180,7 @@ pub async fn webhook_file(
         "name": "test",
         "avatar": url
     });
-    let attachment =
-        CreateAttachment::path(<std::string::String as AsRef<Path>>::as_ref(&path)).await;
+    let attachment = CreateAttachment::path(Path::new(path)).await;
     let existing_webhooks = match channel_id.webhooks(&ctx.http).await {
         Ok(webhooks) => webhooks,
         Err(err) => {

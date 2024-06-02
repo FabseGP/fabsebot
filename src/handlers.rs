@@ -2,7 +2,6 @@ use crate::types::{Data, Error};
 use crate::utils::{
     dead_chat, embed_builder, emoji_react, random_number, spoiler_message, webhook_message,
 };
-
 use poise::serenity_prelude::{self as serenity, Colour, CreateEmbed, CreateMessage, FullEvent};
 use serenity::{
     gateway::ActivityData,
@@ -40,7 +39,7 @@ pub async fn event_handler(
                     || new_message.author.id == 538731291970109471)
                 && !new_message.attachments.is_empty()
             {
-                spoiler_message(ctx, new_message, new_message.content.to_string()).await;
+                spoiler_message(ctx, new_message, &new_message.content).await;
             } else if content.contains(&ctx.cache.current_user().to_string()) {
                 embed_builder(
                     ctx,
