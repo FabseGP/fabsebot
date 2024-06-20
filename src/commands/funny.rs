@@ -11,20 +11,13 @@ pub async fn anonymous(
     #[rest]
     message: String,
 ) -> Result<(), Error> {
+    ctx.send(
+        CreateReply::default()
+            .ephemeral(true)
+            .content("with big power comes big responsibility"),
+    )
+    .await?;
     ctx.channel_id().say(&ctx.http(), message).await?;
-    Ok(())
-}
-
-/// Add me to your walls
-#[poise::command(slash_command, prefix_command)]
-pub async fn bot_dm(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.author()
-        .dm(
-            &ctx,
-            CreateMessage::default()
-                .content("https://media.tenor.com/x8v1oNUOmg4AAAAd/rickroll-roll.gif"),
-        )
-        .await?;
     Ok(())
 }
 

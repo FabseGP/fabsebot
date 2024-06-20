@@ -50,7 +50,8 @@ pub async fn anime_scene(
         "https://api.trace.moe/search?cutBorders&anilistInfo&url={input}",
         input = encoded_input
     );
-    let request = reqwest::get(request_url).await?;
+    let client = &ctx.data().req_client;
+    let request = client.get(request_url).send().await?;
     let scene: MoeResponse = request.json().await.unwrap();
     if !scene.result.is_empty() {
         ctx.send(

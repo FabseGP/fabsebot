@@ -3,6 +3,7 @@ use crate::types::{Context, Error};
 use poise::serenity_prelude::{self as serenity, CreateEmbed};
 use poise::CreateReply;
 use serenity::model::Timestamp;
+use std::sync::Arc;
 
 /// Send a birthday wish to a user
 #[poise::command(slash_command, prefix_command)]
@@ -10,18 +11,13 @@ pub async fn birthday(
     ctx: Context<'_>,
     #[description = "User to congratulate"]
     #[rest]
-    user: Option<serenity::User>,
+    user: serenity::User,
 ) -> Result<(), Error> {
-    let target = user.as_ref().unwrap_or_else(|| ctx.author());
-    let avatar_url = target
-        .avatar_url()
-        .unwrap_or_else(|| target.default_avatar_url());
-    let nickname = target
-        .nick_in(ctx, ctx.guild_id().unwrap_or_default())
-        .await;
+    let avatar_url = user.avatar_url().unwrap();
+    let nickname = user.nick_in(ctx, ctx.guild_id().unwrap_or_default()).await;
     let target_nick = nickname
         .as_ref()
-        .map_or_else(|| target.name.clone(), |n| n.clone());
+        .map_or_else(|| user.name.clone(), |n| n.clone());
     ctx.send(
         CreateReply::default().embed(
             CreateEmbed::new()
@@ -33,14 +29,6 @@ pub async fn birthday(
         ),
     )
     .await?;
-    Ok(())
-}
-
-/// Was fabseman here?
-#[poise::command(slash_command, prefix_command)]
-pub async fn fabseman(ctx: Context<'_>) -> Result<(), Error> {
-    ctx.send(CreateReply::default().content("fabseman was here!"))
-        .await?;
     Ok(())
 }
 
@@ -64,12 +52,35 @@ pub async fn help(
     Ok(())
 }
 
-/// Wise xsensei saying
+/// Leaderboard of lifeless ppl
 #[poise::command(slash_command, prefix_command)]
-pub async fn sensei_status(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
+    let guild = match ctx.guild() {
+        Some(g) => Arc::new(g.clone()),
+        None => {
+            return Ok(());
+        }
+    };
+
+    let thumbnail = if let Some(banner) = guild.banner.clone() {
+        banner
+    } else if let Some(icon_hash) = &guild.icon {
+        format!(
+            "https://cdn.discordapp.com/icons/{}/{}.png",
+            guild.id, icon_hash
+        )
+    } else {
+        "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_string()
+    };
+    let mut conn = ctx.data().db.acquire().await?;
+    let stream = sqlx::query!("SELECT * from message_count").fetch(&mut *conn);
     ctx.send(
-        CreateReply::default()
-            .content(format!("day: {} of reading dogshit", rand::random::<i64>())),
+        CreateReply::default().embed(
+            CreateEmbed::new()
+                .title("Server leaderboard")
+                .thumbnail(thumbnail)
+                .color(0xFF5733),
+        ),
     )
     .await?;
     Ok(())

@@ -3,6 +3,7 @@ use crate::handlers::event_handler;
 use crate::types::Data;
 
 use poise::serenity_prelude as serenity;
+use reqwest::Client as http_client;
 use serenity::{client::Client, prelude::GatewayIntents};
 use songbird::SerenityInit;
 use std::env;
@@ -31,27 +32,22 @@ pub async fn start() {
             commands: vec![
                 animanga::anime_scene(),
                 api_calls::anilist_anime(),
-                api_calls::bored(),
                 api_calls::eightball(),
                 api_calls::gif(),
-                api_calls::imgbb(),
-                api_calls::imgur(),
                 api_calls::joke(),
                 api_calls::memegen(),
                 api_calls::translate(),
                 api_calls::urban(),
                 funny::anonymous(),
-                funny::bot_dm(),
                 funny::user_dm(),
                 funny::user_misuse(),
                 games::rps(),
                 info::user_info(),
                 info::server_info(),
                 misc::birthday(),
-                misc::fabseman(),
                 misc::help(),
-                misc::sensei_status(),
                 misc::troll(),
+                music::add_playlist(),
                 music::join_voice(),
                 music::leave_voice(),
                 music::play_song(),
@@ -82,7 +78,10 @@ pub async fn start() {
         .setup(move |_ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(_ctx, &framework.options().commands).await?;
-                Ok(Data { db: database })
+                Ok(Data {
+                    db: database,
+                    req_client: http_client::new(),
+                })
             })
         })
         .build();

@@ -3,24 +3,9 @@ use crate::utils::random_number;
 
 use poise::serenity_prelude::CreateEmbed;
 use poise::CreateReply;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use urlencoding::encode;
-
-const QUERY: &str = "
-query ($id: Int) { # Define which variables will be used in the query (id)
-  Media (id: $id, type: ANIME) { # Insert our variables into the query arguments (id) (type: ANIME is hard-coded in the query)
-    id
-    title {
-      romaji
-      english
-      native
-    }
-  }
-}
-";
 
 /// When the other bot sucks
 #[poise::command(slash_command, prefix_command)]
@@ -28,50 +13,53 @@ pub async fn anilist_anime(
     ctx: Context<'_>,
     #[description = "Anime to search"]
     #[rest]
-    _anime: String,
+    anime: String,
 ) -> Result<(), Error> {
-    let client = Client::new();
-    let json = json!({"query": QUERY, "variables": {"id": 15125}});
+    let client = &ctx.data().req_client;
+    let query = format!(
+        r#"{{
+        "query": "query ($search: String) {{
+            Media (id: $id, type: ANIME) {{
+                id
+                title {{
+                    romaji
+                    english
+                    native
+                }}
+            }}
+        }}",
+        "variables": {{
+            "search": "{}"
+        }}
+    }}"#,
+        anime
+    );
     let resp = client
         .post("https://graphql.anilist.co/")
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
-        .body(json.to_string())
+        .body(query)
         .send()
-        .await
-        .unwrap()
-        .text();
-    let result: serde_json::Value = serde_json::from_str(&resp.await.unwrap()).unwrap();
-    ctx.send(CreateReply::default().embed(
-        CreateEmbed::new().title("Anime").color(0x33d17a).field(
-            "Output:",
-            result.to_string(),
-            false,
-        ),
-    ))
-    .await?;
-    println!("{:#}", result);
-    Ok(())
-}
+        .await?;
+    let data: serde_json::Value = resp.json().await?;
+    println!("{:#}", data);
+    let anime_data = &data["data"]["Media"];
 
-#[derive(Deserialize, Debug, Serialize)]
-struct BoredResponse {
-    activity: String,
-}
-
-/// When you need some activities
-#[poise::command(slash_command, prefix_command)]
-pub async fn bored(ctx: Context<'_>) -> Result<(), Error> {
-    let request_url = "https://www.boredapi.com/api/activity";
-    let request = reqwest::get(request_url).await?;
-    let data: BoredResponse = request.json().await.unwrap();
-    if !data.activity.is_empty() {
-        ctx.send(CreateReply::default().content(&data.activity))
-            .await?;
-    } else {
-        ctx.send(CreateReply::default().content("don't be bored or kill yourself"))
-            .await?;
+    if anime_data.is_null() {
+        ctx.say("No anime found with that name.").await?;
+        return Ok(());
     }
+
+    let id = anime_data["id"].as_u64().unwrap();
+    let title = anime_data["title"]["romaji"].as_str().unwrap_or("Unknown");
+
+    let embed = CreateEmbed::default()
+        .title("Anime")
+        .field("ID", id.to_string(), false)
+        .field("Title (Romaji)", title.to_string(), false)
+        .color(0x33d17a);
+
+    ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
 }
 
@@ -93,8 +81,9 @@ pub async fn eightball(
         "https://eightballapi.com/api/biased?question={query}&lucky=false",
         query = encoded_input
     );
-    let request = reqwest::get(request_url).await?;
-    let judging: EightBallResponse = request.json().await.unwrap();
+    let client = &ctx.data().req_client;
+    let request = client.get(request_url).send().await?;
+    let judging: EightBallResponse = request.json().await?;
     if !judging.reading.is_empty() {
         ctx.send(
             CreateReply::default().embed(CreateEmbed::new().title(question).color(0x33d17a).field(
@@ -134,7 +123,8 @@ pub async fn gif(
         search = encoded_input,
         key = "AIzaSyD-XwC-iyuRIZQrcaBzCuTLfAvEGh3DPwo"
     );
-    let request = reqwest::get(request_url).await?;
+    let client = &ctx.data().req_client;
+    let request = client.get(request_url).send().await?;
     let urls: GifResponse = request.json().await.unwrap();
     if !urls.results.is_empty() {
         ctx.send(CreateReply::default().content(&urls.results[random_number(30)].url))
@@ -143,95 +133,6 @@ pub async fn gif(
         ctx.send(CreateReply::default().content("life is not gifing"))
             .await?;
     }
-    Ok(())
-}
-
-#[derive(Deserialize, Debug, Serialize)]
-struct CrapResponse {
-    data: ImgData,
-}
-#[derive(Deserialize, Debug, Serialize)]
-struct ImgData {
-    url: String,
-}
-
-/// Proprietary image upload
-#[poise::command(slash_command, prefix_command)]
-pub async fn imgbb(
-    ctx: Context<'_>,
-    #[description = "User"] user: String,
-    #[description = "Upload image"]
-    #[rest]
-    image: String,
-) -> Result<(), Error> {
-    let api_key = if user == "rinynm" || user == "rinymn" {
-        "93b076cd514f50ae220e7502a24b7690"
-    } else {
-        "1d9386cec5ba63fa4ae740888656aee7"
-    };
-    let request_url = format!(
-        "https://api.imgbb.com/1/upload?key={key}&image={url}",
-        key = api_key,
-        url = image
-    );
-    let request = reqwest::get(request_url).await?;
-    let upload: CrapResponse = request.json().await.unwrap();
-    if !upload.data.url.is_empty() {
-        ctx.send(CreateReply::default().content(format!("image url: {}", &upload.data.url)))
-            .await?;
-    } else {
-        ctx.send(CreateReply::default().content("your image is too perfect for imgbb"))
-            .await?;
-    }
-    Ok(())
-}
-
-#[derive(Debug, Deserialize)]
-struct ImgurResponse {
-    data: ImgurData,
-}
-
-#[derive(Debug, Deserialize)]
-struct ImgurData {
-    link: String,
-}
-
-/// Proprietary image upload V2
-#[poise::command(slash_command, prefix_command)]
-pub async fn imgur(
-    ctx: Context<'_>,
-    #[description = "User"] user: String,
-    #[description = "Upload image"]
-    #[rest]
-    image: String,
-) -> Result<(), Error> {
-    let token = if user == "rinynm" || user == "rinymn" {
-        "93b076cd514f50ae220e7502a24b7690"
-    } else {
-        "350a80711beb8d2d7ba99f1af635718af6fe4c50"
-    };
-    let album_id = if user == "rinynm" || user == "rinymn" {
-        "93b076cd514f50ae220e7502a24b7690"
-    } else {
-        "9VJs4pi"
-    };
-    let url = "https://api.imgur.com/3/image";
-    let client = Client::new();
-    let request_url = client
-        .post(url)
-        .header("Authorization", format!("Bearer {}", token))
-        .form(&[("image", image), ("album", album_id.to_string())])
-        .send()
-        .await;
-    //    if request_url.status().is_success() {
-    let imgur_response: ImgurResponse = request_url?.json().await?;
-    let imgur_link = imgur_response.data.link;
-    ctx.send(CreateReply::default().content(format!("image url: {}", imgur_link)))
-        .await?;
-    //  } else {
-    //    ctx.send(|m| m.content("imgur has broken up with you"))
-    //         .await?;
-    //  }
     Ok(())
 }
 
@@ -245,7 +146,8 @@ struct JokeResponse {
 pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
     let request_url =
         "https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
-    let request = reqwest::get(request_url).await?;
+    let client = &ctx.data().req_client;
+    let request = client.get(request_url).send().await?;
     let data: JokeResponse = request.json().await.unwrap();
     if !data.joke.is_empty() {
         ctx.send(CreateReply::default().content(&data.joke)).await?;
@@ -286,99 +188,10 @@ pub async fn memegen(
     Ok(())
 }
 
-/*
-#[derive(Debug, Deserialize)]
-struct RomanianAuth {
-    data: PicsurAuth,
-}
-
-#[derive(Debug, Deserialize)]
-struct PicsurAuth {
-    jwt_token: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RomanianUpload {
-    data: PicsurUpload,
-}
-
-#[derive(Debug, Deserialize)]
-struct PicsurUpload {
-    id: String,
-}
-
-/// Romanian image upload, beware of your metal!
-#[poise::command(slash_command, prefix_command)]
-pub async fn picsur(
-    ctx: Context<'_>,
-    #[description = "Upload image"]
-    #[rest]
-    image: String,
-) -> Result<(), Error> {
-    let username = "eventteam";
-    let password = "JwC8y#V6%o9Fm4q#2tTegkX252RvoV";
-    let auth_url = "https://fileshare.benzone.work/api/user/login";
-    let client = Client::new();
-    let request_auth = client
-        .post(auth_url)
-        .header("Content-Type", "application/json")
-        .body(
-            json!({
-               "username": username,
-               "password": password
-            })
-            .to_string(),
-        )
-        .send()
-        .await;
-    //    if request_auth.status().is_success() {
-    let upload_url = "https://fileshare.benzone.work/api/image/upload";
-    let romanian_auth: RomanianAuth = request_auth?.json().await?;
-    let token = romanian_auth.data.jwt_token;
-    let target = reqwest::get(&image).await?;
-    let download = target.bytes().await?;
-    let filename = image.split('/').last().unwrap_or("downloaded_file.txt");
-    let path = Path::new(".").join(filename);
-    let mut file = File::create(&path)?;
-    copy(&mut download.as_ref(), &mut file)?;
-    let file = File::open(&path)?;
-    let response_upload = client
-        .post(upload_url)
-        .header("Authorization", format!("Bearer {}", token))
-        //  .multipart(multipart::Form::new().part(
-        //    "image",
-        //      multipart::Part::reader(file).file_name(format!("upload_{}.png", Timestamp::now())),
-        //   ))
-        .send()
-        .await;
-    // if response_upload.status().is_success() {
-    let romanian_upload: RomanianUpload = response_upload?.json().await?;
-    let image_url = format!(
-        "https://fileshare.benzone.work/i/{}",
-        romanian_upload.data.id
-    );
-    ctx.send(CreateReply::default().content(format!("image url: {}", image_url)))
-        .await?;
-    // } else {
-    //     ctx.send(|m| m.content("romania have ceased to exist"))
-    //         .await?;
-    // }
-    remove_file(&path)?;
-    //  } else {
-    //      ctx.send(|m| m.content("these dammed romanians are keeping us out!"))
-    //          .await?;
-    //  }
-    Ok(())
-}
-*/
-
 #[derive(Deserialize, Debug, Serialize)]
 struct TranslateResponse {
-    engine: String,
-    #[serde(rename = "translated-text")]
+    #[serde(rename = "translatedText")]
     translated_text: String,
-    source_language: String,
-    target_language: String,
 }
 
 /// When you stumble on some ancient sayings
@@ -392,31 +205,37 @@ pub async fn translate(
     sentence: String,
 ) -> Result<(), Error> {
     let encoded_input = encode(&sentence);
-    let request_url = format!(
-        "https://translate.projectsegfau.lt/api/translate?engine=all&from={s}&to={t}&text={m}",
-        s = source,
-        t = target,
-        m = encoded_input
-    );
-    let request = reqwest::Client::new()
-        .get(&request_url)
+    let form_data = format!("q={}&source={}&target={}", encoded_input, source, target);
+
+    let response = ctx
+        .data()
+        .req_client
+        .post("https://translate.lotigara.ru/translate")
         .header("accept", "application/json")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(form_data)
         .send()
         .await?;
-    let data: Vec<TranslateResponse> = request.json().await.unwrap();
-    if !data[2].source_language.is_empty() {
-        ctx.send(
-            CreateReply::default().embed(
-                CreateEmbed::new()
-                    .title(format!("Translation from {} to {}", source, target))
-                    .color(0x33d17a)
-                    .field("Original:", sentence, false)
-                    .field("Translation:", &data[2].translated_text, false),
-            ),
-        )
-        .await?;
+
+    if response.status().is_success() {
+        let data: TranslateResponse = response.json().await?;
+        if !data.translated_text.is_empty() {
+            ctx.send(
+                CreateReply::default().embed(
+                    CreateEmbed::new()
+                        .title(format!("Translation from {} to {}", source, target))
+                        .color(0x33d17a)
+                        .field("Original:", sentence, false)
+                        .field("Translation:", &data.translated_text, false),
+                ),
+            )
+            .await?;
+        } else {
+            ctx.send(CreateReply::default().content("invalid syntax, pls follow this template: '!translate da,en text', here translating from danish to english")).await?;
+        }
     } else {
-        ctx.send(CreateReply::default().content("invalid syntax, pls follow this template: '!translate da,en text', here translating from danish to english")).await?;
+        ctx.send(CreateReply::default().content("my translator is currently busy, pls standby"))
+            .await?;
     }
     Ok(())
 }
@@ -445,7 +264,8 @@ pub async fn urban(
         "https://api.urbandictionary.com/v0/define?term={search}",
         search = encoded_input
     );
-    let request = reqwest::get(request_url).await?;
+    let client = &ctx.data().req_client;
+    let request = client.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await.unwrap();
     if !data.list.is_empty() {
         ctx.send(

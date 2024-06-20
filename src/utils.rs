@@ -77,17 +77,17 @@ pub fn emoji_react(emoji: &str) -> ReactionType {
 }
 
 pub fn random_number(count: usize) -> usize {
-    let mut rng = rand::thread_rng();
-    rng.gen_range(0..count)
+    rand::thread_rng().gen_range(0..count)
 }
 
 pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Message, text: &str) {
     let avatar_url = message.author.avatar_url().unwrap_or_default();
     let username = &message.author_nick(&ctx.http).await.unwrap_or_default();
     let mut index = 0;
+    let client = reqwest::Client::new();
     for attachment in &message.attachments {
         let target = &attachment.url;
-        let response = reqwest::get(target).await;
+        let response = client.get(target).send().await;
         let download = response.unwrap().bytes().await;
         let filename = format!("SPOILER_{}", &attachment.filename);
         let file = File::create(&filename);

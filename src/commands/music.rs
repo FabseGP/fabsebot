@@ -2,7 +2,62 @@ use crate::types::{Context, Error};
 
 use poise::serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder};
 use poise::CreateReply;
+use serde::{Deserialize, Serialize};
 use songbird::input::{Compose, YoutubeDl};
+
+#[derive(Deserialize, Serialize)]
+struct DeezerResponse {
+    tracks: DeezerData,
+}
+
+#[derive(Deserialize, Serialize)]
+struct DeezerData {
+    data: Vec<DeezerTracks>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct DeezerTracks {
+    title: String,
+    artist: DeezerArtist,
+}
+
+#[derive(Deserialize, Serialize)]
+struct DeezerArtist {
+    name: String,
+}
+
+/// Play all songs in a playlist from Deezer
+#[poise::command(slash_command, prefix_command)]
+pub async fn add_playlist(
+    ctx: Context<'_>,
+    #[description = "ID of the playlist in mind"]
+    #[rest]
+    playlist_id: String,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let guild_id = ctx.guild_id().unwrap();
+    let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let client = &ctx.data().req_client;
+        let request = client
+            .get(format!("https://api.deezer.com/playlist/{}", playlist_id))
+            .send()
+            .await?;
+        let data: DeezerResponse = request.json().await.unwrap();
+        if !data.tracks.data.is_empty() {
+            let mut handler = handler_lock.lock().await;
+            for track in data.tracks.data {
+                let search = format! {"{} {}", track.title, track.artist.name};
+                let src = YoutubeDl::new_search(ctx.data().req_client.clone(), search);
+                handler.enqueue_input(src.into()).await;
+            }
+            ctx.say("Added playlist to queue").await?;
+        }
+    } else {
+        ctx.say("Bruh, I'm not even in a voice channel").await?;
+    }
+    Ok(())
+}
 
 /// Join your current voice channel
 #[poise::command(slash_command, prefix_command)]
@@ -51,14 +106,15 @@ pub async fn play_song(
     #[rest]
     url: String,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
     let guild_id = ctx.guild_id().unwrap();
     let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
         let mut src = if url.starts_with("http") {
-            YoutubeDl::new(reqwest::Client::new(), url.clone())
+            YoutubeDl::new(ctx.data().req_client.clone(), url.clone())
         } else {
-            YoutubeDl::new_search(reqwest::Client::new(), url.clone())
+            YoutubeDl::new_search(ctx.data().req_client.clone(), url.clone())
         };
         let metadata = src.aux_metadata().await;
         handler.enqueue_input(src.into()).await;
@@ -124,7 +180,7 @@ pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
         let handler = handler_lock.lock().await;
         let queue = handler.queue();
         queue.skip()?;
-        ctx.say(format!("Song skipped: {} in queue", queue.len()))
+        ctx.say(format!("Song skipped. {} left in queue", queue.len() - 2))
             .await?;
     } else {
         ctx.say("Bruh, I'm not even in a voice channel").await?;
