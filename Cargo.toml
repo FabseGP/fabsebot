@@ -1,6 +1,6 @@
 [package]
 name = "fabsebot_supremacy"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 
 [dependencies]
@@ -10,7 +10,7 @@ rand = "0"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serenity = { version = "0", default-features = false, features = ["builder", "client", "gateway", "voice"] }
+serenity = { version = "0", default-features = false, features = ["client", "gateway", "model", "voice"] }
 songbird = { version = "0", features = ["builtin-queue"] }
 sqlx = { version = "0", features = ["mysql", "runtime-tokio"] }
 symphonia = { version = "0", features = ["aac", "mp3"] }

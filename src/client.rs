@@ -46,6 +46,7 @@ pub async fn start() {
                 info::server_info(),
                 misc::birthday(),
                 misc::help(),
+                misc::leaderboard(),
                 misc::troll(),
                 music::add_playlist(),
                 music::join_voice(),
@@ -96,7 +97,6 @@ pub async fn start() {
         | GatewayIntents::GUILD_MESSAGE_REACTIONS
         | GatewayIntents::GUILD_MESSAGE_TYPING
         | GatewayIntents::GUILD_PRESENCES
-        | GatewayIntents::GUILD_SCHEDULED_EVENTS
         | GatewayIntents::GUILD_VOICE_STATES
         | GatewayIntents::MESSAGE_CONTENT;
     let token = env::var("DISCORD_TOKEN").unwrap();

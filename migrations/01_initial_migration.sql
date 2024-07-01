@@ -6,6 +6,7 @@ CREATE TABLE guild_settings (
 );
 
 CREATE TABLE message_count (
+    guild_id BIGINT UNSIGNED NOT NULL,
     user_name CHAR(200) NOT NULL UNIQUE,
     messages BIGINT UNSIGNED NOT NULL,
     PRIMARY KEY (user_name)

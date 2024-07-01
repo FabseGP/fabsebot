@@ -1,7 +1,11 @@
 use crate::types::{Data, Error};
-use crate::utils::{embed_builder, emoji_react, random_number, spoiler_message, webhook_message};
+use crate::utils::{embed_builder, emoji_id, random_number, spoiler_message, webhook_message};
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
-use serenity::{builder::EditProfile, gateway::ActivityData, model::user::OnlineStatus};
+use serenity::{
+    builder::EditProfile,
+    gateway::ActivityData,
+    model::{channel::ReactionType, user::OnlineStatus},
+};
 
 pub async fn event_handler(
     ctx: &serenity::Context,
@@ -12,22 +16,36 @@ pub async fn event_handler(
     match event {
         FullEvent::Ready { data_about_bot } => {
             println!("Logged in as {}", data_about_bot.user.name);
-            let activity = ActivityData::listening("YMCA");
-            let status = OnlineStatus::Online;
-            ctx.set_presence(Some(activity), status);
-            let _ = EditProfile::banner(
-                EditProfile::new(),
-                &CreateAttachment::url(&ctx.http, "https://rustacean.net/assets/rustlogo.png")
-                    .await?,
-            );
+            let activity = ActivityData::listening("You Could Be Mine");
+            //   let activity =
+            //      ActivityData::streaming("You could be mine", "https://youtu.be/MXx9S2nDouY").unwrap();
+            let avatar = CreateAttachment::url(
+                &ctx.http,
+                "https://media1.tenor.com/m/029KypcoTxQAAAAC/sleep-pokemon.gif",
+            )
+            .await?;
+            let banner =
+                CreateAttachment::url(&ctx.http, "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fs1.zerochan.net%2FFAIRY.TAIL.600.1870606.jpg&f=1&nofb=1&ipt=1a9ade7d1a4d0a2f783a15018c53faa63a7c38bc72a288d4df37e11e7f3d0e4d&ipo=images")
+                    .await?;
+            ctx.set_presence(Some(activity), OnlineStatus::Online);
+            ctx.http
+                .edit_profile(
+                    &EditProfile::new()
+                        .avatar(&avatar)
+                        .banner(&banner)
+                        .username("fabsebot"),
+                )
+                .await?;
         }
         FullEvent::Message { new_message } => {
             if !new_message.author.bot {
                 let content = new_message.content.to_lowercase();
                 let mut conn = _data.db.acquire().await?;
+                let id: u64 = new_message.guild_id.unwrap().into();
                 sqlx::query!(
-                    "INSERT INTO message_count (user_name, messages) VALUES (?, 1)
-        ON DUPLICATE KEY UPDATE messages = messages + 1",
+                    "INSERT INTO message_count (guild_id, user_name, messages) VALUES (?, ?, 1)
+                ON DUPLICATE KEY UPDATE messages = messages + 1",
+                    id,
                     new_message.author.name,
                 )
                 .execute(&mut *conn)
@@ -140,7 +158,15 @@ pub async fn event_handler(
                     || content.contains("fabse")
                 {
                     new_message
-                        .react(&ctx.http, emoji_react("fabseman_willbeatu"))
+                        .react(
+                            &ctx.http,
+                            ReactionType::try_from(
+                                emoji_id(ctx, new_message, "fabseman_willbeatu")
+                                    .await
+                                    .as_str(),
+                            )
+                            .unwrap(),
+                        )
                         .await?;
                 } else if content.contains("kurukuru_seseren") {
                     let count = content.matches("kurukuru_seseren").count();
@@ -158,7 +184,13 @@ pub async fn event_handler(
                     "fabse" | "fabseman" => {
                         webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "# such magnificence").await;
                         new_message
-                            .react(&ctx.http, emoji_react("fabseman_willbeatu"))
+                            .react(
+                                &ctx.http,
+                                ReactionType::try_from(
+                                    emoji_id(ctx, new_message, "fabseman_willbeatu").await,
+                                )
+                                .unwrap(),
+                            )
                             .await?;
                     }
                     "riny" => {
@@ -170,7 +202,13 @@ pub async fn event_handler(
                     }
                     "rin_willbeatu" | "<@1014524859532980255>" => {
                         new_message
-                            .react(&ctx.http, emoji_react("fabseman_willbeatu"))
+                            .react(
+                                &ctx.http,
+                                ReactionType::try_from(
+                                    emoji_id(ctx, new_message, "fabseman_willbeatu").await,
+                                )
+                                .unwrap(),
+                            )
                             .await?;
                     }
                     "rinynm" | "rinymn" => {
@@ -182,6 +220,7 @@ pub async fn event_handler(
                     "xsensei" => {
                         webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "we hate sensei").await;
                     }
+                    "test" => {}
                     _ => {}
                 }
             }

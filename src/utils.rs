@@ -4,43 +4,9 @@ use rand::Rng;
 use serenity::{
     builder::CreateAttachment,
     json::json,
-    model::{channel::ReactionType, colour::Colour, id::EmojiId, prelude::ChannelId, Timestamp},
+    model::{colour::Colour, prelude::Timestamp},
 };
 use std::{fs, fs::File, io::Write, path::Path};
-
-pub async fn dead_chat(
-    ctx: &serenity::Context,
-    channel_id: ChannelId,
-) -> Result<(), serenity::Error> {
-    let dead_gifs = [
-        "https://media1.tenor.com/m/k6k3vCBIYlYAAAAC/dead-chat.gif",
-        "https://media1.tenor.com/m/t_DmbWvjTKMAAAAd/dead-chat-discord.gif",
-        "https://media1.tenor.com/m/8JHVRggIIl4AAAAd/hello-chat-dead-chat.gif",
-        "https://media1.tenor.com/m/BDJsAenz_SUAAAAd/chat-dead-chat.gif",
-        "https://media.tenor.com/PFyQ24Kux9UAAAAC/googas-wet.gif",
-        "https://media.tenor.com/71DeLT3bO0AAAAAM/dead-chat-dead-chat-skeleton.gif",
-        "https://media.tenor.com/yjAObClgNM4AAAAM/dead-chat-xd-dead-chat.gif",
-        "https://media.tenor.com/dpXmFPj7PacAAAAM/dead-chat.gif",
-        "https://media.tenor.com/XyZ3A8FKZpkAAAAM/dead-group-chat-dead-chat.gif",
-        "https://media.tenor.com/bAfYpkySsqQAAAAd/rip-chat-chat-dead.gif",
-        "https://media.tenor.com/ogIdtDgmJuUAAAAC/dead-chat-dead-chat-xd.gif",
-        "https://media.tenor.com/NPVLum9UiXYAAAAM/cringe-dead-chat.gif",
-        "https://media.tenor.com/AYJL7HPOy-EAAAAd/ayo-the-chat-is-dead.gif",
-        "https://media.tenor.com/2u621yp8wg0AAAAC/dead-chat-xd-mugman.gif",
-        "https://media.tenor.com/3VXXC59D2BYAAAAC/omori-dead-chat.gif",
-        "https://media.tenor.com/FqJ2W5diczAAAAAd/dead-chat.gif",
-        "https://media.tenor.com/KFZQqKXcujIAAAAd/minecraft-dead-chat.gif",
-        "https://media.tenor.com/qQeE7sMPIRMAAAAC/dead-chat-xd-ded-chat.gif",
-        "https://media.tenor.com/cX9CCITVZNQAAAAd/hello-goodbye.gif",
-        "https://media.tenor.com/eW0bnOiDjSAAAAAC/deadchatxdrickroll.gif",
-        "https://media.tenor.com/1wCIRabmVUUAAAAd/chat-ded.gif",
-        "https://media.tenor.com/N502JNoV_poAAAAd/dead-chat-dead-chat-xd.gif",
-    ];
-    channel_id
-        .say(&ctx.http, dead_gifs[random_number(dead_gifs.len())])
-        .await?;
-    Ok(())
-}
 
 pub async fn embed_builder(
     ctx: &serenity::Context,
@@ -64,15 +30,21 @@ pub async fn embed_builder(
         .await;
 }
 
-pub fn emoji_react(emoji: &str) -> ReactionType {
-    let id = match emoji {
-        "fabseman_willbeatu" => 1135252520785150012,
-        _ => 1135252520785150012,
-    };
-    ReactionType::Custom {
-        animated: false,
-        id: EmojiId::new(id),
-        name: Some(emoji.to_string()),
+pub async fn emoji_id(
+    ctx: &serenity::Context,
+    message: &serenity::Message,
+    emoji_name: &str,
+) -> String {
+    let guild = message.guild_id.unwrap();
+    match guild.emojis(&ctx.http).await {
+        Ok(emojis) => {
+            if let Some(emoji) = emojis.iter().find(|e| e.name == emoji_name) {
+                emoji.to_string()
+            } else {
+                "bruh".to_string()
+            }
+        }
+        Err(_) => "bruh".to_string(),
     }
 }
 

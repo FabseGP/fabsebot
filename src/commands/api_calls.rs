@@ -42,7 +42,6 @@ pub async fn anilist_anime(
         .send()
         .await?;
     let data: serde_json::Value = resp.json().await?;
-    println!("{:#}", data);
     let anime_data = &data["data"]["Media"];
 
     if anime_data.is_null() {
