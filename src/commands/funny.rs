@@ -101,9 +101,18 @@ pub async fn user_misuse(
             )
             .await?;
     }
-    ctx.channel_id()
-        .delete_message(ctx.http(), ctx.id())
+    if ctx.prefix() != "/" {
+        ctx.channel_id()
+            .delete_message(ctx.http(), ctx.id())
+            .await?;
+    } else {
+        ctx.send(
+            CreateReply::default()
+                .content("you're going to hell")
+                .ephemeral(true),
+        )
         .await?;
+    }
 
     Ok(())
 }
