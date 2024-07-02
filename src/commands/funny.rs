@@ -74,7 +74,7 @@ pub async fn user_misuse(
         .iter()
         .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
     {
-        let _ = existing_webhook
+        existing_webhook
             .execute(
                 &ctx.http(),
                 false,
@@ -83,13 +83,13 @@ pub async fn user_misuse(
                     .avatar_url(avatar_url)
                     .content(message),
             )
-            .await;
+            .await?;
     } else {
         let new_webhook = ctx
             .http()
             .create_webhook(channel_id, &webhook_info, None)
             .await;
-        let _ = new_webhook
+        new_webhook
             .unwrap()
             .execute(
                 &ctx.http(),
@@ -99,9 +99,11 @@ pub async fn user_misuse(
                     .avatar_url(avatar_url)
                     .content(message),
             )
-            .await;
+            .await?;
     }
-    // ctx.send(CreateReply::default().content("thou can't be trusted with this power"))
-    //   .await?;
+    ctx.channel_id()
+        .delete_message(ctx.http(), ctx.id())
+        .await?;
+
     Ok(())
 }
