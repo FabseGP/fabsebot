@@ -40,12 +40,12 @@ pub async fn event_handler(
                 let content = new_message.content.to_lowercase();
                 let mut conn = _data.db.acquire().await?;
                 let id: u64 = new_message.guild_id.unwrap().into();
-                sqlx::query!(
+                sqlx::query(
                     "INSERT INTO message_count (guild_id, user_name, messages) VALUES (?, ?, 1)
-                ON DUPLICATE KEY UPDATE messages = messages + 1",
-                    id,
-                    new_message.author.name,
+                ON DUPLICATE KEY UPDATE messages = messages + 1"
                 )
+                .bind(id)
+                .bind(&new_message.author.name)
                 .execute(&mut *conn)
                 .await
                 .unwrap();

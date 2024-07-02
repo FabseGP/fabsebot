@@ -10,12 +10,12 @@ pub async fn dead_chat(
     #[description = "Channel to send dead chat gifs to"] channel: serenity::model::channel::Channel,
 ) -> Result<(), Error> {
     let mut conn = ctx.data().db.acquire().await?;
-    sqlx::query!(
-        "REPLACE INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)",
-        ctx.guild_id().unwrap().get(),
-        occurrence,
-        channel.id().to_string()
+    sqlx::query(
+        "REPLACE INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)"
     )
+    .bind(ctx.guild_id().unwrap().get())
+    .bind(occurrence)
+    .bind(channel.id().to_string())
     .execute(&mut *conn)
     .await
     .unwrap();

@@ -23,7 +23,6 @@ pub async fn start() {
         ))
         .await
         .expect("Couldn't connect to database");
-    sqlx::migrate!("./migrations").run(&database).await.unwrap();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             event_handler: |ctx, event, framework, data| {

@@ -73,25 +73,20 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
         "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_string()
     };
     let mut conn = ctx.data().db.acquire().await?;
-    struct Users {
-        user_name: String,
-        messages: u64,
-    }
     let id: u64 = ctx.guild_id().unwrap().into();
-    let mut users = sqlx::query_as!(
-        Users,
+    let mut users = sqlx::query_as::<_, (String, u64)>(
         "SELECT user_name, messages FROM message_count WHERE guild_id = ?",
-        id
     )
+    .bind(id)
     .fetch_all(&mut *conn)
     .await?;
-    users.sort_by(|a, b| b.messages.cmp(&a.messages));
+    users.sort_by(|a, b| b.1.cmp(&a.1));
     let mut embed = CreateEmbed::new()
         .title("Server leaderboard")
         .thumbnail(thumbnail)
         .color(0xFF5733);
     for user in users.into_iter() {
-        embed = embed.field(user.user_name, user.messages.to_string(), false);
+        embed = embed.field(user.0, user.1.to_string(), false);
     }
 
     ctx.send(CreateReply::default().embed(embed)).await?;
