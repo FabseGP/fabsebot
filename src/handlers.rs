@@ -2,7 +2,7 @@ use crate::types::{Data, Error};
 use crate::utils::{embed_builder, emoji_id, random_number, spoiler_message, webhook_message};
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
 use serenity::{
-    builder::EditProfile,
+    builder::{CreateMessage, EditProfile},
     gateway::ActivityData,
     model::{channel::ReactionType, user::OnlineStatus},
 };
@@ -17,8 +17,6 @@ pub async fn event_handler(
         FullEvent::Ready { data_about_bot } => {
             println!("Logged in as {}", data_about_bot.user.name);
             let activity = ActivityData::listening("You Could Be Mine");
-            //   let activity =
-            //      ActivityData::streaming("You could be mine", "https://youtu.be/MXx9S2nDouY").unwrap();
             let avatar = CreateAttachment::url(
                 &ctx.http,
                 "https://media1.tenor.com/m/029KypcoTxQAAAAC/sleep-pokemon.gif",
@@ -51,21 +49,24 @@ pub async fn event_handler(
                 .execute(&mut *conn)
                 .await
                 .unwrap();
-                if new_message.channel_id == 1103729117184139325 {
+                if new_message.author.id == 1014524859532980255 &&  content == "pgo-end" {
+                    std::process::exit(0);
+                }
+                if new_message.channel_id == 1146385698279137331 {
                     spoiler_message(ctx, new_message, &new_message.content).await;
-                } else if new_message.author.id == 1014524859532980255 {
-                    if content == "pgo-end" {
-                        std::process::exit(0);
-                    }
-                } else if content.contains(&ctx.cache.current_user().to_string()) {
-                    embed_builder(
-                        ctx,
-                        new_message,
-                        "why ping me bitch, go get a life!",
-                        "https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif",
-                        Colour(0x00b0f4),
-                    )
-                    .await;
+                } 
+                 else if content.contains(&ctx.cache.current_user().to_string()) {
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "why ping me bitch, go get a life!",
+                                "https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif",
+                                Colour(0x00b0f4),
+                            )),
+                        )
+                        .await?;
                 } else if content.contains("<@1014524859532980255>") && !content.contains("!user") {
                     let fabse_life_gifs = [
                         "https://media1.tenor.com/m/hcjOU7y8RgMAAAAd/pokemon-psyduck.gif",
@@ -74,94 +75,107 @@ pub async fn event_handler(
                         "https://media1.tenor.com/m/yhO7PxBKUVoAAAAC/pokemon-hole.gif",
                         "https://media1.tenor.com/m/t--85A1qznIAAAAd/pupuce-cat.gif",
                     ];
-                    embed_builder(
-                        ctx,
-                        new_message,
-                        "fabseman is out to open source life",
-                        fabse_life_gifs[random_number(fabse_life_gifs.len())],
-                        Colour(0xf8e45c),
-                    )
-                    .await;
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "fabseman is out to open source life",
+                                fabse_life_gifs[random_number(fabse_life_gifs.len())],
+                                Colour(0xf8e45c),
+                            )),
+                        )
+                        .await?;
                 } else if (content.contains("<@409113157550997515>")
                     || content == "nito"
                     || content == "denito")
                     && !content.contains("!user")
                 {
-                    embed_builder(
-                        ctx,
-                        new_message,
-                        "haiiii ^_^ hi!! hiiiii<3 haii :3 meow",
-                        "https://i.postimg.cc/xC0pBhR1/gifntext-gif.gif",
-                        Colour(0x00b0f4),
-                    )
-                    .await;
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "haiiii ^_^ hi!! hiiiii<3 haii :3 meow",
+                                "https://i.postimg.cc/xC0pBhR1/gifntext-gif.gif",
+                                Colour(0x00b0f4),
+                            )),
+                        )
+                        .await?;
                 } else if (content.contains("<@1110757956775051294>")
                     || content == "kato"
                     || content == "kachooow"
                     || content == "kachoow")
                     && !content.contains("!user")
                 {
-                    embed_builder(
-                        ctx,
-                        new_message,
-                        "kachooow",
-                        "https://i.postimg.cc/m2YSQ8RL/022106-tofushop.gif",
-                        Colour(0x00b0f4),
-                    )
-                    .await;
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "kachooow",
+                                "https://i.postimg.cc/m2YSQ8RL/022106-tofushop.gif",
+                                Colour(0x00b0f4),
+                            )),
+                        )
+                        .await?;
                 } else if (content.contains("<@701838215757299772>") || content == "harsh g")
                     && !content.contains("!user")
                 {
-                    embed_builder(
-                        ctx,
-                        new_message,
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder( 
                         "don't be harsh on me",
                         "https://media1.tenor.com/m/JYSs-svHAaMAAAAC/sunglasses-men-in-black.gif",
                         Colour(0x00b0f4),
-                    )
-                    .await;
+                    )))
+                    .await?;
                 } else if (content.contains("<@749949941975089213>") || content == "bread")
                     && !content.contains("!user")
                 {
-                    embed_builder(
-                            ctx,
-                            new_message,
+                     new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                
                             "not expired",
                             "https://media1.tenor.com/m/wmmJSYZqcPIAAAAC/lets-get-this-bread-praise-the-loaf.gif",
                             Colour(0x00b0f4),
-                        )
-                        .await;
+                        )))
+                        .await?;
                 } else if (content.contains("<@287809220210851851>")
                     || content == "ant1hero"
                     || content == "antihero")
                     && !content.contains("!user")
-                {
-                    embed_builder(
-                        ctx,
-                        new_message,
+                { new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
                         "It's me, hi",
                         "https://i.postimg.cc/25Lhr6KQ/ezgif-1-c18da48d4b.gif",
                         Colour(0x00b0f4),
-                    )
-                    .await;
-                } else if content == "sensei is here" {
-                    embed_builder(
-                        ctx,
-                        new_message,
+                    )))
+                    .await?;
+                } else if content == "sensei is here" { new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
                         "shrugging",
                         "https://media.tenor.com/rEgYW314NQ0AAAAi/shruggers-shrug.gif",
                         Colour(0x00b0f4),
-                    )
-                    .await;
-                } else if content.contains("fabseman_willbeatu")
-                    || content.contains(":fabseman_willbeatu:")
-                    || content.contains("fabse")
-                {
+                    )))
+                    .await?;
+                } else if content.contains("fabseman_willbeatu") {
                     new_message
                         .react(
                             &ctx.http,
                             ReactionType::try_from(
-                                emoji_id(ctx, new_message, "fabseman_willbeatu")
+                                emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu")
                                     .await
                                     .as_str(),
                             )
@@ -182,12 +196,19 @@ pub async fn event_handler(
                 }
                 match content.as_str() {
                     "fabse" | "fabseman" => {
-                        webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "# such magnificence").await;
+                        webhook_message(
+                            ctx,
+                            new_message,
+                            "yotsuba",
+                            "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png",
+                            "# such magnificence",
+                        )
+                        .await;
                         new_message
                             .react(
                                 &ctx.http,
                                 ReactionType::try_from(
-                                    emoji_id(ctx, new_message, "fabseman_willbeatu").await,
+                                    emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu").await,
                                 )
                                 .unwrap(),
                             )
@@ -205,7 +226,7 @@ pub async fn event_handler(
                             .react(
                                 &ctx.http,
                                 ReactionType::try_from(
-                                    emoji_id(ctx, new_message, "fabseman_willbeatu").await,
+                                    emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu").await,
                                 )
                                 .unwrap(),
                             )

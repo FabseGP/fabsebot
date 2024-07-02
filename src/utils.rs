@@ -1,4 +1,4 @@
-use poise::serenity_prelude::{self as serenity, CreateEmbed, CreateMessage, ExecuteWebhook};
+use poise::serenity_prelude::{self as serenity, CreateEmbed, ExecuteWebhook};
 
 use rand::Rng;
 use serenity::{
@@ -8,35 +8,20 @@ use serenity::{
 };
 use std::{fs, fs::File, io::Write, path::Path};
 
-pub async fn embed_builder(
-    ctx: &serenity::Context,
-    message: &serenity::Message,
-    title: &str,
-    url: &str,
-    colour: Colour,
-) {
-    let _ = message
-        .channel_id
-        .send_message(
-            &ctx.http,
-            CreateMessage::default().embed(
-                CreateEmbed::new()
-                    .title(title)
-                    .image(url)
-                    .color(colour)
-                    .timestamp(Timestamp::now()),
-            ),
-        )
-        .await;
+pub fn embed_builder(title: &str, url: &str, colour: Colour) -> CreateEmbed {
+    CreateEmbed::new()
+        .title(title)
+        .image(url)
+        .color(colour)
+        .timestamp(Timestamp::now())
 }
 
 pub async fn emoji_id(
     ctx: &serenity::Context,
-    message: &serenity::Message,
+    guild_id: serenity::GuildId,
     emoji_name: &str,
 ) -> String {
-    let guild = message.guild_id.unwrap();
-    match guild.emojis(&ctx.http).await {
+    match guild_id.emojis(&ctx.http).await {
         Ok(emojis) => {
             if let Some(emoji) = emojis.iter().find(|e| e.name == emoji_name) {
                 emoji.to_string()
