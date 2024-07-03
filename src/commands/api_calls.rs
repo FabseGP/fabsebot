@@ -1,11 +1,83 @@
 use crate::types::{Context, Error};
 use crate::utils::random_number;
 
-use poise::serenity_prelude::CreateEmbed;
+use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
 use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 
 use urlencoding::encode;
+
+#[derive(Deserialize, Debug, Serialize)]
+struct FabseAIText {
+    result: AiResponseText,
+}
+#[derive(Deserialize, Debug, Serialize)]
+struct AiResponseText {
+    response: String,
+}
+
+/// Did someone say AI text?
+#[poise::command(slash_command, prefix_command)]
+pub async fn ai_text(
+    ctx: Context<'_>,
+    #[description = "Prompt"]
+    #[rest]
+    prompt: String,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let encoded_input = encode(&prompt);
+    let client = &ctx.data().req_client;
+    let resp = client
+        .post("https://api.cloudflare.com/client/v4/accounts/dbc36a22e79dd7acf1ed94aa596bb44e/ai/run/@cf/meta/llama-3-8b-instruct")
+        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
+        .json(&serde_json::json!({ "prompt": encoded_input }))
+        .send()
+        .await?;
+    let output: FabseAIText = resp.json().await?;
+    if !output.result.response.is_empty() {
+        let response_chars: Vec<char> = output.result.response.chars().collect();
+        let chunks = response_chars.chunks(1024);
+        let mut embed = CreateEmbed::default();
+        embed = embed.title(&prompt).color(0xFF7800);
+        for (i, chunk) in chunks.enumerate() {
+            let chunk_str: String = chunk.iter().collect();
+            let field_name = if i == 0 {
+                "Response:".to_string()
+            } else {
+                format!("Response (cont. {})", i + 1)
+            };
+            embed = embed.field(field_name, chunk_str, false);
+        }
+        ctx.send(CreateReply::default().embed(embed)).await?;
+    } else {
+        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to ask", prompt)))
+            .await?;
+    }
+    Ok(())
+}
+
+/// Did someone say AI image?
+#[poise::command(slash_command, prefix_command)]
+pub async fn ai_image(
+    ctx: Context<'_>,
+    #[description = "Prompt"]
+    #[rest]
+    prompt: String,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let encoded_input = encode(&prompt);
+    let client = &ctx.data().req_client;
+    let resp = client
+        .post("https://api.cloudflare.com/client/v4/accounts/dbc36a22e79dd7acf1ed94aa596bb44e/ai/run/@cf/lykon/dreamshaper-8-lcm")
+        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
+        .json(&serde_json::json!({ "prompt": encoded_input }))
+        .send()
+        .await?;
+    let image_data = resp.bytes().await?.to_vec();
+    let file = CreateAttachment::bytes(image_data, "output.png");
+    ctx.send(CreateReply::default().attachment(file)).await?;
+    Ok(())
+}
 
 /// When the other bot sucks
 #[poise::command(slash_command, prefix_command)]
@@ -267,24 +339,25 @@ pub async fn urban(
     let request = client.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await.unwrap();
     if !data.list.is_empty() {
-        ctx.send(
-            CreateReply::default().embed(
-                CreateEmbed::new()
-                    .title(&data.list[0].word)
-                    .color(0xEFFF00)
-                    .field(
-                        "Definition:",
-                        data.list[0].definition.replace(['[', ']'], ""),
-                        false,
-                    )
-                    .field(
-                        "Example:",
-                        data.list[0].example.replace(['[', ']'], ""),
-                        false,
-                    ),
-            ),
-        )
-        .await?;
+        let response_chars: Vec<char> = data.list[0].definition.chars().collect();
+        let chunks = response_chars.chunks(1024);
+        let mut embed = CreateEmbed::default();
+        embed = embed.title(&data.list[0].word).color(0xEFFF00);
+        for (i, chunk) in chunks.enumerate() {
+            let chunk_str: String = chunk.iter().collect();
+            let field_name = if i == 0 {
+                "Definition:".to_string()
+            } else {
+                format!("Response (cont. {})", i + 1)
+            };
+            embed = embed.field(field_name, chunk_str, false);
+        }
+        embed = embed.field(
+            "Example:",
+            data.list[0].example.replace(['[', ']'], ""),
+            false,
+        );
+        ctx.send(CreateReply::default().embed(embed)).await?;
     } else {
         ctx.send(CreateReply::default().content(format!("like you, {} don't exist", input)))
             .await?;
