@@ -52,7 +52,10 @@ pub async fn user_misuse(
     message: String,
 ) -> Result<(), Error> {
     let avatar_url = user.avatar_url().unwrap();
-    let name = user.name;
+    let name = user
+        .nick_in(&ctx.http(), ctx.guild_id().unwrap())
+        .await
+        .unwrap();
     let channel_id = ctx.channel_id();
     let webhook_info = json!({
         "name": name,
@@ -60,9 +63,14 @@ pub async fn user_misuse(
     });
     let existing_webhooks = match channel_id.webhooks(&ctx.http()).await {
         Ok(webhooks) => webhooks,
-        Err(err) => {
-            eprintln!("Error retrieving webhooks: {:?}", err);
-            Vec::new()
+        Err(_) => {
+            ctx.send(
+                CreateReply::default()
+                    .content("no hooks for you")
+                    .ephemeral(true),
+            )
+            .await?;
+            return Ok(());
         }
     };
     if existing_webhooks.len() >= 15 {

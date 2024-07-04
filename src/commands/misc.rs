@@ -93,6 +93,16 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
+/// This is not a test
+#[poise::command(slash_command, prefix_command)]
+pub async fn test(ctx: Context<'_>) -> Result<(), Error> {
+    if ctx.author().id.to_string() != "1014524859532980255" {
+        ctx.send(CreateReply::default().content("you're illegal"))
+            .await?;
+    }
+    Ok(())
+}
+
 /// Do you dare?
 #[poise::command(slash_command, prefix_command)]
 pub async fn troll(ctx: Context<'_>) -> Result<(), Error> {

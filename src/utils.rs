@@ -80,8 +80,7 @@ pub async fn webhook_message(
     });
     let existing_webhooks = match channel_id.webhooks(&ctx.http).await {
         Ok(webhooks) => webhooks,
-        Err(err) => {
-            eprintln!("Error retrieving webhooks: {:?}", err);
+        Err(_) => {
             return;
         }
     };
@@ -140,8 +139,7 @@ pub async fn webhook_file(
     let attachment = CreateAttachment::path(Path::new(path)).await;
     let existing_webhooks = match channel_id.webhooks(&ctx.http).await {
         Ok(webhooks) => webhooks,
-        Err(err) => {
-            eprintln!("Error retrieving webhooks: {:?}", err);
+        Err(_) => {
             return;
         }
     };

@@ -72,7 +72,11 @@ pub async fn user_info(
     user: serenity::User,
 ) -> Result<(), Error> {
     let embed = CreateEmbed::new()
-        .title(user.name.to_string())
+        .title(
+            user.nick_in(&ctx.http(), ctx.guild_id().unwrap())
+                .await
+                .unwrap(),
+        )
         .thumbnail(user.avatar_url().unwrap())
         .field("Account created at: ", user.created_at().to_string(), false);
     ctx.send(CreateReply::default().embed(embed)).await?;
