@@ -4,14 +4,43 @@ use crate::utils::random_number;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
 use poise::CreateReply;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use urlencoding::encode;
 
-#[derive(Deserialize, Debug, Serialize)]
+/// Did someone say AI image?
+#[poise::command(slash_command, prefix_command)]
+pub async fn ai_image(
+    ctx: Context<'_>,
+    #[description = "Prompt"]
+    #[rest]
+    prompt: String,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let encoded_input = encode(&prompt);
+    let client = &ctx.data().req_client;
+    let resp = client
+        .post("https://api.cloudflare.com/client/v4/accounts/dbc36a22e79dd7acf1ed94aa596bb44e/ai/run/@cf/bytedance/stable-diffusion-xl-lightning")
+        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
+        .json(&json!({ "prompt": encoded_input }))
+        .send()
+        .await?;
+    let image_data = resp.bytes().await?.to_vec();
+    if !image_data.is_empty() {
+        let file = CreateAttachment::bytes(image_data, "output.png");
+        ctx.send(CreateReply::default().attachment(file)).await?;
+    } else {
+        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to ask", prompt)))
+            .await?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize, Serialize)]
 struct FabseAIText {
     result: AiResponseText,
 }
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct AiResponseText {
     response: String,
 }
@@ -30,7 +59,7 @@ pub async fn ai_text(
     let resp = client
         .post("https://api.cloudflare.com/client/v4/accounts/dbc36a22e79dd7acf1ed94aa596bb44e/ai/run/@cf/meta/llama-3-8b-instruct")
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
-        .json(&serde_json::json!({ "prompt": encoded_input }))
+        .json(&json!({ "prompt": encoded_input }))
         .send()
         .await?;
     let output: FabseAIText = resp.json().await?;
@@ -53,29 +82,6 @@ pub async fn ai_text(
         ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to ask", prompt)))
             .await?;
     }
-    Ok(())
-}
-
-/// Did someone say AI image?
-#[poise::command(slash_command, prefix_command)]
-pub async fn ai_image(
-    ctx: Context<'_>,
-    #[description = "Prompt"]
-    #[rest]
-    prompt: String,
-) -> Result<(), Error> {
-    ctx.defer().await?;
-    let encoded_input = encode(&prompt);
-    let client = &ctx.data().req_client;
-    let resp = client
-        .post("https://api.cloudflare.com/client/v4/accounts/dbc36a22e79dd7acf1ed94aa596bb44e/ai/run/@cf/lykon/dreamshaper-8-lcm")
-        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
-        .json(&serde_json::json!({ "prompt": encoded_input }))
-        .send()
-        .await?;
-    let image_data = resp.bytes().await?.to_vec();
-    let file = CreateAttachment::bytes(image_data, "output.png");
-    ctx.send(CreateReply::default().attachment(file)).await?;
     Ok(())
 }
 
@@ -134,7 +140,7 @@ pub async fn anilist_anime(
     Ok(())
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct EightBallResponse {
     reading: String,
 }
@@ -171,11 +177,11 @@ pub async fn eightball(
     Ok(())
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct GifResponse {
     results: Vec<GifData>,
 }
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct GifData {
     url: String,
 }
@@ -207,7 +213,7 @@ pub async fn gif(
     Ok(())
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct JokeResponse {
     joke: String,
 }
@@ -259,7 +265,7 @@ pub async fn memegen(
     Ok(())
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct TranslateResponse {
     #[serde(rename = "translatedText")]
     translated_text: String,
@@ -311,11 +317,11 @@ pub async fn translate(
     Ok(())
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct UrbanResponse {
     list: Vec<UrbanDict>,
 }
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct UrbanDict {
     definition: String,
     example: String,

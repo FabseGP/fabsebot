@@ -97,7 +97,7 @@ pub async fn event_handler(
                             &ctx.http,
                             CreateMessage::default().embed(embed_builder(
                                 "haiiii ^_^ hi!! hiiiii<3 haii :3 meow",
-                                "https://i.imgur.com/R3VL3fN.mp4",
+                                "https://i.imgur.com/lJV82uz.gif",
                                 Colour(0x00b0f4),
                             )),
                         )
@@ -114,7 +114,7 @@ pub async fn event_handler(
                             &ctx.http,
                             CreateMessage::default().embed(embed_builder(
                                 "kachooow",
-                                "https://i.postimg.cc/m2YSQ8RL/022106-tofushop.gif",
+                                "https://media1.tenor.com/m/gL0ZoZuJdAkAAAAd/omgtakumi-ae86comeon.gif",
                                 Colour(0x00b0f4),
                             )),
                         )

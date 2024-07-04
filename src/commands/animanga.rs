@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use urlencoding::encode;
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct MoeResponse {
     result: Vec<AnimeScene>,
 }
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct AnimeScene {
     anilist: Anilist,
     episode: Option<i32>,
@@ -18,11 +18,11 @@ struct AnimeScene {
     to: Option<f32>,
     video: String,
 }
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct Anilist {
     title: AnimeTitle,
 }
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct AnimeTitle {
     english: Option<String>,
 }
