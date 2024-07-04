@@ -55,7 +55,7 @@ pub async fn event_handler(
                 if new_message.channel_id == 1146385698279137331 {
                     spoiler_message(ctx, new_message, &new_message.content).await;
                 } 
-                 else if content.contains(&ctx.cache.current_user().to_string()) {
+                else if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message
                         .channel_id
                         .send_message(
@@ -140,7 +140,6 @@ pub async fn event_handler(
                         .send_message(
                             &ctx.http,
                             CreateMessage::default().embed(embed_builder(
-                
                             "not expired",
                             "https://media1.tenor.com/m/wmmJSYZqcPIAAAAC/lets-get-this-bread-praise-the-loaf.gif",
                             Colour(0x00b0f4),
@@ -216,7 +215,7 @@ pub async fn event_handler(
                     }
                     "riny" => {
                         new_message
-                            .channel_id
+                            .channel_id                    
                             .say(&ctx.http, "we hate rin-rin")
                             .await?;
                         webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "fr, useless rice cooker").await;
@@ -241,6 +240,9 @@ pub async fn event_handler(
                     "xsensei" => {
                         webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "we hate sensei").await;
                     }
+                    "floppaganda" => {
+                        new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://i.imgur.com/Pys97pb.png")).await?;
+                    }
                     _ => {}
                 }
             }
@@ -249,3 +251,4 @@ pub async fn event_handler(
     }
     Ok(())
 }
+
