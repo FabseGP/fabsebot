@@ -20,7 +20,7 @@ pub async fn ai_image(
     let encoded_input = encode(&prompt);
     let client = &ctx.data().req_client;
     let resp = client
-        .post("https://api.cloudflare.com/client/v4/accounts/dbc36a22e79dd7acf1ed94aa596bb44e/ai/run/@cf/bytedance/stable-diffusion-xl-lightning")
+        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/bytedance/stable-diffusion-xl-lightning")
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
         .json(&json!({ "prompt": encoded_input }))
         .send()
@@ -57,7 +57,7 @@ pub async fn ai_text(
     let encoded_input = encode(&prompt);
     let client = &ctx.data().req_client;
     let resp = client
-        .post("https://api.cloudflare.com/client/v4/accounts/dbc36a22e79dd7acf1ed94aa596bb44e/ai/run/@cf/meta/llama-3-8b-instruct")
+        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
         .json(&json!({ "prompt": encoded_input }))
         .send()
