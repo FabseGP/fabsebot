@@ -49,17 +49,24 @@ struct AiResponseText {
 #[poise::command(slash_command, prefix_command)]
 pub async fn ai_text(
     ctx: Context<'_>,
+    #[description = "AI personality, e.g. *you're an evil assistant*"] role: String,
     #[description = "Prompt"]
     #[rest]
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
+    let encoded_role = encode(&role);
     let encoded_input = encode(&prompt);
     let client = &ctx.data().req_client;
     let resp = client
         .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
-        .json(&json!({ "prompt": encoded_input }))
+        .json(&json!({        
+            "messages": [
+                { "role": "system", "content": encoded_role },
+                { "role": "user", "content": encoded_input }
+            ]
+        }))
         .send()
         .await?;
     let output: FabseAIText = resp.json().await?;
