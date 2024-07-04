@@ -52,10 +52,7 @@ pub async fn user_misuse(
     message: String,
 ) -> Result<(), Error> {
     let avatar_url = user.avatar_url().unwrap();
-    let name = user
-        .nick_in(&ctx.http(), ctx.guild_id().unwrap())
-        .await
-        .unwrap();
+    let name = user.name;
     let channel_id = ctx.channel_id();
     let webhook_info = json!({
         "name": name,
