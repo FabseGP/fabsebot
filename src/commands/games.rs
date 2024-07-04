@@ -66,9 +66,14 @@ pub async fn rps(
                         &ctx,
                         format!(
                             "{} chose {}, {} chose {}. {}",
-                            ctx.author(),
+                            ctx.author()
+                                .nick_in(&ctx.http(), ctx.guild_id().unwrap())
+                                .await
+                                .unwrap_or(ctx.author().name.to_string()),
                             author_choice,
-                            user,
+                            user.nick_in(&ctx.http(), ctx.guild_id().unwrap())
+                                .await
+                                .unwrap_or(user.name.to_string()),
                             target_choice,
                             response
                         ),

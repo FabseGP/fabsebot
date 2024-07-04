@@ -39,7 +39,8 @@ pub fn random_number(count: usize) -> usize {
 
 pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Message, text: &str) {
     let avatar_url = message.author.avatar_url().unwrap_or_default();
-    let username = &message.author_nick(&ctx.http).await.unwrap_or_default();
+    let nick = message.author_nick(&ctx.http).await;
+    let username = nick.as_deref().unwrap_or(message.author.name.as_str());
     let mut index = 0;
     let client = reqwest::Client::new();
     for attachment in &message.attachments {
@@ -50,7 +51,7 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
         let file = File::create(&filename);
         let download_bytes = match download {
             Ok(bytes) => bytes,
-            Err(_e) => {
+            Err(_) => {
                 continue;
             }
         };

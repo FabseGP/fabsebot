@@ -21,5 +21,5 @@ urlencoding = "2"
 [profile.release]
 codegen-units = 1
 lto = "thin"
-panic = "abort"
+# panic = "abort"
 strip = true

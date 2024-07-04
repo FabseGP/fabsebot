@@ -241,7 +241,6 @@ pub async fn event_handler(
                     "xsensei" => {
                         webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "we hate sensei").await;
                     }
-                    "test" => {}
                     _ => {}
                 }
             }

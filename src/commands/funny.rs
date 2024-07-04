@@ -29,9 +29,7 @@ pub async fn user_dm(
     #[description = "Target"] user: serenity::model::user::User,
     #[description = "Message to be sent"] message: String,
 ) -> Result<(), Error> {
-    let dm_channel = user.create_dm_channel(ctx).await?;
-    dm_channel
-        .send_message(ctx, CreateMessage::default().content(message))
+    user.direct_message(ctx, CreateMessage::default().content(message))
         .await?;
     ctx.send(
         CreateReply::default()
@@ -52,7 +50,10 @@ pub async fn user_misuse(
     message: String,
 ) -> Result<(), Error> {
     let avatar_url = user.avatar_url().unwrap();
-    let name = user.name;
+    let name = user
+        .nick_in(&ctx.http(), ctx.guild_id().unwrap())
+        .await
+        .unwrap_or(user.name);
     let channel_id = ctx.channel_id();
     let webhook_info = json!({
         "name": name,
@@ -72,7 +73,7 @@ pub async fn user_misuse(
     };
     if existing_webhooks.len() >= 15 {
         for webhook in &existing_webhooks {
-            let _ = (ctx.http()).delete_webhook(webhook.id, None).await;
+            ctx.http().delete_webhook(webhook.id, None).await?;
         }
     }
     if let Some(existing_webhook) = existing_webhooks

@@ -60,19 +60,11 @@ pub async fn anime_scene(
                     .title(scene.result[0].anilist.title.to_string())
                     .field(
                         "Episode",
-                        scene.result[0].episode.unwrap_or_default().to_string(),
+                        scene.result[0].episode.unwrap().to_string(),
                         true,
                     )
-                    .field(
-                        "From",
-                        scene.result[0].from.unwrap_or_default().to_string(),
-                        true,
-                    )
-                    .field(
-                        "To",
-                        scene.result[0].to.unwrap_or_default().to_string(),
-                        true,
-                    )
+                    .field("From", scene.result[0].from.unwrap().to_string(), true)
+                    .field("To", scene.result[0].to.unwrap().to_string(), true)
                     .color(0x57e389),
             ),
         )
