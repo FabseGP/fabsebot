@@ -71,13 +71,13 @@ pub async fn user_info(
     #[rest]
     user: serenity::User,
 ) -> Result<(), Error> {
+    let member = ctx
+        .http()
+        .get_member(ctx.guild_id().unwrap(), user.id)
+        .await?;
     let embed = CreateEmbed::new()
-        .title(
-            user.nick_in(&ctx.http(), ctx.guild_id().unwrap())
-                .await
-                .unwrap_or(user.name.to_string()),
-        )
-        .thumbnail(user.avatar_url().unwrap())
+        .title(member.nick.as_deref().unwrap_or(&user.name))
+        .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))
         .field("Account created at: ", user.created_at().to_string(), false);
     ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())

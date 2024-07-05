@@ -13,13 +13,16 @@ pub async fn birthday(
     #[rest]
     user: serenity::User,
 ) -> Result<(), Error> {
-    let avatar_url = user.avatar_url().unwrap();
-    let nickname = user.nick_in(ctx, ctx.guild_id().unwrap()).await;
-    let target_nick = nickname.as_ref().unwrap_or(&user.name);
+    let member = ctx
+        .http()
+        .get_member(ctx.guild_id().unwrap(), user.id)
+        .await?;
+    let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
+    let name = member.nick.unwrap_or(user.name);
     ctx.send(
         CreateReply::default().embed(
             CreateEmbed::new()
-                .title(format!("HAPPY BIRTHDAY {}!", target_nick))
+                .title(format!("HAPPY BIRTHDAY {}!", name))
                 .thumbnail(avatar_url)
                 .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
                 .color(0xFF5733)
