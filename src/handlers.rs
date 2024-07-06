@@ -247,6 +247,10 @@ pub async fn event_handler(
                 }
             }
         }
+        FullEvent::MessageDelete { channel_id, deleted_message_id, .. } => {
+            let message = ctx.cache.message(*channel_id, *deleted_message_id).unwrap().clone();
+            channel_id.send_message(&ctx.http, CreateMessage::default().content(format!("{} wrote \"{}\"", message.author_nick(&ctx.http).await.unwrap_or(message.author.name), message.content))).await?;
+        }
         _ => {}
     }
     Ok(())

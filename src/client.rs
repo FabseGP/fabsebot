@@ -4,7 +4,7 @@ use crate::types::Data;
 
 use poise::serenity_prelude as serenity;
 use reqwest::Client as http_client;
-use serenity::{client::Client, prelude::GatewayIntents};
+use serenity::{cache::Settings, client::Client, prelude::GatewayIntents};
 use songbird::SerenityInit;
 use std::env;
 
@@ -101,9 +101,12 @@ pub async fn start() {
         | GatewayIntents::GUILD_VOICE_STATES
         | GatewayIntents::MESSAGE_CONTENT;
     let token = env::var("DISCORD_TOKEN").unwrap();
+    let mut cache_settings = Settings::default();
+    cache_settings.max_messages = 10;
     let client = Client::builder(&token, intents)
         .framework(framework)
         .register_songbird()
+        .cache_settings(cache_settings)
         .await;
     client.unwrap().start().await.unwrap();
 }
