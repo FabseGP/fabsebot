@@ -40,7 +40,7 @@ pub async fn start() {
                 api_calls::translate(),
                 api_calls::urban(),
                 funny::anonymous(),
-                funny::user_dm(),
+                //     funny::user_dm(),
                 funny::user_misuse(),
                 games::rps(),
                 info::user_info(),
