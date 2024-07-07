@@ -30,8 +30,9 @@ pub async fn rps(
     let mut proceed = false;
 
     while start.elapsed() < Duration::from_secs(60) && !proceed {
+        let shard_messenger = &ctx.serenity_context().shard;
         if let Some(reply) = user
-            .await_reply(ctx)
+            .await_reply(shard_messenger.clone())
             .timeout(Duration::from_secs(60) - start.elapsed())
             .await
         {
@@ -63,7 +64,7 @@ pub async fn rps(
 
                 reply
                     .reply(
-                        &ctx,
+                        ctx.http(),
                         format!(
                             "{} chose {}, {} chose {}. {}",
                             ctx.author()

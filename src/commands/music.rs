@@ -36,7 +36,7 @@ pub async fn add_playlist(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let guild_id = ctx.guild_id().unwrap();
-    let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
+    let manager = &ctx.data().music_manager;
     if let Some(handler_lock) = manager.get(guild_id) {
         let client = &ctx.data().req_client;
         let request = client
@@ -69,17 +69,9 @@ pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
         .voice_states
         .get(&ctx.author().id)
         .and_then(|voice_state| voice_state.channel_id);
-    let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
+    let manager = &ctx.data().music_manager;
     manager.join(guild_id, channel_id.unwrap()).await?;
-    match channel_id.unwrap().name(&ctx.http()).await {
-        Ok(channel_name) => {
-            ctx.say(format!("Joined \"{}\"", channel_name)).await?;
-        }
-        Err(_) => {
-            ctx.say("Blame India for this error, no voice channels joined")
-                .await?;
-        }
-    }
+    ctx.say("I've joined the party").await?;
     Ok(())
 }
 
@@ -87,7 +79,7 @@ pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(slash_command, prefix_command)]
 pub async fn leave_voice(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild().unwrap().id;
-    let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
+    let manager = &ctx.data().music_manager;
     let has_handler = manager.get(guild_id).is_some();
     if has_handler {
         manager.remove(guild_id).await?;
@@ -108,7 +100,7 @@ pub async fn play_song(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let guild_id = ctx.guild_id().unwrap();
-    let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
+    let manager = &ctx.data().music_manager;
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
         let mut src = if url.starts_with("http") {
@@ -145,11 +137,15 @@ pub async fn play_song(
                         match source_url {
                             Some(u) => {
                                 e = e.description(
-                                    MessageBuilder::new().push_named_link_safe(title, u).build(),
+                                    MessageBuilder::new()
+                                        .push_named_link_safe(title.as_str(), u.as_str())
+                                        .build(),
                                 );
                             }
                             None => {
-                                e = e.description(MessageBuilder::new().push_safe(title).build());
+                                e = e.description(
+                                    MessageBuilder::new().push_safe(title.as_str()).build(),
+                                );
                             }
                         }
                     }
@@ -175,7 +171,7 @@ pub async fn play_song(
 #[poise::command(slash_command, prefix_command)]
 pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild_id().unwrap();
-    let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
+    let manager = &ctx.data().music_manager;
     if let Some(handler_lock) = manager.get(guild_id) {
         let handler = handler_lock.lock().await;
         let queue = handler.queue();
@@ -192,7 +188,7 @@ pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(slash_command, prefix_command)]
 pub async fn stop_song(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild_id().unwrap();
-    let manager = songbird::get(ctx.serenity_context()).await.unwrap().clone();
+    let manager = &ctx.data().music_manager;
     if let Some(handler_lock) = manager.get(guild_id) {
         let handler = handler_lock.lock().await;
         let queue = handler.queue();

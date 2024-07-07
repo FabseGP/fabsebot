@@ -1,12 +1,32 @@
 use crate::commands::{animanga, api_calls, funny, games, info, misc, music, settings};
 use crate::handlers::event_handler;
-use crate::types::Data;
+use crate::types::{Context, Data, Error};
 
 use poise::serenity_prelude as serenity;
 use reqwest::Client as http_client;
 use serenity::{cache::Settings, client::Client, prelude::GatewayIntents};
-use songbird::SerenityInit;
-use std::env;
+use std::{env, sync::Arc, time::Duration};
+
+async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
+    match error {
+        poise::FrameworkError::Command { error, ctx, .. } => {
+            println!("Error in command `{}`: {:?}", ctx.command().name, error,);
+        }
+        error => {
+            if let Err(e) = poise::builtins::on_error(error).await {
+                println!("Error while handling error: {}", e)
+            }
+        }
+    }
+}
+
+#[poise::command(prefix_command, owners_only)]
+async fn register_commands(ctx: Context<'_>) -> Result<(), Error> {
+    let commands = &ctx.framework().options().commands;
+    poise::builtins::register_globally(ctx.http(), commands).await?;
+    ctx.say("Successfully registered slash commands!").await?;
+    Ok(())
+}
 
 pub async fn start() {
     dotenvy::dotenv().unwrap();
@@ -23,12 +43,17 @@ pub async fn start() {
         ))
         .await
         .expect("Couldn't connect to database");
+    let manager = songbird::Songbird::serenity();
+    let user_data = Data {
+        db: database,
+        req_client: http_client::new(),
+        music_manager: Arc::clone(&manager),
+    };
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            event_handler: |ctx, event, framework, data| {
-                Box::pin(event_handler(ctx, event, framework, data))
-            },
+            event_handler: |framework, event| Box::pin(event_handler(framework, event)),
             commands: vec![
+                register_commands(),
                 animanga::anime_scene(),
                 api_calls::ai_image(),
                 api_calls::ai_text(),
@@ -60,32 +85,17 @@ pub async fn start() {
             ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("!".into()),
+                edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
+                    Duration::from_secs(3600),
+                ))),
+                additional_prefixes: vec![
+                    poise::Prefix::Literal("hey fabsebot"),
+                    poise::Prefix::Literal("hey fabsebot,"),
+                ],
                 ..Default::default()
             },
-            on_error: |error| {
-                Box::pin(async move {
-                    match error {
-                        poise::FrameworkError::ArgumentParse { error, .. } => {
-                            if let Some(error) = error.downcast_ref::<serenity::RoleParseError>() {
-                                println!("Found a RoleParseError: {:?}", error);
-                            } else {
-                                println!("Not a RoleParseError :(");
-                            }
-                        }
-                        other => poise::builtins::on_error(other).await.unwrap(),
-                    }
-                })
-            },
+            on_error: |error| Box::pin(on_error(error)),
             ..Default::default()
-        })
-        .setup(move |_ctx, _ready, framework| {
-            Box::pin(async move {
-                poise::builtins::register_globally(_ctx, &framework.options().commands).await?;
-                Ok(Data {
-                    db: database,
-                    req_client: http_client::new(),
-                })
-            })
         })
         .build();
     let intents = GatewayIntents::non_privileged()
@@ -106,8 +116,9 @@ pub async fn start() {
     cache_settings.max_messages = 10;
     let client = Client::builder(&token, intents)
         .framework(framework)
-        .register_songbird()
+        .voice_manager::<songbird::Songbird>(manager)
         .cache_settings(cache_settings)
+        .data(Arc::new(user_data) as _)
         .await;
     client.unwrap().start().await.unwrap();
 }

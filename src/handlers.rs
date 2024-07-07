@@ -8,11 +8,11 @@ use serenity::{
 };
 
 pub async fn event_handler(
-    ctx: &serenity::Context,
+    framework: poise::FrameworkContext<'_, Data, Error>,
     event: &FullEvent,
-    _framework: poise::FrameworkContext<'_, Data, Error>,
-    data: &Data,
 ) -> Result<(), Error> {
+    let data = framework.user_data();
+    let ctx = framework.serenity_context;
     match event {
         FullEvent::Ready { data_about_bot } => {
             println!("Logged in as {}", data_about_bot.user.name);
@@ -20,10 +20,11 @@ pub async fn event_handler(
             let avatar = CreateAttachment::url(
                 &ctx.http,
                 "https://media1.tenor.com/m/029KypcoTxQAAAAC/sleep-pokemon.gif",
+                "psyduck_avatar.gif"
             )
             .await?;
             let banner =
-                CreateAttachment::url(&ctx.http, "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fs1.zerochan.net%2FFAIRY.TAIL.600.1870606.jpg&f=1&nofb=1&ipt=1a9ade7d1a4d0a2f783a15018c53faa63a7c38bc72a288d4df37e11e7f3d0e4d&ipo=images")
+                CreateAttachment::url(&ctx.http, "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fs1.zerochan.net%2FFAIRY.TAIL.600.1870606.jpg&f=1&nofb=1&ipt=1a9ade7d1a4d0a2f783a15018c53faa63a7c38bc72a288d4df37e11e7f3d0e4d&ipo=images", "psyduck_banner.png")
                     .await?;
             ctx.set_presence(Some(activity), OnlineStatus::Online);
             ctx.http
@@ -36,7 +37,7 @@ pub async fn event_handler(
                 .await?;
         }
         FullEvent::Message { new_message } => {
-            if !new_message.author.bot {
+            if !new_message.author.bot() {
                 let content = new_message.content.to_lowercase();
                 let mut conn = data.db.acquire().await?;
                 let id: u64 = new_message.guild_id.unwrap().into();
@@ -45,7 +46,7 @@ pub async fn event_handler(
                 ON DUPLICATE KEY UPDATE messages = messages + 1"
                 )
                 .bind(id)
-                .bind(&new_message.author.name)
+                .bind(new_message.author.name.to_string())
                 .execute(&mut *conn)
                 .await
                 .unwrap();

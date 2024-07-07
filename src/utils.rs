@@ -1,14 +1,14 @@
 use poise::serenity_prelude::{self as serenity, CreateEmbed, ExecuteWebhook};
 
 use rand::Rng;
+use serde_json::json;
 use serenity::{
     builder::CreateAttachment,
-    json::json,
     model::{colour::Colour, prelude::Timestamp},
 };
 use std::{fs, fs::File, io::Write, path::Path};
 
-pub fn embed_builder(title: &str, url: &str, colour: Colour) -> CreateEmbed {
+pub fn embed_builder<'a>(title: &'a str, url: &'a str, colour: Colour) -> CreateEmbed<'a> {
     CreateEmbed::new()
         .title(title)
         .image(url)
@@ -44,7 +44,7 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
     let mut index = 0;
     let client = reqwest::Client::new();
     for attachment in &message.attachments {
-        let target = &attachment.url;
+        let target = &attachment.url.to_string();
         let response = client.get(target).send().await;
         let download = response.unwrap().bytes().await;
         let filename = format!("SPOILER_{}", &attachment.filename);
@@ -64,7 +64,8 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
         }
         let _ = fs::remove_file(&filename);
     }
-    let _ = message.delete(&ctx).await;
+    let reason: Option<&str> = Some("spoiler message");
+    let _ = message.delete(&ctx.http, reason).await;
 }
 
 pub async fn webhook_message(

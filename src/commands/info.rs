@@ -14,14 +14,14 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
         }
     };
 
-    let size = if guild.large {
+    let size = if guild.large() {
         "Discord labels this server as being large"
     } else {
         "Discord doesn't label this server as being large"
     };
 
     let thumbnail = if let Some(banner) = guild.banner.clone() {
-        banner
+        banner.to_string()
     } else if let Some(icon_hash) = &guild.icon {
         format!(
             "https://cdn.discordapp.com/icons/{}/{}.png",
@@ -30,31 +30,12 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
     } else {
         "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_string()
     };
-
     let embed = CreateEmbed::new()
-        .title(&guild.name)
+        .title(guild.name.to_string())
         .thumbnail(thumbnail)
         .field("Owner: ", guild.owner_id.to_string(), false)
-        .field("Emoji count: ", guild.emojis.len().to_string(), true)
-        .field(
-            "Emojis: ",
-            guild
-                .emojis
-                .values()
-                .map(|e| e.to_string())
-                .collect::<String>(),
-            true,
-        )
+        .field("Emoji count: ", guild.emojis.len().to_string(), false)
         .field("Role count: ", guild.roles.len().to_string(), false)
-        .field(
-            "Roles: ",
-            guild
-                .roles
-                .values()
-                .map(|e| e.to_string())
-                .collect::<String>(),
-            false,
-        )
         .field("Sticker count: ", guild.stickers.len().to_string(), false)
         .field("Members count: ", guild.member_count.to_string(), false)
         .field("Server size: ", size, false);

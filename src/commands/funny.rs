@@ -1,8 +1,8 @@
 use crate::types::{Context, Error};
 
-use poise::serenity_prelude::{self as serenity, ExecuteWebhook};
+use poise::serenity_prelude::ExecuteWebhook;
 use poise::CreateReply;
-use serenity::json::json;
+use serde_json::json;
 
 /// Send an anonymous message
 #[poise::command(slash_command, prefix_command)]
@@ -19,7 +19,7 @@ pub async fn anonymous(
             .content("with big power comes big responsibility"),
     )
     .await?;
-    channel.say(&ctx.http(), message).await?;
+    channel.say(ctx.http(), message).await?;
     Ok(())
 }
 
@@ -64,7 +64,7 @@ pub async fn user_misuse(
             "name": name,
             "avatar": avatar_url
         });
-        let existing_webhooks = match channel_id.webhooks(&ctx.http()).await {
+        let existing_webhooks = match channel_id.webhooks(ctx.http()).await {
             Ok(webhooks) => webhooks,
             Err(_) => {
                 ctx.send(
@@ -87,7 +87,7 @@ pub async fn user_misuse(
         {
             existing_webhook
                 .execute(
-                    &ctx.http(),
+                    ctx.http(),
                     false,
                     ExecuteWebhook::new()
                         .username(name)
@@ -103,7 +103,7 @@ pub async fn user_misuse(
             new_webhook
                 .unwrap()
                 .execute(
-                    &ctx.http(),
+                    ctx.http(),
                     false,
                     ExecuteWebhook::new()
                         .username(name)
@@ -113,8 +113,9 @@ pub async fn user_misuse(
                 .await?;
         }
         if ctx.prefix() != "/" {
+            let reason: Option<&str> = Some("anonymous");
             ctx.channel_id()
-                .delete_message(ctx.http(), ctx.id())
+                .delete_message(ctx.http(), ctx.id().into(), reason)
                 .await?;
         } else {
             ctx.send(

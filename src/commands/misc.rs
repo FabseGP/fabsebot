@@ -64,7 +64,7 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     let thumbnail = if let Some(banner) = guild.banner.clone() {
-        banner
+        banner.to_string()
     } else if let Some(icon_hash) = &guild.icon {
         format!(
             "https://cdn.discordapp.com/icons/{}/{}.png",

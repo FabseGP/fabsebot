@@ -26,3 +26,4 @@ pub async fn dead_chat(
     .await?;
     Ok(())
 }
+

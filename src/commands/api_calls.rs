@@ -282,7 +282,7 @@ pub async fn roast(
     ctx.defer().await?;
     let guild_id = ctx.guild_id().unwrap();
     let guild_roles = {
-        let guild = ctx.guild().unwrap();
+        let guild = ctx.partial_guild().await.unwrap();
         guild.roles.clone()
     };
     let member = ctx.http().get_member(guild_id, user.id).await?;
@@ -290,7 +290,7 @@ pub async fn roast(
     let banner_url = ctx.http().get_user(user.id).await.unwrap().banner_url().unwrap_or("user has no banner".to_string());
     let roles: Vec<String> = member.roles.iter()
         .filter_map(|role_id| guild_roles.get(role_id))
-        .map(|role| role.name.clone())
+        .map(|role| role.name.clone().to_string())
         .collect();
     let name = member.nick.unwrap_or(user.name.clone());
     let account_date = user.created_at();
@@ -302,7 +302,7 @@ pub async fn roast(
         "SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?",
         )
         .bind(id)
-        .bind(user.name)
+        .bind(user.name.to_string())
         .fetch_one(&mut *conn)
         .await;
         let result_filtered: Option<u64> = match result {
@@ -316,26 +316,29 @@ pub async fn roast(
     let messages_string = {
         let mut collected_messages = Vec::new();
         let mut count = 0;
-        
+
         while let Some(message_result) = messages.next().await {
             if let Ok(message) = message_result {
                 if message.author.id == user.id {
                     let formatted_message = format!("message {}: {}", count + 1, message.content);
                     collected_messages.push(formatted_message);
                     count += 1;
-                    if count >= 50 {
-                        break;
-                    }
+                    
                 }
+            } else {
+                break;
+            }
+            if count >= 40 {
+                break;
             }
         }
-
+  
         collected_messages.join(", ")
     };
     
     let description = format!("name: {}, avatar: {}, banner: {}, roles: {}, account creation date: {}, joined server date: {}, message count in server: {}, last 10 messages: {}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
     let encoded_input = encode(&description);
-    
+
     let client = &ctx.data().req_client;
     let resp = client
         .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
