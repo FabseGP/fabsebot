@@ -323,7 +323,7 @@ pub async fn roast(
                     let formatted_message = format!("message {}: {}", count + 1, message.content);
                     collected_messages.push(formatted_message);
                     count += 1;
-                    if count >= 100 {
+                    if count >= 50 {
                         break;
                     }
                 }
