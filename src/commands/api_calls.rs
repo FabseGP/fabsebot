@@ -287,7 +287,7 @@ pub async fn roast(
     };
     let member = ctx.http().get_member(guild_id, user.id).await?;
     let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
-    let banner_url = user.banner_url().unwrap_or("user has no banner".to_string());
+    let banner_url = ctx.http().get_user(user.id).await.unwrap().banner_url().unwrap_or("user has no banner".to_string());
     let roles: Vec<String> = member.roles.iter()
         .filter_map(|role_id| guild_roles.get(role_id))
         .map(|role| role.name.clone())
