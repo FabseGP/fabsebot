@@ -5,6 +5,8 @@ use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
 use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use serenity::futures::StreamExt;
+use sqlx::Row;
 
 use urlencoding::encode;
 
@@ -269,6 +271,104 @@ pub async fn memegen(
     );
     ctx.send(CreateReply::default().content(request_url))
         .await?;
+    Ok(())
+}
+
+#[poise::command(slash_command, prefix_command)]
+pub async fn roast(
+    ctx: Context<'_>,
+    #[description = "Target"] user: poise::serenity_prelude::User,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let guild_id = ctx.guild_id().unwrap();
+    let guild_roles = {
+        let guild = ctx.guild().unwrap();
+        guild.roles.clone()
+    };
+    let member = ctx.http().get_member(guild_id, user.id).await?;
+    let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
+    let banner_url = user.banner_url().unwrap_or("user has no banner".to_string());
+    let roles: Vec<String> = member.roles.iter()
+        .filter_map(|role_id| guild_roles.get(role_id))
+        .map(|role| role.name.clone())
+        .collect();
+    let name = member.nick.unwrap_or(user.name.clone());
+    let account_date = user.created_at();
+    let join_date = member.joined_at.unwrap();
+    let message_count = {
+        let id: u64 = guild_id.into();
+        let mut conn = ctx.data().db.acquire().await?;
+        let result = sqlx::query(
+        "SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?",
+        )
+        .bind(id)
+        .bind(user.name)
+        .fetch_one(&mut *conn)
+        .await;
+        let result_filtered: Option<u64> = match result {
+            Ok(row) => Some(row.try_get("messages").unwrap()),
+            Err(_) => None,
+        };
+        result_filtered.map_or("unknown message count".to_string(), |count| count.to_string())
+    };
+    let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
+
+    let messages_string = {
+        let mut collected_messages = Vec::new();
+        let mut count = 0;
+        
+        while let Some(message_result) = messages.next().await {
+            if let Ok(message) = message_result {
+                if message.author.id == user.id {
+                    let formatted_message = format!("message {}: {}", count + 1, message.content);
+                    collected_messages.push(formatted_message);
+                    count += 1;
+                    if count >= 100 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        collected_messages.join(", ")
+    };
+    
+    let description = format!("name: {}, avatar: {}, banner: {}, roles: {}, account creation date: {}, joined server date: {}, message count in server: {}, last 10 messages: {}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
+    let encoded_input = encode(&description);
+    
+    let client = &ctx.data().req_client;
+    let resp = client
+        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
+        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
+        .json(&json!({
+            "messages": [
+                { "role": "system", "content": "you're an evil ai assistant that excels at roasting ppl, especially weebs, and you show no mercy. every prompt will contain some information of your target" },
+                { "role": "user", "content": encoded_input }
+            ]
+        }))
+        .send()
+        .await?;
+    let output: FabseAIText = resp.json().await?;
+
+    if !output.result.response.is_empty() {
+        let response_chars: Vec<char> = output.result.response.chars().collect();
+        let chunks = response_chars.chunks(1024);
+        let mut embed = CreateEmbed::default();
+        embed = embed.title(format!("Roasting {}", name)).color(0xFF7800);
+        for (i, chunk) in chunks.enumerate() {
+            let chunk_str: String = chunk.iter().collect();
+            let field_name = if i == 0 {
+                "Response:".to_string()
+            } else {
+                format!("Response (cont. {})", i + 1)
+            };
+            embed = embed.field(field_name, chunk_str, false);
+        }
+        ctx.send(CreateReply::default().embed(embed)).await?;
+    } else {
+        ctx.send(CreateReply::default().content(format!("{}'s life is already roasted", name)))
+            .await?;
+    }
     Ok(())
 }
 

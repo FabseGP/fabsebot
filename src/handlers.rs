@@ -11,7 +11,7 @@ pub async fn event_handler(
     ctx: &serenity::Context,
     event: &FullEvent,
     _framework: poise::FrameworkContext<'_, Data, Error>,
-    _data: &Data,
+    data: &Data,
 ) -> Result<(), Error> {
     match event {
         FullEvent::Ready { data_about_bot } => {
@@ -38,7 +38,7 @@ pub async fn event_handler(
         FullEvent::Message { new_message } => {
             if !new_message.author.bot {
                 let content = new_message.content.to_lowercase();
-                let mut conn = _data.db.acquire().await?;
+                let mut conn = data.db.acquire().await?;
                 let id: u64 = new_message.guild_id.unwrap().into();
                 sqlx::query(
                     "INSERT INTO message_count (guild_id, user_name, messages) VALUES (?, ?, 1)
@@ -242,6 +242,9 @@ pub async fn event_handler(
                     }
                     "floppaganda" => {
                         new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://i.imgur.com/Pys97pb.png")).await?;
+                    }
+                    "floppa" => {
+                        new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://libreddit.bus-hit.me/img/3bpsrhciju091.jpg")).await?;
                     }
                     _ => {}
                 }

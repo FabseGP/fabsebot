@@ -37,6 +37,7 @@ pub async fn start() {
                 api_calls::gif(),
                 api_calls::joke(),
                 api_calls::memegen(),
+                api_calls::roast(),
                 api_calls::translate(),
                 api_calls::urban(),
                 funny::anonymous(),

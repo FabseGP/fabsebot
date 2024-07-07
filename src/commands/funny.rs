@@ -8,6 +8,7 @@ use serenity::json::json;
 #[poise::command(slash_command, prefix_command)]
 pub async fn anonymous(
     ctx: Context<'_>,
+    #[description = "Channel to send message"] channel: poise::serenity_prelude::ChannelId,
     #[description = "Message to send"]
     #[rest]
     message: String,
@@ -18,7 +19,7 @@ pub async fn anonymous(
             .content("with big power comes big responsibility"),
     )
     .await?;
-    ctx.channel_id().say(&ctx.http(), message).await?;
+    channel.say(&ctx.http(), message).await?;
     Ok(())
 }
 
@@ -126,7 +127,7 @@ pub async fn user_misuse(
     } else {
         ctx.send(
             CreateReply::default()
-                .content("you need to be fabseman to use this command")
+                .content("you're not fabseman, hush!")
                 .ephemeral(true),
         )
         .await?;
