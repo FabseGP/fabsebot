@@ -89,8 +89,8 @@ pub async fn start() {
                     Duration::from_secs(3600),
                 ))),
                 additional_prefixes: vec![
+                    poise::Prefix::Literal("fabsebot"),
                     poise::Prefix::Literal("hey fabsebot"),
-                    poise::Prefix::Literal("hey fabsebot,"),
                 ],
                 ..Default::default()
             },

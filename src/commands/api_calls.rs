@@ -1,12 +1,13 @@
 use crate::types::{Context, Error};
 use crate::utils::random_number;
 
-use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
+use poise::serenity_prelude::{CreateAttachment, CreateInteractionResponse, ComponentInteractionCollector, CreateEmbed, CreateButton, CreateActionRow, ButtonStyle, EditMessage};
 use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::futures::StreamExt;
 use sqlx::Row;
+use std::time::Duration;
 
 use urlencoding::encode;
 
@@ -455,6 +456,8 @@ pub async fn urban(
     let request = client.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await.unwrap();
     if !data.list.is_empty() {
+        let len = data.list.len() - 1;
+        let mut index = 0;
         let response_chars: Vec<char> = data.list[0].definition.chars().collect();
         let chunks = response_chars.chunks(1024);
         let mut embed = CreateEmbed::default();
@@ -466,16 +469,103 @@ pub async fn urban(
             } else {
                 format!("Response (cont. {})", i + 1)
             };
-            embed = embed.field(field_name, chunk_str, false);
+            embed = embed.field(field_name, chunk_str.replace(['[', ']'], ""), false);
         }
         embed = embed.field(
             "Example:",
             data.list[0].example.replace(['[', ']'], ""),
             false,
         );
-        ctx.send(CreateReply::default().embed(embed)).await?;
+        let components = if len > 1 {
+            vec![CreateActionRow::Buttons(vec![
+                CreateButton::new("next")
+                    .style(ButtonStyle::Primary)
+                    .label("➡️"),
+                ])]
+            } else {
+                vec![]
+            };
+        ctx.send(CreateReply::default().embed(embed).components(components)).await?;
+
+        if len > 1 {
+            while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                .timeout(Duration::from_secs(3600))
+                .await
+            {
+                let choice = match &interaction.data.custom_id[..] {
+                    "prev" | "next" => interaction.data.custom_id.to_string(),
+                    _ => {
+                        ctx.say("why you dumb? try again").await?;
+                        continue;
+                    }
+                };
+
+                interaction
+                    .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                    .await?;
+
+                if choice == "next" && index < len {
+                    index += 1;
+                } else if choice == "prev" && index > 0 {
+                    index -= 1;
+                }
+            
+                let new_response_chars: Vec<char> = data.list[index].definition.chars().collect();
+                let new_chunks = new_response_chars.chunks(1024);
+            
+                let mut new_embed = CreateEmbed::default();
+                new_embed = new_embed.title(&data.list[index].word).color(0xEFFF00);
+            
+                for (i, chunk) in new_chunks.enumerate() {
+                    let chunk_str: String = chunk.iter().collect();
+                    let field_name = if i == 0 {
+                        "Definition:".to_string()
+                    } else {
+                        format!("Response (cont. {})", i + 1)
+                    };
+                    new_embed = new_embed.field(field_name, chunk_str.replace(['[', ']'], ""), false);
+                }
+            
+                new_embed = new_embed.field(
+                    "Example:",
+                    data.list[index].example.replace(['[', ']'], ""),
+                    false,
+                );
+
+                let new_components = if index == 0 {
+                        vec![CreateActionRow::Buttons(vec![
+                            CreateButton::new("next")
+                                .style(ButtonStyle::Primary)
+                                .label("➡️"),
+                        ])]  
+                    } else if index == len {
+                        vec![CreateActionRow::Buttons(vec![
+                            CreateButton::new("prev")
+                                .style(ButtonStyle::Primary)
+                                .label("⬅️"),
+                        ])]
+                    } else {
+                        vec![CreateActionRow::Buttons(vec![
+                            CreateButton::new("next")
+                                .style(ButtonStyle::Primary)
+                                .label("➡️"),
+                            CreateButton::new("prev")
+                                .style(ButtonStyle::Primary)
+                                .label("⬅️"),
+                        ])] 
+                };
+            
+                let mut msg = interaction.message.clone();
+
+                msg.edit(
+                    ctx.http(),
+                    EditMessage::new().embed(new_embed).components(new_components),
+                )
+                .await?;
+            }
+        }
     } else {
-        ctx.send(CreateReply::default().content(format!("like you, {} don't exist", input)))
+        ctx.send(CreateReply::default().content(format!("**like you, {} don't exist**", input)))
             .await?;
     }
     Ok(())
