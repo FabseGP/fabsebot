@@ -1,11 +1,23 @@
 use crate::types::{Context, Error};
 
-use poise::{serenity_prelude as serenity, CreateReply};
+use poise::{
+    futures_util::{Stream, StreamExt},
+    serenity_prelude as serenity, CreateReply,
+};
 use serenity::{
-    ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton, CreateEmbed,
-    CreateInteractionResponse, EditMessage,
+    futures, ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton,
+    CreateEmbed, CreateInteractionResponse, EditMessage,
 };
 use std::{collections::HashMap, time::Duration};
+
+async fn autocomplete_choice<'a>(
+    _ctx: Context<'_>,
+    partial: &'a str,
+) -> impl Stream<Item = String> + 'a {
+    futures::stream::iter(&["rock", "paper", "scissor"])
+        .filter(move |name| futures::future::ready(name.starts_with(partial)))
+        .map(|name| name.to_string())
+}
 
 /// Get rekt by an another user in rps
 #[poise::command(slash_command, prefix_command)]
@@ -13,12 +25,13 @@ pub async fn rps(
     ctx: Context<'_>,
     #[description = "Target"] user: serenity::User,
     #[description = "Your choice: rock, paper, or scissor"]
+    #[autocomplete = "autocomplete_choice"]
     #[rest]
     choice: String,
 ) -> Result<(), Error> {
     if !user.bot() && user.id != ctx.author().id {
-        let author_choice = choice.to_lowercase();
         let valid_choices = ["rock", "paper", "scissor"];
+        let author_choice = choice.to_lowercase();
         if !valid_choices.contains(&author_choice.as_str()) {
             ctx.say("can't you even do smth this simple correct?")
                 .await?;

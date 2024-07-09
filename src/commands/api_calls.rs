@@ -378,7 +378,11 @@ pub async fn roast(
 
 #[derive(Deserialize, Serialize)]
 struct TranslateResponse {
-    #[serde(rename = "translatedText")]
+    result: AiTranslate,
+}
+
+#[derive(Deserialize, Serialize)]
+struct AiTranslate {
     translated_text: String,
 }
 
@@ -386,35 +390,36 @@ struct TranslateResponse {
 #[poise::command(slash_command, prefix_command)]
 pub async fn translate(
     ctx: Context<'_>,
-    #[description = "Language to be translated from"] source: String,
-    #[description = "Language to be translated to"] target: String,
+    #[description = "Language to be translated from, e.g. japanese"] source: String,
+    #[description = "Language to be translated to, e.g. english"] target: String,
     #[description = "What should be translated"]
     #[rest]
     sentence: String,
 ) -> Result<(), Error> {
-    let encoded_input = encode(&sentence);
-    let form_data = format!("q={}&source={}&target={}", encoded_input, source, target);
-
-    let response = ctx
-        .data()
-        .req_client
-        .post("https://translate.lotigara.ru/translate")
-        .header("accept", "application/json")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(form_data)
+    let encoded_input = &sentence;
+    let form_data = json!({
+        "text": encoded_input,
+        "source_lang": source,
+        "target_lang": target
+    });
+    let client = &ctx.data().req_client;
+    let response = client
+        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/m2m100-1.2b")
+        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
+        .json(&form_data)
         .send()
         .await?;
 
     if response.status().is_success() {
         let data: TranslateResponse = response.json().await?;
-        if !data.translated_text.is_empty() {
+        if !data.result.translated_text.is_empty() {
             ctx.send(
                 CreateReply::default().embed(
                     CreateEmbed::new()
                         .title(format!("Translation from {} to {}", source, target))
                         .color(0x33d17a)
                         .field("Original:", sentence, false)
-                        .field("Translation:", &data.translated_text, false),
+                        .field("Translation:", &data.result.translated_text, false),
                 ),
             )
             .await?;
