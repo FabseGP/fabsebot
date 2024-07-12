@@ -1,6 +1,7 @@
 use crate::types::{Context, Error};
+use crate::utils::quote_image;
 
-use poise::serenity_prelude::{self as serenity, CreateEmbed};
+use poise::serenity_prelude::{self as serenity, CreateAttachment, CreateEmbed, CreateMessage};
 use poise::CreateReply;
 use serenity::model::Timestamp;
 use std::sync::Arc;
@@ -91,6 +92,53 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     }
 
     ctx.send(CreateReply::default().embed(embed)).await?;
+    Ok(())
+}
+
+/// When your memory is not enough
+#[poise::command(prefix_command, track_edits, slash_command)]
+pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
+    //  if let Some(reply) = reply {
+    let reply = match ctx
+        .channel_id()
+        .message(&ctx.http(), ctx.id().into())
+        .await?
+    {
+        msg if msg.referenced_message.is_some() => msg.referenced_message.unwrap(),
+        _ => {
+            ctx.say("bruh, reply to a message").await?;
+            return Ok(());
+        }
+    };
+    let member = ctx
+        .http()
+        .get_member(ctx.guild_id().unwrap(), reply.author.id)
+        .await?;
+    let avatar_image = {
+        let avatar_url = member
+            .avatar_url()
+            .unwrap_or(reply.author.avatar_url().unwrap());
+        let avatar_bytes = reqwest::get(&avatar_url)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        image::load_from_memory(&avatar_bytes).unwrap().to_rgba8()
+    };
+    let name = member.nick.unwrap_or(reply.author.name);
+    let content = reply.content.to_string();
+    quote_image(&avatar_image, name.as_str(), &content)
+        .save("test.webp")
+        .unwrap();
+    let paths = [CreateAttachment::path("test.webp").await?];
+    ctx.channel_id()
+        .send_files(ctx.http(), paths.clone(), CreateMessage::new())
+        .await?;
+    let quote_channel = poise::serenity_prelude::ChannelId::new(1146385698279137331);
+    quote_channel
+        .send_files(ctx.http(), paths, CreateMessage::new())
+        .await?;
     Ok(())
 }
 

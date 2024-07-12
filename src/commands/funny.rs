@@ -52,7 +52,7 @@ pub async fn user_misuse(
     #[rest]
     message: String,
 ) -> Result<(), Error> {
-    if ctx.author().id == 1014524859532980255 {
+    if ctx.author().id == 1014524859532980255 || ctx.author().id == 999604056072929321 {
         let member = ctx
             .http()
             .get_member(ctx.guild_id().unwrap(), user.id)
@@ -81,37 +81,32 @@ pub async fn user_misuse(
                 ctx.http().delete_webhook(webhook.id, None).await?;
             }
         }
-        if let Some(existing_webhook) = existing_webhooks
-            .iter()
-            .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
-        {
-            existing_webhook
-                .execute(
-                    ctx.http(),
-                    false,
-                    ExecuteWebhook::new()
-                        .username(name)
-                        .avatar_url(avatar_url)
-                        .content(message),
-                )
-                .await?;
-        } else {
-            let new_webhook = ctx
-                .http()
-                .create_webhook(channel_id, &webhook_info, None)
-                .await;
-            new_webhook
-                .unwrap()
-                .execute(
-                    ctx.http(),
-                    false,
-                    ExecuteWebhook::new()
-                        .username(name)
-                        .avatar_url(avatar_url)
-                        .content(message),
-                )
-                .await?;
-        }
+
+        let webhook = {
+            if let Some(existing_webhook) = existing_webhooks
+                .iter()
+                .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
+            {
+                existing_webhook
+            } else {
+                &ctx.http()
+                    .create_webhook(channel_id, &webhook_info, None)
+                    .await
+                    .unwrap()
+            }
+        };
+
+        webhook
+            .execute(
+                ctx.http(),
+                false,
+                ExecuteWebhook::new()
+                    .username(name)
+                    .avatar_url(avatar_url)
+                    .content(message),
+            )
+            .await?;
+
         if ctx.prefix() != "/" {
             let reason: Option<&str> = Some("anonymous");
             ctx.channel_id()

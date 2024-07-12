@@ -29,7 +29,8 @@ pub async fn rps(
     #[rest]
     choice: String,
 ) -> Result<(), Error> {
-    if !user.bot() && user.id != ctx.author().id {
+    if !user.bot() {
+        // && user.id != ctx.author().id {
         let valid_choices = ["rock", "paper", "scissor"];
         let author_choice = choice.to_lowercase();
         if !valid_choices.contains(&author_choice.as_str()) {
@@ -37,6 +38,11 @@ pub async fn rps(
                 .await?;
             return Ok(());
         }
+
+        let rock_id = format!("{}_rock", ctx.id());
+        let paper_id = format!("{}_paper", ctx.id());
+        let scissor_id = format!("{}_scissor", ctx.id());
+
         /*
             let options = [
                 CreateSelectMenuOption::new("🪨", "rock"),
@@ -45,6 +51,7 @@ pub async fn rps(
             ];
 
             let components = vec![CreateActionRow::SelectMenu(CreateSelectMenu::new(
+        let rock_id = format!("{}_rock", ctx.id());
                 "animal_select",
                 CreateSelectMenuKind::String {
                     options: Cow::Borrowed(&options),
@@ -53,13 +60,13 @@ pub async fn rps(
         */
 
         let components = vec![CreateActionRow::Buttons(vec![
-            CreateButton::new("rock")
+            CreateButton::new(rock_id.clone())
                 .style(ButtonStyle::Primary)
                 .label("🪨"),
-            CreateButton::new("paper")
+            CreateButton::new(paper_id.clone())
                 .style(ButtonStyle::Primary)
                 .label("🧻"),
-            CreateButton::new("scissor")
+            CreateButton::new(scissor_id.clone())
                 .style(ButtonStyle::Primary)
                 .label("✂️"),
         ])];
@@ -72,19 +79,17 @@ pub async fn rps(
         ctx.send(CreateReply::default().embed(embed).components(components))
             .await?;
 
-        while let Some(interaction) =
+        if let Some(interaction) =
             ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                 .author_id(user.id)
                 .timeout(Duration::from_secs(60))
+                .filter(move |interaction| {
+                    let id = interaction.data.custom_id.as_str();
+                    id == rock_id.as_str() || id == paper_id.as_str() || id == scissor_id.as_str()
+                })
                 .await
         {
-            let target_choice = match &interaction.data.custom_id[..] {
-                "rock" | "paper" | "scissor" => interaction.data.custom_id.to_string(),
-                _ => {
-                    ctx.say("why you dumb? try again").await?;
-                    continue;
-                }
-            };
+            let target_choice = &interaction.data.custom_id.to_string();
 
             interaction
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
@@ -92,13 +97,18 @@ pub async fn rps(
 
             let outcomes =
                 HashMap::from([("rock", "scissor"), ("paper", "rock"), ("scissor", "paper")]);
+
             let response = {
-                let result = if author_choice == target_choice {
+                let result = if target_choice.contains(&author_choice) {
                     None
-                } else if outcomes.get(&author_choice.as_str()) == Some(&target_choice.as_str()) {
-                    Some(&author_choice)
+                } else if let Some(&v) = outcomes.get(&author_choice.as_str()) {
+                    if target_choice.contains(v) {
+                        Some(&author_choice)
+                    } else {
+                        Some(target_choice)
+                    }
                 } else {
-                    Some(&target_choice)
+                    Some(target_choice)
                 };
                 match result {
                     Some(winner) if winner == &author_choice => {
@@ -132,8 +142,6 @@ pub async fn rps(
                 EditMessage::new().embed(new_embed).components(vec![]),
             )
             .await?;
-
-            break;
         }
     } else {
         ctx.say("**invalid target, get some friends**").await?;

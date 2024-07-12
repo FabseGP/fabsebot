@@ -452,6 +452,8 @@ pub async fn urban(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
+    let next_id = format!("{}_next", ctx.id());
+    let prev_id = format!("{}_prev", ctx.id());
     let encoded_input = encode(&input);
     let request_url = format!(
         "https://api.urbandictionary.com/v0/define?term={search}",
@@ -481,12 +483,23 @@ pub async fn urban(
             data.list[0].example.replace(['[', ']'], ""),
             false,
         );
-        let components = if len > 1 {
-            vec![CreateActionRow::Buttons(vec![
-                CreateButton::new("next")
+    
+         let next_button =
+            CreateActionRow::Buttons(vec![
+                CreateButton::new(next_id.clone())
                     .style(ButtonStyle::Primary)
                     .label("➡️"),
-                ])]
+                ]);
+
+        let prev_button = 
+           CreateActionRow::Buttons(vec![
+                CreateButton::new(prev_id.clone())
+                    .style(ButtonStyle::Primary)
+                    .label("⬅️"),
+                ]);
+        
+        let components = if len > 1 {
+            vec![next_button.clone()]
             } else {
                 vec![]
             };
@@ -495,23 +508,21 @@ pub async fn urban(
         if len > 1 {
             while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                 .timeout(Duration::from_secs(3600))
+             /*   .filter(move |interaction| {
+                    let id = interaction.data.custom_id.as_str();
+                    id == next_id || id == prev_id
+                }) */
                 .await
             {
-                let choice = match &interaction.data.custom_id[..] {
-                    "prev" | "next" => interaction.data.custom_id.to_string(),
-                    _ => {
-                        ctx.say("why you dumb? try again").await?;
-                        continue;
-                    }
-                };
-
+                let choice = &interaction.data.custom_id.as_str();
+                
                 interaction
                     .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                     .await?;
 
-                if choice == "next" && index < len {
+                if choice.contains("next") && index < len {
                     index += 1;
-                } else if choice == "prev" && index > 0 {
+                } else if choice.contains("prev")  && index > 0 {
                     index -= 1;
                 }
             
@@ -538,26 +549,11 @@ pub async fn urban(
                 );
 
                 let new_components = if index == 0 {
-                        vec![CreateActionRow::Buttons(vec![
-                            CreateButton::new("next")
-                                .style(ButtonStyle::Primary)
-                                .label("➡️"),
-                        ])]  
+                        vec![next_button.clone()]  
                     } else if index == len {
-                        vec![CreateActionRow::Buttons(vec![
-                            CreateButton::new("prev")
-                                .style(ButtonStyle::Primary)
-                                .label("⬅️"),
-                        ])]
+                        vec![prev_button.clone()]
                     } else {
-                        vec![CreateActionRow::Buttons(vec![
-                            CreateButton::new("next")
-                                .style(ButtonStyle::Primary)
-                                .label("➡️"),
-                            CreateButton::new("prev")
-                                .style(ButtonStyle::Primary)
-                                .label("⬅️"),
-                        ])] 
+                        vec![prev_button.clone(),next_button.clone()]
                 };
             
                 let mut msg = interaction.message.clone();

@@ -74,6 +74,7 @@ pub async fn start() {
                 misc::birthday(),
                 misc::help(),
                 misc::leaderboard(),
+                misc::quote(),
                 misc::troll(),
                 music::add_playlist(),
                 music::join_voice(),

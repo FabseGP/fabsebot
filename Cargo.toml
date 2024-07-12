@@ -4,8 +4,10 @@ version = "0.4.0"
 edition = "2021"
 
 [dependencies]
-base64 = "0"
+ab_glyph = "0"
 dotenvy = "0"
+image = { version = "0", default-features = false, features = ["rayon", "avif", "webp"] }
+imageproc = "0"
 poise = { git = "https://github.com/serenity-rs/poise", branch = "serenity-next" }
 rand = "0"
 reqwest = { version = "0", default-features = false, features = ["json", "rustls-tls"] }
@@ -15,6 +17,7 @@ serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", d
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue"] }
 sqlx = { version = "0", default-features = false, features = ["mysql", "runtime-tokio"] }
 symphonia = { version = "0", default-features = false, features = ["aac", "adpcm", "flac", "mkv", "mp3", "wav"] }
+textwrap = "0.16.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 urlencoding = "2"
 

@@ -160,16 +160,6 @@ pub async fn event_handler(
                         Colour(0x00b0f4),
                     )))
                     .await?;
-                } else if content == "sensei is here" { new_message
-                        .channel_id
-                        .send_message(
-                            &ctx.http,
-                            CreateMessage::default().embed(embed_builder(
-                        "shrugging",
-                        "https://media.tenor.com/rEgYW314NQ0AAAAi/shruggers-shrug.gif",
-                        Colour(0x00b0f4),
-                    )))
-                    .await?;
                 } else if content.contains("fabseman_willbeatu") {
                     new_message
                         .react(
@@ -214,32 +204,8 @@ pub async fn event_handler(
                             )
                             .await?;
                     }
-                    "riny" => {
-                        new_message
-                            .channel_id                    
-                            .say(&ctx.http, "we hate rin-rin")
-                            .await?;
-                        webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "fr, useless rice cooker").await;
-                    }
-                    "rin_willbeatu" | "<@1014524859532980255>" => {
-                        new_message
-                            .react(
-                                &ctx.http,
-                                ReactionType::try_from(
-                                    emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu").await,
-                                )
-                                .unwrap(),
-                            )
-                            .await?;
-                    }
-                    "rinynm" | "rinymn" => {
-                        webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "she should be banned fr <:wicked:1174093566017028116>").await;
-                    }
                     "star platinum" => {
                         webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "ZAA WARUDOOOOO").await;
-                    }
-                    "xsensei" => {
-                        webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "we hate sensei").await;
                     }
                     "floppaganda" => {
                         new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://i.imgur.com/Pys97pb.png")).await?;
