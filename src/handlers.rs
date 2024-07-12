@@ -48,9 +48,6 @@ pub async fn event_handler(
                 .execute(&mut *conn)
                 .await
                 .unwrap();
-                if new_message.author.id == 1014524859532980255 &&  content == "pgo-end" {
-                    std::process::exit(0);
-                }
                 if let Ok(record) = sqlx::query!(
                     "SELECT spoiler_channel FROM guild_settings WHERE guild_id = ?",
                     id

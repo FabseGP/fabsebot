@@ -6,7 +6,7 @@ use poise::serenity_prelude::{
 };
 use poise::CreateReply;
 use serenity::model::Timestamp;
-use std::{path::Path, sync::Arc};
+use std::{path::Path, process, sync::Arc};
 use tokio::fs::remove_file;
 
 /// Send a birthday wish to a user
@@ -34,6 +34,15 @@ pub async fn birthday(
         ),
     )
     .await?;
+    Ok(())
+}
+
+/// Ignore this command
+#[poise::command(prefix_command)]
+pub async fn end_pgo(ctx: Context<'_>) -> Result<(), Error> {
+    if ctx.author().id == 1014524859532980255 {
+        process::exit(0);
+    }
     Ok(())
 }
 

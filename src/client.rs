@@ -76,6 +76,7 @@ pub async fn start() {
                 info::user_info(),
                 info::server_info(),
                 misc::birthday(),
+                misc::end_pgo(),
                 misc::help(),
                 misc::leaderboard(),
                 misc::quote(),
