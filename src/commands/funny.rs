@@ -52,7 +52,10 @@ pub async fn user_misuse(
     #[rest]
     message: String,
 ) -> Result<(), Error> {
-    if ctx.author().id == 1014524859532980255 || ctx.author().id == 999604056072929321 {
+    if (ctx.guild_id().unwrap() == 1103723321683611698
+        && (ctx.author().id == 1014524859532980255 || ctx.author().id == 999604056072929321))
+        || ctx.guild_id().unwrap() != 1103723321683611698
+    {
         let member = ctx
             .http()
             .get_member(ctx.guild_id().unwrap(), user.id)

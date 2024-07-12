@@ -321,7 +321,7 @@ pub async fn roast(
         while let Some(message_result) = messages.next().await {
             if let Ok(message) = message_result {
                 if message.author.id == user.id {
-                    let formatted_message = format!("message {}: {}", count + 1, message.content);
+                    let formatted_message = format!("{}:{}", count + 1, message.content);
                     collected_messages.push(formatted_message);
                     count += 1;
                     
@@ -329,15 +329,15 @@ pub async fn roast(
             } else {
                 break;
             }
-            if count >= 40 {
+            if count >= 25 {
                 break;
             }
         }
   
-        collected_messages.join(", ")
+        collected_messages.join(",")
     };
     
-    let description = format!("name: {}, avatar: {}, banner: {}, roles: {}, account creation date: {}, joined server date: {}, message count in server: {}, last 10 messages: {}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
+    let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(","), account_date, join_date, message_count, messages_string);
     let encoded_input = encode(&description);
 
     let client = &ctx.data().req_client;
@@ -346,7 +346,7 @@ pub async fn roast(
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
         .json(&json!({
             "messages": [
-                { "role": "system", "content": "you're an evil ai assistant that excels at roasting ppl, especially weebs, and you show no mercy. every prompt will contain some information of your target" },
+                { "role": "system", "content": "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target" },
                 { "role": "user", "content": encoded_input }
             ]
         }))
