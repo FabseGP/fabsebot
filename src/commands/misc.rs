@@ -1,7 +1,9 @@
 use crate::types::{Context, Error};
 use crate::utils::quote_image;
 
-use poise::serenity_prelude::{self as serenity, CreateAttachment, CreateEmbed, CreateMessage};
+use poise::serenity_prelude::{
+    self as serenity, ChannelId, CreateAttachment, CreateEmbed, CreateMessage,
+};
 use poise::CreateReply;
 use serenity::model::Timestamp;
 use std::sync::Arc;
@@ -54,6 +56,11 @@ pub async fn help(
     Ok(())
 }
 
+struct User {
+    user_name: String,
+    messages: u64,
+}
+
 /// Leaderboard of lifeless ppl
 #[poise::command(slash_command, prefix_command)]
 pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
@@ -76,19 +83,20 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     };
     let mut conn = ctx.data().db.acquire().await?;
     let id: u64 = ctx.guild_id().unwrap().into();
-    let mut users = sqlx::query_as::<_, (String, u64)>(
+    let mut users = sqlx::query_as!(
+        User,
         "SELECT user_name, messages FROM message_count WHERE guild_id = ?",
+        id
     )
-    .bind(id)
     .fetch_all(&mut *conn)
     .await?;
-    users.sort_by(|a, b| b.1.cmp(&a.1));
+    users.sort_by(|a, b| b.messages.cmp(&a.messages));
     let mut embed = CreateEmbed::new()
         .title("Server leaderboard")
         .thumbnail(thumbnail)
         .color(0xFF5733);
     for user in users.into_iter() {
-        embed = embed.field(user.0, user.1.to_string(), false);
+        embed = embed.field(user.user_name, user.messages.to_string(), false);
     }
 
     ctx.send(CreateReply::default().embed(embed)).await?;
@@ -98,7 +106,6 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
 /// When your memory is not enough
 #[poise::command(prefix_command, track_edits, slash_command)]
 pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
-    //  if let Some(reply) = reply {
     let reply = match ctx
         .channel_id()
         .message(&ctx.http(), ctx.id().into())
@@ -135,10 +142,20 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     ctx.channel_id()
         .send_files(ctx.http(), paths.clone(), CreateMessage::new())
         .await?;
-    let quote_channel = poise::serenity_prelude::ChannelId::new(1146385698279137331);
-    quote_channel
-        .send_files(ctx.http(), paths, CreateMessage::new())
-        .await?;
+
+    let mut conn = ctx.data().db.acquire().await?;
+    if let Ok(record) = sqlx::query!(
+        "SELECT quotes_channel FROM guild_settings WHERE guild_id = ?",
+        ctx.guild_id().unwrap().get()
+    )
+    .fetch_one(&mut *conn)
+    .await
+    {
+        let quote_channel = ChannelId::new(record.quotes_channel);
+        quote_channel
+            .send_files(ctx.http(), paths, CreateMessage::new())
+            .await?;
+    }
     Ok(())
 }
 

@@ -42,7 +42,11 @@ pub async fn start() {
             database = sql_database
         ))
         .await
-        .expect("Couldn't connect to database");
+        .expect("oof, couldn't connect to database");
+    sqlx::migrate!("./migrations")
+        .run(&database)
+        .await
+        .expect("oof, couldn't run database migrations");
     let manager = songbird::Songbird::serenity();
     let user_data = Data {
         db: database,
@@ -83,6 +87,8 @@ pub async fn start() {
                 music::skip_song(),
                 music::stop_song(),
                 settings::dead_chat(),
+                settings::quote_channel(),
+                settings::spoiler_channel(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("!".into()),

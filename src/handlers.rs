@@ -4,7 +4,7 @@ use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEv
 use serenity::{
     builder::{CreateMessage, EditProfile},
     gateway::ActivityData,
-    model::{channel::ReactionType, user::OnlineStatus},
+    model::{channel::ReactionType, id::ChannelId, user::OnlineStatus},
 };
 
 pub async fn event_handler(
@@ -41,21 +41,28 @@ pub async fn event_handler(
                 let content = new_message.content.to_lowercase();
                 let mut conn = data.db.acquire().await?;
                 let id: u64 = new_message.guild_id.unwrap().into();
-                sqlx::query(
+                sqlx::query!(
                     "INSERT INTO message_count (guild_id, user_name, messages) VALUES (?, ?, 1)
-                ON DUPLICATE KEY UPDATE messages = messages + 1"
+                    ON DUPLICATE KEY UPDATE messages = messages + 1", id, new_message.author.name.to_string()
                 )
-                .bind(id)
-                .bind(new_message.author.name.to_string())
                 .execute(&mut *conn)
                 .await
                 .unwrap();
                 if new_message.author.id == 1014524859532980255 &&  content == "pgo-end" {
                     std::process::exit(0);
                 }
-                if new_message.channel_id == 1146385698279137331 {
-                    spoiler_message(ctx, new_message, &new_message.content).await;
-                } 
+                if let Ok(record) = sqlx::query!(
+                    "SELECT spoiler_channel FROM guild_settings WHERE guild_id = ?",
+                    id
+                )
+                .fetch_one(&mut *conn)
+                .await
+                {
+                    let spoiler_channel = ChannelId::new(record.spoiler_channel);
+                    if new_message.channel_id == spoiler_channel {
+                        spoiler_message(ctx, new_message, &new_message.content).await;
+                    }
+                }
                 else if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message
                         .channel_id

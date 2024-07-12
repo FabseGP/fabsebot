@@ -15,7 +15,7 @@ serde = { version = "1", features = ["serde_derive"] }
 serde_json = "1"
 serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "voice"] }
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue"] }
-sqlx = { version = "0", default-features = false, features = ["mysql", "runtime-tokio"] }
+sqlx = { version = "0", default-features = false, features = ["macros", "migrate", "mysql", "runtime-tokio"] }
 symphonia = { version = "0", default-features = false, features = ["aac", "adpcm", "flac", "mkv", "mp3", "wav"] }
 textwrap = "0.16.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
