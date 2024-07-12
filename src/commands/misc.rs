@@ -6,7 +6,8 @@ use poise::serenity_prelude::{
 };
 use poise::CreateReply;
 use serenity::model::Timestamp;
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
+use tokio::fs::remove_file;
 
 /// Send a birthday wish to a user
 #[poise::command(slash_command, prefix_command)]
@@ -156,6 +157,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
             .send_files(ctx.http(), paths, CreateMessage::new())
             .await?;
     }
+    remove_file(Path::new("test.webp")).await?;
     Ok(())
 }
 
