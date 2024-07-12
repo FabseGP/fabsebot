@@ -103,6 +103,7 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
                         text_offset += 64;
                     }
                 }
+                total_text_height += 40;
                 break;
             }
         }
