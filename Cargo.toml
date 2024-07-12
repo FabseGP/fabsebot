@@ -17,7 +17,7 @@ serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", d
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue"] }
 sqlx = { version = "0", default-features = false, features = ["macros", "migrate", "mysql", "runtime-tokio"] }
 symphonia = { version = "0", default-features = false, features = ["aac", "adpcm", "flac", "mkv", "mp3", "wav"] }
-textwrap = "0.16.1"
+textwrap = "0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 urlencoding = "2"
 

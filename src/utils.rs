@@ -50,10 +50,10 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
 
     overlay(&mut img, &avatar_image, 0, 0);
 
-    let font_content_data = include_bytes!("../fonts/Satoshi-Regular.otf");
+    let font_content_data = include_bytes!("../fonts/NotoSansJP-Regular.ttf");
     let font_content = FontArc::try_from_slice(font_content_data as &[u8]).unwrap();
 
-    let font_author_data = include_bytes!("../fonts/Satoshi-LightItalic.otf");
+    let font_author_data = include_bytes!("../fonts/NotoSansJP-ExtraLight.ttf");
     let font_author = FontArc::try_from_slice(font_author_data as &[u8]).unwrap();
 
     let content_scale = PxScale::from(160.0);
