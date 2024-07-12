@@ -56,7 +56,7 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
     let font_author_data = include_bytes!("../fonts/NotoSansJP-ExtraLight.ttf");
     let font_author = FontArc::try_from_slice(font_author_data as &[u8]).unwrap();
 
-    let content_scale = PxScale::from(160.0);
+    let content_scale = PxScale::from(128.0);
     let author_scale = PxScale::from(40.0);
     let white = Rgba([255, 255, 255, 255]);
 
@@ -65,6 +65,8 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
 
     let mut wrapped_length = 20;
     let mut wrapped_lines = wrap(quoted_content, wrapped_length);
+
+    let mut text_offset = 320;
 
     let mut total_text_height;
     let mut content_scale_adjusted = content_scale;
@@ -96,7 +98,10 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
                 content_scale_adjusted = content_scale;
             } else {
                 if wrapped_lines.len() == 1 {
-                    total_text_height = line_height + 30;
+                    total_text_height = line_height + 40;
+                    if wrapped_lines[0].len() < 10 {
+                        text_offset += 64;
+                    }
                 }
                 break;
             }
@@ -111,7 +116,7 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
     let (author_name_width, _author_name_height) =
         text_size(author_scale, &font_author, author_name);
 
-    let quoted_content_x = ((width - max_content_width) / 2) + 320;
+    let quoted_content_x = ((width - max_content_width) / 2) + text_offset;
     let author_name_x = ((width - author_name_width) / 2) + 320;
 
     for line in wrapped_lines {
