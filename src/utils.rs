@@ -12,7 +12,7 @@ use serenity::{
     builder::CreateAttachment,
     model::{colour::Colour, prelude::Timestamp},
 };
-use std::{fs, fs::File, io::Write, path::Path};
+use std::{cmp::Ordering, fs, fs::File, io::Write, path::Path};
 use textwrap::wrap;
 
 pub fn embed_builder<'a>(title: &'a str, url: &'a str, colour: Colour) -> CreateEmbed<'a> {
@@ -57,11 +57,11 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
     let font_author = FontArc::try_from_slice(font_author_data as &[u8]).unwrap();
 
     let content_scale = PxScale::from(128.0);
-    let author_scale = PxScale::from(40.0);
+    let mut author_scale = PxScale::from(40.0);
     let white = Rgba([255, 255, 255, 255]);
 
     let max_content_width = width - height - 96;
-    let max_content_height = height - 128;
+    let max_content_height = height - 64;
 
     let mut wrapped_length = 20;
     let mut wrapped_lines = wrap(quoted_content, wrapped_length);
@@ -75,13 +75,16 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
         let mut all_fit = true;
         total_text_height = 0;
         let mut line_height = 0;
+        let mut line_width = 0;
+        let mut dimensions;
+        let padding = if wrapped_lines.len() == 1 { 32 } else { 16 };
 
         for line in &wrapped_lines {
-            let dimensions = text_size(content_scale_adjusted, &font_content, line);
+            dimensions = text_size(content_scale_adjusted, &font_content, line);
             line_height = dimensions.1;
-            let line_width = dimensions.0;
+            line_width = dimensions.0;
 
-            if total_text_height + line_height > max_content_height
+            if total_text_height + line_height + padding > max_content_height
                 || line_width > max_content_width
             {
                 all_fit = false;
@@ -92,7 +95,7 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
         }
 
         if all_fit {
-            if wrapped_lines.len() > 14 {
+            if wrapped_lines.len() > 18 {
                 wrapped_length += 2;
                 wrapped_lines = wrap(quoted_content, wrapped_length);
                 content_scale_adjusted = content_scale;
@@ -102,13 +105,32 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
                     if wrapped_lines[0].len() < 10 {
                         text_offset += 64;
                     }
+                } else {
+                    total_text_height += 16;
                 }
-                total_text_height += 40;
                 break;
             }
+        } else {
+            content_scale_adjusted = PxScale::from(content_scale_adjusted.x - 1.0);
+            if (content_scale_adjusted.x + 2.0) == author_scale.x {
+                if author_scale.x.partial_cmp(&18.0) != Some(Ordering::Less) {
+                    author_scale = PxScale::from(author_scale.x - 1.0);
+                } else if line_width > max_content_width {
+                    wrapped_length -= 2;
+                    wrapped_lines = wrap(quoted_content, wrapped_length);
+                } else {
+                    wrapped_length += 2;
+                    wrapped_lines = wrap(quoted_content, wrapped_length);
+                    dimensions =
+                        text_size(content_scale_adjusted, &font_content, &wrapped_lines[0]);
+                    if dimensions.0 > max_content_width {
+                        wrapped_length -= 2;
+                        wrapped_lines = wrap(quoted_content, wrapped_length);
+                    }
+                }
+                content_scale_adjusted = content_scale;
+            }
         }
-
-        content_scale_adjusted = PxScale::from(content_scale_adjusted.x - 1.0);
     }
 
     let mut quoted_content_y = (height - total_text_height) / 2;

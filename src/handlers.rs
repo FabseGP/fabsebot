@@ -60,7 +60,7 @@ pub async fn event_handler(
                         spoiler_message(ctx, new_message, &new_message.content).await;
                     }
                 }
-                else if content.contains(&ctx.cache.current_user().to_string()) {
+                if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message
                         .channel_id
                         .send_message(
