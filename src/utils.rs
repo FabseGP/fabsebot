@@ -3,10 +3,11 @@ use poise::serenity_prelude::{self as serenity, CreateEmbed, ExecuteWebhook};
 use ab_glyph::{FontArc, PxScale};
 use image::{
     imageops::{overlay, resize, FilterType::Gaussian},
-    Rgba, RgbaImage,
+    load_from_memory, Rgba, RgbaImage,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
 use rand::Rng;
+use regex::Regex;
 use serde_json::json;
 use serenity::{
     builder::CreateAttachment,
@@ -40,7 +41,7 @@ pub async fn emoji_id(
     }
 }
 
-pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) -> RgbaImage {
+pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) -> RgbaImage {
     let width = 1200;
     let height = 630;
 
@@ -52,6 +53,7 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
 
     let font_content_data = include_bytes!("../fonts/NotoSansJP-Regular.ttf");
     let font_content = FontArc::try_from_slice(font_content_data as &[u8]).unwrap();
+    overlay(&mut img, &avatar_image, 0, 0);
 
     let font_author_data = include_bytes!("../fonts/NotoSansJP-ExtraLight.ttf");
     let font_author = FontArc::try_from_slice(font_author_data as &[u8]).unwrap();
@@ -63,8 +65,43 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
     let max_content_width = width - height - 96;
     let max_content_height = height - 64;
 
+    let mut emoji_id = String::new();
+    let mut index = 0;
+    let len = quoted_content.len();
+    while index < len {
+        if quoted_content.chars().nth(index).unwrap_or_default() == ':'
+            && index + 1 < len
+            && quoted_content
+                .chars()
+                .nth(index + 1)
+                .unwrap()
+                .is_ascii_digit()
+        {
+            let mut jindex = index + 1;
+            let mut numbers: Vec<String> = Vec::new();
+            while jindex < len {
+                if quoted_content.chars().nth(jindex).unwrap() != '<'
+                    && quoted_content.chars().nth(jindex).unwrap().is_ascii_digit()
+                {
+                    numbers.push(quoted_content.chars().nth(jindex).unwrap().to_string());
+                } else {
+                    break;
+                }
+                jindex += 1
+            }
+            emoji_id = numbers.join("");
+            break;
+        }
+        index += 1;
+    }
+
+    let pattern = r#"<:[A-Za-z0-9_]+:[0-9]+>"#;
+    let re = Regex::new(pattern).unwrap();
+
+    let content_filtered = re.replace_all(quoted_content, "");
+
     let mut wrapped_length = 20;
-    let mut wrapped_lines = wrap(quoted_content, wrapped_length);
+    let mut wrapped_lines = wrap(&content_filtered, wrapped_length);
 
     let mut text_offset = 320;
 
@@ -133,6 +170,37 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
         }
     }
 
+    let (_, emoji_height) = text_size(
+        content_scale_adjusted,
+        &font_content,
+        wrapped_lines.join("").as_str(),
+    );
+
+    let emoji_image = if !emoji_id.is_empty() {
+        let emoji_url = format!(
+            "https://cdn.discordapp.com/emojis/{}.webp?size={}quality=lossless",
+            emoji_id, emoji_height
+        );
+        let emoji_bytes = reqwest::get(&emoji_url)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        Some(load_from_memory(&emoji_bytes).unwrap().to_rgba8())
+    } else {
+        None
+    };
+
+    if let Some(emoji) = emoji_image {
+        overlay(
+            &mut img,
+            &emoji,
+            (width - emoji.width()).into(),
+            (height - emoji.height()).into(),
+        );
+    }
+
     let mut quoted_content_y = (height - total_text_height) / 2;
     let author_name_y = quoted_content_y + total_text_height + 16;
 
@@ -152,6 +220,7 @@ pub fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) 
             &font_content,
             &line,
         );
+
         let dimensions = text_size(content_scale_adjusted, &font_content, &line);
         quoted_content_y += dimensions.1 + 10;
     }

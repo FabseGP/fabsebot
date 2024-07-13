@@ -1,6 +1,7 @@
 use crate::types::{Context, Error};
 use crate::utils::quote_image;
 
+use image::load_from_memory;
 use poise::serenity_prelude::{
     self as serenity, ChannelId, CreateAttachment, CreateEmbed, CreateMessage,
 };
@@ -141,14 +142,15 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
             .bytes()
             .await
             .unwrap();
-        image::load_from_memory(&avatar_bytes).unwrap().to_rgba8()
+        load_from_memory(&avatar_bytes).unwrap().to_rgba8()
     };
     let name = member.nick.unwrap_or(reply.author.name);
     let content = reply.content.to_string();
     quote_image(&avatar_image, name.as_str(), &content)
-        .save("test.webp")
+        .await
+        .save("quote.webp")
         .unwrap();
-    let paths = [CreateAttachment::path("test.webp").await?];
+    let paths = [CreateAttachment::path("quote.webp").await?];
     ctx.channel_id()
         .send_files(ctx.http(), paths.clone(), CreateMessage::new())
         .await?;
@@ -166,7 +168,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
             .send_files(ctx.http(), paths, CreateMessage::new())
             .await?;
     }
-    remove_file(Path::new("test.webp")).await?;
+    remove_file(Path::new("quote.webp")).await?;
     Ok(())
 }
 
