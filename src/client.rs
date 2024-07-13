@@ -80,6 +80,7 @@ pub async fn start() {
                 misc::help(),
                 misc::leaderboard(),
                 misc::quote(),
+                misc::slow_mode(),
                 misc::troll(),
                 music::add_playlist(),
                 music::join_voice(),

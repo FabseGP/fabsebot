@@ -5,7 +5,7 @@ use poise::CreateReply;
 use std::sync::Arc;
 
 /// Get server information
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
     let guild = match ctx.guild() {
         Some(g) => Arc::new(g.clone()),
@@ -45,7 +45,7 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// Leak other users private data
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn user_info(
     ctx: Context<'_>,
     #[description = "Target"]

@@ -1,13 +1,14 @@
 use crate::types::{Context, Error};
 
 use poise::CreateReply;
+use serenity::model::channel::Channel;
 
 /// Configure the occurence of dead chat gifs
-#[poise::command(slash_command, prefix_command, owners_only)]
+#[poise::command(owners_only, prefix_command, slash_command)]
 pub async fn dead_chat(
     ctx: Context<'_>,
     #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: u8,
-    #[description = "Channel to send dead chat gifs to"] channel: serenity::model::channel::Channel,
+    #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
     let mut conn = ctx.data().db.acquire().await?;
     sqlx::query!(
@@ -37,12 +38,11 @@ pub async fn dead_chat(
     Ok(())
 }
 
-/// Configure the occurence of dead chat gifs
-#[poise::command(slash_command, prefix_command, owners_only)]
+/// Configure where to send quotes
+#[poise::command(owners_only, prefix_command, slash_command)]
 pub async fn quote_channel(
     ctx: Context<'_>,
-    #[description = "Channel to send quoted messages to"]
-    channel: serenity::model::channel::Channel,
+    #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
     let mut conn = ctx.data().db.acquire().await?;
     sqlx::query!(
@@ -64,12 +64,11 @@ pub async fn quote_channel(
     Ok(())
 }
 
-/// Configure the occurence of dead chat gifs
-#[poise::command(slash_command, prefix_command, owners_only)]
+/// Configure a channel to always spoiler messages
+#[poise::command(owners_only, prefix_command, slash_command)]
 pub async fn spoiler_channel(
     ctx: Context<'_>,
-    #[description = "Channel to send spoilered messages to"]
-    channel: serenity::model::channel::Channel,
+    #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
     let mut conn = ctx.data().db.acquire().await?;
     sqlx::query!(

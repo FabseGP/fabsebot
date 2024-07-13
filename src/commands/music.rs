@@ -27,7 +27,7 @@ struct DeezerArtist {
 }
 
 /// Play all songs in a playlist from Deezer
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn add_playlist(
     ctx: Context<'_>,
     #[description = "ID of the playlist in mind"]
@@ -60,7 +60,7 @@ pub async fn add_playlist(
 }
 
 /// Join your current voice channel
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild().unwrap().id;
     let channel_id = ctx
@@ -76,7 +76,7 @@ pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// Leave the current voice channel
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn leave_voice(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild().unwrap().id;
     let manager = &ctx.data().music_manager;
@@ -91,7 +91,7 @@ pub async fn leave_voice(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// Play song / add song to queue in the current voice channel
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn play_song(
     ctx: Context<'_>,
     #[description = "Link to the song or query to search"]
@@ -168,7 +168,7 @@ pub async fn play_song(
 }
 
 /// Skip to the next song in queue
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild_id().unwrap();
     let manager = &ctx.data().music_manager;
@@ -185,7 +185,7 @@ pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// Stop current playing song
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn stop_song(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild_id().unwrap();
     let manager = &ctx.data().music_manager;

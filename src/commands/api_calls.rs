@@ -12,7 +12,7 @@ use std::time::Duration;
 use urlencoding::encode;
 
 /// Did someone say AI image?
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn ai_image(
     ctx: Context<'_>,
     #[description = "Prompt"]
@@ -49,7 +49,7 @@ struct AiResponseText {
 }
 
 /// Did someone say AI text?
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn ai_text(
     ctx: Context<'_>,
     #[description = "AI personality, e.g. *you're an evil assistant*"] role: String,
@@ -96,7 +96,7 @@ pub async fn ai_text(
 }
 
 /// When the other bot sucks
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn anilist_anime(
     ctx: Context<'_>,
     #[description = "Anime to search"]
@@ -156,7 +156,7 @@ struct EightBallResponse {
 }
 
 /// When you need a wise opinion
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn eightball(
     ctx: Context<'_>,
     #[description = "Your question"]
@@ -197,7 +197,7 @@ struct GifData {
 }
 
 /// Gifing
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn gif(
     ctx: Context<'_>,
     #[description = "Search gif"]
@@ -229,7 +229,7 @@ struct JokeResponse {
 }
 
 /// When your life isn't fun anymore
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
     let request_url =
         "https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
@@ -254,7 +254,7 @@ pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// When there aren't enough memes
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn memegen(
     ctx: Context<'_>,
     #[description = "Top-left text"] top_left: String,
@@ -275,7 +275,7 @@ pub async fn memegen(
     Ok(())
 }
 
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn roast(
     ctx: Context<'_>,
     #[description = "Target"] user: poise::serenity_prelude::User,
@@ -387,7 +387,7 @@ struct AiTranslate {
 }
 
 /// When you stumble on some ancient sayings
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn translate(
     ctx: Context<'_>,
     #[description = "Language to be translated from, e.g. japanese"] source: String,
@@ -445,7 +445,7 @@ struct UrbanDict {
 }
 
 /// The holy moly urbandictionary
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn urban(
     ctx: Context<'_>,
     #[description = "Word(s) to lookup"]

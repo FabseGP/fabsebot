@@ -20,7 +20,7 @@ async fn autocomplete_choice<'a>(
 }
 
 /// Get rekt by an another user in rps
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn rps(
     ctx: Context<'_>,
     #[description = "Target"] user: serenity::User,

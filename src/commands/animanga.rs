@@ -38,7 +38,7 @@ impl Display for AnimeTitle {
 }
 
 /// What anime was that scene from?
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn anime_scene(
     ctx: Context<'_>,
     #[description = "Link to anime image"]

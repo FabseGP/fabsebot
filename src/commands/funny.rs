@@ -5,7 +5,7 @@ use poise::CreateReply;
 use serde_json::json;
 
 /// Send an anonymous message
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn anonymous(
     ctx: Context<'_>,
     #[description = "Channel to send message"] channel: poise::serenity_prelude::ChannelId,
@@ -25,7 +25,7 @@ pub async fn anonymous(
 
 /*
 /// Misuse other users dm
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn user_dm(
     ctx: Context<'_>,
     #[description = "Target"] user: serenity::model::user::User,
@@ -44,7 +44,7 @@ pub async fn user_dm(
 */
 
 /// Send message as an another user
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn user_misuse(
     ctx: Context<'_>,
     #[description = "Target"] user: poise::serenity_prelude::User,

@@ -2,16 +2,17 @@ use crate::types::{Context, Error};
 use crate::utils::quote_image;
 
 use image::load_from_memory;
+use nonmax::NonMaxU16;
 use poise::serenity_prelude::{
-    self as serenity, ChannelId, CreateAttachment, CreateEmbed, CreateMessage,
+    self as serenity, ChannelId, CreateAttachment, CreateEmbed, CreateMessage, EditChannel,
 };
 use poise::CreateReply;
-use serenity::model::Timestamp;
+use serenity::model::{channel::Channel, Timestamp};
 use std::{path::Path, process, sync::Arc};
 use tokio::fs::remove_file;
 
 /// Send a birthday wish to a user
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn birthday(
     ctx: Context<'_>,
     #[description = "User to congratulate"]
@@ -48,7 +49,7 @@ pub async fn end_pgo(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// When you need some help
-#[poise::command(prefix_command, track_edits, slash_command)]
+#[poise::command(prefix_command, slash_command, track_edits)]
 pub async fn help(
     ctx: Context<'_>,
     #[description = "Command to show help about"]
@@ -73,7 +74,7 @@ struct User {
 }
 
 /// Leaderboard of lifeless ppl
-#[poise::command(slash_command, prefix_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     let guild = match ctx.guild() {
         Some(g) => Arc::new(g.clone()),
@@ -115,7 +116,7 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// When your memory is not enough
-#[poise::command(prefix_command, track_edits, slash_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     let reply = match ctx
         .channel_id()
@@ -169,6 +170,20 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
             .await?;
     }
     remove_file(Path::new("quote.webp")).await?;
+    Ok(())
+}
+
+/// When your users are yapping
+#[poise::command(owners_only, prefix_command, slash_command)]
+pub async fn slow_mode(
+    ctx: Context<'_>,
+    #[description = "Channel to rate limit"] channel: Channel,
+    #[description = "Duration of rate limit in seconds"] duration: NonMaxU16,
+) -> Result<(), Error> {
+    let settings = EditChannel::new().rate_limit_per_user(duration);
+    channel.id().edit(ctx.http(), settings).await?;
+    ctx.say(format!("channel is ratelimited for {} seconds", duration))
+        .await?;
     Ok(())
 }
 
