@@ -1,6 +1,7 @@
 use crate::types::{Data, Error};
 use crate::utils::{embed_builder, emoji_id, get_waifu, random_number, spoiler_message, webhook_message};
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
+use regex::Regex;
 use serenity::{
     builder::{CreateMessage, EditProfile},
     gateway::ActivityData,
@@ -60,8 +61,9 @@ pub async fn event_handler(
                         spoiler_message(ctx, new_message, &new_message.content).await;
                     }
                 }
-                if new_message.author.id == 538731291970109471 && new_message.content.contains("nigga") {
-                    let new_content = new_message.content.replace("nigga", "beautiful person");
+                if new_message.author.id == 538731291970109471 && content.contains("nigga") {
+                    let re = Regex::new(r"(?i)\bnigga\b").unwrap();
+                    let new_content = re.replace_all(new_message.content.as_str(), "beautiful person");
                     webhook_message(
                         ctx,
                         new_message,
