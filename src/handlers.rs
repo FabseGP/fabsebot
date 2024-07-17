@@ -203,6 +203,23 @@ pub async fn event_handler(
                         Colour(0x00b0f4),
                     )))
                     .await?;
+                } else if content.contains("furina") {  
+                    let furina_gifs = [
+                        "https://media1.tenor.com/m/-DdP7PTL6r8AAAAC/furina-focalors.gif",
+                        "https://media1.tenor.com/m/gARaejr6ODIAAAAd/furina-focalors.gif",
+                        "https://media1.tenor.com/m/_H_syqWiknsAAAAd/focalors-genshin-impact.gif",
+                    ];
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "your queen has arrived",
+                                furina_gifs[random_number(furina_gifs.len())],
+                                Colour(0xf8e45c),
+                            )),
+                        )
+                        .await?;
                 } else if content.contains("fabseman_willbeatu") {
                     new_message
                         .react(
