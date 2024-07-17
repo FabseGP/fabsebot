@@ -102,7 +102,12 @@ pub async fn event_handler(
                         "https://media1.tenor.com/m/7lgxLiGtCX4AAAAC/psyduck-psyduck-x.gif",
                         "https://media1.tenor.com/m/yhO7PxBKUVoAAAAC/pokemon-hole.gif",
                         "https://media1.tenor.com/m/t--85A1qznIAAAAd/pupuce-cat.gif",
+                        "https://media1.tenor.com/m/rdkYJPdWkyAAAAAC/psychokwak-psyduck.gif",
+                        "https://media1.tenor.com/m/w5m9Sh-s4igAAAAC/psychokwak-psyduck.gif"
                     ];
+                    let fabse_travel_gifs = [
+                        "https://media1.tenor.com/m/-OS17IIpcL0AAAAC/psyduck-pokemon.gif"
+                    ]; /*
                     new_message
                         .channel_id
                         .send_message(
@@ -110,6 +115,17 @@ pub async fn event_handler(
                             CreateMessage::default().embed(embed_builder(
                                 "fabseman is out to open source life",
                                 fabse_life_gifs[random_number(fabse_life_gifs.len())],
+                                Colour(0xf8e45c),
+                            )),
+                        )
+                        .await?; */
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "fabseman is out to buy a volcano in iceland",
+                                fabse_travel_gifs[random_number(fabse_travel_gifs.len())],
                                 Colour(0xf8e45c),
                             )),
                         )
