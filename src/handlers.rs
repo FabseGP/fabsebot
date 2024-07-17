@@ -244,6 +244,23 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
+                } else if content.contains("kinich") {  
+                    let kinich_gifs = [
+                        "https://media1.tenor.com/m/GAA5_YmbClkAAAAC/natlan-dendro-boy.gif",
+                        "https://media1.tenor.com/m/qcdZ04vXqEIAAAAC/natlan-guy-kinich.gif",
+                        "https://media1.tenor.com/m/mJC2SsAcQB8AAAAd/dendro-natlan.gif",
+                    ];
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "pls destroy lily's oven",
+                                kinich_gifs[random_number(kinich_gifs.len())],
+                                Colour(0xf8e45c),
+                            )),
+                        )
+                        .await?;
                 } else if content.contains("fabseman_willbeatu") {
                     new_message
                         .react(
