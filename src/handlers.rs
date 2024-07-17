@@ -1,5 +1,5 @@
 use crate::types::{Data, Error};
-use crate::utils::{embed_builder, emoji_id, random_number, spoiler_message, webhook_message};
+use crate::utils::{embed_builder, emoji_id, get_waifu, random_number, spoiler_message, webhook_message};
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
 use serenity::{
     builder::{CreateMessage, EditProfile},
@@ -60,6 +60,18 @@ pub async fn event_handler(
                         spoiler_message(ctx, new_message, &new_message.content).await;
                     }
                 }
+                if new_message.author.id == 538731291970109471 && new_message.content.contains("nigga") {
+                    let new_content = new_message.content.replace("nigga", "beautiful person");
+                    webhook_message(
+                        ctx,
+                        new_message,
+                        new_message.author_nick(&ctx.http).await.unwrap_or(new_message.author.name.to_string()).as_str(),
+                        new_message.author.avatar_url().unwrap().as_str(),
+                        &new_content,
+                    )
+                    .await;
+                    new_message.delete(&ctx.http, Some("pure")).await?;
+                }
                 if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message
                         .channel_id
@@ -94,7 +106,7 @@ pub async fn event_handler(
                 } else if (content.contains("<@409113157550997515>")
                     || content == "nito"
                     || content == "denito")
-                    && !content.contains("!user")
+                    && !content.contains("!user_misuse")
                 {
                     new_message
                         .channel_id
@@ -107,11 +119,27 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
+
+                } else if (content.contains("<@999604056072929321>")
+                    || content == "ayaan")
+                    && !content.contains("!user_misuse")
+                {
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "Glare this cute waifu while handsome ayaan_luffy replies your message",
+                                &get_waifu().await,
+                                Colour(0x00b0f4),
+                            )),
+                        )
+                        .await?;
                 } else if (content.contains("<@1110757956775051294>")
                     || content == "kato"
                     || content == "kachooow"
                     || content == "kachoow")
-                    && !content.contains("!user")
+                    && !content.contains("!user_misuse")
                 {
                     new_message
                         .channel_id
@@ -125,7 +153,7 @@ pub async fn event_handler(
                         )
                         .await?;
                 } else if (content.contains("<@701838215757299772>") || content == "harsh g")
-                    && !content.contains("!user")
+                    && !content.contains("!user_misuse")
                 {
                     new_message
                         .channel_id
@@ -138,7 +166,7 @@ pub async fn event_handler(
                     )))
                     .await?;
                 } else if (content.contains("<@749949941975089213>") || content == "bread")
-                    && !content.contains("!user")
+                    && !content.contains("!user_misuse")
                 {
                      new_message
                         .channel_id
@@ -153,7 +181,7 @@ pub async fn event_handler(
                 } else if (content.contains("<@287809220210851851>")
                     || content == "ant1hero"
                     || content == "antihero")
-                    && !content.contains("!user")
+                    && !content.contains("!user_misuse")
                 { new_message
                         .channel_id
                         .send_message(

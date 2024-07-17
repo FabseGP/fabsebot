@@ -8,6 +8,7 @@ use image::{
 use imageproc::drawing::{draw_text_mut, text_size};
 use rand::Rng;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::{
     builder::CreateAttachment,
@@ -268,6 +269,27 @@ pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Messag
     }
     let reason: Option<&str> = Some("");
     let _ = message.delete(&ctx.http, reason).await;
+}
+
+#[derive(Deserialize, Serialize)]
+struct WaifuResponse {
+    images: Vec<WaifuData>,
+}
+#[derive(Deserialize, Serialize)]
+struct WaifuData {
+    url: String,
+}
+
+pub async fn get_waifu() -> String {
+    let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
+    let client = reqwest::Client::new();
+    let request = client.get(request_url).send().await.unwrap();
+    let url: WaifuResponse = request.json().await.unwrap();
+    if !url.images.is_empty() {
+        url.images[0].url.clone()
+    } else {
+        "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_string()
+    }
 }
 
 pub async fn webhook_message(
