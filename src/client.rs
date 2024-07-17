@@ -70,6 +70,7 @@ pub async fn start() {
                 api_calls::roast(),
                 api_calls::translate(),
                 api_calls::urban(),
+                api_calls::waifu(),
                 funny::anonymous(),
                 //     funny::user_dm(),
                 funny::user_misuse(),

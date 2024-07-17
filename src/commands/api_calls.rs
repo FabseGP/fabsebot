@@ -619,3 +619,31 @@ pub async fn urban(
     }
     Ok(())
 }
+
+#[derive(Deserialize, Serialize)]
+struct WaifuResponse {
+    images: Vec<WaifuData>,
+}
+#[derive(Deserialize, Serialize)]
+struct WaifuData {
+    url: String,
+}
+
+/// Do I need to explain it?
+#[poise::command(prefix_command, slash_command)]
+pub async fn waifu(
+    ctx: Context<'_>,
+) -> Result<(), Error> {
+    let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
+    let client = &ctx.data().req_client;
+    let request = client.get(request_url).send().await?;
+    let url: WaifuResponse = request.json().await.unwrap();
+    if !url.images.is_empty() {
+        ctx.send(CreateReply::default().content(&url.images[0].url))
+            .await?;
+    } else {
+        ctx.send(CreateReply::default().content("life is not waifuing"))
+            .await?;
+    }
+    Ok(())
+}
