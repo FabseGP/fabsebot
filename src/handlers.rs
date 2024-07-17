@@ -220,6 +220,30 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
+                } else if content.contains("kafka") {  
+                    let kafka_gifs = [
+                        "https://media1.tenor.com/m/Hse9P_W_A3UAAAAC/kafka-hsr-live-reaction-kafka.gif",
+                        "https://media1.tenor.com/m/Z-qCHXJsDwoAAAAC/kafka.gif",
+                        "https://media1.tenor.com/m/6RXMiM9te7AAAAAC/kafka-honkai-star-rail.gif",
+                        "https://media1.tenor.com/m/QDXaFgSJMAcAAAAd/kafka-kafka-honkai.gif",
+                        "https://media1.tenor.com/m/zDDaAU3TX38AAAAC/kafka-honkai.gif",
+                        "https://media1.tenor.com/m/dy9TUjKaq4MAAAAC/kafka-honkai-star-rail.gif",
+                        "https://media1.tenor.com/m/Fsyz6klrIqUAAAAd/kafka-honkai-star-rail.gif",
+                        "https://media1.tenor.com/m/aDWOgEh1GycAAAAd/kafka-honkai.gif",
+                        "https://media1.tenor.com/m/C1Y9XD8U7XMAAAAC/kafka-hsr.gif",
+                        "https://media1.tenor.com/m/_RiBHVVH-wIAAAAC/kafka-kafka-pat.gif",
+                    ];
+                    new_message
+                        .channel_id
+                        .send_message(
+                            &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                                "your queen has arrived",
+                                kafka_gifs[random_number(kafka_gifs.len())],
+                                Colour(0xf8e45c),
+                            )),
+                        )
+                        .await?;
                 } else if content.contains("fabseman_willbeatu") {
                     new_message
                         .react(
