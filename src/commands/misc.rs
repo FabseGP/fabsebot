@@ -49,7 +49,7 @@ pub async fn end_pgo(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// When you need some help
-#[poise::command(prefix_command, slash_command, track_edits)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn help(
     ctx: Context<'_>,
     #[description = "Command to show help about"]
@@ -129,14 +129,10 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
-    let member = 
-        //if !reply.webhook_id.is_some() {
-        ctx.http()
-            .get_member(ctx.guild_id().unwrap(), reply.author.id)
-            .await?;
- //   } else {
-   //     reply.author
-   // };
+    let member = ctx
+        .http()
+        .get_member(ctx.guild_id().unwrap(), reply.author.id)
+        .await?;
     let avatar_image = {
         let avatar_url = member
             .avatar_url()
@@ -158,7 +154,11 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
         .unwrap();
     let paths = [CreateAttachment::path("quote.webp").await?];
     ctx.channel_id()
-        .send_files(ctx.http(), paths.clone(), CreateMessage::new().content(&message_url))
+        .send_files(
+            ctx.http(),
+            paths.clone(),
+            CreateMessage::new().content(&message_url),
+        )
         .await?;
 
     let mut conn = ctx.data().db.acquire().await?;
@@ -175,6 +175,31 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
             .await?;
     }
     remove_file(Path::new("quote.webp")).await?;
+    Ok(())
+}
+
+/// Hmm, I wonder how pure we are
+#[poise::command(prefix_command, slash_command)]
+pub async fn pure_count(ctx: Context<'_>) -> Result<(), Error> {
+    let mut conn = ctx.data().db.acquire().await?;
+    let id: u64 = ctx.guild_id().unwrap().into();
+    if let Ok(record) = sqlx::query!(
+        "SELECT count FROM words_count WHERE word = ? AND guild_id = ?",
+        "nigga",
+        id
+    )
+    .fetch_one(&mut *conn)
+    .await
+    {
+        ctx.say(format!(
+            "oof, {} n-words counted, martin luther king jr. would be disappointed fr",
+            record.count
+        ))
+        .await?;
+    } else {
+        ctx.say("hmm, 0 n-word counted... yeet must be gone")
+            .await?;
+    }
     Ok(())
 }
 

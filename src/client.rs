@@ -84,6 +84,7 @@ pub async fn start() {
                 misc::quote(),
                 misc::slow_mode(),
                 misc::troll(),
+                misc::pure_count(),
                 music::add_playlist(),
                 music::join_voice(),
                 music::leave_voice(),

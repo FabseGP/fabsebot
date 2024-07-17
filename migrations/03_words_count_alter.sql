@@ -1,0 +1,2 @@
+ALTER TABLE words_count
+ADD guild_id BIGINT UNSIGNED NOT NULL;

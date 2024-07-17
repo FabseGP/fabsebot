@@ -61,18 +61,27 @@ pub async fn event_handler(
                         spoiler_message(ctx, new_message, &new_message.content).await;
                     }
                 }
-                if new_message.author.id == 538731291970109471 && content.contains("nigga") {
-                    let re = Regex::new(r"(?i)\bnigg?a[s]?\b").unwrap();
-                    let new_content = re.replace_all(new_message.content.as_str(), "beautiful person");
-                    webhook_message(
-                        ctx,
-                        new_message,
-                        new_message.author_nick(&ctx.http).await.unwrap_or(new_message.author.name.to_string()).as_str(),
-                        new_message.author.avatar_url().unwrap().as_str(),
-                        &new_content,
+                if content.contains("nigga") {
+                    if new_message.author.id == 538731291970109471 {              
+                        let re = Regex::new(r"(?i)\bnigg?a[s]?\b").unwrap();
+                        let new_content = re.replace_all(new_message.content.as_str(), "beautiful person");
+                        webhook_message(
+                            ctx,
+                            new_message,
+                            new_message.author_nick(&ctx.http).await.unwrap_or(new_message.author.name.to_string()).as_str(),
+                            new_message.author.avatar_url().unwrap().as_str(),
+                            &new_content,
+                        )
+                        .await;
+                        new_message.delete(&ctx.http, Some("pure")).await?; 
+                    }
+                    sqlx::query!(
+                        "INSERT INTO words_count (word, guild_id, count) VALUES (?, ?, 1)
+                        ON DUPLICATE KEY UPDATE count = count + 1", "nigga", id
                     )
-                    .await;
-                    new_message.delete(&ctx.http, Some("pure")).await?;
+                    .execute(&mut *conn)
+                    .await
+                    .unwrap();
                 }
                 if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message

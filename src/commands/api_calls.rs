@@ -555,7 +555,7 @@ pub async fn urban(
 
         if len > 1 {
             while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                .timeout(Duration::from_secs(3600))
+                .timeout(Duration::from_secs(600))
              /*   .filter(move |interaction| {
                     let id = interaction.data.custom_id.as_str();
                     id == next_id || id == prev_id
