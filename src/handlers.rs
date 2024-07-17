@@ -48,6 +48,19 @@ pub async fn event_handler(
                 .execute(&mut *conn)
                 .await
                 .unwrap();
+                if new_message.author.id == 538731291970109471 {
+                    new_message
+                        .react(
+                            &ctx.http,
+                            ReactionType::try_from(
+                                emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu")
+                                    .await
+                                    .as_str(),
+                            )
+                            .unwrap(),
+                        )
+                        .await?;
+                }
                 if let Ok(record) = sqlx::query!(
                     "SELECT spoiler_channel FROM guild_settings WHERE guild_id = ?",
                     id

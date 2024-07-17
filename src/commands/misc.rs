@@ -129,10 +129,14 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
-    let member = ctx
-        .http()
-        .get_member(ctx.guild_id().unwrap(), reply.author.id)
-        .await?;
+    let member = 
+        //if !reply.webhook_id.is_some() {
+        ctx.http()
+            .get_member(ctx.guild_id().unwrap(), reply.author.id)
+            .await?;
+ //   } else {
+   //     reply.author
+   // };
     let avatar_image = {
         let avatar_url = member
             .avatar_url()
@@ -145,6 +149,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
             .unwrap();
         load_from_memory(&avatar_bytes).unwrap().to_rgba8()
     };
+    let message_url = reply.link();
     let name = member.nick.unwrap_or(reply.author.name);
     let content = reply.content.to_string();
     quote_image(&avatar_image, name.as_str(), &content)
@@ -153,7 +158,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
         .unwrap();
     let paths = [CreateAttachment::path("quote.webp").await?];
     ctx.channel_id()
-        .send_files(ctx.http(), paths.clone(), CreateMessage::new())
+        .send_files(ctx.http(), paths.clone(), CreateMessage::new().content(&message_url))
         .await?;
 
     let mut conn = ctx.data().db.acquire().await?;
@@ -166,7 +171,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     {
         let quote_channel = ChannelId::new(record.quotes_channel);
         quote_channel
-            .send_files(ctx.http(), paths, CreateMessage::new())
+            .send_files(ctx.http(), paths, CreateMessage::new().content(message_url))
             .await?;
     }
     remove_file(Path::new("quote.webp")).await?;

@@ -60,6 +60,7 @@ pub async fn start() {
                 register_commands(),
                 animanga::anime_scene(),
                 api_calls::ai_image(),
+                api_calls::ai_summarize(),
                 api_calls::ai_text(),
                 api_calls::anilist_anime(),
                 api_calls::eightball(),

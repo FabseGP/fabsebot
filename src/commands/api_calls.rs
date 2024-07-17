@@ -40,6 +40,53 @@ pub async fn ai_image(
 }
 
 #[derive(Deserialize, Serialize)]
+struct FabseAISummary {
+    result: AiResponseSummary,
+}
+#[derive(Deserialize, Serialize)]
+struct AiResponseSummary {
+    summary: String,
+}
+
+/// Did someone say AI summarize?
+#[poise::command(prefix_command, slash_command)]
+pub async fn ai_summarize(
+    ctx: Context<'_>,
+    #[description = "Maximum length of summary in words"] length: u64,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let reply = match ctx
+        .channel_id()
+        .message(&ctx.http(), ctx.id().into())
+        .await?
+    {
+        msg if msg.referenced_message.is_some() => msg.referenced_message.unwrap(),
+        _ => {
+            ctx.say("bruh, reply to a message").await?;
+            return Ok(());
+        }
+    };
+    let client = &ctx.data().req_client;
+    let resp = client
+        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/facebook/bart-large-cnn")
+        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
+        .json(&json!({        
+            "input_text": reply.content.to_string(),
+            "max_length": length 
+        }))
+        .send()
+        .await?;
+    let output: FabseAISummary = resp.json().await?;
+    if !output.result.summary.is_empty() {
+        ctx.say(output.result.summary).await?;
+    } else {
+        ctx.send(CreateReply::default().content("this is too much work"))
+            .await?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize, Serialize)]
 struct FabseAIText {
     result: AiResponseText,
 }
@@ -275,6 +322,7 @@ pub async fn memegen(
     Ok(())
 }
 
+/// When someone offended you
 #[poise::command(prefix_command, slash_command)]
 pub async fn roast(
     ctx: Context<'_>,
