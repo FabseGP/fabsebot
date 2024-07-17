@@ -62,7 +62,7 @@ pub async fn event_handler(
                     }
                 }
                 if new_message.author.id == 538731291970109471 && content.contains("nigga") {
-                    let re = Regex::new(r"(?i)\bnigga\b").unwrap();
+                    let re = Regex::new(r"(?i)\bnigg?a[s]?\b").unwrap();
                     let new_content = re.replace_all(new_message.content.as_str(), "beautiful person");
                     webhook_message(
                         ctx,
@@ -218,6 +218,19 @@ pub async fn event_handler(
                     )
                     .await;
                 }
+                else if content.contains("ayaan") && content != "ayaan" {
+                    new_message
+                        .channel_id
+                        .send_message(
+                        &ctx.http,
+                            CreateMessage::default().embed(embed_builder(
+                            "I heard you mentioned ayaan so here's a cute waifu",
+                            &get_waifu().await,
+                            Colour(0x00b0f4),
+                            )),
+                        )
+                        .await?;
+                } 
                 match content.as_str() {
                     "fabse" | "fabseman" => {
                         webhook_message(
