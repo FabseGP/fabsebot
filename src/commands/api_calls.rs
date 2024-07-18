@@ -1,12 +1,12 @@
 use crate::types::{Context, Error};
-use crate::utils::random_number;
+use crate::utils::{get_gif, random_number};
 
 use poise::serenity_prelude::{CreateAttachment, CreateInteractionResponse, ComponentInteractionCollector, CreateEmbed, CreateButton, CreateActionRow, ButtonStyle, EditMessage};
 use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::futures::StreamExt;
-use sqlx::Row;
+use sqlx::{query, Row};
 use std::time::Duration;
 
 use urlencoding::encode;
@@ -234,15 +234,6 @@ pub async fn eightball(
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
-struct GifResponse {
-    results: Vec<GifData>,
-}
-#[derive(Deserialize, Serialize)]
-struct GifData {
-    url: String,
-}
-
 /// Gifing
 #[poise::command(prefix_command, slash_command)]
 pub async fn gif(
@@ -251,22 +242,9 @@ pub async fn gif(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    let encoded_input = encode(&input);
-    let request_url = format!(
-        "https://tenor.googleapis.com/v2/search?q={search}&key={key}&contentfilter=medium&limit=30",
-        search = encoded_input,
-        key = "AIzaSyD-XwC-iyuRIZQrcaBzCuTLfAvEGh3DPwo"
-    );
-    let client = &ctx.data().req_client;
-    let request = client.get(request_url).send().await?;
-    let urls: GifResponse = request.json().await.unwrap();
-    if !urls.results.is_empty() {
-        ctx.send(CreateReply::default().content(&urls.results[random_number(30)].url))
-            .await?;
-    } else {
-        ctx.send(CreateReply::default().content("life is not gifing"))
-            .await?;
-    }
+    let url = get_gif(input).await;
+    ctx.send(CreateReply::default().content(url))
+        .await?;
     Ok(())
 }
 
@@ -347,7 +325,7 @@ pub async fn roast(
     let message_count = {
         let id: u64 = guild_id.into();
         let mut conn = ctx.data().db.acquire().await?;
-        let result = sqlx::query(
+        let result = query(
         "SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?",
         )
         .bind(id)

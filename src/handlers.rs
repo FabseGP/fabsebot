@@ -7,6 +7,7 @@ use serenity::{
     gateway::ActivityData,
     model::{channel::ReactionType, id::ChannelId, user::OnlineStatus},
 };
+use sqlx::query;
 
 pub async fn event_handler(
     framework: poise::FrameworkContext<'_, Data, Error>,
@@ -40,20 +41,19 @@ pub async fn event_handler(
         FullEvent::Message { new_message } => {
             if !new_message.author.bot() {
                 let content = new_message.content.to_lowercase();
-                let mut conn = data.db.acquire().await?;
                 let id: u64 = new_message.guild_id.unwrap().into();
-                sqlx::query!(
+                query!(
                     "INSERT INTO message_count (guild_id, user_name, messages) VALUES (?, ?, 1)
                     ON DUPLICATE KEY UPDATE messages = messages + 1", id, new_message.author.name.to_string()
                 )
-                .execute(&mut *conn)
+                .execute(&mut *data.db.acquire().await?)
                 .await
                 .unwrap();
-                if let Ok(record) = sqlx::query!(
+                if let Ok(record) = query!(
                     "SELECT spoiler_channel FROM guild_settings WHERE guild_id = ?",
                     id
                 )
-                .fetch_one(&mut *conn)
+                .fetch_one(&mut *data.db.acquire().await?)
                 .await
                 {
                     let spoiler_channel = ChannelId::new(record.spoiler_channel);
@@ -63,7 +63,7 @@ pub async fn event_handler(
                 }
                 if content.contains("nigga") {
                     if new_message.author.id == 538731291970109471 {              
-                        let re = Regex::new(r"(?i)\bnigg?a[s]?\b").unwrap();
+                        let re = Regex::new(r"(?i)nigg?a").unwrap();
                         let new_content = re.replace_all(new_message.content.as_str(), "beautiful person");
                         webhook_message(
                             ctx,
@@ -75,11 +75,11 @@ pub async fn event_handler(
                         .await;
                         new_message.delete(&ctx.http, Some("pure")).await?; 
                     }
-                    sqlx::query!(
+                    query!(
                         "INSERT INTO words_count (word, guild_id, count) VALUES (?, ?, 1)
                         ON DUPLICATE KEY UPDATE count = count + 1", "nigga", id
                     )
-                    .execute(&mut *conn)
+                    .execute(&mut *data.db.acquire().await?)
                     .await
                     .unwrap();
                 }
@@ -96,7 +96,7 @@ pub async fn event_handler(
                         )
                         .await?;
                 } else if content.contains("<@1014524859532980255>") && !content.contains("!user") {
-                    let fabse_life_gifs = [
+                  /*  let fabse_life_gifs = [
                         "https://media1.tenor.com/m/hcjOU7y8RgMAAAAd/pokemon-psyduck.gif",
                         "https://media1.tenor.com/m/z0ZTwNfJJDAAAAAC/psyduck-psyduck-x.gif",
                         "https://media1.tenor.com/m/7lgxLiGtCX4AAAAC/psyduck-psyduck-x.gif",
@@ -105,9 +105,6 @@ pub async fn event_handler(
                         "https://media1.tenor.com/m/rdkYJPdWkyAAAAAC/psychokwak-psyduck.gif",
                         "https://media1.tenor.com/m/w5m9Sh-s4igAAAAC/psychokwak-psyduck.gif"
                     ];
-                    let fabse_travel_gifs = [
-                        "https://media1.tenor.com/m/-OS17IIpcL0AAAAC/psyduck-pokemon.gif"
-                    ]; /*
                     new_message
                         .channel_id
                         .send_message(
@@ -118,7 +115,10 @@ pub async fn event_handler(
                                 Colour(0xf8e45c),
                             )),
                         )
-                        .await?; */
+                        .await?;  */
+                    let fabse_travel_gifs = [
+                        "https://media1.tenor.com/m/-OS17IIpcL0AAAAC/psyduck-pokemon.gif"
+                    ]; 
                     new_message
                         .channel_id
                         .send_message(
@@ -147,8 +147,7 @@ pub async fn event_handler(
                         )
                         .await?;
 
-                } else if (content.contains("<@999604056072929321>")
-                    || content == "ayaan")
+                } else if content.contains("<@999604056072929321>")
                     && !content.contains("!user_misuse")
                 {
                     new_message
@@ -277,7 +276,7 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
-                } else if content.contains("fabseman_willbeatu") {
+                } else if content.contains("fabse") {
                     new_message
                         .react(
                             &ctx.http,
@@ -300,8 +299,7 @@ pub async fn event_handler(
                         &response,
                     )
                     .await;
-                }
-                else if content.contains("ayaan") && content != "ayaan" {
+                } else if content.contains("ayaan") {
                     new_message
                         .channel_id
                         .send_message(
@@ -313,37 +311,30 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
-                } 
-                match content.as_str() {
-                    "fabse" | "fabseman" => {
-                        webhook_message(
-                            ctx,
-                            new_message,
-                            "yotsuba",
-                            "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png",
-                            "# such magnificence",
-                        )
-                        .await;
-                        new_message
-                            .react(
-                                &ctx.http,
-                                ReactionType::try_from(
-                                    emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu").await,
-                                )
-                                .unwrap(),
+                } else if content == "fabse" || content == "fabseman" {
+                    webhook_message(
+                        ctx,
+                        new_message,
+                        "yotsuba",
+                        "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png",
+                        "# such magnificence",
+                    )
+                    .await;
+                    new_message
+                        .react(
+                            &ctx.http,
+                            ReactionType::try_from(
+                                emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu").await,
                             )
-                            .await?;
-                    }
-                    "star platinum" => {
-                        webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "ZAA WARUDOOOOO").await;
-                    }
-                    "floppaganda" => {
-                        new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://i.imgur.com/Pys97pb.png")).await?;
-                    }
-                    "floppa" => {
-                        new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://libreddit.bus-hit.me/img/3bpsrhciju091.jpg")).await?;
-                    }
-                    _ => {}
+                            .unwrap(),
+                        )
+                        .await?;
+                } else if content == "star_platinum" {
+                    webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "ZAA WARUDOOOOO").await;
+                } else if content == "floppaganda" {
+                    new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://i.imgur.com/Pys97pb.png")).await?;
+                } else if content == "floppa" {
+                    new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://libreddit.bus-hit.me/img/3bpsrhciju091.jpg")).await?;
                 }
             }
         } /*

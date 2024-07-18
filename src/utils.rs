@@ -1,11 +1,11 @@
-use poise::serenity_prelude::{self as serenity, CreateEmbed, ExecuteWebhook};
-
+use crate::types::get_http_client;
 use ab_glyph::{FontArc, PxScale};
 use image::{
     imageops::{overlay, resize, FilterType::Gaussian},
     load_from_memory, Rgba, RgbaImage,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
+use poise::serenity_prelude::{self as serenity, Context, CreateEmbed, ExecuteWebhook};
 use rand::Rng;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -13,9 +13,11 @@ use serde_json::json;
 use serenity::{
     builder::CreateAttachment,
     model::{colour::Colour, prelude::Timestamp},
+    Message,
 };
 use std::{cmp::Ordering, fs, fs::File, io::Write, path::Path};
 use textwrap::wrap;
+use urlencoding::encode;
 
 pub fn embed_builder<'a>(title: &'a str, url: &'a str, colour: Colour) -> CreateEmbed<'a> {
     CreateEmbed::new()
@@ -39,6 +41,32 @@ pub async fn emoji_id(
             }
         }
         Err(_) => "bruh".to_string(),
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct GifResponse {
+    results: Vec<GifData>,
+}
+#[derive(Deserialize, Serialize)]
+struct GifData {
+    url: String,
+}
+
+pub async fn get_gif(input: String) -> String {
+    let encoded_input = encode(&input);
+    let request_url = format!(
+        "https://tenor.googleapis.com/v2/search?q={search}&key={key}&contentfilter=medium&limit=30",
+        search = encoded_input,
+        key = "AIzaSyD-XwC-iyuRIZQrcaBzCuTLfAvEGh3DPwo"
+    );
+    let client = get_http_client();
+    let request = client.get(request_url).send().await.unwrap();
+    let urls: GifResponse = request.json().await.unwrap();
+    if !urls.results.is_empty() {
+        urls.results[random_number(30)].url.to_string()
+    } else {
+        "life is not gifing".to_string()
     }
 }
 
@@ -243,12 +271,12 @@ pub fn random_number(count: usize) -> usize {
     rand::thread_rng().gen_range(0..count)
 }
 
-pub async fn spoiler_message(ctx: &serenity::Context, message: &serenity::Message, text: &str) {
+pub async fn spoiler_message(ctx: &Context, message: &serenity::Message, text: &str) {
     let avatar_url = message.author.avatar_url().unwrap();
     let nick = message.author_nick(&ctx.http).await;
     let username = nick.as_deref().unwrap_or(message.author.name.as_str());
     let mut is_first = true;
-    let client = reqwest::Client::new();
+    let client = get_http_client();
     for attachment in &message.attachments {
         let target = &attachment.url.to_string();
         let response = client.get(target).send().await;
@@ -282,19 +310,19 @@ struct WaifuData {
 
 pub async fn get_waifu() -> String {
     let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
-    let client = reqwest::Client::new();
+    let client = get_http_client();
     let request = client.get(request_url).send().await.unwrap();
     let url: WaifuResponse = request.json().await.unwrap();
     if !url.images.is_empty() {
-        url.images[0].url.clone()
+        url.images[0].url.to_string()
     } else {
         "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_string()
     }
 }
 
 pub async fn webhook_message(
-    ctx: &serenity::Context,
-    message: &serenity::Message,
+    ctx: &Context,
+    message: &Message,
     name: &str,
     url: &str,
     output: &str,
@@ -311,7 +339,8 @@ pub async fn webhook_message(
         }
     };
     if existing_webhooks.len() >= 15 {
-        for webhook in &existing_webhooks {
+        let webhooks_to_delete = existing_webhooks.len() - 14;
+        for webhook in existing_webhooks.iter().take(webhooks_to_delete) {
             let _ = (ctx.http).delete_webhook(webhook.id, None).await;
         }
     }
@@ -342,8 +371,8 @@ pub async fn webhook_message(
 }
 
 pub async fn webhook_file(
-    ctx: &serenity::Context,
-    message: &serenity::Message,
+    ctx: &Context,
+    message: &Message,
     name: &str,
     url: &str,
     text: &str,
@@ -363,7 +392,8 @@ pub async fn webhook_file(
         }
     };
     if existing_webhooks.len() >= 15 {
-        for webhook in &existing_webhooks {
+        let webhooks_to_delete = existing_webhooks.len() - 14;
+        for webhook in existing_webhooks.iter().take(webhooks_to_delete) {
             let _ = (ctx.http).delete_webhook(webhook.id, None).await;
         }
     }

@@ -2,12 +2,15 @@ use crate::types::{Context, Error};
 use crate::utils::quote_image;
 
 use image::load_from_memory;
-use nonmax::NonMaxU16;
 use poise::serenity_prelude::{
     self as serenity, ChannelId, CreateAttachment, CreateEmbed, CreateMessage, EditChannel,
 };
 use poise::CreateReply;
-use serenity::model::{channel::Channel, Timestamp};
+use serenity::{
+    model::{channel::Channel, Timestamp},
+    nonmax::NonMaxU16,
+};
+use sqlx::{query, query_as};
 use std::{path::Path, process, sync::Arc};
 use tokio::fs::remove_file;
 
@@ -93,14 +96,13 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     } else {
         "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_string()
     };
-    let mut conn = ctx.data().db.acquire().await?;
     let id: u64 = ctx.guild_id().unwrap().into();
-    let mut users = sqlx::query_as!(
+    let mut users = query_as!(
         User,
         "SELECT user_name, messages FROM message_count WHERE guild_id = ?",
         id
     )
-    .fetch_all(&mut *conn)
+    .fetch_all(&mut *ctx.data().db.acquire().await?)
     .await?;
     users.sort_by(|a, b| b.messages.cmp(&a.messages));
     let mut embed = CreateEmbed::new()
@@ -180,12 +182,11 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
         )
         .await?;
 
-    let mut conn = ctx.data().db.acquire().await?;
-    if let Ok(record) = sqlx::query!(
+    if let Ok(record) = query!(
         "SELECT quotes_channel FROM guild_settings WHERE guild_id = ?",
         ctx.guild_id().unwrap().get()
     )
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *ctx.data().db.acquire().await?)
     .await
     {
         let quote_channel = ChannelId::new(record.quotes_channel);
@@ -200,14 +201,13 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
 /// Hmm, I wonder how pure we are
 #[poise::command(prefix_command, slash_command)]
 pub async fn pure_count(ctx: Context<'_>) -> Result<(), Error> {
-    let mut conn = ctx.data().db.acquire().await?;
     let id: u64 = ctx.guild_id().unwrap().into();
-    if let Ok(record) = sqlx::query!(
+    if let Ok(record) = query!(
         "SELECT count FROM words_count WHERE word = ? AND guild_id = ?",
         "nigga",
         id
     )
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *ctx.data().db.acquire().await?)
     .await
     {
         ctx.say(format!(

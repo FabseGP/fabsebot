@@ -2,6 +2,7 @@ use crate::types::{Context, Error};
 
 use poise::CreateReply;
 use serenity::model::channel::Channel;
+use sqlx::query;
 
 /// Configure the occurence of dead chat gifs
 #[poise::command(owners_only, prefix_command, slash_command)]
@@ -10,8 +11,7 @@ pub async fn dead_chat(
     #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: u8,
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
-    let mut conn = ctx.data().db.acquire().await?;
-    sqlx::query!(
+    query!(
         "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel) VALUES (?, ?, ?, 0, 0)
         ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
         ctx.guild_id().unwrap().get(),
@@ -20,10 +20,7 @@ pub async fn dead_chat(
         occurrence,
         channel.id().to_string()
     )
-    .bind(ctx.guild_id().unwrap().get())
-    .bind(occurrence)
-    .bind(channel.id().to_string())
-    .execute(&mut *conn)
+    .execute(&mut *ctx.data().db.acquire().await?)
     .await
     .unwrap();
     ctx.send(
@@ -44,12 +41,11 @@ pub async fn quote_channel(
     ctx: Context<'_>,
     #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
-    let mut conn = ctx.data().db.acquire().await?;
     sqlx::query!(
         "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel) VALUES (?, 0, 0, ?, 0)
         ON DUPLICATE KEY UPDATE quotes_channel = ?", ctx.guild_id().unwrap().get(), channel.id().to_string(), channel.id().to_string()
     )
-    .execute(&mut *conn)
+    .execute(&mut *ctx.data().db.acquire().await?)
     .await
     .unwrap();
     ctx.send(
@@ -70,12 +66,11 @@ pub async fn spoiler_channel(
     ctx: Context<'_>,
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
-    let mut conn = ctx.data().db.acquire().await?;
     sqlx::query!(
         "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel) VALUES (?, 0, 0, 0, ?)
         ON DUPLICATE KEY UPDATE quotes_channel = ?", ctx.guild_id().unwrap().get(), channel.id().to_string(), channel.id().to_string()
     )
-    .execute(&mut *conn)
+    .execute(&mut *ctx.data().db.acquire().await?)
     .await
     .unwrap();
     ctx.send(

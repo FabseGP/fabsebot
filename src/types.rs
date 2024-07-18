@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use reqwest::Client;
 use std::sync::Arc;
 
@@ -8,3 +9,11 @@ pub struct Data {
     pub music_manager: Arc<songbird::Songbird>,
 }
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
+
+lazy_static! {
+    static ref HTTP_CLIENT: Arc<Client> = Arc::new(Client::new());
+}
+
+pub fn get_http_client() -> Arc<Client> {
+    Arc::clone(&HTTP_CLIENT)
+}
