@@ -20,18 +20,25 @@ struct EventResponse {
 #[poise::command(prefix_command, slash_command)]
 pub async fn ai_anime(
     ctx: Context<'_>,
+    #[description = "nsfw?"]
+    nsfw: bool,
     #[description = "Prompt"]
     #[rest]
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_input = encode(&prompt);
+    let encoded_input = 
+        if nsfw {
+            format!("nsfw, {}", encode(&prompt))
+        } else {
+            encode(&prompt).to_string()
+    };
     let url = "https://cagliostrolab-animagine-xl-3-1.hf.space/call/run";
     let client = &ctx.data().req_client;
     let request_body = json!({
         "data": [
             encoded_input,
-            "nsfw, lowres, (bad), text, error, fewer, extra, missing, worst quality, jpeg artifacts, low quality, watermark, unfinished, displeasing, oldest, early, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]",
+            "",
             2118373563,
             2048,
             2048,
@@ -40,7 +47,7 @@ pub async fn ai_anime(
             "Euler a",
             "1024 x 1024",
             "(None)",
-            "Standard v3.1",
+            "Heavy v3.1",
             false,
             0,
             1,
