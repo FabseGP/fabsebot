@@ -3,13 +3,81 @@ use crate::utils::{get_gif, random_number};
 
 use poise::serenity_prelude::{CreateAttachment, CreateInteractionResponse, ComponentInteractionCollector, CreateEmbed, CreateButton, CreateActionRow, ButtonStyle, EditMessage};
 use poise::CreateReply;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::futures::StreamExt;
 use sqlx::{query, Row};
 use std::time::Duration;
-
 use urlencoding::encode;
+
+#[derive(Deserialize, Serialize)]
+struct EventResponse {
+    event_id: String,
+}
+
+/// Anime image
+#[poise::command(prefix_command, slash_command)]
+pub async fn ai_anime(
+    ctx: Context<'_>,
+    #[description = "Prompt"]
+    #[rest]
+    prompt: String,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let encoded_input = encode(&prompt);
+    let url = "https://cagliostrolab-animagine-xl-3-1.hf.space/call/run";
+    let client = &ctx.data().req_client;
+    let request_body = json!({
+        "data": [
+            encoded_input,
+            "nsfw, lowres, (bad), text, error, fewer, extra, missing, worst quality, jpeg artifacts, low quality, watermark, unfinished, displeasing, oldest, early, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]",
+            2118373563,
+            2048,
+            2048,
+            7,
+            28,
+            "Euler a",
+            "1024 x 1024",
+            "(None)",
+            "Standard v3.1",
+            false,
+            0,
+            1,
+            true,
+        ]
+    });
+    let resp = client
+        .post(url)   
+        .json(&request_body)
+        .send()
+        .await?; 
+    let output: EventResponse = resp.json().await?;
+    if !output.event_id.is_empty() {
+        let status_url = format!("{}/{}", url, output.event_id);
+        let path_regex = Regex::new(r#""path":\s*"(.*?)""#).unwrap();
+        loop {
+            let status_resp = client.get(&status_url).send().await?;
+            let status_text = status_resp.text().await?;
+            if status_text.contains("event: complete") {
+                if let Some(captures) = path_regex.captures(&status_text) {
+                    if let Some(path) = captures.get(1) {
+                        let image_url = format!("https://cagliostrolab-animagine-xl-3-1.hf.space/file={}", path.as_str());
+                        let image_data = client.get(&image_url).send().await?;
+                        let image_data = image_data.bytes().await?.to_vec();
+                        let file = CreateAttachment::bytes(image_data, "output.png");
+                        ctx.send(CreateReply::default().attachment(file)).await?;
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)))
+            .await?;
+    }   
+    Ok(())
+}
 
 /// Did someone say AI image?
 #[poise::command(prefix_command, slash_command)]
@@ -22,8 +90,12 @@ pub async fn ai_image(
     ctx.defer().await?;
     let encoded_input = encode(&prompt);
     let client = &ctx.data().req_client;
+    let models = [
+        "https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/lykon/dreamshaper-8-lcm", 
+        "https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/bytedance/stable-diffusion-xl-lightning"
+    ];
     let resp = client
-        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/bytedance/stable-diffusion-xl-lightning")
+        .post(models[random_number(models.len())])
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
         .json(&json!({ "prompt": encoded_input }))
         .send()
@@ -33,9 +105,66 @@ pub async fn ai_image(
         let file = CreateAttachment::bytes(image_data, "output.png");
         ctx.send(CreateReply::default().attachment(file)).await?;
     } else {
-        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to ask", prompt)))
+        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)))
             .await?;
     }
+    Ok(())
+}
+
+/// Midjourney image
+#[poise::command(prefix_command, slash_command)]
+pub async fn ai_midjourney(
+    ctx: Context<'_>,
+    #[description = "Prompt"]
+    #[rest]
+    prompt: String,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let encoded_input = encode(&prompt);
+    let url = "https://mukaist-Midjourney.hf.space/call/run";
+    let client = &ctx.data().req_client;
+    let request_body = json!({
+        "data": [
+            encoded_input,
+            "(deformed iris, deformed pupils, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime:1.4), text, close up, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck)",
+            true,
+            "2560 x 1440",
+            0,
+            2048,
+            2048,
+            6,
+            true
+        ]
+    });
+    let resp = client
+        .post(url)   
+        .json(&request_body)
+        .send()
+        .await?;
+    let output: EventResponse = resp.json().await?;
+    if !output.event_id.is_empty() {
+        let status_url = format!("{}/{}", url, output.event_id);
+        let path_regex = Regex::new(r#""path":\s*"(.*?)""#).unwrap();
+        loop {
+            let status_resp = client.get(&status_url).send().await?;
+            let status_text = status_resp.text().await?;
+            if status_text.contains("event: complete") {
+                if let Some(captures) = path_regex.captures(&status_text) {
+                    if let Some(path) = captures.get(1) {
+                        let image_url = format!("https://mukaist-midjourney.hf.space/file={}", path.as_str());
+                        let image_data = client.get(&image_url).send().await?;
+                        let image_data = image_data.bytes().await?.to_vec();
+                        let file = CreateAttachment::bytes(image_data, "output.png");
+                        ctx.send(CreateReply::default().attachment(file)).await?;
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)))
+            .await?;
+    }  
     Ok(())
 }
 
@@ -488,7 +617,7 @@ pub async fn urban(
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await.unwrap();
-    if !data.list.is_empty() {
+    if !data.list[0].definition.is_empty() {
         let len = data.list.len() - 1;
         let mut index = 0;
         let response_chars: Vec<char> = data.list[0].definition.chars().collect();
@@ -616,7 +745,7 @@ pub async fn waifu(
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
     let url: WaifuResponse = request.json().await.unwrap();
-    if !url.images.is_empty() {
+    if !url.images[0].url.is_empty() {
         ctx.send(CreateReply::default().content(&url.images[0].url))
             .await?;
     } else {

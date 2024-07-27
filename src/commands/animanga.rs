@@ -53,7 +53,7 @@ pub async fn anime_scene(
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
     let scene: MoeResponse = request.json().await.unwrap();
-    if !scene.result.is_empty() {
+    if !scene.result[0].video.is_empty() {
         ctx.send(
             CreateReply::default().embed(
                 CreateEmbed::new()

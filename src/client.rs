@@ -59,7 +59,9 @@ pub async fn start() {
             commands: vec![
                 register_commands(),
                 animanga::anime_scene(),
+                api_calls::ai_anime(),
                 api_calls::ai_image(),
+                api_calls::ai_midjourney(),
                 api_calls::ai_summarize(),
                 api_calls::ai_text(),
                 api_calls::anilist_anime(),

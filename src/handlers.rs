@@ -1,5 +1,6 @@
 use crate::types::{Data, Error};
-use crate::utils::{embed_builder, emoji_id, get_waifu, random_number, spoiler_message, webhook_message};
+use crate::utils::{embed_builder, emoji_id, get_waifu, quote_image, random_number, spoiler_message, webhook_message};
+use image::load_from_memory;
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
 use regex::Regex;
 use serenity::{
@@ -8,6 +9,8 @@ use serenity::{
     model::{channel::ReactionType, id::ChannelId, user::OnlineStatus},
 };
 use sqlx::query;
+use std::path::Path;
+use tokio::fs::remove_file;
 
 pub async fn event_handler(
     framework: poise::FrameworkContext<'_, Data, Error>,
@@ -96,7 +99,7 @@ pub async fn event_handler(
                         )
                         .await?;
                 } else if content.contains("<@1014524859532980255>") && !content.contains("!user") {
-                  /*  let fabse_life_gifs = [
+                    let fabse_life_gifs = [
                         "https://media1.tenor.com/m/hcjOU7y8RgMAAAAd/pokemon-psyduck.gif",
                         "https://media1.tenor.com/m/z0ZTwNfJJDAAAAAC/psyduck-psyduck-x.gif",
                         "https://media1.tenor.com/m/7lgxLiGtCX4AAAAC/psyduck-psyduck-x.gif",
@@ -115,7 +118,7 @@ pub async fn event_handler(
                                 Colour(0xf8e45c),
                             )),
                         )
-                        .await?;  */
+                        .await?; /*
                     let fabse_travel_gifs = [
                         "https://media1.tenor.com/m/-OS17IIpcL0AAAAC/psyduck-pokemon.gif"
                     ]; 
@@ -129,7 +132,7 @@ pub async fn event_handler(
                                 Colour(0xf8e45c),
                             )),
                         )
-                        .await?;
+                        .await?; */
                 } else if (content.contains("<@409113157550997515>")
                     || content == "nito"
                     || content == "denito")
@@ -218,6 +221,31 @@ pub async fn event_handler(
                         Colour(0x00b0f4),
                     )))
                     .await?;
+
+                } else if content == "fabse" || content == "fabseman" {
+                    webhook_message(
+                        ctx,
+                        new_message,
+                        "yotsuba",
+                        "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png",
+                        "# such magnificence",
+                    )
+                    .await;
+                    new_message
+                        .react(
+                            &ctx.http,
+                            ReactionType::try_from(
+                                emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu").await,
+                            )
+                            .unwrap(),
+                        )
+                        .await?;
+                } else if content == "star_platinum" {
+                    webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "ZAA WARUDOOOOO").await;
+                } else if content == "floppaganda" {
+                    new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://i.imgur.com/Pys97pb.png")).await?;
+                } else if content == "floppa" {
+                    new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://libreddit.bus-hit.me/img/3bpsrhciju091.jpg")).await?;
                 } else if content.contains("furina") {  
                     let furina_gifs = [
                         "https://media1.tenor.com/m/-DdP7PTL6r8AAAAC/furina-focalors.gif",
@@ -311,30 +339,80 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
-                } else if content == "fabse" || content == "fabseman" {
-                    webhook_message(
-                        ctx,
-                        new_message,
-                        "yotsuba",
-                        "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png",
-                        "# such magnificence",
-                    )
-                    .await;
-                    new_message
-                        .react(
-                            &ctx.http,
-                            ReactionType::try_from(
-                                emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu").await,
-                            )
-                            .unwrap(),
-                        )
+                } else if content.contains("<@949479338275913799>") && !content.contains("!user_misuse") {
+                    let reply = match new_message
+                        .channel_id
+                        .message(&ctx.http, new_message.id)
+                        .await?
+                    {
+                        msg if msg.referenced_message.is_some() => msg.referenced_message.unwrap(),
+                        _ => {
+                            new_message.channel_id.say(&ctx.http, "bruh, reply to a message").await?;
+                            return Ok(());
+                        }
+                    };
+                    let message_url = reply.link();
+                    let message_content = reply.content.to_string();
+                    if reply.webhook_id.is_none() {
+                        let member = ctx
+                        .http
+                        .get_member(new_message.guild_id.unwrap(), reply.author.id)
                         .await?;
-                } else if content == "star_platinum" {
-                    webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "ZAA WARUDOOOOO").await;
-                } else if content == "floppaganda" {
-                    new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://i.imgur.com/Pys97pb.png")).await?;
-                } else if content == "floppa" {
-                    new_message.channel_id.send_message(&ctx.http, CreateMessage::default().content("https://libreddit.bus-hit.me/img/3bpsrhciju091.jpg")).await?;
+                        let avatar_image = {
+                            let avatar_url = member
+                                .avatar_url()
+                                .unwrap_or(reply.author.avatar_url().unwrap());
+                            let avatar_bytes = reqwest::get(&avatar_url)
+                                .await
+                                .unwrap()
+                                .bytes()
+                                .await
+                                .unwrap();
+                            load_from_memory(&avatar_bytes).unwrap().to_rgba8()
+                        };
+                        let name = member.nick.unwrap_or(reply.author.name);
+                        quote_image(&avatar_image, name.as_str(), &message_content)
+                            .await
+                            .save("quote.webp")
+                            .unwrap();
+                    } else {
+                        let avatar_image = {
+                            let avatar_url = reply.author.avatar_url().unwrap();
+                            let avatar_bytes = reqwest::get(&avatar_url)
+                                .await
+                                .unwrap()
+                                .bytes()
+                                .await
+                                .unwrap();
+                            load_from_memory(&avatar_bytes).unwrap().to_rgba8()
+                        };
+                        let name = reply.author.name.to_string();
+                        quote_image(&avatar_image, name.as_str(), &message_content)
+                            .await
+                            .save("quote.webp")
+                            .unwrap();
+                    }
+                    let paths = [CreateAttachment::path("quote.webp").await?];
+                    new_message.channel_id
+                        .send_files(
+                        &ctx.http,
+                        paths.clone(),
+                        CreateMessage::new().content(&message_url),
+                    )
+                    .await?;
+                    if let Ok(record) = query!(
+                        "SELECT quotes_channel FROM guild_settings WHERE guild_id = ?",
+                        new_message.guild_id.unwrap().get()
+                    )
+                    .fetch_one(&mut *data.db.acquire().await?)                    
+                    .await
+                    {
+                        let quote_channel = ChannelId::new(record.quotes_channel);
+                        quote_channel
+                            .send_files(&ctx.http, paths, CreateMessage::new().content(message_url))
+                            .await?;
+                    }
+                    remove_file(Path::new("quote.webp")).await?;
                 }
             }
         } /*

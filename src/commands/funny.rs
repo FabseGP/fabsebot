@@ -80,8 +80,9 @@ pub async fn user_misuse(
             }
         };
         if existing_webhooks.len() >= 15 {
-            for webhook in &existing_webhooks {
-                ctx.http().delete_webhook(webhook.id, None).await?;
+            let webhooks_to_delete = existing_webhooks.len() - 14;
+            for webhook in existing_webhooks.iter().take(webhooks_to_delete) {
+                let _ = (ctx.http()).delete_webhook(webhook.id, None).await;
             }
         }
 

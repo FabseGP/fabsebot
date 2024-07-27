@@ -47,6 +47,7 @@ pub async fn birthday(
 pub async fn end_pgo(ctx: Context<'_>) -> Result<(), Error> {
     if ctx.author().id == 1014524859532980255 {
         process::exit(0);
+        // ctx.serenity_context().shard.shutdown_clean();
     }
     Ok(())
 }

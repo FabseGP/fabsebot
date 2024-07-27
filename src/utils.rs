@@ -63,7 +63,7 @@ pub async fn get_gif(input: String) -> String {
     let client = get_http_client();
     let request = client.get(request_url).send().await.unwrap();
     let urls: GifResponse = request.json().await.unwrap();
-    if !urls.results.is_empty() {
+    if !urls.results[0].url.is_empty() {
         urls.results[random_number(30)].url.to_string()
     } else {
         "life is not gifing".to_string()
@@ -313,7 +313,7 @@ pub async fn get_waifu() -> String {
     let client = get_http_client();
     let request = client.get(request_url).send().await.unwrap();
     let url: WaifuResponse = request.json().await.unwrap();
-    if !url.images.is_empty() {
+    if !url.images[0].url.is_empty() {
         url.images[0].url.to_string()
     } else {
         "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_string()
