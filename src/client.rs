@@ -40,7 +40,11 @@ pub async fn dynamic_prefix(
         .fetch_one(&mut *ctx.framework.user_data().db.acquire().await?)
         .await
         {
-            record.prefix
+            if record.prefix != "" {
+                "!".to_string()
+            } else {
+                record.prefix
+            }
         } else {
             "!".to_string()
         }
@@ -122,7 +126,6 @@ pub async fn start() {
             prefix_options: poise::PrefixFrameworkOptions {
                 // prefix: Some("!".into()),
                 dynamic_prefix: Some(|ctx| Box::pin(dynamic_prefix(ctx))),
-                //  prefix: Some("!".into()),
                 edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
                     Duration::from_secs(3600),
                 ))),
