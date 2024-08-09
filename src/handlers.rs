@@ -149,7 +149,12 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
-
+                /*  
+                    let guild_channel = new_message.guild_channel(&ctx.http).await.unwrap();
+                    let member = new_message.member(&ctx.http).await.unwrap();
+                    let guild_perms = new_message.guild(&ctx.cache).unwrap().user_permissions_in(&guild_channel, &member).bits();
+                    println!("{}/{}", guild_perms, new_message.guild_id.unwrap().member(&ctx.http, new_message.author.id).await.unwrap().permissions(&ctx.cache).expect("guld perms").bits());
+                */
                 } else if content.contains("<@999604056072929321>")
                     && !content.contains("!user_misuse")
                 {
@@ -327,18 +332,6 @@ pub async fn event_handler(
                         &response,
                     )
                     .await;
-                } else if content.contains("ayaan") {
-                    new_message
-                        .channel_id
-                        .send_message(
-                        &ctx.http,
-                            CreateMessage::default().embed(embed_builder(
-                            "I heard you mentioned ayaan so here's a cute waifu",
-                            &get_waifu().await,
-                            Colour(0x00b0f4),
-                            )),
-                        )
-                        .await?;
                 } else if content.contains("<@949479338275913799>") && !content.contains("!user_misuse") {
                     let reply = match new_message
                         .channel_id
