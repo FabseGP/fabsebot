@@ -40,7 +40,8 @@ pub async fn dynamic_prefix(
         .fetch_one(&mut *ctx.framework.user_data().db.acquire().await?)
         .await
         {
-            if record.prefix != "" {
+            println!("{}", record.prefix);
+            if record.prefix.is_empty() {
                 "!".to_string()
             } else {
                 record.prefix
