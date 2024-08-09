@@ -5,7 +5,8 @@ use crate::types::{Context, Data, Error};
 use poise::serenity_prelude as serenity;
 use reqwest::Client as http_client;
 use serenity::{cache::Settings, client::Client, prelude::GatewayIntents};
-use std::{env, sync::Arc, time::Duration};
+use sqlx::query;
+use std::{borrow::Cow, env, sync::Arc, time::Duration};
 
 async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     match error {
@@ -26,6 +27,26 @@ async fn register_commands(ctx: Context<'_>) -> Result<(), Error> {
     poise::builtins::register_globally(ctx.http(), commands).await?;
     ctx.say("Successfully registered slash commands!").await?;
     Ok(())
+}
+
+pub async fn dynamic_prefix(
+    ctx: poise::PartialContext<'_, Data, Error>,
+) -> Result<Option<Cow<'static, str>>, Error> {
+    let prefix = {
+        if let Ok(record) = query!(
+            "SELECT prefix FROM guild_settings WHERE guild_id = ?",
+            ctx.guild_id.unwrap().get()
+        )
+        .fetch_one(&mut *ctx.framework.user_data().db.acquire().await?)
+        .await
+        {
+            record.prefix
+        } else {
+            "!".to_string()
+        }
+    };
+
+    Ok(Some(Cow::Owned(prefix)))
 }
 
 pub async fn start() {
@@ -94,11 +115,14 @@ pub async fn start() {
                 music::skip_song(),
                 music::stop_song(),
                 settings::dead_chat(),
+                settings::prefix(),
                 settings::quote_channel(),
                 settings::spoiler_channel(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
-                prefix: Some("!".into()),
+                // prefix: Some("!".into()),
+                dynamic_prefix: Some(|ctx| Box::pin(dynamic_prefix(ctx))),
+                //  prefix: Some("!".into()),
                 edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
                     Duration::from_secs(3600),
                 ))),
@@ -128,6 +152,9 @@ pub async fn start() {
     let token = env::var("DISCORD_TOKEN").unwrap();
     let mut cache_settings = Settings::default();
     cache_settings.max_messages = 10;
+    // cache_settings.cache_channels = false;
+    // cache_settings.cache_users = false;
+    // cache_settings.cache_guilds = false;
     let client = Client::builder(&token, intents)
         .framework(framework)
         .voice_manager::<songbird::Songbird>(manager)
