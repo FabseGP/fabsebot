@@ -28,9 +28,10 @@ pub async fn event_handler(
                 "psyduck_avatar.gif"
             )
             .await?;
-            let banner =
-                CreateAttachment::url(&ctx.http, "https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fs1.zerochan.net%2FFAIRY.TAIL.600.1870606.jpg&f=1&nofb=1&ipt=1a9ade7d1a4d0a2f783a15018c53faa63a7c38bc72a288d4df37e11e7f3d0e4d&ipo=images", "psyduck_banner.png")
-                    .await?;
+            let banner =             
+                CreateAttachment::url(&ctx.http, "https://i.postimg.cc/RFWkBJfs/2024-08-2012-50-17online-video-cutter-com-ezgif-com-optimize.gif", "fabsebot_banner.gif")
+                .await?;
+            
             ctx.set_presence(Some(activity), OnlineStatus::Online);
             ctx.http
                 .edit_profile(

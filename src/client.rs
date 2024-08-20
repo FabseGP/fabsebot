@@ -125,7 +125,6 @@ pub async fn start() {
                 settings::spoiler_channel(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {
-                // prefix: Some("!".into()),
                 dynamic_prefix: Some(|ctx| Box::pin(dynamic_prefix(ctx))),
                 edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
                     Duration::from_secs(3600),
@@ -156,9 +155,6 @@ pub async fn start() {
     let token = env::var("DISCORD_TOKEN").unwrap();
     let mut cache_settings = Settings::default();
     cache_settings.max_messages = 10;
-    // cache_settings.cache_channels = false;
-    // cache_settings.cache_users = false;
-    // cache_settings.cache_guilds = false;
     let client = Client::builder(&token, intents)
         .framework(framework)
         .voice_manager::<songbird::Songbird>(manager)
