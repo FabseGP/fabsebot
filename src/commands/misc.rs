@@ -107,7 +107,7 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     .await?;
     users.sort_by(|a, b| b.messages.cmp(&a.messages));
     let mut embed = CreateEmbed::new()
-        .title("Server leaderboard")
+        .title("Server leaderboard of sent messages")
         .thumbnail(thumbnail)
         .color(0xFF5733);
     for user in users.into_iter() {
