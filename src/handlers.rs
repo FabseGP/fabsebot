@@ -319,15 +319,19 @@ pub async fn event_handler(
                     .await;
                 }
             }
-        } /*
-        FullEvent::MessageDelete { channel_id, deleted_message_id, .. } => {
-            let message = ctx.cache.message(*channel_id, *deleted_message_id).unwrap().clone();
-            if message.content.contains("https") {
-                channel_id.send_message(&ctx.http, CreateMessage::default().content(format!("\"{}\" wrote:", message.author_nick(&ctx.http).await.unwrap_or(message.author.name)))).await?;
-                channel_id.send_message(&ctx.http, CreateMessage::default().content(message.content)).await?;
-            } else {
-                channel_id.send_message(&ctx.http, CreateMessage::default().content(format!("{} wrote \"{}\"", message.author_nick(&ctx.http).await.unwrap_or(message.author.name), message.content))).await?;
-        }} */
+        } 
+        FullEvent::MessageDelete { channel_id, guild_id, deleted_message_id } => {
+            if ctx.cache.message(*channel_id, *deleted_message_id).unwrap().author.id == 1146382254927523861 {
+                let guild = ctx.http.get_guild(guild_id.unwrap()).await.unwrap();
+                let audit = guild.audit_logs(&ctx.http, Some(serenity::model::guild::audit_log::Action::Message(serenity::model::guild::audit_log::MessageAction::Delete)), None, None, None).await.unwrap();
+                if let Some(entry) = audit.entries.first() {
+                    if let Some(user_id) = entry.user_id {
+                        let nickname = ctx.http.get_member(guild_id.unwrap(), user_id).await.unwrap().nick.unwrap();
+                        channel_id.send_message(&ctx.http, CreateMessage::default().content(format!("bruh, {} deleted my message", nickname))).await?;
+                    }
+                }
+            } 
+        }
         _ => {}
     }
     Ok(())
