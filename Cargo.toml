@@ -24,6 +24,5 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 urlencoding = "2"
 
 [profile.release]
-codegen-units = 1
 lto = "thin"
 strip = true

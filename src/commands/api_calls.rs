@@ -617,7 +617,7 @@ pub async fn urban(
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await.unwrap();
-    if !data.list[0].definition.is_empty() {
+    if !data.list.is_empty() {
         let len = data.list.len() - 1;
         let mut index = 0;
         let response_chars: Vec<char> = data.list[0].definition.chars().collect();
