@@ -1,7 +1,10 @@
 use crate::types::{Context, Error};
 use crate::utils::{get_gif, random_number};
 
-use poise::serenity_prelude::{CreateAttachment, CreateInteractionResponse, ComponentInteractionCollector, CreateEmbed, CreateButton, CreateActionRow, ButtonStyle, EditMessage};
+use poise::serenity_prelude::{
+    ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment, CreateButton,
+    CreateEmbed, CreateInteractionResponse, EditMessage,
+};
 use poise::CreateReply;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -47,11 +50,7 @@ pub async fn ai_anime(
             true,
         ]
     });
-    let resp = client
-        .post(url)   
-        .json(&request_body)
-        .send()
-        .await?; 
+    let resp = client.post(url).json(&request_body).send().await?;
     let output: EventResponse = resp.json().await?;
     if !output.event_id.is_empty() {
         let status_url = format!("{}/{}", url, output.event_id);
@@ -62,7 +61,10 @@ pub async fn ai_anime(
             if status_text.contains("event: complete") {
                 if let Some(captures) = path_regex.captures(&status_text) {
                     if let Some(path) = captures.get(1) {
-                        let image_url = format!("https://cagliostrolab-animagine-xl-3-1.hf.space/file={}", path.as_str());
+                        let image_url = format!(
+                            "https://cagliostrolab-animagine-xl-3-1.hf.space/file={}",
+                            path.as_str()
+                        );
                         let image_data = client.get(&image_url).send().await?;
                         let image_data = image_data.bytes().await?.to_vec();
                         let file = CreateAttachment::bytes(image_data, "output.png");
@@ -73,9 +75,11 @@ pub async fn ai_anime(
             }
         }
     } else {
-        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)))
-            .await?;
-    }   
+        ctx.send(
+            CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -96,7 +100,7 @@ pub async fn ai_image(
     ];
     let resp = client
         .post(models[random_number(models.len())])
-        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
+        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
         .json(&json!({ "prompt": encoded_input }))
         .send()
         .await?;
@@ -105,8 +109,10 @@ pub async fn ai_image(
         let file = CreateAttachment::bytes(image_data, "output.png");
         ctx.send(CreateReply::default().attachment(file)).await?;
     } else {
-        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)))
-            .await?;
+        ctx.send(
+            CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -136,11 +142,7 @@ pub async fn ai_midjourney(
             true
         ]
     });
-    let resp = client
-        .post(url)   
-        .json(&request_body)
-        .send()
-        .await?;
+    let resp = client.post(url).json(&request_body).send().await?;
     let output: EventResponse = resp.json().await?;
     if !output.event_id.is_empty() {
         let status_url = format!("{}/{}", url, output.event_id);
@@ -151,7 +153,8 @@ pub async fn ai_midjourney(
             if status_text.contains("event: complete") {
                 if let Some(captures) = path_regex.captures(&status_text) {
                     if let Some(path) = captures.get(1) {
-                        let image_url = format!("https://mukaist-midjourney.hf.space/file={}", path.as_str());
+                        let image_url =
+                            format!("https://mukaist-midjourney.hf.space/file={}", path.as_str());
                         let image_data = client.get(&image_url).send().await?;
                         let image_data = image_data.bytes().await?.to_vec();
                         let file = CreateAttachment::bytes(image_data, "output.png");
@@ -162,9 +165,11 @@ pub async fn ai_midjourney(
             }
         }
     } else {
-        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)))
-            .await?;
-    }  
+        ctx.send(
+            CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -199,8 +204,7 @@ pub async fn ai_summarize(
     let resp = client
         .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/facebook/bart-large-cnn")
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
-        .json(&json!({        
-            "input_text": reply.content.to_string(),
+        .json(&json!({"input_text": reply.content.to_string(),
             "max_length": length 
         }))
         .send()
@@ -240,8 +244,7 @@ pub async fn ai_text(
     let resp = client
         .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
-        .json(&json!({        
-            "messages": [
+        .json(&json!({"messages": [
                 { "role": "system", "content": encoded_role },
                 { "role": "user", "content": encoded_input }
             ]
@@ -372,8 +375,7 @@ pub async fn gif(
     input: String,
 ) -> Result<(), Error> {
     let url = get_gif(input).await;
-    ctx.send(CreateReply::default().content(url))
-        .await?;
+    ctx.send(CreateReply::default().content(url)).await?;
     Ok(())
 }
 
@@ -443,8 +445,16 @@ pub async fn roast(
     };
     let member = ctx.http().get_member(guild_id, user.id).await?;
     let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
-    let banner_url = ctx.http().get_user(user.id).await.unwrap().banner_url().unwrap_or("user has no banner".to_string());
-    let roles: Vec<String> = member.roles.iter()
+    let banner_url = ctx
+        .http()
+        .get_user(user.id)
+        .await
+        .unwrap()
+        .banner_url()
+        .unwrap_or("user has no banner".to_string());
+    let roles: Vec<String> = member
+        .roles
+        .iter()
         .filter_map(|role_id| guild_roles.get(role_id))
         .map(|role| role.name.clone().to_string())
         .collect();
@@ -454,18 +464,19 @@ pub async fn roast(
     let message_count = {
         let id: u64 = guild_id.into();
         let mut conn = ctx.data().db.acquire().await?;
-        let result = query(
-        "SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?",
-        )
-        .bind(id)
-        .bind(user.name.to_string())
-        .fetch_one(&mut *conn)
-        .await;
+        let result =
+            query("SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?")
+                .bind(id)
+                .bind(user.name.to_string())
+                .fetch_one(&mut *conn)
+                .await;
         let result_filtered: Option<u64> = match result {
             Ok(row) => Some(row.try_get("messages").unwrap()),
             Err(_) => None,
         };
-        result_filtered.map_or("unknown message count".to_string(), |count| count.to_string())
+        result_filtered.map_or("unknown message count".to_string(), |count| {
+            count.to_string()
+        })
     };
     let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
@@ -479,7 +490,6 @@ pub async fn roast(
                     let formatted_message = format!("{}:{}", count + 1, message.content);
                     collected_messages.push(formatted_message);
                     count += 1;
-                    
                 }
             } else {
                 break;
@@ -488,10 +498,10 @@ pub async fn roast(
                 break;
             }
         }
-  
+
         collected_messages.join(",")
     };
-    
+
     let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(","), account_date, join_date, message_count, messages_string);
     let encoded_input = encode(&description);
 
@@ -599,6 +609,13 @@ struct UrbanDict {
     word: String,
 }
 
+struct UrbanState {
+    next_id: String,
+    prev_id: String,
+    index: usize,
+    len: usize,
+}
+
 /// The holy moly urbandictionary
 #[poise::command(prefix_command, slash_command)]
 pub async fn urban(
@@ -607,8 +624,7 @@ pub async fn urban(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    let next_id = format!("{}_next", ctx.id());
-    let prev_id = format!("{}_prev", ctx.id());
+    ctx.defer().await.unwrap();
     let encoded_input = encode(&input);
     let request_url = format!(
         "https://api.urbandictionary.com/v0/define?term={search}",
@@ -619,7 +635,19 @@ pub async fn urban(
     let data: UrbanResponse = request.json().await.unwrap();
     if !data.list.is_empty() {
         let len = data.list.len() - 1;
-        let mut index = 0;
+        let index = 0;
+        let next_id = format!("{}_next_{}", ctx.id(), index);
+        let prev_id = format!("{}_prev_{}", ctx.id(), index);
+        let mut state = UrbanState {
+            next_id: next_id.clone(),
+            prev_id: prev_id.clone(),
+            index,
+            len,
+        };
+        let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
+            .style(ButtonStyle::Primary)
+            .label("➡️")]);
+        let components = if len > 1 { vec![next_button] } else { vec![] };
         let response_chars: Vec<char> = data.list[0].definition.chars().collect();
         let chunks = response_chars.chunks(1024);
         let mut embed = CreateEmbed::default();
@@ -638,55 +666,51 @@ pub async fn urban(
             data.list[0].example.replace(['[', ']'], ""),
             false,
         );
-    
-         let next_button =
-            CreateActionRow::Buttons(vec![
-                CreateButton::new(next_id.clone())
-                    .style(ButtonStyle::Primary)
-                    .label("➡️"),
-                ]);
 
-        let prev_button = 
-           CreateActionRow::Buttons(vec![
-                CreateButton::new(prev_id.clone())
-                    .style(ButtonStyle::Primary)
-                    .label("⬅️"),
-                ]);
-        
-        let components = if len > 1 {
-            vec![next_button.clone()]
-            } else {
-                vec![]
-            };
-        ctx.send(CreateReply::default().embed(embed).components(components)).await?;
+        ctx.send(CreateReply::default().embed(embed).components(components))
+            .await?;
 
         if len > 1 {
-            while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                .timeout(Duration::from_secs(600))
-             /*   .filter(move |interaction| {
-                    let id = interaction.data.custom_id.as_str();
-                    id == next_id || id == prev_id
-                }) */
-                .await
+            while let Some(interaction) =
+                ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                    .timeout(Duration::from_secs(600))
+                    .filter(move |interaction| {
+                        let next_id_clone = state.next_id.clone();
+                        let prev_id_clone = state.prev_id.clone();
+                        let id = interaction.data.custom_id.as_str();
+                        id == next_id_clone.as_str() || id == prev_id_clone.as_str()
+                    })
+                    .await
             {
                 let choice = &interaction.data.custom_id.as_str();
-                
+
                 interaction
                     .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                     .await?;
 
-                if choice.contains("next") && index < len {
-                    index += 1;
-                } else if choice.contains("prev")  && index > 0 {
-                    index -= 1;
+                if choice.contains("next") && state.index < state.len {
+                    state.index += 1;
+                } else if choice.contains("prev") && state.index > 0 {
+                    state.index -= 1;
                 }
-            
+
+                state.next_id = format!("{}_next_{}", ctx.id(), state.index);
+                state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
+
+                let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
+                    .style(ButtonStyle::Primary)
+                    .label("➡️")]);
+
+                let prev_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.prev_id)
+                    .style(ButtonStyle::Primary)
+                    .label("⬅️")]);
+
                 let new_response_chars: Vec<char> = data.list[index].definition.chars().collect();
                 let new_chunks = new_response_chars.chunks(1024);
-            
+
                 let mut new_embed = CreateEmbed::default();
                 new_embed = new_embed.title(&data.list[index].word).color(0xEFFF00);
-            
+
                 for (i, chunk) in new_chunks.enumerate() {
                     let chunk_str: String = chunk.iter().collect();
                     let field_name = if i == 0 {
@@ -694,9 +718,10 @@ pub async fn urban(
                     } else {
                         format!("Response (cont. {})", i + 1)
                     };
-                    new_embed = new_embed.field(field_name, chunk_str.replace(['[', ']'], ""), false);
+                    new_embed =
+                        new_embed.field(field_name, chunk_str.replace(['[', ']'], ""), false);
                 }
-            
+
                 new_embed = new_embed.field(
                     "Example:",
                     data.list[index].example.replace(['[', ']'], ""),
@@ -704,18 +729,20 @@ pub async fn urban(
                 );
 
                 let new_components = if index == 0 {
-                        vec![next_button.clone()]  
-                    } else if index == len {
-                        vec![prev_button.clone()]
-                    } else {
-                        vec![prev_button.clone(),next_button.clone()]
+                    vec![next_button]
+                } else if index == len {
+                    vec![prev_button]
+                } else {
+                    vec![prev_button, next_button]
                 };
-            
+
                 let mut msg = interaction.message.clone();
 
                 msg.edit(
                     ctx.http(),
-                    EditMessage::new().embed(new_embed).components(new_components),
+                    EditMessage::new()
+                        .embed(new_embed)
+                        .components(new_components),
                 )
                 .await?;
             }
@@ -738,9 +765,7 @@ struct WaifuData {
 
 /// Do I need to explain it?
 #[poise::command(prefix_command, slash_command)]
-pub async fn waifu(
-    ctx: Context<'_>,
-) -> Result<(), Error> {
+pub async fn waifu(ctx: Context<'_>) -> Result<(), Error> {
     let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;

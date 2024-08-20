@@ -1,9 +1,17 @@
 use crate::types::{Context, Error};
 
-use poise::serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder};
-use poise::CreateReply;
+use poise::{
+    futures_util::{Stream, StreamExt},
+    serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder},
+    CreateReply,
+};
 use serde::{Deserialize, Serialize};
-use songbird::input::{Compose, YoutubeDl};
+use serenity::futures;
+use songbird::{
+    input::{Compose, YoutubeDl},
+    tracks::PlayMode,
+};
+use std::time::Duration;
 
 #[derive(Deserialize, Serialize)]
 struct DeezerResponse {
@@ -54,7 +62,8 @@ pub async fn add_playlist(
             ctx.say("Added playlist to queue").await?;
         }
     } else {
-        ctx.say("Bruh, I'm not even in a voice channel").await?;
+        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
+            .await?;
     }
     Ok(())
 }
@@ -62,7 +71,7 @@ pub async fn add_playlist(
 /// Join your current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
-    let guild_id = ctx.guild().unwrap().id;
+    let guild_id = ctx.guild_id().unwrap();
     let channel_id = ctx
         .guild()
         .unwrap()
@@ -78,14 +87,42 @@ pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
 /// Leave the current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn leave_voice(ctx: Context<'_>) -> Result<(), Error> {
-    let guild_id = ctx.guild().unwrap().id;
+    let guild_id = ctx.guild_id().unwrap();
     let manager = &ctx.data().music_manager;
     let has_handler = manager.get(guild_id).is_some();
     if has_handler {
         manager.remove(guild_id).await?;
         ctx.say("Left voice channel, don't forget me").await?;
     } else {
-        ctx.reply("Bruh, I'm not even in a voice channel").await?;
+        ctx.reply(
+            "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Continue/pause the current playing song
+#[poise::command(prefix_command, slash_command)]
+pub async fn pause_continue_song(ctx: Context<'_>) -> Result<(), Error> {
+    let guild_id = ctx.guild_id().unwrap();
+    let manager = &ctx.data().music_manager;
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let handler = handler_lock.lock().await;
+        let queue = handler.queue();
+        let status = queue.current().unwrap().get_info().await.unwrap().playing;
+        if status == PlayMode::Pause {
+            queue.current().unwrap().play().unwrap();
+        } else if status == PlayMode::Play {
+            queue.current().unwrap().pause().unwrap();
+        } else {
+            ctx.say("bruh, no song is playing").await?;
+            return Ok(());
+        }
+        ctx.say("Song is either continued or paused").await?;
+    } else {
+        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
+            .await?;
     }
     Ok(())
 }
@@ -162,7 +199,51 @@ pub async fn play_song(
             }
         }
     } else {
-        ctx.say("Bruh, I'm not even in a voice channel").await?;
+        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
+            .await?;
+    }
+    Ok(())
+}
+
+async fn autocomplete_choice<'a>(
+    _ctx: Context<'_>,
+    partial: &'a str,
+) -> impl Stream<Item = String> + 'a {
+    futures::stream::iter(&["forward", "backward"])
+        .filter(move |name| futures::future::ready(name.starts_with(partial)))
+        .map(|name| name.to_string())
+}
+
+/// Seek current playing song
+#[poise::command(prefix_command, slash_command)]
+pub async fn seek_song(
+    ctx: Context<'_>,
+    #[description = "Seconds to seek"] seconds: u64,
+    #[description = "Forward or backward"]
+    #[autocomplete = "autocomplete_choice"]
+    #[rest]
+    direction: String,
+) -> Result<(), Error> {
+    let guild_id = ctx.guild_id().unwrap();
+    let manager = &ctx.data().music_manager;
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let handler = handler_lock.lock().await;
+        let queue = handler.queue();
+        let current_position = queue.current().unwrap().get_info().await.unwrap().position;
+        let seek = if direction == "forward" {
+            current_position + Duration::from_secs(seconds)
+        } else if direction == "backward" {
+            current_position - Duration::from_secs(seconds)
+        } else {
+            ctx.say("you managed to destroy the matrix smh").await?;
+            return Ok(());
+        };
+        queue.current().unwrap().seek_async(seek).await?;
+        ctx.say(format!("Seeked {} seconds {}", seconds, direction))
+            .await?;
+    } else {
+        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
+            .await?;
     }
     Ok(())
 }
@@ -179,7 +260,8 @@ pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
         ctx.say(format!("Song skipped. {} left in queue", queue.len() - 2))
             .await?;
     } else {
-        ctx.say("Bruh, I'm not even in a voice channel").await?;
+        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
+            .await?;
     }
     Ok(())
 }
@@ -195,7 +277,8 @@ pub async fn stop_song(ctx: Context<'_>) -> Result<(), Error> {
         queue.stop();
         ctx.say("Queue cleared").await?;
     } else {
-        ctx.say("Bruh, I'm not even in a voice channel").await?;
+        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
+            .await?;
     }
     Ok(())
 }
