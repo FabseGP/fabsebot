@@ -121,6 +121,7 @@ pub async fn start() {
                 settings::dead_chat(),
                 settings::prefix(),
                 settings::quote_channel(),
+                settings::reset_settings(),
                 settings::spoiler_channel(),
             ],
             prefix_options: poise::PrefixFrameworkOptions {

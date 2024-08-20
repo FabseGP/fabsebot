@@ -113,6 +113,34 @@ pub async fn quote_channel(
     Ok(())
 }
 
+/// To reset or not to reset, that's the question
+#[poise::command(prefix_command, slash_command)]
+pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
+    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id {
+        sqlx::query!(
+        "REPLACE INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, 0, 0, ?)", 
+        ctx.guild_id().unwrap().get(), "!"
+    )
+    .execute(&mut *ctx.data().db.acquire().await?)
+    .await
+    .unwrap();
+        ctx.send(
+            CreateReply::default()
+                .content("Server settings resetted... probably")
+                .ephemeral(true),
+        )
+        .await?;
+    } else {
+        ctx.send(
+            CreateReply::default()
+                .content("hush, you're not the owner")
+                .ephemeral(true),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// Configure a channel to always spoiler messages
 #[poise::command(prefix_command, slash_command)]
 pub async fn spoiler_channel(

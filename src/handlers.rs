@@ -133,9 +133,7 @@ pub async fn event_handler(
                             )),
                         )
                         .await?; */
-                } else if (content.contains("<@409113157550997515>")
-                    || content == "nito"
-                    || content == "denito")
+                } else if content.contains("<@409113157550997515>") 
                     && !content.contains("!user_misuse")
                 {
                     new_message
@@ -149,12 +147,6 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
-                /*  
-                    let guild_channel = new_message.guild_channel(&ctx.http).await.unwrap();
-                    let member = new_message.member(&ctx.http).await.unwrap();
-                    let guild_perms = new_message.guild(&ctx.cache).unwrap().user_permissions_in(&guild_channel, &member).bits();
-                    println!("{}/{}", guild_perms, new_message.guild_id.unwrap().member(&ctx.http, new_message.author.id).await.unwrap().permissions(&ctx.cache).expect("guld perms").bits());
-                */
                 } else if content.contains("<@999604056072929321>")
                     && !content.contains("!user_misuse")
                 {
@@ -169,10 +161,7 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
-                } else if (content.contains("<@1110757956775051294>")
-                    || content == "kato"
-                    || content == "kachooow"
-                    || content == "kachoow")
+                } else if content.contains("<@1110757956775051294>")
                     && !content.contains("!user_misuse")
                 {
                     new_message
@@ -186,7 +175,7 @@ pub async fn event_handler(
                             )),
                         )
                         .await?;
-                } else if (content.contains("<@701838215757299772>") || content == "harsh g")
+                } else if content.contains("<@701838215757299772>")
                     && !content.contains("!user_misuse")
                 {
                     new_message
@@ -199,7 +188,7 @@ pub async fn event_handler(
                         Colour(0x00b0f4),
                     )))
                     .await?;
-                } else if (content.contains("<@749949941975089213>") || content == "bread")
+                } else if content.contains("<@749949941975089213>")
                     && !content.contains("!user_misuse")
                 {
                      new_message
@@ -212,9 +201,7 @@ pub async fn event_handler(
                             Colour(0x00b0f4),
                         )))
                         .await?;
-                } else if (content.contains("<@287809220210851851>")
-                    || content == "ant1hero"
-                    || content == "antihero")
+                } else if content.contains("<@287809220210851851>")
                     && !content.contains("!user_misuse")
                 { new_message
                         .channel_id
