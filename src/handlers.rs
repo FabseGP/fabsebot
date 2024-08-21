@@ -112,25 +112,32 @@ pub async fn event_handler(
                     let history = guild_conversations
                         .entry(new_message.channel_id.into())
                         .or_insert_with(Vec::new);
-                    history.push(new_message.content.to_string());
-                    let context = format!(
-                        "old conversation: {}, new message to reply to: {}",
-                        history.join("\n"),
-                        new_message.content
-                    );
-                    let mut response = ai_response(context).await;
-                    if response == "empty" {
+                    if content == "clear" {
                         guild_conversations.remove(&new_message.channel_id.into());
-                        guild_conversations
-                            .entry(new_message.channel_id.into())
-                            .or_insert_with(Vec::new)
-                            .push(new_message.content.to_string());
-                        response = ai_response(new_message.content.to_string()).await;
+                        new_message
+                            .channel_id
+                            .say(&ctx.http, "conversation cleared!")
+                            .await?;
+                    } else {
+                        history.push(new_message.content.to_string());
+                        let context = format!(
+                            "current user: {}, old conversation: {}, new message to reply to: {}",
+                            new_message.author.name,
+                            history.join("\n"),
+                            new_message.content
+                        );
+                        let mut response = ai_response(context).await;
+                        if response == "empty" {
+                            guild_conversations.remove(&new_message.channel_id.into());
+                            guild_conversations
+                                .entry(new_message.channel_id.into())
+                                .or_insert_with(Vec::new)
+                                .push(new_message.content.to_string());
+                            response = ai_response(new_message.content.to_string()).await;
+                        }
+                        new_message.channel_id.say(&ctx.http, response).await?;
+                        typing.stop();
                     }
-                    if let Err(why) = new_message.channel_id.say(&ctx.http, response).await {
-                        println!("Error sending message: {:?}", why);
-                    }
-                    typing.stop();
                 }
                 if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message
