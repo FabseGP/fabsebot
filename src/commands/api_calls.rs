@@ -665,7 +665,7 @@ pub async fn urban(
     let request = client.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await.unwrap();
     if !data.list.is_empty() {
-        let len = data.list.len() - 1;
+        let len = data.list.len();
         let index = 0;
         let next_id = format!("{}_next_{}", ctx.id(), index);
         let prev_id = format!("{}_prev_{}", ctx.id(), index);
@@ -719,7 +719,7 @@ pub async fn urban(
                     .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                     .await?;
 
-                if choice.contains("next") && state.index < state.len {
+                if choice.contains("next") && state.index < state.len - 1 {
                     state.index += 1;
                 } else if choice.contains("prev") && state.index > 0 {
                     state.index -= 1;
@@ -728,13 +728,13 @@ pub async fn urban(
                 state.next_id = format!("{}_next_{}", ctx.id(), state.index);
                 state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
 
-                let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
+                let next_button = CreateButton::new(&state.next_id)
                     .style(ButtonStyle::Primary)
-                    .label("➡️")]);
+                    .label("➡️");
 
-                let prev_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.prev_id)
+                let prev_button = CreateButton::new(&state.prev_id)
                     .style(ButtonStyle::Primary)
-                    .label("⬅️")]);
+                    .label("⬅️");
 
                 let new_response_chars: Vec<char> =
                     data.list[state.index].definition.chars().collect();
@@ -763,11 +763,11 @@ pub async fn urban(
                 );
 
                 let new_components = if state.index == 0 {
-                    vec![next_button]
-                } else if state.index == len {
-                    vec![prev_button]
+                    vec![CreateActionRow::Buttons(vec![next_button])]
+                } else if state.index == len - 1 {
+                    vec![CreateActionRow::Buttons(vec![prev_button])]
                 } else {
-                    vec![prev_button, next_button]
+                    vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
                 };
 
                 let mut msg = interaction.message.clone();
