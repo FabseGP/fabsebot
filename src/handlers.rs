@@ -5,7 +5,6 @@ use crate::utils::{
 };
 
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
-use regex::Regex;
 use serenity::{
     builder::{CreateMessage, EditProfile},
     gateway::ActivityData,
@@ -47,6 +46,9 @@ pub async fn event_handler(
             if !new_message.author.bot() {
                 let content = new_message.content.to_lowercase();
                 let guild_id: u64 = new_message.guild_id.unwrap().into();
+                query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id,)
+                    .execute(&mut *data.db.acquire().await?)
+                    .await?;
                 query!(
                     "INSERT INTO message_count (guild_id, user_name, messages) VALUES (?, ?, 1)
                     ON DUPLICATE KEY UPDATE messages = messages + 1",
@@ -68,75 +70,69 @@ pub async fn event_handler(
                         spoiler_message(ctx, new_message, &new_message.content).await;
                     }
                 }
-                if content.contains("nigga") {
-                    if new_message.author.id == 538731291970109471 {
-                        let re = Regex::new(r"(?i)nigg?a").unwrap();
-                        let new_content =
-                            re.replace_all(new_message.content.as_str(), "beautiful person");
-                        webhook_message(
-                            ctx,
-                            new_message,
-                            new_message
-                                .author_nick(&ctx.http)
-                                .await
-                                .unwrap_or(new_message.author.name.to_string())
-                                .as_str(),
-                            new_message.author.avatar_url().unwrap().as_str(),
-                            &new_content,
+                if let Ok(_) = query!(
+                    "SELECT dead_chat_channel FROM guild_settings WHERE guild_id = ?",
+                    guild_id
+                )
+                .fetch_one(&mut *data.db.acquire().await?)
+                .await
+                {}
+                let words_to_count: Vec<String> =
+                    query!("SELECT word FROM words_count WHERE guild_id = ?", guild_id)
+                        .fetch_all(&mut *data.db.acquire().await?)
+                        .await
+                        .unwrap()
+                        .iter()
+                        .map(|row| row.word.clone())
+                        .collect();
+                for word in words_to_count.iter() {
+                    if content.contains(word) {
+                        query!(
+                            "INSERT INTO words_count (word, guild_id, count) VALUES (?, ?, 1)
+                            ON DUPLICATE KEY UPDATE count = count + 1",
+                            word,
+                            guild_id
                         )
-                        .await;
-                        new_message.delete(&ctx.http, Some("pure")).await?;
+                        .execute(&mut *data.db.acquire().await?)
+                        .await
+                        .unwrap();
                     }
-                    query!(
-                        "INSERT INTO words_count (word, guild_id, count) VALUES (?, ?, 1)
-                        ON DUPLICATE KEY UPDATE count = count + 1",
-                        "nigga",
-                        guild_id
-                    )
-                    .execute(&mut *data.db.acquire().await?)
-                    .await
-                    .unwrap();
                 }
-                if new_message
-                    .guild_channel(&ctx.http)
-                    .await
-                    .unwrap()
-                    .topic
-                    .unwrap()
-                    .contains("ai-chat")
-                {
-                    let typing = new_message.channel_id.start_typing(ctx.http.clone());
-                    let mut conversations = data.conversations.lock().await;
-                    let guild_conversations =
-                        conversations.entry(guild_id).or_insert_with(HashMap::new);
-                    let history = guild_conversations
-                        .entry(new_message.channel_id.into())
-                        .or_insert_with(Vec::new);
-                    if content == "clear" {
-                        guild_conversations.remove(&new_message.channel_id.into());
-                        new_message
-                            .channel_id
-                            .say(&ctx.http, "Conversation cleared!")
-                            .await?;
-                    } else {
-                        history.push(new_message.content.to_string());
-                        let context = format!(
-                            "old conversation: {}, new message to reply to: {}",
-                            history.join("\n"),
-                            new_message.content
-                        );
-                        let mut response = ai_response(context).await;
-                        if response == "empty" {
+                if let Some(topic) = new_message.guild_channel(&ctx.http).await.unwrap().topic {
+                    if topic.contains("ai-chat") {
+                        let typing = new_message.channel_id.start_typing(ctx.http.clone());
+                        let mut conversations = data.conversations.lock().await;
+                        let guild_conversations =
+                            conversations.entry(guild_id).or_insert_with(HashMap::new);
+                        let history = guild_conversations
+                            .entry(new_message.channel_id.into())
+                            .or_insert_with(Vec::new);
+                        if content == "clear" {
                             guild_conversations.remove(&new_message.channel_id.into());
-                            guild_conversations
-                                .entry(new_message.channel_id.into())
-                                .or_insert_with(Vec::new)
-                                .push(new_message.content.to_string());
-                            response = ai_response(new_message.content.to_string()).await;
+                            new_message
+                                .channel_id
+                                .say(&ctx.http, "Conversation cleared!")
+                                .await?;
+                        } else {
+                            history.push(new_message.content.to_string());
+                            let context = format!(
+                                "old conversation: {}, new message to reply to: {}",
+                                history.join("\n"),
+                                new_message.content
+                            );
+                            let mut response = ai_response(context).await;
+                            if response == "empty" {
+                                guild_conversations.remove(&new_message.channel_id.into());
+                                guild_conversations
+                                    .entry(new_message.channel_id.into())
+                                    .or_insert_with(Vec::new)
+                                    .push(new_message.content.to_string());
+                                response = ai_response(new_message.content.to_string()).await;
+                            }
+                            new_message.channel_id.say(&ctx.http, response).await?;
                         }
-                        new_message.channel_id.say(&ctx.http, response).await?;
+                        typing.stop();
                     }
-                    typing.stop();
                 }
                 if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message

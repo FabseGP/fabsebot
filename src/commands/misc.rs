@@ -223,7 +223,7 @@ pub async fn pure_count(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// When your users are yapping
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(slash_command)]
 pub async fn slow_mode(
     ctx: Context<'_>,
     #[description = "Channel to rate limit"] channel: Channel,

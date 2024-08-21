@@ -5,7 +5,7 @@ use poise::CreateReply;
 use serde_json::json;
 
 /// Send an anonymous message
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(slash_command)]
 pub async fn anonymous(
     ctx: Context<'_>,
     #[description = "Channel to send message"] channel: poise::serenity_prelude::ChannelId,
