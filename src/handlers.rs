@@ -1,7 +1,9 @@
 use crate::types::{Data, Error};
 use crate::utils::{
-    embed_builder, emoji_id, get_waifu, random_number, spoiler_message, webhook_message,
+    ai_response, embed_builder, emoji_id, get_waifu, random_number, spoiler_message,
+    webhook_message,
 };
+
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
 use regex::Regex;
 use serenity::{
@@ -10,6 +12,7 @@ use serenity::{
     model::{channel::ReactionType, id::ChannelId, user::OnlineStatus},
 };
 use sqlx::query;
+use std::collections::HashMap;
 
 pub async fn event_handler(
     framework: poise::FrameworkContext<'_, Data, Error>,
@@ -43,11 +46,11 @@ pub async fn event_handler(
         FullEvent::Message { new_message } => {
             if !new_message.author.bot() {
                 let content = new_message.content.to_lowercase();
-                let id: u64 = new_message.guild_id.unwrap().into();
+                let guild_id: u64 = new_message.guild_id.unwrap().into();
                 query!(
                     "INSERT INTO message_count (guild_id, user_name, messages) VALUES (?, ?, 1)
                     ON DUPLICATE KEY UPDATE messages = messages + 1",
-                    id,
+                    guild_id,
                     new_message.author.name.to_string()
                 )
                 .execute(&mut *data.db.acquire().await?)
@@ -55,7 +58,7 @@ pub async fn event_handler(
                 .unwrap();
                 if let Ok(record) = query!(
                     "SELECT spoiler_channel FROM guild_settings WHERE guild_id = ?",
-                    id
+                    guild_id
                 )
                 .fetch_one(&mut *data.db.acquire().await?)
                 .await
@@ -88,11 +91,46 @@ pub async fn event_handler(
                         "INSERT INTO words_count (word, guild_id, count) VALUES (?, ?, 1)
                         ON DUPLICATE KEY UPDATE count = count + 1",
                         "nigga",
-                        id
+                        guild_id
                     )
                     .execute(&mut *data.db.acquire().await?)
                     .await
                     .unwrap();
+                }
+                if new_message
+                    .guild_channel(&ctx.http)
+                    .await
+                    .unwrap()
+                    .topic
+                    .unwrap()
+                    .contains("ai-chat")
+                {
+                    let typing = new_message.channel_id.start_typing(ctx.http.clone());
+                    let mut conversations = data.conversations.lock().await;
+                    let guild_conversations =
+                        conversations.entry(guild_id).or_insert_with(HashMap::new);
+                    let history = guild_conversations
+                        .entry(new_message.channel_id.into())
+                        .or_insert_with(Vec::new);
+                    history.push(new_message.content.to_string());
+                    let context = format!(
+                        "old conversation: {}, new message to reply to: {}",
+                        history.join("\n"),
+                        new_message.content
+                    );
+                    let mut response = ai_response(context).await;
+                    if response == "empty" {
+                        guild_conversations.remove(&new_message.channel_id.into());
+                        guild_conversations
+                            .entry(new_message.channel_id.into())
+                            .or_insert_with(Vec::new)
+                            .push(new_message.content.to_string());
+                        response = ai_response(new_message.content.to_string()).await;
+                    }
+                    if let Err(why) = new_message.channel_id.say(&ctx.http, response).await {
+                        println!("Error sending message: {:?}", why);
+                    }
+                    typing.stop();
                 }
                 if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message
@@ -380,7 +418,7 @@ pub async fn event_handler(
                             .get_member(guild_id, user_id)
                             .await
                             .unwrap()
-                            .permissions
+                            .permissions(&ctx.cache)
                             .unwrap()
                             .administrator();
                         if evil_person.id != ctx.http.get_guild(guild_id).await.unwrap().owner_id

@@ -6,7 +6,8 @@ use poise::serenity_prelude as serenity;
 use reqwest::Client as http_client;
 use serenity::{cache::Settings, client::Client, prelude::GatewayIntents};
 use sqlx::query;
-use std::{borrow::Cow, env, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::HashMap, env, sync::Arc, time::Duration};
+use tokio::sync::Mutex;
 
 async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
     match error {
@@ -77,6 +78,7 @@ pub async fn start() {
         db: database,
         req_client: http_client::new(),
         music_manager: Arc::clone(&manager),
+        conversations: Arc::new(Mutex::new(HashMap::new())),
     };
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
