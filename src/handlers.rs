@@ -116,7 +116,7 @@ pub async fn event_handler(
                         guild_conversations.remove(&new_message.channel_id.into());
                         new_message
                             .channel_id
-                            .say(&ctx.http, "conversation cleared!")
+                            .say(&ctx.http, "Conversation cleared!")
                             .await?;
                     } else {
                         history.push(new_message.content.to_string());
