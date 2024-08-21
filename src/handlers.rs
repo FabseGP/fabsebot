@@ -121,8 +121,7 @@ pub async fn event_handler(
                     } else {
                         history.push(new_message.content.to_string());
                         let context = format!(
-                            "current user: {}, old conversation: {}, new message to reply to: {}",
-                            new_message.author.name,
+                            "old conversation: {}, new message to reply to: {}",
                             history.join("\n"),
                             new_message.content
                         );
@@ -136,8 +135,8 @@ pub async fn event_handler(
                             response = ai_response(new_message.content.to_string()).await;
                         }
                         new_message.channel_id.say(&ctx.http, response).await?;
-                        typing.stop();
                     }
+                    typing.stop();
                 }
                 if content.contains(&ctx.cache.current_user().to_string()) {
                     new_message
