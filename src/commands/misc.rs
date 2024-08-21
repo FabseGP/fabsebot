@@ -43,12 +43,11 @@ pub async fn birthday(
 }
 
 /// Ignore this command
-#[poise::command(prefix_command)]
-pub async fn end_pgo(ctx: Context<'_>) -> Result<(), Error> {
-    if ctx.author().id == 1014524859532980255 {
-        process::exit(0);
-        // ctx.serenity_context().shard.shutdown_clean();
-    }
+#[poise::command(prefix_command, owners_only)]
+pub async fn end_pgo(_: Context<'_>) -> Result<(), Error> {
+    process::exit(0);
+
+    #[allow(unreachable_code)]
     Ok(())
 }
 
@@ -60,10 +59,10 @@ pub async fn help(
     #[autocomplete = "poise::builtins::autocomplete_command"]
     command: Option<String>,
 ) -> Result<(), Error> {
-    poise::builtins::help(
+    poise::builtins::pretty_help(
         ctx,
         command.as_deref(),
-        poise::builtins::HelpConfiguration {
+        poise::builtins::PrettyHelpConfiguration {
             extra_text_at_bottom: "Courtesy of Fabseman Inc.",
             ..Default::default()
         },
@@ -224,16 +223,35 @@ pub async fn pure_count(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// When your users are yapping
-#[poise::command(owners_only, prefix_command, slash_command)]
+#[poise::command(prefix_command, slash_command)]
 pub async fn slow_mode(
     ctx: Context<'_>,
     #[description = "Channel to rate limit"] channel: Channel,
     #[description = "Duration of rate limit in seconds"] duration: NonMaxU16,
 ) -> Result<(), Error> {
-    let settings = EditChannel::new().rate_limit_per_user(duration);
-    channel.id().edit(ctx.http(), settings).await?;
-    ctx.say(format!("channel is ratelimited for {} seconds", duration))
+    let admin_perms = ctx
+        .author_member()
+        .await
+        .unwrap()
+        .permissions
+        .unwrap()
+        .administrator();
+    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id
+        || admin_perms
+        || ctx.author().id == 1014524859532980255
+    {
+        let settings = EditChannel::new().rate_limit_per_user(duration);
+        channel.id().edit(ctx.http(), settings).await?;
+        ctx.say(format!("channel is ratelimited for {} seconds", duration))
+            .await?;
+    } else {
+        ctx.send(
+            CreateReply::default()
+                .content("hush, you're not permitted to use this command")
+                .ephemeral(true),
+        )
         .await?;
+    }
     Ok(())
 }
 

@@ -375,11 +375,21 @@ pub async fn event_handler(
                 if let Some(entry) = audit.entries.first() {
                     if let Some(user_id) = entry.user_id {
                         let evil_person = ctx.http.get_user(user_id).await.unwrap();
-                        let name = evil_person
-                            .nick_in(&ctx.http, guild_id)
+                        let admin_perms = ctx
+                            .http
+                            .get_member(guild_id, user_id)
                             .await
-                            .unwrap_or(evil_person.name.to_string());
-                        if evil_person.id != ctx.http.get_guild(guild_id).await.unwrap().owner_id {
+                            .unwrap()
+                            .permissions
+                            .unwrap()
+                            .administrator();
+                        if evil_person.id != ctx.http.get_guild(guild_id).await.unwrap().owner_id
+                            && !admin_perms
+                        {
+                            let name = evil_person
+                                .nick_in(&ctx.http, guild_id)
+                                .await
+                                .unwrap_or(evil_person.name.to_string());
                             channel_id
                                 .send_message(
                                     &ctx.http,

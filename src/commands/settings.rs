@@ -11,7 +11,14 @@ pub async fn dead_chat(
     #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: u8,
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
-    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id {
+    let admin_perms = ctx
+        .author_member()
+        .await
+        .unwrap()
+        .permissions
+        .unwrap()
+        .administrator();
+    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
         query!(
         "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, ?, ?, 0, 0, ?)
         ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
@@ -37,7 +44,7 @@ pub async fn dead_chat(
     } else {
         ctx.send(
             CreateReply::default()
-                .content("hush, you're not the owner")
+                .content("hush, you're either not the owner or don't have admin perms")
                 .ephemeral(true),
         )
         .await?;
@@ -51,7 +58,14 @@ pub async fn prefix(
     ctx: Context<'_>,
     #[description = "Character(s) to use as prefix for commands"] characters: String,
 ) -> Result<(), Error> {
-    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id {
+    let admin_perms = ctx
+        .author_member()
+        .await
+        .unwrap()
+        .permissions
+        .unwrap()
+        .administrator();
+    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
         sqlx::query!(
         "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, 0, 0, ?)
         ON DUPLICATE KEY UPDATE prefix = ?", ctx.guild_id().unwrap().get(), characters, characters
@@ -71,7 +85,7 @@ pub async fn prefix(
     } else {
         ctx.send(
             CreateReply::default()
-                .content("hush, you're not the owner")
+                .content("hush, you're either not the owner or don't have admin perms")
                 .ephemeral(true),
         )
         .await?;
@@ -85,7 +99,14 @@ pub async fn quote_channel(
     ctx: Context<'_>,
     #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
-    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id {
+    let admin_perms = ctx
+        .author_member()
+        .await
+        .unwrap()
+        .permissions
+        .unwrap()
+        .administrator();
+    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
         sqlx::query!(
         "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, ?, 0, ?)
         ON DUPLICATE KEY UPDATE quotes_channel = ?", ctx.guild_id().unwrap().get(), channel.id().to_string(), channel.id().to_string(), "!"
@@ -105,7 +126,7 @@ pub async fn quote_channel(
     } else {
         ctx.send(
             CreateReply::default()
-                .content("hush, you're not the owner")
+                .content("hush, you're either not the owner or don't have admin perms")
                 .ephemeral(true),
         )
         .await?;
@@ -116,7 +137,14 @@ pub async fn quote_channel(
 /// To reset or not to reset, that's the question
 #[poise::command(prefix_command, slash_command)]
 pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
-    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id {
+    let admin_perms = ctx
+        .author_member()
+        .await
+        .unwrap()
+        .permissions
+        .unwrap()
+        .administrator();
+    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
         sqlx::query!(
         "REPLACE INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, 0, 0, ?)", 
         ctx.guild_id().unwrap().get(), "!"
@@ -133,7 +161,7 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
     } else {
         ctx.send(
             CreateReply::default()
-                .content("hush, you're not the owner")
+                .content("hush, you're either not the owner or don't have admin perms")
                 .ephemeral(true),
         )
         .await?;
@@ -147,7 +175,14 @@ pub async fn spoiler_channel(
     ctx: Context<'_>,
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
-    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id {
+    let admin_perms = ctx
+        .author_member()
+        .await
+        .unwrap()
+        .permissions
+        .unwrap()
+        .administrator();
+    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
         sqlx::query!(
         "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, 0, ?, ?)
         ON DUPLICATE KEY UPDATE quotes_channel = ?", ctx.guild_id().unwrap().get(), channel.id().to_string(), channel.id().to_string(), "!"
@@ -167,7 +202,7 @@ pub async fn spoiler_channel(
     } else {
         ctx.send(
             CreateReply::default()
-                .content("hush, you're not the owner")
+                .content("hush, you're either not the owner or don't have admin perms")
                 .ephemeral(true),
         )
         .await?;
