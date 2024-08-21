@@ -379,7 +379,7 @@ pub async fn event_handler(
                             .await
                             .unwrap()
                             .nick
-                            .unwrap();
+                            .unwrap_or(ctx.http.get_user(user_id).await.unwrap().name);
                         channel_id
                             .send_message(
                                 &ctx.http,

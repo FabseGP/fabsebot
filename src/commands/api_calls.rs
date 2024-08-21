@@ -542,54 +542,85 @@ pub async fn roast(
 }
 
 #[derive(Deserialize, Serialize)]
-struct TranslateResponse {
-    result: AiTranslate,
+struct FabseTranslate {
+    #[serde(rename = "detectedLanguage")]
+    detected_language: FabseLanguage,
+    #[serde(rename = "translatedText")]
+    translated_text: String,
 }
 
 #[derive(Deserialize, Serialize)]
-struct AiTranslate {
-    translated_text: String,
+struct FabseLanguage {
+    confidence: f64,
+    language: String,
 }
 
 /// When you stumble on some ancient sayings
 #[poise::command(prefix_command, slash_command)]
 pub async fn translate(
     ctx: Context<'_>,
-    #[description = "Language to be translated from, e.g. japanese"] source: String,
-    #[description = "Language to be translated to, e.g. english"] target: String,
+    #[description = "Language to be translated to, e.g. en"] target: Option<String>,
     #[description = "What should be translated"]
     #[rest]
-    sentence: String,
+    sentence: Option<String>,
 ) -> Result<(), Error> {
-    let encoded_input = &sentence;
+    let content = match ctx
+        .channel_id()
+        .message(&ctx.http(), ctx.id().into())
+        .await?
+    {
+        msg if msg.referenced_message.is_some() => {
+            msg.referenced_message.unwrap().content.to_string()
+        }
+        _ => {
+            if let Some(query) = sentence {
+                query
+            } else {
+                ctx.say("bruh, give me smth to translate").await?;
+                return Ok(());
+            }
+        }
+    };
+    let encoded_input = &content;
+    let target_lang = if let Some(language) = target {
+        language
+    } else {
+        "en".to_string()
+    };
     let form_data = json!({
-        "text": encoded_input,
-        "source_lang": source,
-        "target_lang": target
+        "q": encoded_input,
+        "source": "auto",
+        "target": target_lang
     });
     let client = &ctx.data().req_client;
     let response = client
-        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/m2m100-1.2b")
+        .post("https://translate.fabseman.space/translate")
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
         .json(&form_data)
         .send()
         .await?;
 
     if response.status().is_success() {
-        let data: TranslateResponse = response.json().await?;
-        if !data.result.translated_text.is_empty() {
+        let data: FabseTranslate = response.json().await?;
+        if !data.translated_text.is_empty() {
             ctx.send(
                 CreateReply::default().embed(
                     CreateEmbed::new()
-                        .title(format!("Translation from {} to {}", source, target))
+                        .title(format!(
+                            "Translation from {} to {} with {}% confidence",
+                            data.detected_language.language,
+                            target_lang,
+                            data.detected_language.confidence
+                        ))
                         .color(0x33d17a)
-                        .field("Original:", sentence, false)
-                        .field("Translation:", &data.result.translated_text, false),
+                        .field("Original:", content, false)
+                        .field("Translation:", &data.translated_text, false),
                 ),
             )
             .await?;
         } else {
-            ctx.send(CreateReply::default().content("invalid syntax, pls follow this template: '!translate da,en text', here translating from danish to english")).await?;
+            ctx.send(CreateReply::default().content("too dangerous to translate"))
+                .await?;
         }
     } else {
         ctx.send(CreateReply::default().content("my translator is currently busy, pls standby"))
@@ -705,11 +736,14 @@ pub async fn urban(
                     .style(ButtonStyle::Primary)
                     .label("⬅️")]);
 
-                let new_response_chars: Vec<char> = data.list[index].definition.chars().collect();
+                let new_response_chars: Vec<char> =
+                    data.list[state.index].definition.chars().collect();
                 let new_chunks = new_response_chars.chunks(1024);
 
                 let mut new_embed = CreateEmbed::default();
-                new_embed = new_embed.title(&data.list[index].word).color(0xEFFF00);
+                new_embed = new_embed
+                    .title(&data.list[state.index].word)
+                    .color(0xEFFF00);
 
                 for (i, chunk) in new_chunks.enumerate() {
                     let chunk_str: String = chunk.iter().collect();
@@ -724,13 +758,13 @@ pub async fn urban(
 
                 new_embed = new_embed.field(
                     "Example:",
-                    data.list[index].example.replace(['[', ']'], ""),
+                    data.list[state.index].example.replace(['[', ']'], ""),
                     false,
                 );
 
-                let new_components = if index == 0 {
+                let new_components = if state.index == 0 {
                     vec![next_button]
-                } else if index == len {
+                } else if state.index == len {
                     vec![prev_button]
                 } else {
                     vec![prev_button, next_button]
