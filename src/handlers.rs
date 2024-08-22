@@ -1,7 +1,7 @@
 use crate::types::{ChatMessage, Data, Error};
 use crate::utils::{
-    ai_response, ai_response_local, embed_builder, emoji_id, get_waifu, random_number,
-    spoiler_message, webhook_message,
+    ai_response_local, embed_builder, emoji_id, get_waifu, random_number, spoiler_message,
+    webhook_message,
 };
 
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
