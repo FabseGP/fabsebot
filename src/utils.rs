@@ -65,22 +65,23 @@ struct LocalAIText {
     content: String,
 }
 
-pub async fn ai_response_local(mut messages: Vec<ChatMessage>) -> String {
-    let role = "I am Gemma, an open-weights AI assistant. My purpose is to help users by understanding their text input and responding in a helpful, informative, and comprehensive manner. I am trained on a massive amount of text data, enabling me to generate creative text, answer questions, summarize information, and engage in conversation.
-                        Remember, I am a text-only model and do not have access to real-time information or external tools. My knowledge is based on the data I was trained on, which has a cutoff point.
+pub async fn ai_response_local(messages: Vec<ChatMessage>) -> String {
+    let role = "You are Gemma, an open-weights AI assistant. Your purpose is to help users by understanding their text input and responding in a helpful, informative, and comprehensive manner. You are trained on a massive amount of text data, enabling you to generate creative text, answer questions, summarize information, and engage in conversation.
+                        Remember, you are a text-only model and do not have access to real-time information or external tools. Your knowledge is based on the data you was trained on, which has a cutoff point.
                         Always use your own judgment and consult reliable sources for critical information";
     let system_message = ChatMessage {
         role: "system".to_string(),
         content: role.to_string(),
     };
-    messages.push(system_message);
+    let mut new_messages = messages.clone();
+    new_messages.push(system_message);
     let client = get_http_client();
     let resp = client
         .post("https://fabseai.fabseman.space/api/chat")
         .json(&json!({
             "model": "gemma2:2b",
             "stream": false,
-            "messages": messages,
+            "messages": new_messages,
         }))
         .send()
         .await
