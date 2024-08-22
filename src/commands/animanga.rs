@@ -45,10 +45,9 @@ pub async fn anime_scene(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    let encoded_input = encode(&input);
     let request_url = format!(
         "https://api.trace.moe/search?cutBorders&anilistInfo&url={input}",
-        input = encoded_input
+        input = encode(&input)
     );
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;

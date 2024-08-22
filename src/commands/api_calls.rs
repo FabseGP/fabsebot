@@ -28,12 +28,11 @@ pub async fn ai_anime(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_input = encode(&prompt);
     let url = "https://cagliostrolab-animagine-xl-3-1.hf.space/call/run";
     let client = &ctx.data().req_client;
     let request_body = json!({
         "data": [
-            encoded_input,
+            prompt,
             "",
             random_number(2147483647),
             2048,
@@ -92,7 +91,6 @@ pub async fn ai_image(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_input = encode(&prompt);
     let client = &ctx.data().req_client;
     let models = [
         "https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/lykon/dreamshaper-8-lcm", 
@@ -101,7 +99,7 @@ pub async fn ai_image(
     let resp = client
         .post(models[random_number(models.len())])
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
-        .json(&json!({ "prompt": encoded_input }))
+        .json(&json!({ "prompt": prompt }))
         .send()
         .await?;
     let image_data = resp.bytes().await?.to_vec();
@@ -126,12 +124,11 @@ pub async fn ai_midjourney(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_input = encode(&prompt);
     let url = "https://mukaist-Midjourney.hf.space/call/run";
     let client = &ctx.data().req_client;
     let request_body = json!({
         "data": [
-            encoded_input,
+            prompt,
             "(deformed iris, deformed pupils, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime:1.4), text, close up, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck)",
             true,
             "2560 x 1440",
@@ -238,15 +235,13 @@ pub async fn ai_text(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_role = encode(&role);
-    let encoded_input = encode(&prompt);
     let client = &ctx.data().req_client;
     let resp = client
         .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
         .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
         .json(&json!({"messages": [
-                { "role": "system", "content": encoded_role },
-                { "role": "user", "content": encoded_input }
+                { "role": "system", "content": role },
+                { "role": "user", "content": prompt }
             ]
         }))
         .send()
@@ -342,10 +337,9 @@ pub async fn eightball(
     #[rest]
     question: String,
 ) -> Result<(), Error> {
-    let encoded_input = encode(&question);
     let request_url = format!(
         "https://eightballapi.com/api/biased?question={query}&lucky=false",
-        query = encoded_input
+        query = encode(&question)
     );
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
@@ -417,14 +411,11 @@ pub async fn memegen(
     #[description = "Top-right text"] top_right: String,
     #[description = "Bottom text"] bottom: String,
 ) -> Result<(), Error> {
-    let encoded_topl = encode(&top_left);
-    let encoded_topr = encode(&top_right);
-    let encoded_bottom = encode(&bottom);
     let request_url = format!(
         "https://api.memegen.link/images/exit/{left}/{right}/{bottom}.png",
-        left = encoded_topl,
-        right = encoded_topr,
-        bottom = encoded_bottom
+        left = encode(&top_left),
+        right = encode(&top_right),
+        bottom = encode(&bottom)
     );
     ctx.send(CreateReply::default().content(request_url))
         .await?;
@@ -503,7 +494,6 @@ pub async fn roast(
     };
 
     let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(","), account_date, join_date, message_count, messages_string);
-    let encoded_input = encode(&description);
 
     let client = &ctx.data().req_client;
     let resp = client
@@ -512,7 +502,7 @@ pub async fn roast(
         .json(&json!({
             "messages": [
                 { "role": "system", "content": "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target" },
-                { "role": "user", "content": encoded_input }
+                { "role": "user", "content": description }
             ]
         }))
         .send()
@@ -581,14 +571,13 @@ pub async fn translate(
             }
         }
     };
-    let encoded_input = &content;
     let target_lang = if let Some(language) = target {
         language
     } else {
         "en".to_string()
     };
     let form_data = json!({
-        "q": encoded_input,
+        "q": content,
         "source": "auto",
         "target": target_lang
     });
@@ -656,10 +645,9 @@ pub async fn urban(
     input: String,
 ) -> Result<(), Error> {
     ctx.defer().await.unwrap();
-    let encoded_input = encode(&input);
     let request_url = format!(
         "https://api.urbandictionary.com/v0/define?term={search}",
-        search = encoded_input
+        search = encode(&input)
     );
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
