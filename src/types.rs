@@ -1,14 +1,21 @@
 use lazy_static::lazy_static;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
 
 pub type Context<'a> = poise::Context<'a, Data, Error>;
 pub struct Data {
     pub db: sqlx::MySqlPool,
     pub req_client: Client,
     pub music_manager: Arc<songbird::Songbird>,
-    pub conversations: Arc<Mutex<HashMap<u64, HashMap<u64, Vec<String>>>>>,
+    pub conversations: Arc<Mutex<HashMap<u64, HashMap<u64, Vec<ChatMessage>>>>>,
 }
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

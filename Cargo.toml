@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 ab_glyph = "0"
+anyhow = "1"
 dotenvy = "0"
 image = { version = "0", default-features = false, features = ["avif", "rayon", "webp"] }
 imageproc = "0"

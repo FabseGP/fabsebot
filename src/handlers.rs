@@ -1,7 +1,7 @@
-use crate::types::{Data, Error};
+use crate::types::{ChatMessage, Data, Error};
 use crate::utils::{
-    ai_response, embed_builder, emoji_id, get_waifu, random_number, spoiler_message,
-    webhook_message,
+    ai_response, ai_response_local, embed_builder, emoji_id, get_waifu, random_number,
+    spoiler_message, webhook_message,
 };
 
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
@@ -104,32 +104,33 @@ pub async fn event_handler(
                         let mut conversations = data.conversations.lock().await;
                         let guild_conversations =
                             conversations.entry(guild_id).or_insert_with(HashMap::new);
-                        let history = guild_conversations
-                            .entry(new_message.channel_id.into())
-                            .or_insert_with(Vec::new);
                         if content == "clear" {
                             guild_conversations.remove(&new_message.channel_id.into());
                             new_message
-                                .channel_id
-                                .say(&ctx.http, "Conversation cleared!")
+                                .reply(&ctx.http, "Conversation cleared!")
                                 .await?;
                         } else {
-                            history.push(new_message.content.to_string());
-                            let context = format!(
-                                "old conversation: {}, new message to reply to: {}",
-                                history.join("\n"),
-                                new_message.content
-                            );
-                            let mut response = ai_response(context).await;
-                            if response == "empty" {
-                                guild_conversations.remove(&new_message.channel_id.into());
-                                guild_conversations
-                                    .entry(new_message.channel_id.into())
-                                    .or_insert_with(Vec::new)
-                                    .push(new_message.content.to_string());
-                                response = ai_response(new_message.content.to_string()).await;
+                            let history = guild_conversations
+                                .entry(new_message.channel_id.into())
+                                .or_insert_with(Vec::new);
+                            history.push(ChatMessage {
+                                role: "user".to_string(),
+                                content: new_message.content.to_string(),
+                            });
+                            let response = ai_response_local(history.clone()).await;
+                            if response == "error" {
+                                new_message
+                                    .channel_id
+                                    .say(&ctx.http, "Sorry, I had to forget our convo, too boring!")
+                                    .await?;
+                                history.clear();
+                            } else {
+                                history.push(ChatMessage {
+                                    role: "assistant".to_string(),
+                                    content: response.clone(),
+                                });
+                                new_message.channel_id.say(&ctx.http, response).await?;
                             }
-                            new_message.channel_id.say(&ctx.http, response).await?;
                         }
                         typing.stop();
                     }

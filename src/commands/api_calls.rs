@@ -175,10 +175,10 @@ pub async fn ai_midjourney(
 
 #[derive(Deserialize, Serialize)]
 struct FabseAISummary {
-    result: AiResponseSummary,
+    result: AIResponseSummary,
 }
 #[derive(Deserialize, Serialize)]
-struct AiResponseSummary {
+struct AIResponseSummary {
     summary: String,
 }
 
@@ -221,10 +221,10 @@ pub async fn ai_summarize(
 
 #[derive(Deserialize, Serialize)]
 struct FabseAIText {
-    result: AiResponseText,
+    result: AIResponseText,
 }
 #[derive(Deserialize, Serialize)]
-struct AiResponseText {
+struct AIResponseText {
     response: String,
 }
 
