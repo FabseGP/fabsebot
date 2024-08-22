@@ -119,11 +119,13 @@ pub async fn event_handler(
                             });
                             let response = ai_response_local(history.clone()).await;
                             if response == "error" {
-                                new_message
-                                    .channel_id
-                                    .say(&ctx.http, "Sorry, I had to forget our convo, too boring!")
-                                    .await?;
+                                let error_msg = "Sorry, I had to forget our convo, too boring!";
+                                new_message.channel_id.say(&ctx.http, error_msg).await?;
                                 history.clear();
+                                history.push(ChatMessage {
+                                    role: "assistant".to_string(),
+                                    content: error_msg.to_string(),
+                                });
                             } else {
                                 history.push(ChatMessage {
                                     role: "assistant".to_string(),
