@@ -390,76 +390,77 @@ pub async fn event_handler(
             guild_id,
             deleted_message_id,
         } => {
-            if ctx
+            let message_author_id = ctx
                 .cache
                 .message(*channel_id, *deleted_message_id)
-                .unwrap()
-                .author
-                .id
-                == 1146382254927523861
-            {
-                let guild_id = guild_id.unwrap();
-                let guild = ctx.http.get_guild(guild_id).await.unwrap();
-                let audit = guild
-                    .audit_logs(
-                        &ctx.http,
-                        Some(serenity::model::guild::audit_log::Action::Message(
-                            serenity::model::guild::audit_log::MessageAction::Delete,
-                        )),
-                        None,
-                        None,
-                        None,
-                    )
-                    .await
-                    .unwrap();
-                if let Some(entry) = audit.entries.first() {
-                    if let Some(user_id) = entry.user_id {
-                        let evil_person = ctx.http.get_user(user_id).await.unwrap();
-                        let admin_perms = ctx
-                            .http
-                            .get_member(guild_id, user_id)
-                            .await
-                            .unwrap()
-                            .permissions(&ctx.cache)
-                            .unwrap()
-                            .administrator();
-                        if evil_person.id != ctx.http.get_guild(guild_id).await.unwrap().owner_id
-                            && !admin_perms
-                        {
-                            let name = evil_person
-                                .nick_in(&ctx.http, guild_id)
+                .map(|msg| msg.author.id);
+            if let Some(author_id) = message_author_id {
+                if author_id == 1146382254927523861 {
+                    let guild_id = guild_id.unwrap();
+                    let guild = ctx.http.get_guild(guild_id).await.unwrap();
+                    let audit = guild
+                        .audit_logs(
+                            &ctx.http,
+                            Some(serenity::model::guild::audit_log::Action::Message(
+                                serenity::model::guild::audit_log::MessageAction::Delete,
+                            )),
+                            None,
+                            None,
+                            None,
+                        )
+                        .await
+                        .unwrap();
+                    if let Some(entry) = audit.entries.first() {
+                        if let Some(user_id) = entry.user_id {
+                            let evil_person = ctx.http.get_user(user_id).await.unwrap();
+                            let admin_perms = ctx
+                                .http
+                                .get_member(guild_id, user_id)
                                 .await
-                                .unwrap_or(evil_person.name.to_string());
-                            channel_id
-                                .send_message(
-                                    &ctx.http,
-                                    CreateMessage::default().content(format!(
-                                        "bruh, {} deleted my message, sending it again",
-                                        name
-                                    )),
-                                )
-                                .await?;
-                            let deleted_content = ctx
-                                .cache
-                                .message(*channel_id, *deleted_message_id)
                                 .unwrap()
-                                .clone();
-                            if !deleted_content.embeds.is_empty() {
+                                .permissions(&ctx.cache)
+                                .unwrap()
+                                .administrator();
+                            if evil_person.id
+                                != ctx.http.get_guild(guild_id).await.unwrap().owner_id
+                                && !admin_perms
+                            {
+                                let name = evil_person
+                                    .nick_in(&ctx.http, guild_id)
+                                    .await
+                                    .unwrap_or(evil_person.name.to_string());
                                 channel_id
                                     .send_message(
                                         &ctx.http,
-                                        CreateMessage::default()
-                                            .content(deleted_content.content)
-                                            .embed(deleted_content.embeds[0].clone().into()),
+                                        CreateMessage::default().content(format!(
+                                            "bruh, {} deleted my message, sending it again",
+                                            name
+                                        )),
                                     )
                                     .await?;
-                            } else {
-                                channel_id
-                                    .send_message(
-                                        &ctx.http,
-                                        CreateMessage::default().content(deleted_content.content),
-                                    )
-                                    .await?;
+                                let deleted_content = ctx
+                                    .cache
+                                    .message(*channel_id, *deleted_message_id)
+                                    .unwrap()
+                                    .clone();
+                                if !deleted_content.embeds.is_empty() {
+                                    channel_id
+                                        .send_message(
+                                            &ctx.http,
+                                            CreateMessage::default()
+                                                .content(deleted_content.content)
+                                                .embed(deleted_content.embeds[0].clone().into()),
+                                        )
+                                        .await?;
+                                } else {
+                                    channel_id
+                                        .send_message(
+                                            &ctx.http,
+                                            CreateMessage::default()
+                                                .content(deleted_content.content),
+                                        )
+                                        .await?;
+                                }
                             }
                         }
                     }
