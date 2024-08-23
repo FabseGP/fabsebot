@@ -182,7 +182,7 @@ pub async fn event_handler(
                         typing.stop();
                     }
                 }
-                if new_message.mentions_me(&ctx.http).await.unwrap() {
+                if  content.contains("<@1146382254927523861>") && !content.contains("!user") {
                     new_message
                         .channel_id
                         .send_message(
