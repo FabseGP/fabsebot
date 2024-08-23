@@ -41,10 +41,10 @@ pub async fn dynamic_prefix(
         .fetch_one(&mut *ctx.framework.user_data().db.acquire().await?)
         .await
         {
-            if record.prefix.is_empty() {
-                "!".to_string()
+            if let Some(prefix) = record.prefix {
+                prefix
             } else {
-                record.prefix
+                "!".to_string()
             }
         } else {
             "!".to_string()

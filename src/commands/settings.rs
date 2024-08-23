@@ -26,12 +26,11 @@ pub async fn dead_chat(
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         query!(
-            "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, ?, ?, 0, 0, ?)
+            "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)
             ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
             ctx.guild_id().unwrap().get(),
             occurrence,
             channel.id().to_string(),
-            "!",
             occurrence,
             channel.id().to_string()
         )
@@ -80,12 +79,15 @@ pub async fn prefix(
             .execute(&mut *ctx.data().db.acquire().await?)
             .await?;
             query!(
-            "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, 0, 0, ?)
-            ON DUPLICATE KEY UPDATE prefix = ?", ctx.guild_id().unwrap().get(), characters, characters
-        )
-        .execute(&mut *ctx.data().db.acquire().await?)
-        .await
-        .unwrap();
+                "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?)
+                ON DUPLICATE KEY UPDATE prefix = ?",
+                ctx.guild_id().unwrap().get(),
+                characters,
+                characters
+            )
+            .execute(&mut *ctx.data().db.acquire().await?)
+            .await
+            .unwrap();
             ctx.send(
                 CreateReply::default()
                     .content(format!(
@@ -135,8 +137,11 @@ pub async fn quote_channel(
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         query!(
-            "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, ?, 0, ?)
-            ON DUPLICATE KEY UPDATE quotes_channel = ?", ctx.guild_id().unwrap().get(), channel.id().to_string(), "!", channel.id().to_string(),
+            "INSERT INTO guild_settings (guild_id, quotes_channel) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE quotes_channel = ?",
+            ctx.guild_id().unwrap().get(),
+            channel.id().to_string(),
+            channel.id().to_string(),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await
@@ -171,7 +176,10 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
         .permissions(ctx.cache())
         .unwrap()
         .administrator();
-    if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
+    if ctx.author().id == 1014524859532980255
+        || ctx.author().id == ctx.partial_guild().await.unwrap().owner_id
+        || admin_perms
+    {
         query!(
             "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
             ctx.guild_id().unwrap().get(),
@@ -179,8 +187,8 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         query!(
-            "REPLACE INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, 0, 0, ?)", 
-            ctx.guild_id().unwrap().get(), "!"
+            "REPLACE INTO guild_settings (guild_id) VALUES (?)",
+            ctx.guild_id().unwrap().get()
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await
@@ -223,8 +231,11 @@ pub async fn spoiler_channel(
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         query!(
-            "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, quotes_channel, spoiler_channel, prefix) VALUES (?, 0, 0, 0, ?, ?)
-            ON DUPLICATE KEY UPDATE quotes_channel = ?", ctx.guild_id().unwrap().get(), channel.id().to_string(), "!", channel.id().to_string()
+            "INSERT INTO guild_settings (guild_id, spoiler_channel) VALUES (?, ?)
+            ON DUPLICATE KEY UPDATE quotes_channel = ?",
+            ctx.guild_id().unwrap().get(),
+            channel.id().to_string(),
+            channel.id().to_string()
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await

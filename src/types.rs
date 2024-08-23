@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, error::Error as StdError, sync::Arc};
 use tokio::sync::Mutex;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -18,7 +18,7 @@ pub struct Data {
     pub conversations: Arc<Mutex<HashMap<u64, HashMap<u64, Vec<ChatMessage>>>>>,
 }
 
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Error = Box<dyn StdError + Send + Sync>;
 
 lazy_static! {
     static ref HTTP_CLIENT: Arc<Client> = Arc::new(Client::new());

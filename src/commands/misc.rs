@@ -189,10 +189,12 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     .fetch_one(&mut *ctx.data().db.acquire().await?)
     .await
     {
-        let quote_channel = ChannelId::new(record.quotes_channel);
-        quote_channel
-            .send_files(ctx.http(), paths, CreateMessage::new().content(message_url))
-            .await?;
+        if let Some(channel) = record.quotes_channel {
+            let quote_channel = ChannelId::new(channel);
+            quote_channel
+                .send_files(ctx.http(), paths, CreateMessage::new().content(message_url))
+                .await?;
+        }
     }
     remove_file(Path::new("quote.webp")).await?;
     Ok(())

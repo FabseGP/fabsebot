@@ -1,14 +1,15 @@
 use crate::types::{ChatMessage, Data, Error};
 use crate::utils::{
-    ai_response_local, embed_builder, emoji_id, get_waifu, random_number, spoiler_message,
+    ai_response, ai_response_local, embed_builder, emoji_id, get_waifu, random_number, spoiler_message,
     webhook_message,
 };
 
 use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
 use serenity::{
     builder::{CreateMessage, EditProfile},
+    futures::StreamExt,
     gateway::ActivityData,
-    model::{channel::ReactionType, id::ChannelId, user::OnlineStatus},
+    model::{channel::ReactionType, id::ChannelId, user::OnlineStatus, Timestamp},
 };
 use sqlx::query;
 use std::collections::HashMap;
@@ -65,18 +66,60 @@ pub async fn event_handler(
                 .fetch_one(&mut *data.db.acquire().await?)
                 .await
                 {
-                    let spoiler_channel = ChannelId::new(record.spoiler_channel);
-                    if new_message.channel_id == spoiler_channel {
-                        spoiler_message(ctx, new_message, &new_message.content).await;
+                    if let Some(channel) = record.spoiler_channel {
+                        let spoiler_channel = ChannelId::new(channel);
+                        if new_message.channel_id == spoiler_channel {
+                            spoiler_message(ctx, new_message, &new_message.content).await;
+                        }
                     }
                 }
-                if let Ok(_) = query!(
-                    "SELECT dead_chat_channel FROM guild_settings WHERE guild_id = ?",
+                if let Ok(record) = query!(
+                    "SELECT dead_chat_channel, dead_chat_rate FROM guild_settings WHERE guild_id = ?",
                     guild_id
                 )
                 .fetch_one(&mut *data.db.acquire().await?)
                 .await
-                {}
+                {
+                    if let Some(channel) = record.dead_chat_channel {
+                        let dead_chat_channel = ChannelId::new(channel);
+                        let last_message_time = dead_chat_channel
+                            .messages_iter(&ctx)
+                            .boxed()
+                            .next()
+                            .await
+                            .unwrap()
+                            .unwrap()
+                            .timestamp.timestamp();
+                        let current_time = Timestamp::now().timestamp();
+                        if current_time - last_message_time > record.dead_chat_rate.unwrap() as i64 * 60 {    
+                            let dead_chat_gifs = [
+                                "https://media1.tenor.com/m/k6k3vCBIYlYAAAAC/dead-chat.gif",
+                                "https://media1.tenor.com/m/t_DmbWvjTKMAAAAd/dead-chat-discord.gif",
+                                "https://media1.tenor.com/m/8JHVRggIIl4AAAAd/hello-chat-dead-chat.gif",
+                                "https://media1.tenor.com/m/BDJsAenz_SUAAAAd/chat-dead-chat.gif",
+                                "https://media.tenor.com/PFyQ24Kux9UAAAAC/googas-wet.gif",
+                                "https://media.tenor.com/71DeLT3bO0AAAAAM/dead-chat-dead-chat-skeleton.gif",
+                                "https://media.tenor.com/yjAObClgNM4AAAAM/dead-chat-xd-dead-chat.gif",
+                                "https://media.tenor.com/dpXmFPj7PacAAAAM/dead-chat.gif",
+                                "https://media.tenor.com/XyZ3A8FKZpkAAAAM/dead-group-chat-dead-chat.gif",
+                                "https://media.tenor.com/bAfYpkySsqQAAAAd/rip-chat-chat-dead.gif",
+                                "https://media.tenor.com/ogIdtDgmJuUAAAAC/dead-chat-dead-chat-xd.gif",
+                                "https://media.tenor.com/NPVLum9UiXYAAAAM/cringe-dead-chat.gif",
+                                "https://media.tenor.com/AYJL7HPOy-EAAAAd/ayo-the-chat-is-dead.gif",
+                                "https://media.tenor.com/2u621yp8wg0AAAAC/dead-chat-xd-mugman.gif",
+                                "https://media.tenor.com/3VXXC59D2BYAAAAC/omori-dead-chat.gif",
+                                "https://media.tenor.com/FqJ2W5diczAAAAAd/dead-chat.gif",
+                                "https://media.tenor.com/KFZQqKXcujIAAAAd/minecraft-dead-chat.gif",
+                                "https://media.tenor.com/qQeE7sMPIRMAAAAC/dead-chat-xd-ded-chat.gif",
+                                "https://media.tenor.com/cX9CCITVZNQAAAAd/hello-goodbye.gif",
+                                "https://media.tenor.com/eW0bnOiDjSAAAAAC/deadchatxdrickroll.gif",
+                                "https://media.tenor.com/1wCIRabmVUUAAAAd/chat-ded.gif",
+                                "https://media.tenor.com/N502JNoV_poAAAAd/dead-chat-dead-chat-xd.gif",
+                            ];
+                            dead_chat_channel.say(&ctx.http, dead_chat_gifs[random_number(dead_chat_gifs.len())]).await?;
+                        }
+                    }
+                }
                 let words_to_count: Vec<String> =
                     query!("SELECT word FROM words_count WHERE guild_id = ?", guild_id)
                         .fetch_all(&mut *data.db.acquire().await?)
@@ -117,27 +160,29 @@ pub async fn event_handler(
                                 role: "user".to_string(),
                                 content: new_message.content.to_string(),
                             });
-                            let response = ai_response_local(history.clone()).await;
-                            if response == "error" {
-                                let error_msg = "Sorry, I had to forget our convo, too boring!";
-                                new_message.channel_id.say(&ctx.http, error_msg).await?;
-                                history.clear();
-                                history.push(ChatMessage {
-                                    role: "assistant".to_string(),
-                                    content: error_msg.to_string(),
-                                });
-                            } else {
-                                history.push(ChatMessage {
-                                    role: "assistant".to_string(),
-                                    content: response.clone(),
-                                });
-                                new_message.channel_id.say(&ctx.http, response).await?;
+                            match ai_response(history.clone()).await {
+                                Ok(response) => {
+                                    history.push(ChatMessage {
+                                        role: "assistant".to_string(),
+                                        content: response.clone(),
+                                    });
+                                    new_message.channel_id.say(&ctx.http, response).await?;
+                                },
+                                Err(_) => {
+                                    let error_msg = "Sorry, I had to forget our convo, too boring!";
+                                    new_message.channel_id.say(&ctx.http, error_msg).await?;
+                                    history.clear();
+                                    history.push(ChatMessage {
+                                        role: "assistant".to_string(),
+                                        content: error_msg.to_string(),
+                                    });
+                                }
                             }
                         }
                         typing.stop();
                     }
                 }
-                if content.contains(&ctx.cache.current_user().to_string()) {
+                if new_message.mentions_me(&ctx.http).await.unwrap() {
                     new_message
                         .channel_id
                         .send_message(
@@ -275,16 +320,16 @@ pub async fn event_handler(
                         "# such magnificence",
                     )
                     .await;
-                    new_message
-                        .react(
-                            &ctx.http,
-                            ReactionType::try_from(
-                                emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu")
-                                    .await,
+                    let emoji =  emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu")
+                        .await;
+                    if let Ok(emoji) = emoji {
+                        new_message
+                            .react(
+                                &ctx.http,
+                                ReactionType::try_from(emoji).unwrap()
                             )
-                            .unwrap(),
-                        )
-                        .await?;
+                            .await?;
+                    }
                 } else if content == "star_platinum" {
                     webhook_message(ctx, new_message, "yotsuba", "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png", "ZAA WARUDOOOOO").await;
                 } else if content == "floppaganda" {
@@ -363,17 +408,16 @@ pub async fn event_handler(
                         )
                         .await?;
                 } else if content.contains("fabse") {
-                    new_message
-                        .react(
-                            &ctx.http,
-                            ReactionType::try_from(
-                                emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu")
-                                    .await
-                                    .as_str(),
+                    let emoji =  emoji_id(ctx, new_message.guild_id.unwrap(), "fabseman_willbeatu")
+                        .await;
+                    if let Ok(emoji) = emoji {
+                        new_message
+                            .react(
+                                &ctx.http,
+                                ReactionType::try_from(emoji).unwrap()
                             )
-                            .unwrap(),
-                        )
-                        .await?;
+                            .await?;
+                    }
                 } else if content.contains("kurukuru_seseren") {
                     let count = content.matches("kurukuru_seseren").count();
                     let response = "<a:kurukuru_seseren:1153742599220375634>".repeat(count);

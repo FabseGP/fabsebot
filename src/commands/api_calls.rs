@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serenity::futures::StreamExt;
 use sqlx::{query, Row};
-use std::time::Duration;
+use std::{env, time::Duration};
 use urlencoding::encode;
 
 #[derive(Deserialize, Serialize)]
@@ -96,9 +96,10 @@ pub async fn ai_image(
         "https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/lykon/dreamshaper-8-lcm", 
         "https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/bytedance/stable-diffusion-xl-lightning"
     ];
+    let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
     let resp = client
         .post(models[random_number(models.len())])
-        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
+        .bearer_auth(api_key)
         .json(&json!({ "prompt": prompt }))
         .send()
         .await?;
@@ -198,9 +199,10 @@ pub async fn ai_summarize(
         }
     };
     let client = &ctx.data().req_client;
+    let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
     let resp = client
         .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/facebook/bart-large-cnn")
-        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
+        .bearer_auth(api_key)       
         .json(&json!({"input_text": reply.content.to_string(),
             "max_length": length 
         }))
@@ -236,9 +238,10 @@ pub async fn ai_text(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let client = &ctx.data().req_client;
+    let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
     let resp = client
         .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
-        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")       
+        .bearer_auth(api_key)   
         .json(&json!({"messages": [
                 { "role": "system", "content": role },
                 { "role": "user", "content": prompt }
@@ -369,7 +372,11 @@ pub async fn gif(
     input: String,
 ) -> Result<(), Error> {
     let url = get_gif(input).await;
-    ctx.send(CreateReply::default().content(url)).await?;
+    if let Ok(url) = url {
+        ctx.send(CreateReply::default().content(url)).await?; 
+    } else {
+        ctx.send(CreateReply::default().content("life is not gifing")).await?; 
+    }
     Ok(())
 }
 
@@ -496,9 +503,10 @@ pub async fn roast(
     let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(","), account_date, join_date, message_count, messages_string);
 
     let client = &ctx.data().req_client;
+    let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
     let resp = client
         .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
-        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
+        .bearer_auth(api_key)
         .json(&json!({
             "messages": [
                 { "role": "system", "content": "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target" },
@@ -584,7 +592,6 @@ pub async fn translate(
     let client = &ctx.data().req_client;
     let response = client
         .post("https://translate.fabseman.space/translate")
-        .bearer_auth("5UDCidIPqJWWrUZKQPLAncYPYBd6zHH1IJBTLh2r")
         .json(&form_data)
         .send()
         .await?;
