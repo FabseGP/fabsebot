@@ -336,8 +336,7 @@ pub fn random_number(count: usize) -> usize {
 
 pub async fn spoiler_message(ctx: &Context, message: &serenity::Message, text: &str) {
     let avatar_url = message.author.avatar_url().unwrap();
-    let nick = message.author_nick(&ctx.http).await;
-    let username = nick.as_deref().unwrap_or(message.author.name.as_str());
+    let username = message.author.display_name();
     let mut is_first = true;
     let client = get_http_client();
     for attachment in &message.attachments {

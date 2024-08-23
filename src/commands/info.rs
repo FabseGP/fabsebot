@@ -57,7 +57,7 @@ pub async fn user_info(
         .get_member(ctx.guild_id().unwrap(), user.id)
         .await?;
     let embed = CreateEmbed::new()
-        .title(member.nick.as_deref().unwrap_or(&user.name))
+        .title(member.display_name())
         .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))
         .field("Account created at: ", user.created_at().to_string(), false);
     ctx.send(CreateReply::default().embed(embed)).await?;

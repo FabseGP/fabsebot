@@ -27,7 +27,7 @@ pub async fn birthday(
         .get_member(ctx.guild_id().unwrap(), user.id)
         .await?;
     let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
-    let name = member.nick.unwrap_or(user.name);
+    let name = member.display_name();
     ctx.send(
         CreateReply::default().embed(
             CreateEmbed::new()
@@ -151,8 +151,8 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
                 .unwrap();
             load_from_memory(&avatar_bytes).unwrap().to_rgba8()
         };
-        let name = member.nick.unwrap_or(reply.author.name);
-        quote_image(&avatar_image, name.as_str(), &content)
+        let name = member.display_name();
+        quote_image(&avatar_image, name, &content)
             .await
             .save("quote.webp")
             .unwrap();
@@ -167,8 +167,8 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
                 .unwrap();
             load_from_memory(&avatar_bytes).unwrap().to_rgba8()
         };
-        let name = reply.author.name.to_string();
-        quote_image(&avatar_image, name.as_str(), &content)
+        let name = reply.author.display_name();
+        quote_image(&avatar_image, name, &content)
             .await
             .save("quote.webp")
             .unwrap();

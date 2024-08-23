@@ -154,7 +154,7 @@ pub async fn event_handler(
                             let user_message = {
                                 let mut message_parts = vec![
                                     new_message.content.to_string(),
-                                    format!("name of author: {}", new_message.author.name),
+                                    format!("name of author: {}", new_message.author.display_name()),
                                 ];
                                 if let Some(guild_id) = new_message.guild_id {
                                     if let Ok(author_member) = guild_id.member(&ctx.http, new_message.author.id).await {
@@ -172,7 +172,7 @@ pub async fn event_handler(
                                                         .filter_map(|role_id| guild.roles.get(role_id))
                                                         .map(|role| role.name.clone().to_string())
                                                         .collect();
-                                                    message_parts.push(format!("name of user pinged: {}", target.name));
+                                                    message_parts.push(format!("name of user pinged: {}", target.display_name()));
                                                     message_parts.push(format!("roles of user pinged: {}", target_roles.join(",")));
                                                 }
                                             }
@@ -519,10 +519,7 @@ pub async fn event_handler(
                                 != ctx.http.get_guild(guild_id).await.unwrap().owner_id
                                 && !admin_perms
                             {
-                                let name = evil_person
-                                    .nick_in(&ctx.http, guild_id)
-                                    .await
-                                    .unwrap_or(evil_person.name.to_string());
+                                let name = evil_person.display_name();
                                 channel_id
                                     .send_message(
                                         &ctx.http,

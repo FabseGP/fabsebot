@@ -61,7 +61,7 @@ pub async fn user_misuse(
             .get_member(ctx.guild_id().unwrap(), user.id)
             .await?;
         let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
-        let name = member.nick.unwrap_or(user.name);
+        let name = member.display_name();
         let channel_id = ctx.channel_id();
         let webhook_info = json!({
             "name": name,

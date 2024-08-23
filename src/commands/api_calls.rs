@@ -456,7 +456,7 @@ pub async fn roast(
         .filter_map(|role_id| guild_roles.get(role_id))
         .map(|role| role.name.clone().to_string())
         .collect();
-    let name = member.nick.unwrap_or(user.name.clone());
+    let name = member.display_name();
     let account_date = user.created_at();
     let join_date = member.joined_at.unwrap();
     let message_count = {
