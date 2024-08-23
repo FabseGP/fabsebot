@@ -143,13 +143,13 @@ pub async fn event_handler(
                 if let Some(topic) = new_message.guild_channel(&ctx.http).await?.topic {
                     if topic.contains("ai-chat") {
                         let typing = new_message.channel_id.start_typing(ctx.http.clone());
-                        let response = if content == "clear" {
+                        if content == "clear" {
                             let mut conversations = data.conversations.lock().await;
                             conversations
                                 .entry(guild_id)
                                 .or_default()
                                 .remove(&new_message.channel_id.into());
-                            "Conversation cleared!".to_string()
+                           new_message.reply(&ctx.http, "Conversation cleared!").await?;
                         } else {
                             let user_message = {
                                 let mut message_parts = vec![
@@ -206,7 +206,7 @@ pub async fn event_handler(
                                             content: response.clone(),
                                         });
                                     }
-                                    response
+                                    new_message.channel_id.say(&ctx.http, response).await?;
                                 },
                                 Err(_) => {
                                     let error_msg = "Sorry, I had to forget our convo, too boring!".to_string();
@@ -221,11 +221,10 @@ pub async fn event_handler(
                                             content: error_msg.clone(),
                                         });
                                     }
-                                    error_msg
+                                    new_message.channel_id.say(&ctx.http, error_msg).await?;
                                 }
                             }
-                        };
-                        new_message.channel_id.say(&ctx.http, &response).await?;
+                        }
                         typing.stop();
                     }
                 }
