@@ -35,8 +35,7 @@ pub async fn dead_chat(
             channel.id().to_string()
         )
         .execute(&mut *ctx.data().db.acquire().await?)
-        .await
-        .unwrap();
+        .await?;
         ctx.send(
             CreateReply::default()
                 .content(format!(
@@ -86,8 +85,7 @@ pub async fn prefix(
                 characters
             )
             .execute(&mut *ctx.data().db.acquire().await?)
-            .await
-            .unwrap();
+            .await?;
             ctx.send(
                 CreateReply::default()
                     .content(format!(
@@ -144,8 +142,7 @@ pub async fn quote_channel(
             channel.id().to_string(),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
-        .await
-        .unwrap();
+        .await?;
         ctx.send(
             CreateReply::default()
                 .content(format!(
@@ -191,8 +188,7 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
             ctx.guild_id().unwrap().get()
         )
         .execute(&mut *ctx.data().db.acquire().await?)
-        .await
-        .unwrap();
+        .await?;
         ctx.send(
             CreateReply::default()
                 .content("Server settings resetted... probably")
@@ -238,8 +234,7 @@ pub async fn spoiler_channel(
             channel.id().to_string()
         )
         .execute(&mut *ctx.data().db.acquire().await?)
-        .await
-        .unwrap();
+        .await?;
         ctx.send(
             CreateReply::default()
                 .content(format!(

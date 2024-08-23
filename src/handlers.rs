@@ -12,7 +12,6 @@ use serenity::{
     model::{channel::ReactionType, id::ChannelId, user::OnlineStatus, Timestamp},
 };
 use sqlx::query;
-use std::collections::HashMap;
 
 pub async fn event_handler(
     framework: poise::FrameworkContext<'_, Data, Error>,
@@ -47,9 +46,12 @@ pub async fn event_handler(
             if !new_message.author.bot() {
                 let content = new_message.content.to_lowercase();
                 let guild_id: u64 = new_message.guild_id.unwrap().into();
-                query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id,)
-                    .execute(&mut *data.db.acquire().await?)
-                    .await?;
+                query!(
+                    "INSERT IGNORE INTO guilds (guild_id) VALUES (?)", 
+                    guild_id
+                )
+                .execute(&mut *data.db.acquire().await?)
+                .await?;
                 query!(
                     "INSERT INTO message_count (guild_id, user_name, messages) VALUES (?, ?, 1)
                     ON DUPLICATE KEY UPDATE messages = messages + 1",
@@ -57,8 +59,7 @@ pub async fn event_handler(
                     new_message.author.name.to_string()
                 )
                 .execute(&mut *data.db.acquire().await?)
-                .await
-                .unwrap();
+                .await?;
                 if let Ok(record) = query!(
                     "SELECT spoiler_channel FROM guild_settings WHERE guild_id = ?",
                     guild_id
@@ -120,65 +121,111 @@ pub async fn event_handler(
                         }
                     }
                 }
-                let words_to_count: Vec<String> =
+                if let Ok(records) = 
                     query!("SELECT word FROM words_count WHERE guild_id = ?", guild_id)
                         .fetch_all(&mut *data.db.acquire().await?)
                         .await
-                        .unwrap()
-                        .iter()
-                        .map(|row| row.word.clone())
-                        .collect();
-                for word in words_to_count.iter() {
-                    if content.contains(word) {
-                        query!(
-                            "INSERT INTO words_count (word, guild_id, count) VALUES (?, ?, 1)
-                            ON DUPLICATE KEY UPDATE count = count + 1",
-                            word,
-                            guild_id
-                        )
-                        .execute(&mut *data.db.acquire().await?)
-                        .await
-                        .unwrap();
+                {
+                    let words: Vec<String> = records.iter().map(|row| row.word.clone()).collect();
+                    for word in words.iter() {
+                        if content.contains(word) {
+                            query!(
+                                "INSERT INTO words_count (word, guild_id, count) VALUES (?, ?, 1)
+                                ON DUPLICATE KEY UPDATE count = count + 1",
+                                word,
+                                guild_id
+                            )
+                            .execute(&mut *data.db.acquire().await?)
+                            .await?;
+                        }
                     }
                 }
-                if let Some(topic) = new_message.guild_channel(&ctx.http).await.unwrap().topic {
+                if let Some(topic) = new_message.guild_channel(&ctx.http).await?.topic {
                     if topic.contains("ai-chat") {
                         let typing = new_message.channel_id.start_typing(ctx.http.clone());
-                        let mut conversations = data.conversations.lock().await;
-                        let guild_conversations =
-                            conversations.entry(guild_id).or_insert_with(HashMap::new);
-                        if content == "clear" {
-                            guild_conversations.remove(&new_message.channel_id.into());
-                            new_message
-                                .reply(&ctx.http, "Conversation cleared!")
-                                .await?;
+                        let response = if content == "clear" {
+                            let mut conversations = data.conversations.lock().await;
+                            conversations
+                                .entry(guild_id)
+                                .or_default()
+                                .remove(&new_message.channel_id.into());
+                            "Conversation cleared!".to_string()
                         } else {
-                            let history = guild_conversations
-                                .entry(new_message.channel_id.into())
-                                .or_insert_with(Vec::new);
-                            history.push(ChatMessage {
-                                role: "user".to_string(),
-                                content: new_message.content.to_string(),
-                            });
-                            match ai_response(history.clone()).await {
+                            let user_message = {
+                                let mut message_parts = vec![
+                                    new_message.content.to_string(),
+                                    format!("name of author: {}", new_message.author.name),
+                                ];
+                                if let Some(guild_id) = new_message.guild_id {
+                                    if let Ok(author_member) = guild_id.member(&ctx.http, new_message.author.id).await {
+                                        if let Some(guild) = guild_id.to_guild_cached(&ctx.cache) {
+                                            let roles: Vec<String> = author_member.roles.iter()
+                                                .filter_map(|role_id| guild.roles.get(role_id))
+                                                .map(|role| role.name.clone().to_string())
+                                                .collect();
+                                            if !roles.is_empty() {
+                                                message_parts.push(format!("roles of author: {}", roles.join(",")));
+                                            }
+                                            if let Some(target) = new_message.mentions.first() {
+                                                if let Some(target_member) = target.member.as_ref() {
+                                                    let target_roles: Vec<String> = target_member.roles.iter()
+                                                        .filter_map(|role_id| guild.roles.get(role_id))
+                                                        .map(|role| role.name.clone().to_string())
+                                                        .collect();
+                                                    message_parts.push(format!("name of user pinged: {}", target.name));
+                                                    message_parts.push(format!("roles of user pinged: {}", target_roles.join(",")));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                message_parts.join("\n")
+                            };
+                            let history_clone = {
+                                let mut conversations = data.conversations.lock().await;
+                                let history = conversations
+                                    .entry(guild_id)
+                                    .or_default()
+                                    .entry(new_message.channel_id.into())
+                                    .or_default();
+                                history.push(ChatMessage {
+                                    role: "user".to_string(),
+                                    content: user_message.clone(),
+                                });
+                                history.clone()
+                            };
+                            match ai_response(history_clone).await {
                                 Ok(response) => {
-                                    history.push(ChatMessage {
-                                        role: "assistant".to_string(),
-                                        content: response.clone(),
-                                    });
-                                    new_message.channel_id.say(&ctx.http, response).await?;
+                                    let mut conversations = data.conversations.lock().await;
+                                    if let Some(history) = conversations
+                                        .get_mut(&guild_id)
+                                        .and_then(|gc| gc.get_mut(&new_message.channel_id.into()))
+                                    {
+                                        history.push(ChatMessage {
+                                            role: "assistant".to_string(),
+                                            content: response.clone(),
+                                        });
+                                    }
+                                    response
                                 },
                                 Err(_) => {
-                                    let error_msg = "Sorry, I had to forget our convo, too boring!";
-                                    new_message.channel_id.say(&ctx.http, error_msg).await?;
-                                    history.clear();
-                                    history.push(ChatMessage {
-                                        role: "assistant".to_string(),
-                                        content: error_msg.to_string(),
-                                    });
+                                    let error_msg = "Sorry, I had to forget our convo, too boring!".to_string();
+                                    let mut conversations = data.conversations.lock().await;
+                                    if let Some(history) = conversations
+                                        .get_mut(&guild_id)
+                                        .and_then(|gc| gc.get_mut(&new_message.channel_id.into()))
+                                    {
+                                        history.clear();
+                                        history.push(ChatMessage {
+                                            role: "assistant".to_string(),
+                                            content: error_msg.clone(),
+                                        });
+                                    }
+                                    error_msg
                                 }
                             }
-                        }
+                        };
+                        new_message.channel_id.say(&ctx.http, &response).await?;
                         typing.stop();
                     }
                 }
