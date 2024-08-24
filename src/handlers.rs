@@ -1,6 +1,6 @@
 use crate::types::{ChatMessage, Data, Error};
 use crate::utils::{
-    ai_response, ai_response_local, embed_builder, emoji_id, get_waifu, random_number, spoiler_message,
+    ai_image_desc, ai_response, ai_response_local, embed_builder, emoji_id, get_waifu, random_number, spoiler_message,
     webhook_message,
 };
 
@@ -158,24 +158,68 @@ pub async fn event_handler(
                                 ];
                                 if let Some(guild_id) = new_message.guild_id {
                                     if let Ok(author_member) = guild_id.member(&ctx.http, new_message.author.id).await {
-                                        if let Some(guild) = guild_id.to_guild_cached(&ctx.cache) {
-                                            let roles: Vec<String> = author_member.roles.iter()
-                                                .filter_map(|role_id| guild.roles.get(role_id))
-                                                .map(|role| role.name.clone().to_string())
-                                                .collect();
-                                            if !roles.is_empty() {
-                                                message_parts.push(format!("and has the following roles: {}", roles.join(",")));
+                                        let roles: Vec<String> = {
+                                            if let Some(guild) = guild_id.to_guild_cached(&ctx.cache) {
+                                                author_member.roles.iter()
+                                                    .filter_map(|role_id| guild.roles.get(role_id))
+                                                    .map(|role| role.name.clone().to_string())
+                                                    .collect()
+                                            } else {
+                                                Vec::new()
                                             }
-                                            if let Some(target) = new_message.mentions.first() {
-                                                if let Some(target_member) = target.member.as_ref() {
-                                                    let target_roles: Vec<String> = target_member.roles.iter()
-                                                        .filter_map(|role_id| guild.roles.get(role_id))
-                                                        .map(|role| role.name.clone().to_string())
-                                                        .collect();
-                                                    message_parts.push(format!("a user named: {} was pinged as well", target.display_name()));
-                                                    message_parts.push(format!("the pinged user has the following roles: {}", target_roles.join(",")));
-                                                }
+                                        };
+                                        if !roles.is_empty() {
+                                            message_parts.push(format!("and has the following roles: {}", roles.join(",")));
+                                        }
+                                        let mut mentioned_users = Vec::new();
+                                        for target in &new_message.mentions {
+                                            if let Some(target_member) = target.member.as_ref() {
+                                                let target_roles: Vec<String> = {
+                                                    if let Some(guild) = guild_id.to_guild_cached(&ctx.cache) {
+                                                        target_member.roles.iter()
+                                                            .filter_map(|role_id| guild.roles.get(role_id))
+                                                            .map(|role| role.name.clone().to_string())
+                                                            .collect()
+                                                    } else {
+                                                        Vec::new()
+                                                    }
+                                                };
+                                                let pfp_desc = {                                                
+                                                    let client = data.req_client.clone();
+                                                    let pfp = client.get(target.static_face()).send().await?;
+                                                    if pfp.status().is_success() {
+                                                        let binary_pfp = pfp.bytes().await?.to_vec();
+                                                        ai_image_desc(binary_pfp).await?
+                                                    } else {
+                                                        "Not known".to_string()
+                                                    } 
+                                                };
+                                                let user_info = format!(
+                                                    "User: {} (Roles: {}) (Profile picture description: {})",
+                                                    target.display_name(),
+                                                    target_roles.join(", "),
+                                                    pfp_desc
+                                                );
+                                                mentioned_users.push(user_info);
                                             }
+                                        }
+                                        if !mentioned_users.is_empty() {
+                                            message_parts.push(format!("{} user(s) were pinged:", mentioned_users.len()));
+                                            message_parts.extend(mentioned_users);
+                                        } else {
+                                            message_parts.push("No users were pinged!".to_string());
+                                        }
+                                        let mut attachments_desc = Vec::new();
+                                        for attachment in &new_message.attachments {
+                                            let file = attachment.download().await?;
+                                            let description = ai_image_desc(file).await?;
+                                            attachments_desc.push(description);
+                                        }
+                                        if !attachments_desc.is_empty() {
+                                            message_parts.push(format!("{} image(s) were sent, here are descriptions:", attachments_desc.len()));
+                                            message_parts.extend(attachments_desc);
+                                        } else {
+                                            message_parts.push("No images were sent!".to_string());
                                         }
                                     }
                                 }
@@ -208,14 +252,13 @@ pub async fn event_handler(
                                     .entry(new_message.channel_id.into())
                                     .or_default();
                                 history.push(ChatMessage {
+                                    role: "system".to_string(),
+                                    content: formatted_bot_role.to_string(),
+                                });
+                                history.push(ChatMessage {
                                     role: "user".to_string(),
                                     content: new_message.content.to_string(),
                                 });
-                                let system_message = ChatMessage {
-                                    role: "system".to_string(),
-                                    content: formatted_bot_role.to_string(),
-                                };
-                                history.insert(0, system_message);
                                 history.clone()
                             };
                             match ai_response(history_clone).await {
