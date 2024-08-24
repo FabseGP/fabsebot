@@ -85,7 +85,7 @@ pub async fn ai_response_local(messages: Vec<ChatMessage>) -> Result<String, Err
     let resp = client
         .post("https://fabseai.fabseman.space/api/chat")
         .json(&json!({
-            "model": "gemma2:2b",
+            "model": "mistral-nemo:latest",
             "stream": false,
             "messages": messages,
         }))

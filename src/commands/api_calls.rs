@@ -500,7 +500,7 @@ pub async fn roast(
         collected_messages.join(",")
     };
 
-    let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(","), account_date, join_date, message_count, messages_string);
+    let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
 
     let client = &ctx.data().req_client;
     let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
