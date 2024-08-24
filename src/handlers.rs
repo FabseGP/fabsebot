@@ -206,7 +206,7 @@ pub async fn event_handler(
                                             content: response.clone(),
                                         });
                                     }
-                                    new_message.channel_id.say(&ctx.http, response).await?;
+                                    new_message.reply(&ctx.http, response).await?;
                                 },
                                 Err(_) => {
                                     let error_msg = "Sorry, I had to forget our convo, too boring!".to_string();
@@ -221,7 +221,7 @@ pub async fn event_handler(
                                             content: error_msg.clone(),
                                         });
                                     }
-                                    new_message.channel_id.say(&ctx.http, error_msg).await?;
+                                    new_message.reply(&ctx.http, error_msg).await?;
                                 }
                             }
                         }
