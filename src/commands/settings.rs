@@ -4,6 +4,37 @@ use poise::CreateReply;
 use serenity::model::channel::Channel;
 use sqlx::query;
 
+/// Configure the role for the chatbot individually for each user
+#[poise::command(prefix_command, slash_command)]
+pub async fn chatbot_role(
+    ctx: Context<'_>,
+    #[description = "System prompt for chatbot, aka its role; if not set, then default role"] role: Option<String>,
+) -> Result<(), Error> {
+    query!(
+        "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
+        ctx.guild_id().unwrap().get(),
+    )
+    .execute(&mut *ctx.data().db.acquire().await?)
+    .await?;
+    query!(
+        "INSERT INTO user_settings (guild_id, user_id, chatbot_role) VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE chatbot_role = ?",
+        ctx.guild_id().unwrap().get(),
+        u64::from(ctx.author().id),
+        role,
+        role,
+    )
+    .execute(&mut *ctx.data().db.acquire().await?)
+    .await?;
+    ctx.send(
+        CreateReply::default()
+            .content("Role for chatbot set... probably")
+            .ephemeral(true),
+    )
+    .await?;
+    Ok(())
+}
+
 /// Configure the occurence of dead chat gifs
 #[poise::command(slash_command)]
 pub async fn dead_chat(

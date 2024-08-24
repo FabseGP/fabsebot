@@ -122,6 +122,7 @@ pub async fn start() {
                 music::seek_song(),
                 music::skip_song(),
                 music::stop_song(),
+                settings::chatbot_role(),
                 settings::dead_chat(),
                 settings::prefix(),
                 settings::quote_channel(),
