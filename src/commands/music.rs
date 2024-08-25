@@ -40,7 +40,7 @@ fn configure_call(handler: &mut Call) {
     handler.set_bitrate(Bitrate::Max);
     let mut new_config = handler.config().clone();
     new_config = Config::playout_buffer_length(new_config, NonZeroUsize::new(500).unwrap());
-    new_config = Config::playout_spike_length(new_config, 100);
+    new_config = Config::playout_spike_length(new_config, 200);
     handler.set_config(new_config);
 }
 
