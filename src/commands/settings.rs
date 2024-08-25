@@ -8,7 +8,9 @@ use sqlx::query;
 #[poise::command(prefix_command, slash_command)]
 pub async fn chatbot_role(
     ctx: Context<'_>,
-    #[description = "System prompt for chatbot, aka its role; if not set, then default role"] role: Option<String>,
+    #[description = "The role the bot should take; if not set, then default role"] role: Option<
+        String,
+    >,
 ) -> Result<(), Error> {
     query!(
         "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
@@ -16,6 +18,7 @@ pub async fn chatbot_role(
     )
     .execute(&mut *ctx.data().db.acquire().await?)
     .await?;
+
     query!(
         "INSERT INTO user_settings (guild_id, user_id, chatbot_role) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE chatbot_role = ?",

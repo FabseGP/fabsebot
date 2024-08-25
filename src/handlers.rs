@@ -169,7 +169,13 @@ pub async fn event_handler(
                                     .fetch_optional(&mut *data.db.acquire().await?)
                                     .await
                                 {
-                                    Ok(Some(record)) => record.chatbot_role.unwrap_or(default_bot_role),
+                                    Ok(Some(record)) => { 
+                                        if let Some(user_role) = record.chatbot_role {
+                                            user_role
+                                        } else { 
+                                            default_bot_role
+                                        } 
+                                    },
                                     Ok(None) | Err(_) => default_bot_role,
                                 };
                                 let mut message_parts = vec![bot_role];
@@ -349,21 +355,23 @@ pub async fn event_handler(
                                 Colour(0xf8e45c),
                             )),
                         )
-                        .await?; /*
-                                 let fabse_travel_gifs = [
-                                     "https://media1.tenor.com/m/-OS17IIpcL0AAAAC/psyduck-pokemon.gif"
-                                 ];
-                                 new_message
-                                     .channel_id
-                                     .send_message(
-                                         &ctx.http,
-                                         CreateMessage::default().embed(embed_builder(
-                                             "fabseman is out to buy a volcano in iceland",
-                                             fabse_travel_gifs[random_number(fabse_travel_gifs.len())],
-                                             Colour(0xf8e45c),
-                                         )),
-                                     )
-                                     .await?; */
+                        .await?; 
+/*
+                    let fabse_travel_gifs = [
+                        "https://media1.tenor.com/m/-OS17IIpcL0AAAAC/psyduck-pokemon.gif"
+                    ];
+                    new_message
+                        .channel_id
+                            .send_message(
+                                &ctx.http,
+                                CreateMessage::default().embed(embed_builder(
+                                    "fabseman is out to buy a volcano in iceland",
+                                    fabse_travel_gifs[random_number(fabse_travel_gifs.len())],
+                                    Colour(0xf8e45c),
+                                )),
+                            )
+                            .await?; 
+*/
                 } else if content.contains("<@409113157550997515>")
                     && !content.contains("!user_misuse")
                 {
@@ -555,6 +563,13 @@ pub async fn event_handler(
                         &response,
                     )
                     .await;
+                }
+            }
+        }
+        FullEvent::ReactionAdd { add_reaction } => {
+            if let Some(topic) = add_reaction.channel(&ctx.http).await?.guild().unwrap().topic {
+                if topic.contains("ai-chat") {
+                    add_reaction.message(&ctx.http).await?.react(&ctx.http, add_reaction.emoji.clone()).await?;
                 }
             }
         }

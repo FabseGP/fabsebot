@@ -17,9 +17,9 @@ reqwest = { version = "0", default-features = false, features = ["json", "rustls
 serde = { version = "1", features = ["serde_derive"] }
 serde_json = "1"
 serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "voice"] }
-songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue"] }
+songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
 sqlx = { version = "0", default-features = false, features = ["macros", "migrate", "mysql", "runtime-tokio"] }
-symphonia = { version = "0", features = ["aac", "mp3", "isomp4", "alac", "opt-simd"] }
+symphonia = { version = "0", features = ["aac", "mp3", "isomp4", "opt-simd"] }
 textwrap = "0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 urlencoding = "2"

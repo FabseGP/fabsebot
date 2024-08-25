@@ -5,6 +5,7 @@ use crate::types::{Context, Data, Error};
 use poise::serenity_prelude as serenity;
 use reqwest::Client as http_client;
 use serenity::{cache::Settings, client::Client, prelude::GatewayIntents};
+use songbird::Songbird;
 use sqlx::query;
 use std::{borrow::Cow, collections::HashMap, env, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -73,7 +74,7 @@ pub async fn start() {
         .run(&database)
         .await
         .expect("oof, couldn't run database migrations");
-    let manager = songbird::Songbird::serenity();
+    let manager = Songbird::serenity();
     let user_data = Data {
         db: database,
         req_client: http_client::new(),
@@ -162,7 +163,7 @@ pub async fn start() {
     cache_settings.max_messages = 10;
     let client = Client::builder(&token, intents)
         .framework(framework)
-        .voice_manager::<songbird::Songbird>(manager)
+        .voice_manager::<Songbird>(manager)
         .cache_settings(cache_settings)
         .data(Arc::new(user_data) as _)
         .await;

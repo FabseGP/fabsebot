@@ -194,7 +194,7 @@ pub async fn ai_summarize(
     {
         msg if msg.referenced_message.is_some() => msg.referenced_message.unwrap(),
         _ => {
-            ctx.say("bruh, reply to a message").await?;
+            ctx.reply("bruh, reply to a message").await?;
             return Ok(());
         }
     };
@@ -318,7 +318,7 @@ pub async fn anilist_anime(
     let anime_data = &data["data"]["Media"];
 
     if anime_data.is_null() {
-        ctx.say("No anime found with that name.").await?;
+        ctx.reply("No anime found with that name").await?;
         return Ok(());
     }
 
@@ -584,7 +584,7 @@ pub async fn translate(
             if let Some(query) = sentence {
                 query
             } else {
-                ctx.say("bruh, give me smth to translate").await?;
+                ctx.reply("bruh, give me smth to translate").await?;
                 return Ok(());
             }
         }

@@ -34,7 +34,7 @@ pub async fn rps(
         let valid_choices = ["rock", "paper", "scissor"];
         let author_choice = choice.to_lowercase();
         if !valid_choices.contains(&author_choice.as_str()) {
-            ctx.say("can't you even do smth this simple correct?")
+            ctx.reply("can't you even do smth this simple correct?")
                 .await?;
             return Ok(());
         }
@@ -144,7 +144,7 @@ pub async fn rps(
             .await?;
         }
     } else {
-        ctx.say("**invalid target, get some friends**").await?;
+        ctx.reply("**invalid target, get some friends**").await?;
     }
 
     Ok(())

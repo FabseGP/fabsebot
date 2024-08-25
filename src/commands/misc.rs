@@ -128,7 +128,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     {
         msg if msg.referenced_message.is_some() => msg.referenced_message.unwrap(),
         _ => {
-            ctx.say("bruh, reply to a message").await?;
+            ctx.reply("bruh, reply to a message").await?;
             return Ok(());
         }
     };
@@ -213,13 +213,13 @@ pub async fn pure_count(ctx: Context<'_>) -> Result<(), Error> {
     .fetch_one(&mut *ctx.data().db.acquire().await?)
     .await
     {
-        ctx.say(format!(
+        ctx.reply(format!(
             "oof, {} n-words counted, martin luther king jr. would be disappointed fr",
             record.count
         ))
         .await?;
     } else {
-        ctx.say("hmm, 0 n-word counted... yeet must be gone")
+        ctx.reply("hmm, 0 n-word counted... yeet must be gone")
             .await?;
     }
     Ok(())
@@ -245,8 +245,12 @@ pub async fn slow_mode(
     {
         let settings = EditChannel::new().rate_limit_per_user(duration);
         channel.id().edit(ctx.http(), settings).await?;
-        ctx.say(format!("channel is ratelimited for {} seconds", duration))
-            .await?;
+        ctx.send(
+            CreateReply::default()
+                .content(format!("channel is ratelimited for {} seconds", duration))
+                .ephemeral(true),
+        )
+        .await?;
     } else {
         ctx.send(
             CreateReply::default()

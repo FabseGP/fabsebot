@@ -8,10 +8,12 @@ use poise::{
 use serde::{Deserialize, Serialize};
 use serenity::futures;
 use songbird::{
+    driver::Bitrate,
     input::{Compose, YoutubeDl},
     tracks::PlayMode,
+    Call, Config,
 };
-use std::time::Duration;
+use std::{num::NonZeroUsize, time::Duration};
 
 #[derive(Deserialize, Serialize)]
 struct DeezerResponse {
@@ -32,6 +34,15 @@ struct DeezerTracks {
 #[derive(Deserialize, Serialize)]
 struct DeezerArtist {
     name: String,
+}
+
+fn configure_call(handler: &mut Call) {
+    handler.set_bitrate(Bitrate::Max);
+    let mut new_config = handler.config().clone();
+    new_config = Config::use_softclip(new_config, false);
+    new_config = Config::playout_buffer_length(new_config, NonZeroUsize::new(500).unwrap());
+    new_config = Config::playout_spike_length(new_config, 100);
+    handler.set_config(new_config);
 }
 
 /// Play all songs in a playlist from Deezer
@@ -59,11 +70,13 @@ pub async fn add_playlist(
                 let src = YoutubeDl::new_search(ctx.data().req_client.clone(), search);
                 handler.enqueue_input(src.into()).await;
             }
-            ctx.say("Added playlist to queue").await?;
+            ctx.reply("Added playlist to queue").await?;
         }
     } else {
-        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
-            .await?;
+        ctx.reply(
+            "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
+        )
+        .await?;
     }
     Ok(())
 }
@@ -80,7 +93,7 @@ pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
         .and_then(|voice_state| voice_state.channel_id);
     let manager = &ctx.data().music_manager;
     manager.join(guild_id, channel_id.unwrap()).await?;
-    ctx.say("I've joined the party").await?;
+    ctx.reply("I've joined the party").await?;
     Ok(())
 }
 
@@ -92,7 +105,7 @@ pub async fn leave_voice(ctx: Context<'_>) -> Result<(), Error> {
     let has_handler = manager.get(guild_id).is_some();
     if has_handler {
         manager.remove(guild_id).await?;
-        ctx.say("Left voice channel, don't forget me").await?;
+        ctx.reply("Left voice channel, don't forget me").await?;
     } else {
         ctx.reply(
             "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
@@ -108,7 +121,8 @@ pub async fn pause_continue_song(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild_id().unwrap();
     let manager = &ctx.data().music_manager;
     if let Some(handler_lock) = manager.get(guild_id) {
-        let handler = handler_lock.lock().await;
+        let mut handler = handler_lock.lock().await;
+        configure_call(&mut handler);
         let queue = handler.queue();
         let status = queue.current().unwrap().get_info().await.unwrap().playing;
         if status == PlayMode::Pause {
@@ -116,13 +130,15 @@ pub async fn pause_continue_song(ctx: Context<'_>) -> Result<(), Error> {
         } else if status == PlayMode::Play {
             queue.current().unwrap().pause().unwrap();
         } else {
-            ctx.say("bruh, no song is playing").await?;
+            ctx.reply("bruh, no song is playing").await?;
             return Ok(());
         }
-        ctx.say("Song is either continued or paused").await?;
+        ctx.reply("Song is either continued or paused").await?;
     } else {
-        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
-            .await?;
+        ctx.reply(
+            "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
+        )
+        .await?;
     }
     Ok(())
 }
@@ -140,6 +156,7 @@ pub async fn play_song(
     let manager = &ctx.data().music_manager;
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
+        configure_call(&mut handler);
         let mut src = if url.starts_with("http") {
             YoutubeDl::new(ctx.data().req_client.clone(), url.clone())
         } else {
@@ -194,13 +211,15 @@ pub async fn play_song(
                 .await?;
             }
             Err(_) => {
-                ctx.say("Like you, nothing is known about this song")
+                ctx.reply("Like you, nothing is known about this song")
                     .await?;
             }
         }
     } else {
-        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
-            .await?;
+        ctx.reply(
+            "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
+        )
+        .await?;
     }
     Ok(())
 }
@@ -227,7 +246,8 @@ pub async fn seek_song(
     let guild_id = ctx.guild_id().unwrap();
     let manager = &ctx.data().music_manager;
     if let Some(handler_lock) = manager.get(guild_id) {
-        let handler = handler_lock.lock().await;
+        let mut handler = handler_lock.lock().await;
+        configure_call(&mut handler);
         let queue = handler.queue();
         let current_position = queue.current().unwrap().get_info().await.unwrap().position;
         let seek = if direction == "forward" {
@@ -235,15 +255,17 @@ pub async fn seek_song(
         } else if direction == "backward" {
             current_position - Duration::from_secs(seconds)
         } else {
-            ctx.say("you managed to destroy the matrix smh").await?;
+            ctx.reply("you managed to destroy the matrix smh").await?;
             return Ok(());
         };
         queue.current().unwrap().seek_async(seek).await?;
-        ctx.say(format!("Seeked {} seconds {}", seconds, direction))
+        ctx.reply(format!("Seeked {} seconds {}", seconds, direction))
             .await?;
     } else {
-        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
-            .await?;
+        ctx.reply(
+            "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
+        )
+        .await?;
     }
     Ok(())
 }
@@ -254,14 +276,17 @@ pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
     let guild_id = ctx.guild_id().unwrap();
     let manager = &ctx.data().music_manager;
     if let Some(handler_lock) = manager.get(guild_id) {
-        let handler = handler_lock.lock().await;
+        let mut handler = handler_lock.lock().await;
+        configure_call(&mut handler);
         let queue = handler.queue();
         queue.skip()?;
-        ctx.say(format!("Song skipped. {} left in queue", queue.len() - 2))
+        ctx.reply(format!("Song skipped. {} left in queue", queue.len() - 2))
             .await?;
     } else {
-        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
-            .await?;
+        ctx.reply(
+            "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
+        )
+        .await?;
     }
     Ok(())
 }
@@ -275,10 +300,12 @@ pub async fn stop_song(ctx: Context<'_>) -> Result<(), Error> {
         let handler = handler_lock.lock().await;
         let queue = handler.queue();
         queue.stop();
-        ctx.say("Queue cleared").await?;
+        ctx.reply("Queue cleared").await?;
     } else {
-        ctx.say("bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first")
-            .await?;
+        ctx.reply(
+            "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
+        )
+        .await?;
     }
     Ok(())
 }
