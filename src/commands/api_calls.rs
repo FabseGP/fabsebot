@@ -92,13 +92,13 @@ pub async fn ai_image(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let client = &ctx.data().req_client;
-    let models = [
-        "https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/lykon/dreamshaper-8-lcm", 
-        "https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/bytedance/stable-diffusion-xl-lightning"
-    ];
-    let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
+    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
+    let api_key = env::var("CLOUDFLARE_TOKEN")?;
     let resp = client
-        .post(models[random_number(models.len())])
+        .post(format!(
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/lykon/dreamshaper-8-lcm",
+            gateway
+        ))
         .bearer_auth(api_key)
         .json(&json!({ "prompt": prompt }))
         .send()
@@ -200,11 +200,15 @@ pub async fn ai_summarize(
     };
     let client = &ctx.data().req_client;
     let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
+    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
     let resp = client
-        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/facebook/bart-large-cnn")
-        .bearer_auth(api_key)       
+        .post(format!(
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/facebook/bart-large-cnn",
+            gateway
+        ))
+        .bearer_auth(api_key)
         .json(&json!({"input_text": reply.content.to_string(),
-            "max_length": length 
+            "max_length": length
         }))
         .send()
         .await?;
@@ -239,9 +243,13 @@ pub async fn ai_text(
     ctx.defer().await?;
     let client = &ctx.data().req_client;
     let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
+    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
     let resp = client
-        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
-        .bearer_auth(api_key)   
+        .post(format!(
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3-8b-instruct",
+            gateway
+        ))
+        .bearer_auth(api_key)
         .json(&json!({"messages": [
                 { "role": "system", "content": role },
                 { "role": "user", "content": prompt }
@@ -373,9 +381,10 @@ pub async fn gif(
 ) -> Result<(), Error> {
     let url = get_gif(input).await;
     if let Ok(url) = url {
-        ctx.send(CreateReply::default().content(url)).await?; 
+        ctx.send(CreateReply::default().content(url)).await?;
     } else {
-        ctx.send(CreateReply::default().content("life is not gifing")).await?; 
+        ctx.send(CreateReply::default().content("life is not gifing"))
+            .await?;
     }
     Ok(())
 }
@@ -504,8 +513,9 @@ pub async fn roast(
 
     let client = &ctx.data().req_client;
     let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
+    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
     let resp = client
-        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3-8b-instruct")
+        .post(format!("https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3-8b-instruct", gateway))
         .bearer_auth(api_key)
         .json(&json!({
             "messages": [

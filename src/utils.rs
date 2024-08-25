@@ -32,8 +32,12 @@ struct AIResponseImageDesc {
 pub async fn ai_image_desc(content: Vec<u8>) -> Result<String, Error> {
     let client = get_http_client();
     let api_key = env::var("CLOUDFLARE_TOKEN")?;
+    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
     let resp = client
-        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/llava-hf/llava-1.5-7b-hf")
+        .post(format!(
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/llava-hf/llava-1.5-7b-hf",
+            gateway
+        ))
         .bearer_auth(api_key)
         .json(&json!({
             "image": content,
@@ -58,8 +62,12 @@ struct AIResponseText {
 pub async fn ai_response(content: Vec<ChatMessage>) -> Result<String, Error> {
     let client = get_http_client();
     let api_key = env::var("CLOUDFLARE_TOKEN")?;
+    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
     let resp = client
-        .post("https://gateway.ai.cloudflare.com/v1/dbc36a22e79dd7acf1ed94aa596bb44e/fabsebot/workers-ai/@cf/meta/llama-3.1-8b-instruct")
+        .post(format!(
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-8b-instruct",
+            gateway
+        ))
         .bearer_auth(api_key)
         .json(&json!({
             "messages": content

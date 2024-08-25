@@ -274,7 +274,7 @@ pub async fn event_handler(
                                 }
                                 history.push(ChatMessage {
                                     role: "user".to_string(),
-                                    content: format!("User: {}: {}", author_name, new_message.content),
+                                    content: format!("User: {}: {}", author_name, new_message.content_safe(&ctx.cache)),
                                 });
                                 history.clone()
                             };
