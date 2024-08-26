@@ -40,7 +40,7 @@ fn configure_call(handler: &mut Call) {
     handler.set_bitrate(Bitrate::Max);
     let mut new_config = handler.config().clone();
     new_config = Config::playout_buffer_length(new_config, NonZeroUsize::new(500).unwrap());
-    new_config = Config::playout_spike_length(new_config, 500);
+    new_config = Config::playout_spike_length(new_config, 250);
     handler.set_config(new_config);
 }
 
@@ -278,9 +278,13 @@ pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
         let mut handler = handler_lock.lock().await;
         configure_call(&mut handler);
         let queue = handler.queue();
-        queue.skip()?;
-        ctx.reply(format!("Song skipped. {} left in queue", queue.len() - 2))
-            .await?;
+        if queue.len() != 0 {
+            queue.skip()?;
+            ctx.reply(format!("Song skipped. {} left in queue", queue.len() - 2))
+                .await?;
+        } else {
+            ctx.reply("No songs to skip!").await?;
+        }
     } else {
         ctx.reply(
             "bruh, I'm not even in a voice channel!\nuse /join_voice in a voice channel first",
