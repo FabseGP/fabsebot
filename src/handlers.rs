@@ -49,12 +49,6 @@ pub async fn event_handler(
                 let guild_id: u64 = new_message.guild_id.unwrap().into();
                 let user_id: u64 = new_message.author.id.into();
                 query!(
-                    "INSERT IGNORE INTO guilds (guild_id) VALUES (?)", 
-                    guild_id
-                )
-                .execute(&mut *data.db.acquire().await?)
-                .await?;
-                query!(
                     "INSERT INTO user_settings (guild_id, user_id, message_count) VALUES (?, ?, 1)
                     ON DUPLICATE KEY UPDATE message_count = message_count + 1",
                     guild_id,
@@ -84,41 +78,46 @@ pub async fn event_handler(
                 {
                     if let (Some(channel), Some(rate)) = (record.dead_chat_channel, record.dead_chat_rate) {
                         let dead_chat_channel = ChannelId::new(channel);
-                        let last_message_time = dead_chat_channel
-                            .messages_iter(&ctx)
-                            .boxed()
-                            .next()
-                            .await
-                            .unwrap()
-                            .unwrap()
-                            .timestamp.timestamp();
-                        let current_time = Timestamp::now().timestamp();
-                        if current_time - last_message_time > rate as i64 * 60 {    
-                            let dead_chat_gifs = [
-                                "https://media1.tenor.com/m/k6k3vCBIYlYAAAAC/dead-chat.gif",
-                                "https://media1.tenor.com/m/t_DmbWvjTKMAAAAd/dead-chat-discord.gif",
-                                "https://media1.tenor.com/m/8JHVRggIIl4AAAAd/hello-chat-dead-chat.gif",
-                                "https://media1.tenor.com/m/BDJsAenz_SUAAAAd/chat-dead-chat.gif",
-                                "https://media.tenor.com/PFyQ24Kux9UAAAAC/googas-wet.gif",
-                                "https://media.tenor.com/71DeLT3bO0AAAAAM/dead-chat-dead-chat-skeleton.gif",
-                                "https://media.tenor.com/yjAObClgNM4AAAAM/dead-chat-xd-dead-chat.gif",
-                                "https://media.tenor.com/dpXmFPj7PacAAAAM/dead-chat.gif",
-                                "https://media.tenor.com/XyZ3A8FKZpkAAAAM/dead-group-chat-dead-chat.gif",
-                                "https://media.tenor.com/bAfYpkySsqQAAAAd/rip-chat-chat-dead.gif",
-                                "https://media.tenor.com/ogIdtDgmJuUAAAAC/dead-chat-dead-chat-xd.gif",
-                                "https://media.tenor.com/NPVLum9UiXYAAAAM/cringe-dead-chat.gif",
-                                "https://media.tenor.com/AYJL7HPOy-EAAAAd/ayo-the-chat-is-dead.gif",
-                                "https://media.tenor.com/2u621yp8wg0AAAAC/dead-chat-xd-mugman.gif",
-                                "https://media.tenor.com/3VXXC59D2BYAAAAC/omori-dead-chat.gif",
-                                "https://media.tenor.com/FqJ2W5diczAAAAAd/dead-chat.gif",
-                                "https://media.tenor.com/KFZQqKXcujIAAAAd/minecraft-dead-chat.gif",
-                                "https://media.tenor.com/qQeE7sMPIRMAAAAC/dead-chat-xd-ded-chat.gif",
-                                "https://media.tenor.com/cX9CCITVZNQAAAAd/hello-goodbye.gif",
-                                "https://media.tenor.com/eW0bnOiDjSAAAAAC/deadchatxdrickroll.gif",
-                                "https://media.tenor.com/1wCIRabmVUUAAAAd/chat-ded.gif",
-                                "https://media.tenor.com/N502JNoV_poAAAAd/dead-chat-dead-chat-xd.gif",
-                            ];
-                            dead_chat_channel.say(&ctx.http, dead_chat_gifs[random_number(dead_chat_gifs.len())]).await?;
+                        let last_message_time = {
+                            let mut messages = dead_chat_channel.messages_iter(&ctx).boxed();
+                            if let Some(message_result) = messages.next().await {
+                                match message_result {
+                                    Ok(message) => Some(message.timestamp.timestamp()),
+                                    Err(_) => None,
+                                }
+                            } else { 
+                                None
+                            } 
+                        };
+                        if let Some(last_time) = last_message_time {
+                            let current_time = Timestamp::now().timestamp();
+                            if current_time - last_time > rate as i64 * 60 {    
+                                let dead_chat_gifs = [
+                                    "https://media1.tenor.com/m/k6k3vCBIYlYAAAAC/dead-chat.gif",
+                                    "https://media1.tenor.com/m/t_DmbWvjTKMAAAAd/dead-chat-discord.gif",
+                                    "https://media1.tenor.com/m/8JHVRggIIl4AAAAd/hello-chat-dead-chat.gif",
+                                    "https://media1.tenor.com/m/BDJsAenz_SUAAAAd/chat-dead-chat.gif",
+                                    "https://media.tenor.com/PFyQ24Kux9UAAAAC/googas-wet.gif",
+                                    "https://media.tenor.com/71DeLT3bO0AAAAAM/dead-chat-dead-chat-skeleton.gif",
+                                    "https://media.tenor.com/yjAObClgNM4AAAAM/dead-chat-xd-dead-chat.gif",
+                                    "https://media.tenor.com/dpXmFPj7PacAAAAM/dead-chat.gif",
+                                    "https://media.tenor.com/XyZ3A8FKZpkAAAAM/dead-group-chat-dead-chat.gif",
+                                    "https://media.tenor.com/bAfYpkySsqQAAAAd/rip-chat-chat-dead.gif",
+                                    "https://media.tenor.com/ogIdtDgmJuUAAAAC/dead-chat-dead-chat-xd.gif",
+                                    "https://media.tenor.com/NPVLum9UiXYAAAAM/cringe-dead-chat.gif",
+                                    "https://media.tenor.com/AYJL7HPOy-EAAAAd/ayo-the-chat-is-dead.gif",
+                                    "https://media.tenor.com/2u621yp8wg0AAAAC/dead-chat-xd-mugman.gif",
+                                    "https://media.tenor.com/3VXXC59D2BYAAAAC/omori-dead-chat.gif",
+                                    "https://media.tenor.com/FqJ2W5diczAAAAAd/dead-chat.gif",
+                                    "https://media.tenor.com/KFZQqKXcujIAAAAd/minecraft-dead-chat.gif",
+                                    "https://media.tenor.com/qQeE7sMPIRMAAAAC/dead-chat-xd-ded-chat.gif",
+                                    "https://media.tenor.com/cX9CCITVZNQAAAAd/hello-goodbye.gif",
+                                    "https://media.tenor.com/eW0bnOiDjSAAAAAC/deadchatxdrickroll.gif",
+                                    "https://media.tenor.com/1wCIRabmVUUAAAAd/chat-ded.gif",
+                                    "https://media.tenor.com/N502JNoV_poAAAAd/dead-chat-dead-chat-xd.gif",
+                                ];
+                                dead_chat_channel.say(&ctx.http, dead_chat_gifs[random_number(dead_chat_gifs.len())]).await?;
+                            }
                         }
                     }
                 }
@@ -297,8 +296,9 @@ pub async fn event_handler(
                                         });
                                     }
                                     if response.len() >= 2000 {
-                                        new_message.reply(&ctx.http, response[0..2000].to_string()).await?;
-                                        new_message.reply(&ctx.http, response[2000..].to_string()).await?;
+                                        let (first, second) = response.split_at(response.char_indices().nth(2000).unwrap().0);
+                                        new_message.reply(&ctx.http, first.to_string()).await?;
+                                        new_message.reply(&ctx.http, second.to_string()).await?;
                                     } else {
                                         new_message.reply(&ctx.http, response).await?; 
                                     }
@@ -571,6 +571,17 @@ pub async fn event_handler(
                 if topic.contains("ai-chat") {
                     add_reaction.message(&ctx.http).await?.react(&ctx.http, add_reaction.emoji.clone()).await?;
                 }
+            }
+        }
+        FullEvent::GuildCreate { guild, is_new } => {
+            if is_new.unwrap() {
+                let guild_id: u64 = guild.id.into();
+                query!(
+                    "INSERT IGNORE INTO guilds (guild_id) VALUES (?)", 
+                    guild_id
+                )
+                .execute(&mut *data.db.acquire().await?)
+                .await?;
             }
         }
         FullEvent::MessageDelete {

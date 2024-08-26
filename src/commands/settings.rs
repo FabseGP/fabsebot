@@ -13,13 +13,6 @@ pub async fn chatbot_role(
     >,
 ) -> Result<(), Error> {
     query!(
-        "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
-        ctx.guild_id().unwrap().get(),
-    )
-    .execute(&mut *ctx.data().db.acquire().await?)
-    .await?;
-
-    query!(
         "INSERT INTO user_settings (guild_id, user_id, chatbot_role) VALUES (?, ?, ?)
         ON DUPLICATE KEY UPDATE chatbot_role = ?",
         ctx.guild_id().unwrap().get(),
@@ -53,12 +46,6 @@ pub async fn dead_chat(
         .unwrap()
         .administrator();
     if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
-        query!(
-            "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
-            ctx.guild_id().unwrap().get(),
-        )
-        .execute(&mut *ctx.data().db.acquire().await?)
-        .await?;
         query!(
             "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)
             ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
@@ -105,12 +92,6 @@ pub async fn prefix(
             .unwrap()
             .administrator();
         if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
-            query!(
-                "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
-                ctx.guild_id().unwrap().get(),
-            )
-            .execute(&mut *ctx.data().db.acquire().await?)
-            .await?;
             query!(
                 "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?)
                 ON DUPLICATE KEY UPDATE prefix = ?",
@@ -163,12 +144,6 @@ pub async fn quote_channel(
         .administrator();
     if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
         query!(
-            "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
-            ctx.guild_id().unwrap().get(),
-        )
-        .execute(&mut *ctx.data().db.acquire().await?)
-        .await?;
-        query!(
             "INSERT INTO guild_settings (guild_id, quotes_channel) VALUES (?, ?)
             ON DUPLICATE KEY UPDATE quotes_channel = ?",
             ctx.guild_id().unwrap().get(),
@@ -212,12 +187,6 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
         || admin_perms
     {
         query!(
-            "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
-            ctx.guild_id().unwrap().get(),
-        )
-        .execute(&mut *ctx.data().db.acquire().await?)
-        .await?;
-        query!(
             "REPLACE INTO guild_settings (guild_id) VALUES (?)",
             ctx.guild_id().unwrap().get()
         )
@@ -254,12 +223,6 @@ pub async fn spoiler_channel(
         .unwrap()
         .administrator();
     if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
-        query!(
-            "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
-            ctx.guild_id().unwrap().get(),
-        )
-        .execute(&mut *ctx.data().db.acquire().await?)
-        .await?;
         query!(
             "INSERT INTO guild_settings (guild_id, spoiler_channel) VALUES (?, ?)
             ON DUPLICATE KEY UPDATE quotes_channel = ?",

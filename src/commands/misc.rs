@@ -1,5 +1,5 @@
 use crate::types::{Context, Error};
-use crate::utils::quote_image;
+use crate::utils::{ai_response_simple, quote_image};
 
 use image::load_from_memory;
 use poise::serenity_prelude::{
@@ -115,6 +115,22 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     }
 
     ctx.send(CreateReply::default().embed(embed)).await?;
+    Ok(())
+}
+
+/// Oh it's you
+#[poise::command(prefix_command, slash_command)]
+pub async fn ohitsyou(ctx: Context<'_>) -> Result<(), Error> {
+    let resp = ai_response_simple(
+        "you're a tsundere".to_string(),
+        "generate a one-line love-hate greeting".to_string(),
+    )
+    .await?;
+    if !resp.is_empty() {
+        ctx.reply(resp).await?;
+    } else {
+        ctx.reply("Ugh, fine. It's nice to see you again, I suppose... for now, don't get any ideas thinking this means I actually like you or anything").await?;
+    }
     Ok(())
 }
 

@@ -30,10 +30,11 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
     } else {
         "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_string()
     };
+    let owner_user = guild.owner_id.to_user(&ctx.http()).await?;
     let embed = CreateEmbed::new()
         .title(guild.name.to_string())
         .thumbnail(thumbnail)
-        .field("Owner: ", guild.owner_id.to_string(), false)
+        .field("Owner ID: ", owner_user.display_name(), false)
         .field("Emoji count: ", guild.emojis.len().to_string(), false)
         .field("Role count: ", guild.roles.len().to_string(), false)
         .field("Sticker count: ", guild.stickers.len().to_string(), false)

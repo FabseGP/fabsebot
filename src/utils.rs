@@ -108,6 +108,27 @@ pub async fn ai_response_local(messages: Vec<ChatMessage>) -> Result<String, Err
     }
 }
 
+pub async fn ai_response_simple(role: String, prompt: String) -> Result<String, Error> {
+    let client = get_http_client();
+    let api_key = env::var("CLOUDFLARE_TOKEN")?;
+    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
+    let resp = client
+        .post(format!(
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-8b-instruct",
+            gateway
+        ))
+        .bearer_auth(api_key)
+        .json(&json!({"messages": [
+                { "role": "system", "content": role },
+                { "role": "user", "content": prompt }
+            ]
+        }))
+        .send()
+        .await?;
+    let output = resp.json::<FabseAIText>().await?;
+    Ok(output.result.response)
+}
+
 pub fn embed_builder<'a>(title: &'a str, url: &'a str, colour: Colour) -> CreateEmbed<'a> {
     CreateEmbed::new()
         .title(title)

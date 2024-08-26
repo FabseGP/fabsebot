@@ -1,5 +1,5 @@
 use crate::types::{Context, Error};
-use crate::utils::{get_gif, random_number};
+use crate::utils::{ai_response_simple, get_gif, random_number};
 
 use poise::serenity_prelude::{
     ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment, CreateButton,
@@ -116,61 +116,6 @@ pub async fn ai_image(
     Ok(())
 }
 
-/// Midjourney image
-#[poise::command(prefix_command, slash_command)]
-pub async fn ai_midjourney(
-    ctx: Context<'_>,
-    #[description = "Prompt"]
-    #[rest]
-    prompt: String,
-) -> Result<(), Error> {
-    ctx.defer().await?;
-    let url = "https://mukaist-Midjourney.hf.space/call/run";
-    let client = &ctx.data().req_client;
-    let request_body = json!({
-        "data": [
-            prompt,
-            "(deformed iris, deformed pupils, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime:1.4), text, close up, cropped, out of frame, worst quality, low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck)",
-            true,
-            "2560 x 1440",
-            0,
-            2048,
-            2048,
-            6,
-            true
-        ]
-    });
-    let resp = client.post(url).json(&request_body).send().await?;
-    let output: EventResponse = resp.json().await?;
-    if !output.event_id.is_empty() {
-        let status_url = format!("{}/{}", url, output.event_id);
-        let path_regex = Regex::new(r#""path":\s*"(.*?)""#).unwrap();
-        loop {
-            let status_resp = client.get(&status_url).send().await?;
-            let status_text = status_resp.text().await?;
-            if status_text.contains("event: complete") {
-                if let Some(captures) = path_regex.captures(&status_text) {
-                    if let Some(path) = captures.get(1) {
-                        let image_url =
-                            format!("https://mukaist-midjourney.hf.space/file={}", path.as_str());
-                        let image_data = client.get(&image_url).send().await?;
-                        let image_data = image_data.bytes().await?.to_vec();
-                        let file = CreateAttachment::bytes(image_data, "output.png");
-                        ctx.send(CreateReply::default().attachment(file)).await?;
-                        break;
-                    }
-                }
-            }
-        }
-    } else {
-        ctx.send(
-            CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),
-        )
-        .await?;
-    }
-    Ok(())
-}
-
 #[derive(Deserialize, Serialize)]
 struct FabseAISummary {
     result: AIResponseSummary,
@@ -222,15 +167,6 @@ pub async fn ai_summarize(
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
-struct FabseAIText {
-    result: AIResponseText,
-}
-#[derive(Deserialize, Serialize)]
-struct AIResponseText {
-    response: String,
-}
-
 /// Did someone say AI text?
 #[poise::command(prefix_command, slash_command)]
 pub async fn ai_text(
@@ -241,28 +177,12 @@ pub async fn ai_text(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let client = &ctx.data().req_client;
-    let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
-    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
-    let resp = client
-        .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3-8b-instruct",
-            gateway
-        ))
-        .bearer_auth(api_key)
-        .json(&json!({"messages": [
-                { "role": "system", "content": role },
-                { "role": "user", "content": prompt }
-            ]
-        }))
-        .send()
-        .await?;
-    let output: FabseAIText = resp.json().await?;
-    if !output.result.response.is_empty() {
-        let response_chars: Vec<char> = output.result.response.chars().collect();
+    let resp = ai_response_simple(role, prompt.clone()).await?;
+    if !resp.is_empty() {
+        let response_chars: Vec<char> = resp.chars().collect();
         let chunks = response_chars.chunks(1024);
         let mut embed = CreateEmbed::default();
-        embed = embed.title(&prompt).color(0xFF7800);
+        embed = embed.title(prompt).color(0xFF7800);
         for (i, chunk) in chunks.enumerate() {
             let chunk_str: String = chunk.iter().collect();
             let field_name = if i == 0 {
@@ -510,25 +430,11 @@ pub async fn roast(
     };
 
     let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
+    let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target".to_string();
+    let resp = ai_response_simple(role, description).await?;
 
-    let client = &ctx.data().req_client;
-    let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
-    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
-    let resp = client
-        .post(format!("https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3-8b-instruct", gateway))
-        .bearer_auth(api_key)
-        .json(&json!({
-            "messages": [
-                { "role": "system", "content": "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target" },
-                { "role": "user", "content": description }
-            ]
-        }))
-        .send()
-        .await?;
-    let output: FabseAIText = resp.json().await?;
-
-    if !output.result.response.is_empty() {
-        let response_chars: Vec<char> = output.result.response.chars().collect();
+    if !resp.is_empty() {
+        let response_chars: Vec<char> = resp.chars().collect();
         let chunks = response_chars.chunks(1024);
         let mut embed = CreateEmbed::default();
         embed = embed.title(format!("Roasting {}", name)).color(0xFF7800);
