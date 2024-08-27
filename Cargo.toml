@@ -16,7 +16,7 @@ regex = "1"
 reqwest = { version = "0", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["serde_derive"] }
 serde_json = "1"
-serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "client", "gateway", "model", "rustls_backend", "voice"] }
+serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "gateway", "model", "rustls_backend", "voice"] }
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
 sqlx = { version = "0", default-features = false, features = ["macros", "migrate", "mysql", "runtime-tokio"] }
 symphonia = { version = "0", features = ["aac", "mp3", "isomp4", "opt-simd"] }
