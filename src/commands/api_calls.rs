@@ -144,7 +144,7 @@ pub async fn ai_summarize(
         }
     };
     let client = &ctx.data().req_client;
-    let api_key = env::var("CLOUDFLARE_TOKEN").unwrap();
+    let api_key = env::var("CLOUDFLARE_TOKEN")?;
     let gateway = env::var("CLOUDFLARE_GATEWAY")?;
     let resp = client
         .post(format!(
@@ -506,11 +506,8 @@ pub async fn translate(
         "target": target_lang
     });
     let client = &ctx.data().req_client;
-    let response = client
-        .post("https://translate.fabseman.space/translate")
-        .json(&form_data)
-        .send()
-        .await?;
+    let server = env::var("TRANSLATE_SERVER")?;
+    let response = client.post(server).json(&form_data).send().await?;
 
     if response.status().is_success() {
         let data: FabseTranslate = response.json().await?;
