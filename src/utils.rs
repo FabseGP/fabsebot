@@ -90,11 +90,11 @@ struct LocalAIText {
 
 pub async fn ai_response_local(messages: Vec<ChatMessage>) -> Result<String, Error> {
     let client = get_http_client();
-    let server = env::var("LOCAL_AI")?;
+    let server = env::var("AI_SERVER")?;
     let resp = client
         .post(server)
         .json(&json!({
-            "model": "llama3.1:latest",
+            "model": "phi3.5:latest",
             "stream": false,
             "messages": messages,
         }))
