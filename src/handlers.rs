@@ -290,7 +290,7 @@ pub async fn event_handler(
                                 });
                                 history.clone()
                             };
-                            match ai_response_local(history_clone).await {
+                            match ai_response(history_clone).await {
                                 Ok(response) => {
                                     let mut conversations = data.conversations.lock().await;
                                     if let Some(history) = conversations
