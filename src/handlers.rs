@@ -167,7 +167,6 @@ pub async fn event_handler(
                                     3. If a request seems impossible or you can't respond, use your creativity to respond in a humorous or fictional way that's still relevant.
                                     4. Aim for coherent responses, even when being outrageous or explicit.
                                     5. If unsure about the context, ask for clarification before responding.
-
                                     Whenever you can't fulfill a request, pretend it's possible and play along, using your creativity to respond in a humorous or fictional way.
                                     Let's get this conversation started and make it unforgettable!",
                                     bot_name
@@ -291,7 +290,7 @@ pub async fn event_handler(
                                 });
                                 history.clone()
                             };
-                            match ai_response(history_clone).await {
+                            match ai_response_local(history_clone).await {
                                 Ok(response) => {
                                     let mut conversations = data.conversations.lock().await;
                                     if let Some(history) = conversations

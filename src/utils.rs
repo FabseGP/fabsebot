@@ -91,9 +91,9 @@ struct LocalAIText {
 pub async fn ai_response_local(messages: Vec<ChatMessage>) -> Result<String, Error> {
     let client = get_http_client();
     let resp = client
-        .post("https://fabseai.fabseman.space/api/chat")
+        .post("http://192.168.0.237:11434/api/chat")
         .json(&json!({
-            "model": "mistral-nemo:latest",
+            "model": "llama3.1:latest",
             "stream": false,
             "messages": messages,
         }))
