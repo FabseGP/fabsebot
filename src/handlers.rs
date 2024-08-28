@@ -4,7 +4,7 @@ use crate::utils::{
     webhook_message,
 };
 
-use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent};
+use poise::serenity_prelude::{self as serenity, Colour, CreateAttachment, FullEvent, CreateEmbed};
 use serenity::{
     builder::{CreateMessage, EditProfile},
     futures::StreamExt,
@@ -60,16 +60,54 @@ pub async fn event_handler(
                         let user_id = UserId::new(target.user_id);
                         let user = ctx.http.get_user(user_id).await?;
                         if new_message.author.id == user_id {
+                            let record = query!(
+                                "SELECT pinged_links FROM user_settings WHERE guild_id = ? AND user_id = ?",
+                                guild_id,
+                                target.user_id,
+                            )
+                            .fetch_one(&mut *data.db.acquire().await?)
+                            .await?;
+                            let entries: Vec<&str> = record.pinged_links
+                                .as_deref()
+                                .unwrap_or("")
+                                .split(',')
+                                .collect();
                             new_message.reply(&ctx.http, format!("Ugh, welcome back {}! Guess I didn't manage to kill you after all", user.display_name())).await?;
+                            if !entries.is_empty() {
+                                let mut e = CreateEmbed::new();
+                                e = e
+                                    .colour(0xED333B)
+                                    .title("Pings you retrieved:");
+                                for entry in entries {
+                                    let parts: Vec<&str> = entry.split(';').collect();
+                                    if parts.len() == 2 {
+                                        let name = parts[0];
+                                        let role = parts[1];
+                                        e = e.field(name, role, false);
+                                    }
+                                }
+                                new_message.channel_id.send_message(&ctx.http, CreateMessage::default().embed(e)).await?;
+                            }
                             query!(
-                                "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason) VALUES (?, ?, FALSE, NULL)
-                                ON DUPLICATE KEY UPDATE afk = FALSE, afk_reason = NULL",
+                                "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = ? AND user_id = ?",
                                 guild_id,
                                 target.user_id,
                             )
                             .execute(&mut *data.db.acquire().await?)
                             .await?;
                         } else if new_message.mentions_user_id(user_id) {
+                            let message_link = new_message.link();
+                            let author_name = new_message.author.display_name();
+                            let pinged_link = format!("{};{}", author_name, message_link);
+                            query!(
+                                "UPDATE user_settings SET pinged_links = IF(pinged_links IS NULL, ?, CONCAT(pinged_links, ',', ?)) WHERE guild_id = ? AND user_id = ?",
+                                pinged_link,
+                                pinged_link,
+                                guild_id,
+                                target.user_id,
+                            )
+                            .execute(&mut *data.db.acquire().await?)
+                            .await?;
                             let reason = if let Some(input) = target.afk_reason {
                                 input
                             } else {
@@ -161,10 +199,9 @@ pub async fn event_handler(
                     for word in words.iter() {
                         if content.contains(word) {
                             query!(
-                                "INSERT INTO words_count (word, guild_id, count) VALUES (?, ?, 1)
-                                ON DUPLICATE KEY UPDATE count = count + 1",
-                                word,
-                                guild_id
+                                "UPDATE words_count SET count = count + 1 WHERE guild_id = ? AND word = ?",
+                                guild_id,
+                                word
                             )
                             .execute(&mut *data.db.acquire().await?)
                             .await?;
