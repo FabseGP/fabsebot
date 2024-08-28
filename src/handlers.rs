@@ -73,7 +73,7 @@ pub async fn event_handler(
                                 .split(',')
                                 .collect();
                             new_message.reply(&ctx.http, format!("Ugh, welcome back {}! Guess I didn't manage to kill you after all", user.display_name())).await?;
-                            if !entries.is_empty() {
+                            if !entries[0].is_empty() {
                                 let mut e = CreateEmbed::new();
                                 e = e
                                     .colour(0xED333B)
