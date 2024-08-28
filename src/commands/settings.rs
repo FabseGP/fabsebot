@@ -42,7 +42,7 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// When you want to escape discord
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(slash_command)]
 pub async fn set_afk(
     ctx: Context<'_>,
     #[description = "Reason for afk"] reason: Option<String>,
