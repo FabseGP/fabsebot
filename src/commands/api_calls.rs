@@ -7,14 +7,14 @@ use poise::serenity_prelude::{
 };
 use poise::CreateReply;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use serenity::futures::StreamExt;
 use sqlx::{query, Row};
 use std::{env, time::Duration};
 use urlencoding::encode;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct EventResponse {
     event_id: String,
 }
@@ -116,11 +116,11 @@ pub async fn ai_image(
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct FabseAISummary {
     result: AIResponseSummary,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct AIResponseSummary {
     summary: String,
 }
@@ -255,7 +255,7 @@ pub async fn anilist_anime(
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct EightBallResponse {
     reading: String,
 }
@@ -309,7 +309,7 @@ pub async fn gif(
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct JokeResponse {
     joke: String,
 }
@@ -455,7 +455,7 @@ pub async fn roast(
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct FabseTranslate {
     #[serde(rename = "detectedLanguage")]
     detected_language: FabseLanguage,
@@ -463,7 +463,7 @@ struct FabseTranslate {
     translated_text: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct FabseLanguage {
     confidence: f64,
     language: String,
@@ -538,11 +538,11 @@ pub async fn translate(
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct UrbanResponse {
     list: Vec<UrbanDict>,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct UrbanDict {
     definition: String,
     example: String,
@@ -696,11 +696,11 @@ pub async fn urban(
     Ok(())
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct WaifuResponse {
     images: Vec<WaifuData>,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct WaifuData {
     url: String,
 }

@@ -9,7 +9,7 @@ use serenity::{
     builder::{CreateMessage, EditProfile},
     futures::StreamExt,
     gateway::ActivityData,
-    model::{channel::ReactionType, id::ChannelId, user::OnlineStatus, Timestamp},
+    model::{channel::ReactionType, id::{ChannelId, UserId}, user::OnlineStatus, Timestamp},
 };
 use sqlx::query;
 use std::collections::HashSet;
@@ -48,6 +48,37 @@ pub async fn event_handler(
                 let content = new_message.content.to_lowercase();
                 let guild_id: u64 = new_message.guild_id.unwrap().into();
                 let user_id: u64 = new_message.author.id.into();
+                let users_afk = 
+                    query!(
+                        "SELECT user_id, afk, afk_reason FROM user_settings WHERE guild_id = ?",
+                        guild_id
+                    )
+                    .fetch_all(&mut *data.db.acquire().await?)
+                    .await?;
+                for target in users_afk {
+                    if target.afk.unwrap() != 0 {
+                        let user_id = UserId::new(target.user_id);
+                        let user = ctx.http.get_user(user_id).await?;
+                        if new_message.author.id == user_id {
+                            new_message.reply(&ctx.http, format!("Ugh, welcome back {}! Guess I didn't manage to kill you after all", user.display_name())).await?;
+                            query!(
+                                "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason) VALUES (?, ?, FALSE, NULL)
+                                ON DUPLICATE KEY UPDATE afk = FALSE, afk_reason = NULL",
+                                guild_id,
+                                target.user_id,
+                            )
+                            .execute(&mut *data.db.acquire().await?)
+                            .await?;
+                        } else if new_message.mentions_user_id(user_id) {
+                            let reason = if let Some(input) = target.afk_reason {
+                                input
+                            } else {
+                                "didn't renew life subscription".to_string()
+                            };
+                            new_message.reply(&ctx.http, format!("{} is currently dead. reason: {}", user.display_name(), reason)).await?;
+                        }
+                    }
+                }
                 query!(
                     "INSERT INTO user_settings (guild_id, user_id, message_count) VALUES (?, ?, 1)
                     ON DUPLICATE KEY UPDATE message_count = message_count + 1",

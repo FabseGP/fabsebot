@@ -1,6 +1,6 @@
 use crate::types::{Context, Error};
 
-use poise::CreateReply;
+use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use serenity::model::channel::Channel;
 use sqlx::query;
 
@@ -38,6 +38,40 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
         )
         .await?;
     }
+    Ok(())
+}
+
+/// When you want to escape discord
+#[poise::command(prefix_command, slash_command)]
+pub async fn set_afk(
+    ctx: Context<'_>,
+    #[description = "Reason for afk"] reason: Option<String>,
+) -> Result<(), Error> {
+    query!(
+        "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason) VALUES (?, ?, TRUE, ?)
+        ON DUPLICATE KEY UPDATE afk = TRUE, afk_reason = ?",
+        ctx.guild_id().unwrap().get(),
+        u64::from(ctx.author().id),
+        reason,
+        reason,
+    )
+    .execute(&mut *ctx.data().db.acquire().await?)
+    .await?;
+    let embed_reason = if let Some(input) = reason {
+        input
+    } else {
+        "didn't renew life subscription".to_string()
+    };
+    ctx.send(
+        CreateReply::default().embed(
+            CreateEmbed::new()
+                .title(format!("{} killed!", ctx.author().display_name()))
+                .description(format!("Reason: {}", embed_reason))
+                .thumbnail(ctx.author().avatar_url().unwrap())
+                .color(0xFF5733),
+        ),
+    )
+    .await?;
     Ok(())
 }
 

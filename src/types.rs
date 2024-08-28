@@ -1,10 +1,10 @@
 use lazy_static::lazy_static;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{collections::HashMap, error::Error as StdError, sync::Arc};
 use tokio::sync::Mutex;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Serialize)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,

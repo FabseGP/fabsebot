@@ -2,15 +2,15 @@ use crate::types::{Context, Error};
 
 use poise::serenity_prelude::CreateEmbed;
 use poise::CreateReply;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::fmt::{Display, Formatter};
 use urlencoding::encode;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct MoeResponse {
     result: Vec<AnimeScene>,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct AnimeScene {
     anilist: Anilist,
     episode: Option<i32>,
@@ -18,11 +18,11 @@ struct AnimeScene {
     to: Option<f32>,
     video: String,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct Anilist {
     title: AnimeTitle,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct AnimeTitle {
     english: Option<String>,
 }

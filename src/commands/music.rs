@@ -5,7 +5,7 @@ use poise::{
     serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder},
     CreateReply,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serenity::futures;
 use songbird::{
     driver::Bitrate,
@@ -15,23 +15,23 @@ use songbird::{
 };
 use std::{num::NonZeroUsize, time::Duration};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct DeezerResponse {
     tracks: DeezerData,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct DeezerData {
     data: Vec<DeezerTracks>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct DeezerTracks {
     title: String,
     artist: DeezerArtist,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct DeezerArtist {
     name: String,
 }

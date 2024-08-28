@@ -9,7 +9,7 @@ use imageproc::drawing::{draw_text_mut, text_size};
 use poise::serenity_prelude::{self as serenity, Context, CreateEmbed, ExecuteWebhook};
 use rand::Rng;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use serenity::{
     builder::CreateAttachment,
@@ -20,11 +20,11 @@ use std::{cmp::Ordering, env, fs, fs::File, io::Write, path::Path};
 use textwrap::wrap;
 use urlencoding::encode;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct FabseAIImageDesc {
     result: AIResponseImageDesc,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct AIResponseImageDesc {
     description: String,
 }
@@ -50,11 +50,11 @@ pub async fn ai_image_desc(content: Vec<u8>) -> Result<String, Error> {
     Ok(output.result.description)
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct FabseAIText {
     result: AIResponseText,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct AIResponseText {
     response: String,
 }
@@ -78,12 +78,12 @@ pub async fn ai_response(content: Vec<ChatMessage>) -> Result<String, Error> {
     Ok(output.result.response)
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct LocalAIResponse {
     message: LocalAIText,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct LocalAIText {
     content: String,
 }
@@ -151,11 +151,11 @@ pub async fn emoji_id(
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct GifResponse {
     results: Vec<GifData>,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct GifData {
     url: String,
 }
@@ -401,11 +401,11 @@ pub async fn spoiler_message(ctx: &Context, message: &serenity::Message, text: &
     let _ = message.delete(&ctx.http, reason).await;
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct WaifuResponse {
     images: Vec<WaifuData>,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 struct WaifuData {
     url: String,
 }
