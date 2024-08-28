@@ -4,9 +4,46 @@ use poise::CreateReply;
 use serenity::model::channel::Channel;
 use sqlx::query;
 
+/// To reset or not to reset, that's the question
+#[poise::command(prefix_command, slash_command)]
+pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
+    let admin_perms = ctx
+        .author_member()
+        .await
+        .unwrap()
+        .permissions(ctx.cache())
+        .unwrap()
+        .administrator();
+    if ctx.author().id == 1014524859532980255
+        || ctx.author().id == ctx.partial_guild().await.unwrap().owner_id
+        || admin_perms
+    {
+        query!(
+            "REPLACE INTO guild_settings (guild_id) VALUES (?)",
+            ctx.guild_id().unwrap().get()
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.send(
+            CreateReply::default()
+                .content("Server settings resetted... probably")
+                .ephemeral(true),
+        )
+        .await?;
+    } else {
+        ctx.send(
+            CreateReply::default()
+                .content("hush, you're either not the owner or don't have admin perms")
+                .ephemeral(true),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// Configure the role for the chatbot individually for each user
 #[poise::command(prefix_command, slash_command)]
-pub async fn chatbot_role(
+pub async fn set_chatbot_role(
     ctx: Context<'_>,
     #[description = "The role the bot should take; if not set, then default role"] role: Option<
         String,
@@ -33,7 +70,7 @@ pub async fn chatbot_role(
 
 /// Configure the occurence of dead chat gifs
 #[poise::command(slash_command)]
-pub async fn dead_chat(
+pub async fn set_dead_chat(
     ctx: Context<'_>,
     #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: u8,
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
@@ -79,7 +116,7 @@ pub async fn dead_chat(
 
 /// Configure which prefix to use for commands
 #[poise::command(prefix_command, slash_command)]
-pub async fn prefix(
+pub async fn set_prefix(
     ctx: Context<'_>,
     #[description = "Character(s) to use as prefix for commands"] characters: String,
 ) -> Result<(), Error> {
@@ -131,7 +168,7 @@ pub async fn prefix(
 
 /// Configure where to send quotes
 #[poise::command(slash_command)]
-pub async fn quote_channel(
+pub async fn set_quote_channel(
     ctx: Context<'_>,
     #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
@@ -172,46 +209,9 @@ pub async fn quote_channel(
     Ok(())
 }
 
-/// To reset or not to reset, that's the question
-#[poise::command(prefix_command, slash_command)]
-pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
-    let admin_perms = ctx
-        .author_member()
-        .await
-        .unwrap()
-        .permissions(ctx.cache())
-        .unwrap()
-        .administrator();
-    if ctx.author().id == 1014524859532980255
-        || ctx.author().id == ctx.partial_guild().await.unwrap().owner_id
-        || admin_perms
-    {
-        query!(
-            "REPLACE INTO guild_settings (guild_id) VALUES (?)",
-            ctx.guild_id().unwrap().get()
-        )
-        .execute(&mut *ctx.data().db.acquire().await?)
-        .await?;
-        ctx.send(
-            CreateReply::default()
-                .content("Server settings resetted... probably")
-                .ephemeral(true),
-        )
-        .await?;
-    } else {
-        ctx.send(
-            CreateReply::default()
-                .content("hush, you're either not the owner or don't have admin perms")
-                .ephemeral(true),
-        )
-        .await?;
-    }
-    Ok(())
-}
-
 /// Configure a channel to always spoiler messages
 #[poise::command(slash_command)]
-pub async fn spoiler_channel(
+pub async fn set_spoiler_channel(
     ctx: Context<'_>,
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
@@ -245,6 +245,55 @@ pub async fn spoiler_channel(
         ctx.send(
             CreateReply::default()
                 .content("hush, you're either not the owner or don't have admin perms")
+                .ephemeral(true),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Configure where to send quotes
+#[poise::command(slash_command)]
+pub async fn set_word_track(
+    ctx: Context<'_>,
+    #[description = "Word to track count of"] word: String,
+) -> Result<(), Error> {
+    if word.len() < 50 {
+        let admin_perms = ctx
+            .author_member()
+            .await
+            .unwrap()
+            .permissions
+            .unwrap()
+            .administrator();
+        if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
+            query!(
+                "INSERT INTO words_count (guild_id, word) VALUES (?, ?)
+                ON DUPLICATE KEY UPDATE word = ?",
+                ctx.guild_id().unwrap().get(),
+                word,
+                word,
+            )
+            .execute(&mut *ctx.data().db.acquire().await?)
+            .await?;
+            ctx.send(
+                CreateReply::default()
+                    .content(format!("The count of {} will be tracked... probably", word))
+                    .ephemeral(true),
+            )
+            .await?;
+        } else {
+            ctx.send(
+                CreateReply::default()
+                    .content("hush, you're either not the owner or don't have admin perms")
+                    .ephemeral(true),
+            )
+            .await?;
+        }
+    } else {
+        ctx.send(
+            CreateReply::default()
+                .content("maximum 50 characters are allowed as a word")
                 .ephemeral(true),
         )
         .await?;

@@ -217,30 +217,6 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Hmm, I wonder how pure we are
-#[poise::command(prefix_command, slash_command)]
-pub async fn pure_count(ctx: Context<'_>) -> Result<(), Error> {
-    let id: u64 = ctx.guild_id().unwrap().into();
-    if let Ok(record) = query!(
-        "SELECT count FROM words_count WHERE word = ? AND guild_id = ?",
-        "nigga",
-        id
-    )
-    .fetch_one(&mut *ctx.data().db.acquire().await?)
-    .await
-    {
-        ctx.reply(format!(
-            "oof, {} n-words counted, martin luther king jr. would be disappointed fr",
-            record.count
-        ))
-        .await?;
-    } else {
-        ctx.reply("hmm, 0 n-word counted... yeet must be gone")
-            .await?;
-    }
-    Ok(())
-}
-
 /// When your users are yapping
 #[poise::command(slash_command)]
 pub async fn slow_mode(
@@ -309,5 +285,24 @@ pub async fn troll(ctx: Context<'_>) -> Result<(), Error> {
             .ephemeral(true),
     )
     .await?;
+    Ok(())
+}
+
+/// Hmm, I wonder how pure we are
+#[poise::command(prefix_command, slash_command)]
+pub async fn word_count(ctx: Context<'_>) -> Result<(), Error> {
+    let id: u64 = ctx.guild_id().unwrap().into();
+    if let Ok(record) = query!("SELECT word, count FROM words_count WHERE guild_id = ?", id)
+        .fetch_one(&mut *ctx.data().db.acquire().await?)
+        .await
+    {
+        ctx.reply(format!(
+            "{} was counted {} times, I'm not sure if that's a good thing or not tho",
+            record.word, record.count
+        ))
+        .await?;
+    } else {
+        ctx.reply("hmm, no words were counted... peace?").await?;
+    }
     Ok(())
 }
