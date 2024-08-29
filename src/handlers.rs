@@ -1,6 +1,6 @@
 use crate::types::{ChatMessage, Data, Error};
 use crate::utils::{
-    ai_image_desc, ai_response, ai_response_local, embed_builder, emoji_id, get_gif, get_waifu, random_number, spoiler_message,
+    ai_image_desc, ai_response, embed_builder, emoji_id, get_waifu, random_number, spoiler_message,
     webhook_message,
 };
 
