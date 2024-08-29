@@ -50,7 +50,7 @@ pub async fn event_handler(
                 let user_id: u64 = new_message.author.id.into();
                 let users_afk = 
                     query!(
-                        "SELECT user_id, afk, afk_reason FROM user_settings WHERE guild_id = ?",
+                        "SELECT user_id, afk, afk_reason, pinged_links FROM user_settings WHERE guild_id = ?",
                         guild_id
                     )
                     .fetch_all(&mut *data.db.acquire().await?)
@@ -60,14 +60,7 @@ pub async fn event_handler(
                         let user_id = UserId::new(target.user_id);
                         let user = ctx.http.get_user(user_id).await?;
                         if new_message.author.id == user_id {
-                            let record = query!(
-                                "SELECT pinged_links FROM user_settings WHERE guild_id = ? AND user_id = ?",
-                                guild_id,
-                                target.user_id,
-                            )
-                            .fetch_one(&mut *data.db.acquire().await?)
-                            .await?;
-                            let entries: Vec<&str> = record.pinged_links
+                            let entries: Vec<&str> = target.pinged_links
                                 .as_deref()
                                 .unwrap_or("")
                                 .split(',')
@@ -113,7 +106,7 @@ pub async fn event_handler(
                             } else {
                                 "didn't renew life subscription".to_string()
                             };
-                            new_message.reply(&ctx.http, format!("{} is currently dead. reason: {}", user.display_name(), reason)).await?;
+                            new_message.reply(&ctx.http, format!("{} is currently dead. Reason: {}", user.display_name(), reason)).await?;
                         }
                     }
                 }

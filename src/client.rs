@@ -125,6 +125,7 @@ pub async fn start() {
                 music::stop_song(),
                 settings::reset_settings(),
                 settings::set_afk(),
+                settings::set_chatbot_channel(),
                 settings::set_chatbot_role(),
                 settings::set_dead_chat(),
                 settings::set_prefix(),

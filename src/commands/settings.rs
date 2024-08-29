@@ -75,6 +75,18 @@ pub async fn set_afk(
     Ok(())
 }
 
+/// When you need ai in your life
+#[poise::command(prefix_command, slash_command)]
+pub async fn set_chatbot_channel(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.send(
+        CreateReply::default()
+            .content("To enable ai-sama, create a channel with the topic set to 'ai-chat'")
+            .ephemeral(true),
+    )
+    .await?;
+    Ok(())
+}
+
 /// Configure the role for the chatbot individually for each user
 #[poise::command(prefix_command, slash_command)]
 pub async fn set_chatbot_role(
@@ -303,7 +315,7 @@ pub async fn set_word_track(
         if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
             query!(
                 "INSERT INTO words_count (guild_id, word) VALUES (?, ?)
-                ON DUPLICATE KEY UPDATE word = ?",
+                ON DUPLICATE KEY UPDATE word = ?, count = 0",
                 ctx.guild_id().unwrap().get(),
                 word,
                 word,
