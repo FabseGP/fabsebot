@@ -35,12 +35,12 @@ pub async fn dynamic_prefix(
     ctx: poise::PartialContext<'_, Data, Error>,
 ) -> Result<Option<Cow<'static, str>>, Error> {
     let prefix = {
-        if let Ok(record) = query!(
+        if let Some(record) = query!(
             "SELECT prefix FROM guild_settings WHERE guild_id = ?",
             ctx.guild_id.unwrap().get()
         )
-        .fetch_one(&mut *ctx.framework.user_data().db.acquire().await?)
-        .await
+        .fetch_optional(&mut *ctx.framework.user_data().db.acquire().await?)
+        .await?
         {
             if let Some(prefix) = record.prefix {
                 prefix
