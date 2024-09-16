@@ -1,0 +1,3 @@
+ALTER TABLE user_settings
+ADD ping_content TEXT NULL DEFAULT NULL,
+ADD ping_media TEXT NULL DEFAULT NULL;

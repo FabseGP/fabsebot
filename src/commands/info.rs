@@ -28,10 +28,10 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
             guild.id, icon_hash
         )
     } else {
-        "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_string()
+        "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_owned()
     };
     let owner_user = guild.owner_id.to_user(&ctx.http()).await?;
-    let embed = CreateEmbed::new()
+    let embed = CreateEmbed::default()
         .title(guild.name.to_string())
         .thumbnail(thumbnail)
         .field("Owner ID: ", owner_user.display_name(), false)
@@ -53,14 +53,16 @@ pub async fn user_info(
     #[rest]
     user: serenity::User,
 ) -> Result<(), Error> {
-    let member = ctx
-        .http()
-        .get_member(ctx.guild_id().unwrap(), user.id)
-        .await?;
-    let embed = CreateEmbed::new()
-        .title(member.display_name())
-        .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))
-        .field("Account created at: ", user.created_at().to_string(), false);
-    ctx.send(CreateReply::default().embed(embed)).await?;
+    if let Some(guild_id) = ctx.guild_id() {
+        let member = ctx
+            .http()
+            .get_member(guild_id, user.id)
+            .await?;
+        let embed = CreateEmbed::new()
+            .title(member.display_name())
+            .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))
+            .field("Account created at: ", user.created_at().to_string(), false);
+        ctx.send(CreateReply::default().embed(embed)).await?;
+    }
     Ok(())
 }

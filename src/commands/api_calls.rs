@@ -1,5 +1,5 @@
 use crate::types::{Context, Error};
-use crate::utils::{ai_response_simple, get_gif, random_number};
+use crate::utils::{ai_response_simple, get_gifs};
 
 use poise::serenity_prelude::{
     ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment, CreateButton,
@@ -13,6 +13,13 @@ use serenity::futures::StreamExt;
 use sqlx::{query, Row};
 use std::{env, time::Duration};
 use urlencoding::encode;
+
+struct State {
+    next_id: String,
+    prev_id: String,
+    index: usize,
+    len: usize,
+}
 
 #[derive(Deserialize)]
 struct EventResponse {
@@ -29,12 +36,14 @@ pub async fn ai_anime(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let url = "https://cagliostrolab-animagine-xl-3-1.hf.space/call/run";
-    let client = &ctx.data().req_client;
+    let data = ctx.data();
+    let client = &data.req_client;
+    let rng = &mut data.rng_thread.lock().await;
     let request_body = json!({
         "data": [
             prompt,
             "",
-            random_number(2147483647),
+            rng.usize(..2147483647),
             2048,
             2048,
             7,
@@ -49,35 +58,45 @@ pub async fn ai_anime(
             true,
         ]
     });
-    let resp = client.post(url).json(&request_body).send().await?;
-    let output: EventResponse = resp.json().await?;
-    if !output.event_id.is_empty() {
-        let status_url = format!("{}/{}", url, output.event_id);
-        let path_regex = Regex::new(r#""path":\s*"(.*?)""#).unwrap();
-        loop {
-            let status_resp = client.get(&status_url).send().await?;
-            let status_text = status_resp.text().await?;
-            if status_text.contains("event: complete") {
-                if let Some(captures) = path_regex.captures(&status_text) {
-                    if let Some(path) = captures.get(1) {
-                        let image_url = format!(
-                            "https://cagliostrolab-animagine-xl-3-1.hf.space/file={}",
-                            path.as_str()
-                        );
-                        let image_data = client.get(&image_url).send().await?;
-                        let image_data = image_data.bytes().await?.to_vec();
-                        let file = CreateAttachment::bytes(image_data, "output.png");
-                        ctx.send(CreateReply::default().attachment(file)).await?;
-                        break;
+    let resp = match client.post(url).json(&request_body).send().await {
+        Ok(response) => response,
+        Err(e) => {
+            ctx.send(CreateReply::default().content("AI-sama is currently down, blame the americans"))
+                .await?;
+            tracing::warn!("Generating an AI-image failed with this error: {}", e);
+            return Ok(());
+        }
+    };
+    let output: Option<EventResponse> = resp.json().await?;
+    if let Some(payload) = output {
+        if !payload.event_id.is_empty() {
+            let status_url = format!("{}/{}", url, payload.event_id);
+            let path_regex = Regex::new(r#""path":\s*"(.*?)""#).unwrap();
+            loop {
+                let status_resp = client.get(&status_url).send().await?;
+                let status_text = status_resp.text().await?;
+                if status_text.contains("event: complete") {
+                    if let Some(captures) = path_regex.captures(&status_text) {
+                        if let Some(path) = captures.get(1) {
+                            let image_url = format!(
+                                "https://cagliostrolab-animagine-xl-3-1.hf.space/file={}",
+                                path.as_str()
+                            );
+                            let image_data = client.get(&image_url).send().await?;
+                            let image_data = image_data.bytes().await?.to_vec();
+                            let file = CreateAttachment::bytes(image_data, "output.png");
+                            ctx.send(CreateReply::default().attachment(file)).await?;
+                            break;
+                        }
                     }
                 }
             }
+        } else {
+            ctx.send(
+                CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),
+            )
+            .await?;
         }
-    } else {
-        ctx.send(
-            CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),
-        )
-        .await?;
     }
     Ok(())
 }
@@ -132,16 +151,12 @@ pub async fn ai_summarize(
     #[description = "Maximum length of summary in words"] length: u64,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let reply = match ctx
-        .channel_id()
-        .message(&ctx.http(), ctx.id().into())
-        .await?
-    {
-        msg if msg.referenced_message.is_some() => msg.referenced_message.unwrap(),
-        _ => {
-            ctx.reply("bruh, reply to a message").await?;
-            return Ok(());
-        }
+    let msg = ctx.channel_id().message(&ctx.http(), ctx.id().into()).await?;
+    let reply = if let Some(ref_msg) = msg.referenced_message {
+        ref_msg
+    } else {
+        ctx.reply("Bruh, reply to a message").await?;
+        return Ok(());
     };
     let client = &ctx.data().req_client;
     let api_key = env::var("CLOUDFLARE_TOKEN")?;
@@ -161,14 +176,14 @@ pub async fn ai_summarize(
     if !output.result.summary.is_empty() {
         ctx.say(output.result.summary).await?;
     } else {
-        ctx.send(CreateReply::default().content("this is too much work"))
+        ctx.send(CreateReply::default().content("This is too much work"))
             .await?;
     }
     Ok(())
 }
 
 /// Did someone say AI text?
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(slash_command)]
 pub async fn ai_text(
     ctx: Context<'_>,
     #[description = "AI personality, e.g. *you're an evil assistant*"] role: String,
@@ -186,7 +201,7 @@ pub async fn ai_text(
         for (i, chunk) in chunks.enumerate() {
             let chunk_str: String = chunk.iter().collect();
             let field_name = if i == 0 {
-                "Response:".to_string()
+                "Response:".to_owned()
             } else {
                 format!("Response (cont. {})", i + 1)
             };
@@ -248,7 +263,7 @@ pub async fn anilist_anime(
     let embed = CreateEmbed::default()
         .title("Anime")
         .field("ID", id.to_string(), false)
-        .field("Title (Romaji)", title.to_string(), false)
+        .field("Title (Romaji)", title.to_owned(), false)
         .color(0x33d17a);
 
     ctx.send(CreateReply::default().embed(embed)).await?;
@@ -277,15 +292,19 @@ pub async fn eightball(
     let judging: EightBallResponse = request.json().await?;
     if !judging.reading.is_empty() {
         ctx.send(
-            CreateReply::default().embed(CreateEmbed::new().title(question).color(0x33d17a).field(
-                "",
-                &judging.reading,
-                true,
-            )),
-        )
+            CreateReply::default().embed(
+                CreateEmbed::default()
+                    .title(question)
+                    .color(0x33d17a)
+                    .field(
+                        "",
+                        &judging.reading,
+                        true,
+                    )),
+            )
         .await?;
     } else {
-        ctx.send(CreateReply::default().content("sometimes riding a giraffe is what you need"))
+        ctx.send(CreateReply::default().content("Sometimes riding a giraffe is what you need"))
             .await?;
     }
     Ok(())
@@ -299,13 +318,123 @@ pub async fn gif(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    let url = get_gif(input).await;
-    if let Ok(url) = url {
-        ctx.send(CreateReply::default().content(url)).await?;
+    let resp = get_gifs(input.clone()).await;
+    if let Ok(urls) = resp {
+        let len = urls.len();
+        let index = 0;
+        let next_id = format!("{}_next_{}", ctx.id(), index);
+        let prev_id = format!("{}_prev_{}", ctx.id(), index);
+        let mut state = State {
+            next_id: next_id.clone(),
+            prev_id: prev_id.clone(),
+            index,
+            len,
+        };
+        let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
+            .style(ButtonStyle::Primary)
+            .label("➡️")]);
+        let components = if len > 1 { vec![next_button] } else { vec![] };
+        let embed = CreateEmbed::default().title(input.clone()).image(&urls[0]);
+        ctx.send(CreateReply::default().embed(embed).components(components))
+            .await?;
+        if len > 1 {
+            while let Some(interaction) =
+                ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                    .timeout(Duration::from_secs(600))
+                    .filter(move |interaction| {
+                        let next_id_clone = state.next_id.clone();
+                        let prev_id_clone = state.prev_id.clone();
+                        let id = interaction.data.custom_id.as_str();
+                        id == next_id_clone.as_str() || id == prev_id_clone.as_str()
+                    })
+                    .await
+            {
+                let choice = &interaction.data.custom_id.as_str();
+
+                interaction
+                    .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                    .await?;
+
+                if choice.contains("next") && state.index < state.len - 1 {
+                    state.index += 1;
+                } else if choice.contains("prev") && state.index > 0 {
+                    state.index -= 1;
+                }
+
+                state.next_id = format!("{}_next_{}", ctx.id(), state.index);
+                state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
+
+                let next_button = CreateButton::new(&state.next_id)
+                    .style(ButtonStyle::Primary)
+                    .label("➡️");
+
+                let prev_button = CreateButton::new(&state.prev_id)
+                    .style(ButtonStyle::Primary)
+                    .label("⬅️");
+
+                let new_embed = CreateEmbed::default().title(input.clone()).image(&urls[state.index]);
+
+                let new_components = if state.index == 0 {
+                    vec![CreateActionRow::Buttons(vec![next_button])]
+                } else if state.index == len - 1 {
+                    vec![CreateActionRow::Buttons(vec![prev_button])]
+                } else {
+                    vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                };
+
+                let mut msg = interaction.message.clone();
+
+                msg.edit(
+                    ctx.http(),
+                    EditMessage::new()
+                        .embed(new_embed)
+                        .components(new_components),
+                )
+                .await?;
+            }
+        }
     } else {
-        ctx.send(CreateReply::default().content("life is not gifing"))
+        ctx.send(CreateReply::default().content("Life is not gifing"))
             .await?;
     }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct GithubResponse {
+    items: Vec<GithubSearch>,
+}
+#[derive(Deserialize)]
+struct GithubSearch {
+    url: String,
+}
+
+/// When you need open source in your life
+#[poise::command(prefix_command, slash_command)]
+pub async fn github_search(
+    ctx: Context<'_>,
+    #[description = "Search query"]
+    #[rest]
+    input: String,
+) -> Result<(), Error> {
+    ctx.defer().await.unwrap();
+    let client = &ctx.data().req_client;
+    let api_key = env::var("GITHUB_TOKEN")?;
+    let request = client
+        .get(format!("https://api.github.com/search/code?q={}", input))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "fabseman")
+        .bearer_auth(api_key)
+        .send()
+        .await?;
+    let data: GithubResponse = request.json().await.unwrap();
+    if !data.items.is_empty() {
+        ctx.say(data.items[0].url.clone()).await?;
+    } else {
+        ctx.send(CreateReply::default().content(format!("**Like you, {} don't exist**", input)))
+            .await?;
+    } 
     Ok(())
 }
 
@@ -319,7 +448,9 @@ struct JokeResponse {
 pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
     let request_url =
         "https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
-    let client = &ctx.data().req_client;
+    let data = ctx.data();
+    let client = &data.req_client;
+    let rng = &mut data.rng_thread.lock().await;
     let request = client.get(request_url).send().await?;
     let data: JokeResponse = request.json().await.unwrap();
     if !data.joke.is_empty() {
@@ -333,7 +464,7 @@ pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
             "I don't like you",
             "you smell",
         ];
-        ctx.send(CreateReply::default().content(roasts[random_number(roasts.len())]))
+        ctx.send(CreateReply::default().content(roasts[rng.usize(..roasts.len())]))
             .await?;
     }
     Ok(())
@@ -348,10 +479,10 @@ pub async fn memegen(
     #[description = "Bottom text"] bottom: String,
 ) -> Result<(), Error> {
     let request_url = format!(
-        "https://api.memegen.link/images/exit/{left}/{right}/{bottom}.png",
-        left = encode(&top_left),
-        right = encode(&top_right),
-        bottom = encode(&bottom)
+        "https://api.memegen.link/images/exit/{}/{}/{}.png",
+        encode(&top_left),
+        encode(&top_right),
+        encode(&bottom)
     );
     ctx.send(CreateReply::default().content(request_url))
         .await?;
@@ -378,7 +509,7 @@ pub async fn roast(
         .await
         .unwrap()
         .banner_url()
-        .unwrap_or("user has no banner".to_string());
+        .unwrap_or("user has no banner".to_owned());
     let roles: Vec<String> = member
         .roles
         .iter()
@@ -401,7 +532,7 @@ pub async fn roast(
             Ok(row) => Some(row.try_get("messages").unwrap()),
             Err(_) => None,
         };
-        result_filtered.map_or("unknown message count".to_string(), |count| {
+        result_filtered.map_or("unknown message count".to_owned(), |count| {
             count.to_string()
         })
     };
@@ -430,7 +561,7 @@ pub async fn roast(
     };
 
     let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
-    let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target".to_string();
+    let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target".to_owned();
     let resp = ai_response_simple(role, description).await?;
 
     if !resp.is_empty() {
@@ -441,7 +572,7 @@ pub async fn roast(
         for (i, chunk) in chunks.enumerate() {
             let chunk_str: String = chunk.iter().collect();
             let field_name = if i == 0 {
-                "Response:".to_string()
+                "Response:".to_owned()
             } else {
                 format!("Response (cont. {})", i + 1)
             };
@@ -478,27 +609,21 @@ pub async fn translate(
     #[rest]
     sentence: Option<String>,
 ) -> Result<(), Error> {
-    let content = match ctx
-        .channel_id()
-        .message(&ctx.http(), ctx.id().into())
-        .await?
-    {
-        msg if msg.referenced_message.is_some() => {
-            msg.referenced_message.unwrap().content.to_string()
-        }
-        _ => {
-            if let Some(query) = sentence {
-                query
-            } else {
-                ctx.reply("bruh, give me smth to translate").await?;
-                return Ok(());
-            }
+    let msg = ctx.channel_id().message(&ctx.http(), ctx.id().into()).await?;
+    let content = {
+        if let Some(ref_msg) = msg.referenced_message {
+            ref_msg.content.to_string()
+        } else if let Some(query) = sentence {
+            query
+        } else {
+            ctx.reply("Bruh, give me smth to translate").await?;
+            return Ok(());
         }
     };
     let target_lang = if let Some(language) = target {
         language
     } else {
-        "en".to_string()
+        "en".to_owned()
     };
     let form_data = json!({
         "q": content,
@@ -514,7 +639,7 @@ pub async fn translate(
         if !data.translated_text.is_empty() {
             ctx.send(
                 CreateReply::default().embed(
-                    CreateEmbed::new()
+                    CreateEmbed::default()
                         .title(format!(
                             "Translation from {} to {} with {}% confidence",
                             data.detected_language.language,
@@ -528,11 +653,11 @@ pub async fn translate(
             )
             .await?;
         } else {
-            ctx.send(CreateReply::default().content("too dangerous to translate"))
+            ctx.send(CreateReply::default().content("Too dangerous to translate"))
                 .await?;
         }
     } else {
-        ctx.send(CreateReply::default().content("my translator is currently busy, pls standby"))
+        ctx.send(CreateReply::default().content("My translator is currently busy, pls standby"))
             .await?;
     }
     Ok(())
@@ -547,13 +672,6 @@ struct UrbanDict {
     definition: String,
     example: String,
     word: String,
-}
-
-struct UrbanState {
-    next_id: String,
-    prev_id: String,
-    index: usize,
-    len: usize,
 }
 
 /// The holy moly urbandictionary
@@ -577,7 +695,7 @@ pub async fn urban(
         let index = 0;
         let next_id = format!("{}_next_{}", ctx.id(), index);
         let prev_id = format!("{}_prev_{}", ctx.id(), index);
-        let mut state = UrbanState {
+        let mut state = State {
             next_id: next_id.clone(),
             prev_id: prev_id.clone(),
             index,
@@ -594,7 +712,7 @@ pub async fn urban(
         for (i, chunk) in chunks.enumerate() {
             let chunk_str: String = chunk.iter().collect();
             let field_name = if i == 0 {
-                "Definition:".to_string()
+                "Definition:".to_owned()
             } else {
                 format!("Response (cont. {})", i + 1)
             };
@@ -656,7 +774,7 @@ pub async fn urban(
                 for (i, chunk) in new_chunks.enumerate() {
                     let chunk_str: String = chunk.iter().collect();
                     let field_name = if i == 0 {
-                        "Definition:".to_string()
+                        "Definition:".to_owned()
                     } else {
                         format!("Response (cont. {})", i + 1)
                     };
@@ -690,7 +808,7 @@ pub async fn urban(
             }
         }
     } else {
-        ctx.send(CreateReply::default().content(format!("**like you, {} don't exist**", input)))
+        ctx.send(CreateReply::default().content(format!("**Like you, {} don't exist**", input)))
             .await?;
     }
     Ok(())

@@ -51,30 +51,32 @@ pub async fn anime_scene(
     );
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
-    let scene: MoeResponse = request.json().await.unwrap();
-    if !scene.result[0].video.is_empty() {
-        ctx.send(
-            CreateReply::default().embed(
-                CreateEmbed::new()
-                    .title(scene.result[0].anilist.title.to_string())
-                    .field(
-                        "Episode",
-                        scene.result[0].episode.unwrap().to_string(),
-                        true,
-                    )
-                    .field("From", scene.result[0].from.unwrap().to_string(), true)
-                    .field("To", scene.result[0].to.unwrap().to_string(), true)
-                    .color(0x57e389),
-            ),
-        )
-        .await?;
-        ctx.send(CreateReply::default().content(&scene.result[0].video))
+    let scene: Option<MoeResponse> = request.json().await?;
+    if let Some(payload) = scene { 
+        if !payload.result[0].video.is_empty() {
+            ctx.send(
+                CreateReply::default().embed(
+                    CreateEmbed::default()
+                        .title(payload.result[0].anilist.title.to_string())
+                        .field(
+                            "Episode",
+                            payload.result[0].episode.unwrap().to_string(),
+                            true,
+                        )
+                        .field("From", payload.result[0].from.unwrap().to_string(), true)
+                        .field("To", payload.result[0].to.unwrap().to_string(), true)
+                        .color(0x57e389),
+                ),
+            )
             .await?;
-    } else {
-        ctx.send(
-            CreateReply::default().content("why are you hallucinating, that scene never happened"),
-        )
-        .await?;
+            ctx.send(CreateReply::default().content(&payload.result[0].video))
+                .await?;
+        } else {
+            ctx.send(
+                CreateReply::default().content("Why are you hallucinating, that scene never happened"),
+            )
+            .await?;
+        }
     }
     Ok(())
 }

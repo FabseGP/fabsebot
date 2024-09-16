@@ -1,8 +1,10 @@
 use crate::commands::{animanga, api_calls, funny, games, info, misc, music, settings};
 use crate::handlers::event_handler;
-use crate::types::{Context, Data, Error};
+use crate::types::{Context as PoiseContext, Data, Error};
 
-use poise::serenity_prelude as serenity;
+use anyhow::Context;
+use fastrand::Rng;
+use poise::{builtins, EditTracker, Framework, FrameworkError, FrameworkOptions, PartialContext, PrefixFrameworkOptions, serenity_prelude as serenity};
 use reqwest::Client as http_client;
 use serenity::{cache::Settings, client::Client, prelude::GatewayIntents};
 use songbird::Songbird;
@@ -10,21 +12,23 @@ use sqlx::query;
 use std::{borrow::Cow, collections::HashMap, env, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
-async fn on_error(error: poise::FrameworkError<'_, Data, Error>) {
+async fn on_error(error: FrameworkError<'_, Data, Error>) {
     match error {
-        poise::FrameworkError::Command { error, ctx, .. } => {
-            println!("Error in command `{}`: {:?}", ctx.command().name, error,);
+        FrameworkError::Command { error, ctx, .. } => {
+            tracing::warn!("Error in command `{}`: {:?}", ctx.command().name, error);
         }
+        FrameworkError::DynamicPrefix { .. } => {}
+        FrameworkError::UnknownCommand { .. } => {}
         error => {
-            if let Err(e) = poise::builtins::on_error(error).await {
-                println!("Error while handling error: {}", e)
+            if let Err(e) = builtins::on_error(error).await {
+                tracing::warn!("Error while handling error: {:?}", e);
             }
         }
     }
 }
 
 #[poise::command(prefix_command, owners_only)]
-async fn register_commands(ctx: Context<'_>) -> Result<(), Error> {
+async fn register_commands(ctx: PoiseContext<'_>) -> anyhow::Result<()> {
     let commands = &ctx.framework().options().commands;
     poise::builtins::register_globally(ctx.http(), commands).await?;
     ctx.say("Successfully registered slash commands!").await?;
@@ -32,34 +36,40 @@ async fn register_commands(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 pub async fn dynamic_prefix(
-    ctx: poise::PartialContext<'_, Data, Error>,
-) -> Result<Option<Cow<'static, str>>, Error> {
-    let prefix = {
-        if let Some(record) = query!(
-            "SELECT prefix FROM guild_settings WHERE guild_id = ?",
-            ctx.guild_id.unwrap().get()
-        )
-        .fetch_optional(&mut *ctx.framework.user_data().db.acquire().await?)
-        .await?
-        {
-            if let Some(prefix) = record.prefix {
-                prefix
+    ctx: PartialContext<'_, Data, Error>,
+) -> anyhow::Result<Option<Cow<'static, str>>> {
+    let prefix = match ctx.guild_id {
+        Some(id) => {
+            let mut conn = ctx.framework.user_data().db.acquire().await
+                .context("Failed to acquire database connection")?;
+            if let Some(record) = query!(
+                "SELECT prefix FROM guild_settings WHERE guild_id = ?",
+                id.get()
+            )
+            .fetch_optional(&mut *conn)
+            .await
+            .context("Failed to fetch prefix from database")?
+            {
+                if let Some(prefix) = record.prefix {
+                    prefix
+                } else {
+                    "!".to_owned()
+                }
             } else {
-                "!".to_string()
+                "!".to_owned()
             }
-        } else {
-            "!".to_string()
-        }
+        }, 
+        _ => { "!".to_owned() } 
     };
 
     Ok(Some(Cow::Owned(prefix)))
 }
 
-pub async fn start() {
-    dotenvy::dotenv().unwrap();
-    let sql_user = env::var("MARIADB_USER").unwrap();
-    let sql_password = env::var("MARIADB_PASSWORD").unwrap();
-    let sql_database = env::var("MARIADB_DATABASE").unwrap();
+pub async fn start() -> anyhow::Result<()> {
+    dotenvy::dotenv().context("Failed to load .env file")?;
+    let sql_user = env::var("MARIADB_USER").context("MARIADB_USER not set in environment")?;
+    let sql_password = env::var("MARIADB_PASSWORD").context("MARIADB_PASSWORD not set in environment")?;
+    let sql_database = env::var("MARIADB_DATABASE").context("MARIADB_DATABASE not set in environment")?;
     let database = sqlx::mysql::MySqlPoolOptions::new()
         .max_connections(5)
         .connect(&format!(
@@ -69,20 +79,21 @@ pub async fn start() {
             database = sql_database
         ))
         .await
-        .expect("oof, couldn't connect to database");
+        .context("Failed to connect to database")?;
     sqlx::migrate!("./migrations")
         .run(&database)
         .await
-        .expect("oof, couldn't run database migrations");
+        .context("Failed to run database migrations")?;
     let manager = Songbird::serenity();
     let user_data = Data {
         db: database,
         req_client: http_client::new(),
         music_manager: Arc::clone(&manager),
         conversations: Arc::new(Mutex::new(HashMap::new())),
+        rng_thread: Arc::new(Mutex::new(Rng::new())),
     };
-    let framework = poise::Framework::builder()
-        .options(poise::FrameworkOptions {
+    let framework = Framework::builder()
+        .options(FrameworkOptions {
             event_handler: |framework, event| Box::pin(event_handler(framework, event)),
             commands: vec![
                 register_commands(),
@@ -94,6 +105,7 @@ pub async fn start() {
                 api_calls::anilist_anime(),
                 api_calls::eightball(),
                 api_calls::gif(),
+                api_calls::github_search(),
                 api_calls::joke(),
                 api_calls::memegen(),
                 api_calls::roast(),
@@ -101,11 +113,12 @@ pub async fn start() {
                 api_calls::urban(),
                 api_calls::waifu(),
                 funny::anonymous(),
-                //     funny::user_dm(),
+                // funny::user_dm(),
                 funny::user_misuse(),
                 games::rps(),
                 info::user_info(),
                 info::server_info(),
+                misc::anony_poll(),
                 misc::birthday(),
                 misc::end_pgo(),
                 misc::help(),
@@ -131,11 +144,12 @@ pub async fn start() {
                 settings::set_prefix(),
                 settings::set_quote_channel(),
                 settings::set_spoiler_channel(),
+                settings::set_user_ping(),
                 settings::set_word_track(),
             ],
-            prefix_options: poise::PrefixFrameworkOptions {
+            prefix_options: PrefixFrameworkOptions {
                 dynamic_prefix: Some(|ctx| Box::pin(dynamic_prefix(ctx))),
-                edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
+                edit_tracker: Some(Arc::new(EditTracker::for_timespan(
                     Duration::from_secs(3600),
                 ))),
                 additional_prefixes: vec![
@@ -161,7 +175,7 @@ pub async fn start() {
         | GatewayIntents::GUILD_PRESENCES
         | GatewayIntents::GUILD_VOICE_STATES
         | GatewayIntents::MESSAGE_CONTENT;
-    let token = env::var("DISCORD_TOKEN").unwrap();
+    let token = env::var("DISCORD_TOKEN").context("DISCORD_TOKEN not set in environment")?;
     let mut cache_settings = Settings::default();
     cache_settings.max_messages = 10;
     let client = Client::builder(&token, intents)
@@ -170,5 +184,15 @@ pub async fn start() {
         .cache_settings(cache_settings)
         .data(Arc::new(user_data) as _)
         .await;
-    client.unwrap().start().await.unwrap();
+    match client {
+        Ok(mut client) => {
+            if let Err(e) = client.start().await {
+                tracing::warn!("Client error: {:?}", e);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Error creating client: {:?}", e);
+        }
+    }
+    Ok(())
 }

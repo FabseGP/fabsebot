@@ -1,13 +1,13 @@
 use crate::types::{get_http_client, ChatMessage, Error};
 
 use ab_glyph::{FontArc, PxScale};
+use anyhow::anyhow;
 use image::{
     imageops::{overlay, resize, FilterType::Gaussian},
     load_from_memory, Rgba, RgbaImage,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
 use poise::serenity_prelude::{self as serenity, Context, CreateEmbed, ExecuteWebhook};
-use rand::Rng;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
@@ -94,7 +94,7 @@ pub async fn ai_response_local(messages: Vec<ChatMessage>) -> Result<String, Err
     let resp = client
         .post(server)
         .json(&json!({
-            "model": "phi3.5:latest",
+            "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
             "stream": false,
             "messages": messages,
         }))
@@ -147,30 +147,48 @@ pub async fn emoji_id(
     let emoji = guild_emojis.iter().find(|e| e.name == emoji_name);
     match emoji {
         Some(emoji) => Ok(emoji.to_string()),
-        None => Err(Error::from("Emoji not found")),
-    }
+        None => Err(anyhow!("Emoji not found")),
+    } 
 }
 
 #[derive(Deserialize)]
 struct GifResponse {
-    results: Vec<GifData>,
+    results: Vec<GifResult>,
 }
+
 #[derive(Deserialize)]
-struct GifData {
+struct GifResult {
+    media_formats: MediaFormat,
+}
+
+#[derive(Deserialize)]
+struct MediaFormat {
+    gif: Option<GifObject>,
+}
+
+#[derive(Deserialize)]
+struct GifObject {
     url: String,
 }
 
-pub async fn get_gif(input: String) -> Result<String, Error> {
+
+pub async fn get_gifs(input: String) -> Result<Vec<String>, Error> {
     let api_key = env::var("TENOR_TOKEN")?;
     let request_url = format!(
-        "https://tenor.googleapis.com/v2/search?q={search}&key={key}&contentfilter=medium&limit=30",
-        search = encode(&input),
-        key = api_key
+        "https://tenor.googleapis.com/v2/search?q={}&key={}&contentfilter=medium&limit=40",
+        encode(&input),
+        api_key,
     );
     let client = get_http_client();
     let request = client.get(request_url).send().await?;
     let urls: GifResponse = request.json().await?;
-    Ok(urls.results[random_number(30)].url.clone())
+    let payload = urls.results
+        .iter()
+        .filter_map(|result| result.media_formats.gif.as_ref())
+        .map(|media| media.url.clone())
+        .collect::<Vec<String>>(); 
+
+    Ok(payload)
 }
 
 pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) -> RgbaImage {
@@ -370,10 +388,6 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
     img
 }
 
-pub fn random_number(count: usize) -> usize {
-    rand::thread_rng().gen_range(0..count)
-}
-
 pub async fn spoiler_message(ctx: &Context, message: &serenity::Message, text: &str) {
     let avatar_url = message.author.avatar_url().unwrap();
     let username = message.author.display_name();
@@ -416,9 +430,9 @@ pub async fn get_waifu() -> String {
     let request = client.get(request_url).send().await.unwrap();
     let url: WaifuResponse = request.json().await.unwrap();
     if !url.images[0].url.is_empty() {
-        url.images[0].url.to_string()
+        url.images[0].url.to_owned()
     } else {
-        "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_string()
+        "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned()
     }
 }
 

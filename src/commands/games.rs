@@ -30,11 +30,10 @@ pub async fn rps(
     choice: String,
 ) -> Result<(), Error> {
     if !user.bot() {
-        // && user.id != ctx.author().id {
         let valid_choices = ["rock", "paper", "scissor"];
         let author_choice = choice.to_lowercase();
         if !valid_choices.contains(&author_choice.as_str()) {
-            ctx.reply("can't you even do smth this simple correct?")
+            ctx.reply("Can't you even do smth this simple correct?")
                 .await?;
             return Ok(());
         }
@@ -42,22 +41,6 @@ pub async fn rps(
         let rock_id = format!("{}_rock", ctx.id());
         let paper_id = format!("{}_paper", ctx.id());
         let scissor_id = format!("{}_scissor", ctx.id());
-
-        /*
-            let options = [
-                CreateSelectMenuOption::new("🪨", "rock"),
-                CreateSelectMenuOption::new("🧻", "paper"),
-                CreateSelectMenuOption::new("✂️", "scissor"),
-            ];
-
-            let components = vec![CreateActionRow::SelectMenu(CreateSelectMenu::new(
-        let rock_id = format!("{}_rock", ctx.id());
-                "animal_select",
-                CreateSelectMenuKind::String {
-                    options: Cow::Borrowed(&options),
-                },
-            ))];
-        */
 
         let components = vec![CreateActionRow::Buttons(vec![
             CreateButton::new(rock_id.clone())
@@ -71,7 +54,7 @@ pub async fn rps(
                 .label("✂️"),
         ])];
 
-        let embed = CreateEmbed::new()
+        let embed = CreateEmbed::default()
             .title("Rock paper scissors...")
             .color(0xf6d32d)
             .description("Make a choice within 60s...");
@@ -132,7 +115,7 @@ pub async fn rps(
 
             let mut msg = interaction.message.clone();
 
-            let new_embed = CreateEmbed::new()
+            let new_embed = CreateEmbed::default()
                 .title(&response)
                 .color(0x00ff00)
                 .description("Still no luck getting a life");
@@ -144,7 +127,7 @@ pub async fn rps(
             .await?;
         }
     } else {
-        ctx.reply("**invalid target, get some friends**").await?;
+        ctx.reply("**Invalid target, get some friends**").await?;
     }
 
     Ok(())
