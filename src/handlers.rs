@@ -1,7 +1,7 @@
 use crate::types::{ChatMessage, Data, Error};
 use crate::utils::{
-    ai_image_desc, ai_response, ai_response_local, embed_builder, emoji_id, get_gifs, get_waifu, spoiler_message,
-    webhook_message,
+    ai_image_desc, ai_response, ai_response_local, embed_builder, emoji_id, get_gifs, get_waifu,
+    spoiler_message, webhook_message,
 };
 
 use anyhow::Context;
@@ -54,15 +54,16 @@ pub async fn event_handler(
                 let content = new_message.content.to_lowercase();
                 let guild_id: u64 = new_message.guild_id.unwrap().into();
                 let user_id: u64 = new_message.author.id.into();
-                let mut conn = data.db.acquire().await
+                let mut conn = data
+                    .db
+                    .acquire()
+                    .await
                     .context("Failed to acquire database connection")?;
                 let mut rng = data.rng_thread.lock().await;
-                let user_settings = 
-                    query!("SELECT * from user_settings WHERE guild_id = ?",
-                        guild_id
-                    )
-                    .fetch_all(&mut *conn)
-                    .await?;
+                let user_settings =
+                    query!("SELECT * from user_settings WHERE guild_id = ?", guild_id)
+                        .fetch_all(&mut *conn)
+                        .await?;
                 for target in &user_settings {
                     if target.afk.unwrap() != 0 {
                         let user_id = UserId::new(target.user_id);
@@ -128,7 +129,9 @@ pub async fn event_handler(
                                 .await?;
                         }
                     }
-                    if content.contains(&format!("<@{}>", target.user_id)) && !content.contains("!user") {
+                    if content.contains(&format!("<@{}>", target.user_id))
+                        && !content.contains("!user")
+                    {
                         if let Some(ping_content) = &target.ping_content {
                             let media = {
                                 if let Some(ping_media) = &target.ping_media {
@@ -137,8 +140,7 @@ pub async fn event_handler(
                                     } else {
                                         ping_media
                                     }
-                                }
-                                else {
+                                } else {
                                     &"".to_owned()
                                 }
                             };
@@ -150,7 +152,7 @@ pub async fn event_handler(
                                         ping_content,
                                         media,
                                         Colour(0x00b0f4),
-                                    ))
+                                    )),
                                 )
                                 .await?;
                         }
@@ -481,10 +483,10 @@ pub async fn event_handler(
                         "# such magnificence",
                     )
                     .await;
-                    if let Ok(reaction) = ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>") {
-                        new_message
-                            .react(&ctx.http, reaction)
-                            .await?;
+                    if let Ok(reaction) =
+                        ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>")
+                    {
+                        new_message.react(&ctx.http, reaction).await?;
                     }
                 } else if content == "floppaganda" {
                     new_message
@@ -553,10 +555,10 @@ pub async fn event_handler(
                         )
                         .await?;
                 } else if content.contains("fabse") {
-                    if let Ok(reaction) = ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>") {
-                        new_message
-                            .react(&ctx.http, reaction)
-                            .await?;
+                    if let Ok(reaction) =
+                        ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>")
+                    {
+                        new_message.react(&ctx.http, reaction).await?;
                     }
                 } else if content.contains("kurukuru_seseren") {
                     let count = content.matches("kurukuru_seseren").count();
@@ -591,7 +593,10 @@ pub async fn event_handler(
         }
         FullEvent::GuildCreate { guild, is_new } => {
             if is_new.is_some() {
-                let mut conn = data.db.acquire().await
+                let mut conn = data
+                    .db
+                    .acquire()
+                    .await
                     .context("Failed to acquire database connection")?;
                 let guild_id: u64 = guild.id.into();
                 query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id)
@@ -622,7 +627,7 @@ pub async fn event_handler(
                             None,
                             None,
                         )
-                        .await 
+                        .await
                     {
                         if let Some(entry) = audit.entries.first() {
                             if let Some(user_id) = entry.user_id {
@@ -660,7 +665,9 @@ pub async fn event_handler(
                                                 &ctx.http,
                                                 CreateMessage::default()
                                                     .content(deleted_content.content)
-                                                    .embed(deleted_content.embeds[0].clone().into()),
+                                                    .embed(
+                                                        deleted_content.embeds[0].clone().into(),
+                                                    ),
                                             )
                                             .await?;
                                     } else {

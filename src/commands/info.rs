@@ -54,10 +54,7 @@ pub async fn user_info(
     user: serenity::User,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let member = ctx
-            .http()
-            .get_member(guild_id, user.id)
-            .await?;
+        let member = ctx.http().get_member(guild_id, user.id).await?;
         let embed = CreateEmbed::new()
             .title(member.display_name())
             .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))

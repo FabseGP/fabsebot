@@ -19,7 +19,7 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
                     guild_id.get()
                 )
                 .execute(&mut *ctx.data().db.acquire().await?)
-            .await?;
+                .await?;
                 ctx.send(
                     CreateReply::default()
                         .content("Server settings resetted... probably")
@@ -273,10 +273,10 @@ pub async fn set_spoiler_channel(
                 ctx.send(
                     CreateReply::default()
                         .content(format!(
-                        "Spoilered messages will be sent to {}... probably",
-                        channel
-                    ))
-                    .ephemeral(true),
+                            "Spoilered messages will be sent to {}... probably",
+                            channel
+                        ))
+                        .ephemeral(true),
                 )
                 .await?;
             }
@@ -297,7 +297,9 @@ pub async fn set_spoiler_channel(
 pub async fn set_user_ping(
     ctx: Context<'_>,
     #[description = "Message to send"] content: String,
-    #[description = "Image/gif to send. Write waifu to get a random waifu pic"] media: Option<String>
+    #[description = "Image/gif to send. Write waifu to get a random waifu pic"] media: Option<
+        String,
+    >,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(

@@ -1,6 +1,6 @@
 use crate::types::{Context, Error};
 
-use poise::serenity_prelude::{ExecuteWebhook, ChannelId, User};
+use poise::serenity_prelude::{ChannelId, ExecuteWebhook, User};
 use poise::CreateReply;
 use serde_json::json;
 
@@ -53,12 +53,11 @@ pub async fn user_misuse(
     message: String,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        if guild_id != 1103723321683611698 || ctx.author().id == 1014524859532980255 || ctx.author().id == 999604056072929321
+        if guild_id != 1103723321683611698
+            || ctx.author().id == 1014524859532980255
+            || ctx.author().id == 999604056072929321
         {
-            let member = ctx
-                .http()
-                .get_member(guild_id, user.id)
-                .await?;
+            let member = ctx.http().get_member(guild_id, user.id).await?;
             let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
             let name = member.display_name();
             let channel_id = ctx.channel_id();
@@ -71,12 +70,14 @@ pub async fn user_misuse(
                 Err(err) => {
                     ctx.send(
                         CreateReply::default()
-                            .content("no hooks for you, aká lacks permissions to manage/create webhooks")
+                            .content(
+                                "no hooks for you, aká lacks permissions to manage/create webhooks",
+                            )
                             .ephemeral(true),
                     )
                     .await?;
                     tracing::warn!("Error retrieving webhooks: {:?}", err);
-                    return Ok(()); 
+                    return Ok(());
                 }
             };
             if existing_webhooks.len() >= 15 {

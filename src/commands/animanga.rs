@@ -52,7 +52,7 @@ pub async fn anime_scene(
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
     let scene: Option<MoeResponse> = request.json().await?;
-    if let Some(payload) = scene { 
+    if let Some(payload) = scene {
         if !payload.result[0].video.is_empty() {
             ctx.send(
                 CreateReply::default().embed(
@@ -73,7 +73,8 @@ pub async fn anime_scene(
                 .await?;
         } else {
             ctx.send(
-                CreateReply::default().content("Why are you hallucinating, that scene never happened"),
+                CreateReply::default()
+                    .content("Why are you hallucinating, that scene never happened"),
             )
             .await?;
         }

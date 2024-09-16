@@ -61,8 +61,10 @@ pub async fn ai_anime(
     let resp = match client.post(url).json(&request_body).send().await {
         Ok(response) => response,
         Err(e) => {
-            ctx.send(CreateReply::default().content("AI-sama is currently down, blame the americans"))
-                .await?;
+            ctx.send(
+                CreateReply::default().content("AI-sama is currently down, blame the americans"),
+            )
+            .await?;
             tracing::warn!("Generating an AI-image failed with this error: {}", e);
             return Ok(());
         }
@@ -93,7 +95,8 @@ pub async fn ai_anime(
             }
         } else {
             ctx.send(
-                CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),
+                CreateReply::default()
+                    .content(format!("\"{}\" is too dangerous to generate", prompt)),
             )
             .await?;
         }
@@ -151,7 +154,10 @@ pub async fn ai_summarize(
     #[description = "Maximum length of summary in words"] length: u64,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let msg = ctx.channel_id().message(&ctx.http(), ctx.id().into()).await?;
+    let msg = ctx
+        .channel_id()
+        .message(&ctx.http(), ctx.id().into())
+        .await?;
     let reply = if let Some(ref_msg) = msg.referenced_message {
         ref_msg
     } else {
@@ -296,12 +302,9 @@ pub async fn eightball(
                 CreateEmbed::default()
                     .title(question)
                     .color(0x33d17a)
-                    .field(
-                        "",
-                        &judging.reading,
-                        true,
-                    )),
-            )
+                    .field("", &judging.reading, true),
+            ),
+        )
         .await?;
     } else {
         ctx.send(CreateReply::default().content("Sometimes riding a giraffe is what you need"))
@@ -372,7 +375,9 @@ pub async fn gif(
                     .style(ButtonStyle::Primary)
                     .label("⬅️");
 
-                let new_embed = CreateEmbed::default().title(input.clone()).image(&urls[state.index]);
+                let new_embed = CreateEmbed::default()
+                    .title(input.clone())
+                    .image(&urls[state.index]);
 
                 let new_components = if state.index == 0 {
                     vec![CreateActionRow::Buttons(vec![next_button])]
@@ -434,7 +439,7 @@ pub async fn github_search(
     } else {
         ctx.send(CreateReply::default().content(format!("**Like you, {} don't exist**", input)))
             .await?;
-    } 
+    }
     Ok(())
 }
 
@@ -609,7 +614,10 @@ pub async fn translate(
     #[rest]
     sentence: Option<String>,
 ) -> Result<(), Error> {
-    let msg = ctx.channel_id().message(&ctx.http(), ctx.id().into()).await?;
+    let msg = ctx
+        .channel_id()
+        .message(&ctx.http(), ctx.id().into())
+        .await?;
     let content = {
         if let Some(ref_msg) = msg.referenced_message {
             ref_msg.content.to_string()

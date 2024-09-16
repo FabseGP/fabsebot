@@ -148,7 +148,7 @@ pub async fn emoji_id(
     match emoji {
         Some(emoji) => Ok(emoji.to_string()),
         None => Err(anyhow!("Emoji not found")),
-    } 
+    }
 }
 
 #[derive(Deserialize)]
@@ -171,7 +171,6 @@ struct GifObject {
     url: String,
 }
 
-
 pub async fn get_gifs(input: String) -> Result<Vec<String>, Error> {
     let api_key = env::var("TENOR_TOKEN")?;
     let request_url = format!(
@@ -182,11 +181,12 @@ pub async fn get_gifs(input: String) -> Result<Vec<String>, Error> {
     let client = get_http_client();
     let request = client.get(request_url).send().await?;
     let urls: GifResponse = request.json().await?;
-    let payload = urls.results
+    let payload = urls
+        .results
         .iter()
         .filter_map(|result| result.media_formats.gif.as_ref())
         .map(|media| media.url.clone())
-        .collect::<Vec<String>>(); 
+        .collect::<Vec<String>>();
 
     Ok(payload)
 }

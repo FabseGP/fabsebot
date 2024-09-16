@@ -7,9 +7,9 @@ use poise::serenity_prelude::{
 };
 use poise::{builtins, CreateReply};
 use serenity::{
+    builder::{CreatePoll, CreatePollAnswer},
     model::{channel::Channel, Timestamp},
     nonmax::NonMaxU16,
-    builder::{CreatePoll, CreatePollAnswer},
 };
 use sqlx::{query, query_as};
 use std::{path::Path, process, sync::Arc, time::Duration};
@@ -17,14 +17,20 @@ use tokio::fs::remove_file;
 
 /// When you want to find the imposter
 #[poise::command(slash_command)]
-pub async fn anony_poll(ctx: Context<'_>, #[description = "Comma-separated options"] options: String, #[description = "Title"] title: String, #[description = "Duration in minutes"] duration: u64) -> Result<(), Error> {
+pub async fn anony_poll(
+    ctx: Context<'_>,
+    #[description = "Comma-separated options"] options: String,
+    #[description = "Title"] title: String,
+    #[description = "Duration in minutes"] duration: u64,
+) -> Result<(), Error> {
     let option_list: Vec<String> = options
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
     if option_list.len() < 2 {
-        ctx.say("Bruh, 1 option ain't gonna cut it for a poll").await?;
+        ctx.say("Bruh, 1 option ain't gonna cut it for a poll")
+            .await?;
         return Ok(());
     }
     let mut embed = CreateEmbed::default()
@@ -49,10 +55,7 @@ pub async fn birthday(
     user: serenity::User,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let member = ctx
-            .http()
-            .get_member(guild_id, user.id)
-            .await?;
+        let member = ctx.http().get_member(guild_id, user.id).await?;
         let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
         let name = member.display_name();
         ctx.send(
@@ -139,7 +142,7 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     for user in users.into_iter() {
         if let Ok(target) = ctx.http().get_user(user.user_id.into()).await {
             let user_name = target.display_name().to_owned();
-            embed = embed.field(user_name, user.message_count.to_string(), false); 
+            embed = embed.field(user_name, user.message_count.to_string(), false);
         }
     }
 
@@ -166,7 +169,10 @@ pub async fn ohitsyou(ctx: Context<'_>) -> Result<(), Error> {
 /// When your memory is not enough
 #[poise::command(prefix_command, slash_command)]
 pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
-    let msg = ctx.channel_id().message(&ctx.http(), ctx.id().into()).await?;
+    let msg = ctx
+        .channel_id()
+        .message(&ctx.http(), ctx.id().into())
+        .await?;
     let reply = if let Some(ref_msg) = msg.referenced_message {
         ref_msg
     } else {
@@ -178,10 +184,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     let content = reply.content.to_string();
     if reply.webhook_id.is_none() {
         if let Some(guild_id) = ctx.guild_id() {
-            let member = ctx
-                .http()
-                .get_member(guild_id, reply.author.id)
-                .await?;
+            let member = ctx.http().get_member(guild_id, reply.author.id).await?;
             let avatar_image = {
                 let avatar_url = member
                     .avatar_url()

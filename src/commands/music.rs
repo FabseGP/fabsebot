@@ -76,7 +76,7 @@ pub async fn add_playlist(
             }
         } else {
             ctx.reply(
-            "Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
+                "Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
             )
             .await?;
         }
@@ -96,7 +96,7 @@ pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
             .and_then(|voice_state| voice_state.channel_id);
         let manager = &ctx.data().music_manager;
         manager.join(guild_id, channel_id.unwrap()).await?;
-        ctx.reply("I've joined the party").await?; 
+        ctx.reply("I've joined the party").await?;
     }
     Ok(())
 }

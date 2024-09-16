@@ -4,7 +4,10 @@ use crate::types::{Context as PoiseContext, Data, Error};
 
 use anyhow::Context;
 use fastrand::Rng;
-use poise::{builtins, EditTracker, Framework, FrameworkError, FrameworkOptions, PartialContext, PrefixFrameworkOptions, serenity_prelude as serenity};
+use poise::{
+    builtins, serenity_prelude as serenity, EditTracker, Framework, FrameworkError,
+    FrameworkOptions, PartialContext, PrefixFrameworkOptions,
+};
 use reqwest::Client as http_client;
 use serenity::{cache::Settings, client::Client, prelude::GatewayIntents};
 use songbird::Songbird;
@@ -40,7 +43,12 @@ pub async fn dynamic_prefix(
 ) -> anyhow::Result<Option<Cow<'static, str>>> {
     let prefix = match ctx.guild_id {
         Some(id) => {
-            let mut conn = ctx.framework.user_data().db.acquire().await
+            let mut conn = ctx
+                .framework
+                .user_data()
+                .db
+                .acquire()
+                .await
                 .context("Failed to acquire database connection")?;
             if let Some(record) = query!(
                 "SELECT prefix FROM guild_settings WHERE guild_id = ?",
@@ -58,8 +66,8 @@ pub async fn dynamic_prefix(
             } else {
                 "!".to_owned()
             }
-        }, 
-        _ => { "!".to_owned() } 
+        }
+        _ => "!".to_owned(),
     };
 
     Ok(Some(Cow::Owned(prefix)))
@@ -68,8 +76,10 @@ pub async fn dynamic_prefix(
 pub async fn start() -> anyhow::Result<()> {
     dotenvy::dotenv().context("Failed to load .env file")?;
     let sql_user = env::var("MARIADB_USER").context("MARIADB_USER not set in environment")?;
-    let sql_password = env::var("MARIADB_PASSWORD").context("MARIADB_PASSWORD not set in environment")?;
-    let sql_database = env::var("MARIADB_DATABASE").context("MARIADB_DATABASE not set in environment")?;
+    let sql_password =
+        env::var("MARIADB_PASSWORD").context("MARIADB_PASSWORD not set in environment")?;
+    let sql_database =
+        env::var("MARIADB_DATABASE").context("MARIADB_DATABASE not set in environment")?;
     let database = sqlx::mysql::MySqlPoolOptions::new()
         .max_connections(5)
         .connect(&format!(
@@ -149,9 +159,9 @@ pub async fn start() -> anyhow::Result<()> {
             ],
             prefix_options: PrefixFrameworkOptions {
                 dynamic_prefix: Some(|ctx| Box::pin(dynamic_prefix(ctx))),
-                edit_tracker: Some(Arc::new(EditTracker::for_timespan(
-                    Duration::from_secs(3600),
-                ))),
+                edit_tracker: Some(Arc::new(EditTracker::for_timespan(Duration::from_secs(
+                    3600,
+                )))),
                 additional_prefixes: vec![
                     poise::Prefix::Literal("fabsebot"),
                     poise::Prefix::Literal("hey fabsebot"),
