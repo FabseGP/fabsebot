@@ -1,6 +1,6 @@
 mod client;
 mod commands;
-mod handlers;
+mod events;
 mod types;
 mod utils;
 

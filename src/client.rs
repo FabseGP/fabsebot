@@ -1,15 +1,21 @@
-use crate::commands::{animanga, api_calls, funny, games, info, misc, music, settings};
-use crate::handlers::event_handler;
-use crate::types::{Context as PoiseContext, Data, Error};
-
+use crate::{
+    commands::{animanga, api_calls, funny, games, info, misc, music, settings},
+    events::{
+        bot_ready::handle_ready, guild_create::handle_guild_create,
+        message_delete::handle_message_delete, message_sent::handle_message,
+        reaction_add::handle_reaction_add,
+    },
+    types::{ClientData, Context as PoiseContext, Data, Error, CLIENT_DATA},
+};
 use anyhow::Context;
 use fastrand::Rng;
 use poise::{
-    builtins, serenity_prelude as serenity, EditTracker, Framework, FrameworkError,
-    FrameworkOptions, PartialContext, PrefixFrameworkOptions,
+    builtins,
+    serenity_prelude::{cache::Settings, Client, FullEvent, GatewayIntents},
+    EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
+    PrefixFrameworkOptions,
 };
 use reqwest::Client as http_client;
-use serenity::{cache::Settings, client::Client, prelude::GatewayIntents};
 use songbird::Songbird;
 use sqlx::query;
 use std::{borrow::Cow, collections::HashMap, env, sync::Arc, time::Duration};
@@ -20,7 +26,6 @@ async fn on_error(error: FrameworkError<'_, Data, Error>) {
         FrameworkError::Command { error, ctx, .. } => {
             tracing::warn!("Error in command `{}`: {:?}", ctx.command().name, error);
         }
-        FrameworkError::DynamicPrefix { .. } => {}
         FrameworkError::UnknownCommand { .. } => {}
         error => {
             if let Err(e) = builtins::on_error(error).await {
@@ -33,12 +38,12 @@ async fn on_error(error: FrameworkError<'_, Data, Error>) {
 #[poise::command(prefix_command, owners_only)]
 async fn register_commands(ctx: PoiseContext<'_>) -> anyhow::Result<()> {
     let commands = &ctx.framework().options().commands;
-    poise::builtins::register_globally(ctx.http(), commands).await?;
-    ctx.say("Successfully registered slash commands!").await?;
+    builtins::register_globally(ctx.http(), commands).await?;
+    ctx.reply("Successfully registered slash commands!").await?;
     Ok(())
 }
 
-pub async fn dynamic_prefix(
+async fn dynamic_prefix(
     ctx: PartialContext<'_, Data, Error>,
 ) -> anyhow::Result<Option<Cow<'static, str>>> {
     let prefix = match ctx.guild_id {
@@ -73,6 +78,31 @@ pub async fn dynamic_prefix(
     Ok(Some(Cow::Owned(prefix)))
 }
 
+async fn event_handler(
+    framework: FrameworkContext<'_, Data, Error>,
+    event: &FullEvent,
+) -> Result<(), Error> {
+    let data = framework.user_data();
+    let ctx = framework.serenity_context;
+
+    match event {
+        FullEvent::Ready { data_about_bot } => handle_ready(ctx, data_about_bot).await?,
+        FullEvent::Message { new_message } => handle_message(ctx, data, new_message).await?,
+        FullEvent::ReactionAdd { add_reaction } => handle_reaction_add(ctx, add_reaction).await?,
+        FullEvent::GuildCreate { guild, is_new } => {
+            handle_guild_create(data, guild, is_new).await?
+        }
+        FullEvent::MessageDelete {
+            channel_id,
+            guild_id,
+            deleted_message_id,
+        } => handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id).await?,
+        _ => {}
+    }
+
+    Ok(())
+}
+
 pub async fn start() -> anyhow::Result<()> {
     dotenvy::dotenv().context("Failed to load .env file")?;
     let sql_user = env::var("MARIADB_USER").context("MARIADB_USER not set in environment")?;
@@ -83,10 +113,8 @@ pub async fn start() -> anyhow::Result<()> {
     let database = sqlx::mysql::MySqlPoolOptions::new()
         .max_connections(5)
         .connect(&format!(
-            "mariadb://{username}:{password}@localhost/{database}",
-            username = sql_user,
-            password = sql_password,
-            database = sql_database
+            "mariadb://{}:{}@localhost/{}",
+            sql_user, sql_password, sql_database
         ))
         .await
         .context("Failed to connect to database")?;
@@ -198,6 +226,12 @@ pub async fn start() -> anyhow::Result<()> {
         Ok(mut client) => {
             if let Err(e) = client.start().await {
                 tracing::warn!("Client error: {:?}", e);
+            }
+            let client_data = Arc::new(ClientData {
+                shard_manager: client.shard_manager.clone(),
+            });
+            if CLIENT_DATA.set(client_data).is_err() {
+                tracing::error!("Failed to set CLIENT_DATA");
             }
         }
         Err(e) => {

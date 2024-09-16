@@ -1,7 +1,8 @@
 use fastrand::Rng;
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use reqwest::Client;
 use serde::Serialize;
+use serenity::gateway::ShardManager;
 use songbird::Songbird;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -28,3 +29,8 @@ static HTTP_CLIENT: Lazy<Arc<Client>> = Lazy::new(|| Arc::new(Client::new()));
 pub fn get_http_client() -> Arc<Client> {
     Arc::clone(&HTTP_CLIENT)
 }
+
+pub struct ClientData {
+    pub shard_manager: Arc<ShardManager>,
+}
+pub static CLIENT_DATA: OnceCell<Arc<ClientData>> = OnceCell::new();

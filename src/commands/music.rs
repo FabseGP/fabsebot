@@ -37,10 +37,10 @@ struct DeezerArtist {
 }
 
 fn configure_call(handler: &mut Call) {
-    let mut new_config = handler.config().clone();
-    new_config = Config::use_softclip(new_config, false);
-    new_config = Config::playout_buffer_length(new_config, NonZeroUsize::new(750).unwrap());
-    new_config = Config::playout_spike_length(new_config, 375);
+    let new_config = Config::default()
+        .use_softclip(false)
+        .playout_buffer_length(NonZeroUsize::new(500).unwrap())
+        .playout_spike_length(250);
     handler.set_config(new_config);
     handler.set_bitrate(Bitrate::Max);
 }
