@@ -12,15 +12,16 @@ pub async fn handle_guild_create(
 ) -> Result<(), Error> {
     if let Some(new_guild) = is_new {
         if *new_guild {
-        let mut conn = data
-            .db
-            .acquire()
-            .await
-            .context("Failed to acquire database connection")?;
-        let guild_id: u64 = guild.id.into();
-        query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id)
-            .execute(&mut *conn)
-            .await?;
-    } }
+            let mut conn = data
+                .db
+                .acquire()
+                .await
+                .context("Failed to acquire database connection")?;
+            let guild_id: u64 = guild.id.into();
+            query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id)
+                .execute(&mut *conn)
+                .await?;
+        }
+    }
     Ok(())
 }

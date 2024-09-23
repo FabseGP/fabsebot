@@ -32,7 +32,15 @@ pub async fn handle_message(
         .await
         .context("Failed to acquire database connection")?;
     let mut rng = data.rng_thread.lock().await;
-    let user_settings = query!("SELECT * from user_settings WHERE guild_id = ?", guild_id)
+    let sql_guild = query!("SELECT guild_id FROM guilds WHERE guild_id = ?", guild_id)
+        .fetch_one(&mut *conn)
+        .await;
+    if sql_guild.is_err() {
+        query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id)
+            .execute(&mut *conn)
+            .await?;
+    }
+    let user_settings = query!("SELECT * FROM user_settings WHERE guild_id = ?", guild_id)
         .fetch_all(&mut *conn)
         .await?;
     for target in &user_settings {
