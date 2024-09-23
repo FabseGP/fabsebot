@@ -1,7 +1,9 @@
 use crate::types::{Context, Error};
 
-use poise::serenity_prelude::{ChannelId, ExecuteWebhook, User};
-use poise::CreateReply;
+use poise::{
+    serenity_prelude::{ChannelId, ExecuteWebhook, User},
+    CreateReply,
+};
 use serde_json::json;
 
 /// Send an anonymous message

@@ -1,7 +1,9 @@
 use crate::types::{Context, Error};
 
-use poise::{serenity_prelude::CreateEmbed, CreateReply};
-use serenity::model::channel::Channel;
+use poise::{
+    serenity_prelude::{Channel, CreateEmbed},
+    CreateReply,
+};
 use sqlx::query;
 
 /// To reset or not to reset, that's the question

@@ -1,7 +1,6 @@
 use crate::types::{Context, Error};
 
-use poise::serenity_prelude::CreateEmbed;
-use poise::CreateReply;
+use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use serde::Deserialize;
 use std::fmt::{Display, Formatter};
 use urlencoding::encode;

@@ -1,7 +1,9 @@
 use crate::types::{Context, Error};
-use poise::serenity_prelude as serenity;
-use poise::serenity_prelude::CreateEmbed;
-use poise::CreateReply;
+
+use poise::{
+    serenity_prelude::{CreateEmbed, User},
+    CreateReply,
+};
 use std::sync::Arc;
 
 /// Get server information
@@ -51,7 +53,7 @@ pub async fn user_info(
     ctx: Context<'_>,
     #[description = "Target"]
     #[rest]
-    user: serenity::User,
+    user: User,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let member = ctx.http().get_member(guild_id, user.id).await?;

@@ -7,15 +7,13 @@ use image::{
     load_from_memory, Rgba, RgbaImage,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
-use poise::serenity_prelude::{self as serenity, Context, CreateEmbed, ExecuteWebhook};
+use poise::serenity_prelude::{
+    self as serenity, builder::CreateAttachment, Colour, CreateEmbed, ExecuteWebhook, GuildId,
+    Message, Timestamp,
+};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use serenity::{
-    builder::CreateAttachment,
-    model::{colour::Colour, prelude::Timestamp},
-    Message,
-};
 use std::{cmp::Ordering, env, fs, fs::File, io::Write, path::Path};
 use textwrap::wrap;
 use urlencoding::encode;
@@ -45,8 +43,8 @@ pub async fn ai_image_desc(content: Vec<u8>) -> Result<String, Error> {
         }))
         .send()
         .await?;
-
     let output = resp.json::<FabseAIImageDesc>().await?;
+
     Ok(output.result.description)
 }
 
@@ -75,6 +73,7 @@ pub async fn ai_response(content: Vec<ChatMessage>) -> Result<String, Error> {
         .send()
         .await?;
     let output = resp.json::<FabseAIText>().await?;
+
     Ok(output.result.response)
 }
 
@@ -140,7 +139,7 @@ pub fn embed_builder<'a>(title: &'a str, url: &'a str, colour: Colour) -> Create
 
 pub async fn emoji_id(
     ctx: &serenity::Context,
-    guild_id: serenity::GuildId,
+    guild_id: GuildId,
     emoji_name: &str,
 ) -> Result<String, Error> {
     let guild_emojis = guild_id.emojis(&ctx.http).await?;
@@ -331,7 +330,10 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
             "https://cdn.discordapp.com/emojis/{}.webp?size={}quality=lossless",
             emoji_id, emoji_height
         );
-        let emoji_bytes = reqwest::get(&emoji_url)
+        let client = get_http_client();
+        let emoji_bytes = client
+            .get(&emoji_url)
+            .send()
             .await
             .unwrap()
             .bytes()
@@ -388,7 +390,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
     img
 }
 
-pub async fn spoiler_message(ctx: &Context, message: &serenity::Message, text: &str) {
+pub async fn spoiler_message(ctx: &serenity::Context, message: &Message, text: &str) {
     let avatar_url = message.author.avatar_url().unwrap();
     let username = message.author.display_name();
     let mut is_first = true;
@@ -437,7 +439,7 @@ pub async fn get_waifu() -> String {
 }
 
 pub async fn webhook_message(
-    ctx: &Context,
+    ctx: &serenity::Context,
     message: &Message,
     name: &str,
     url: &str,
@@ -487,7 +489,7 @@ pub async fn webhook_message(
 }
 
 pub async fn webhook_file(
-    ctx: &Context,
+    ctx: &serenity::Context,
     message: &Message,
     name: &str,
     url: &str,

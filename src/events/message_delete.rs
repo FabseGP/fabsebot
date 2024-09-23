@@ -1,15 +1,15 @@
 use crate::types::Error;
 
 use poise::serenity_prelude::{
-    audit_log, ChannelId, Context, CreateMessage, GuildId, MessageId, UserId,
+    self as serenity, audit_log, ChannelId, CreateMessage, GuildId, MessageId, UserId,
 };
 
 pub async fn handle_message_delete(
-    ctx: &Context,
+    ctx: &serenity::Context,
     channel_id: ChannelId,
     guild_id: Option<GuildId>,
     deleted_message_id: MessageId,
-) -> Result<(), Error> {
+) -> anyhow::Result<(), Error> {
     let message_author_id = ctx
         .cache
         .message(channel_id, deleted_message_id)

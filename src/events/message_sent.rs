@@ -8,9 +8,10 @@ use crate::{
 
 use anyhow::Context;
 use poise::serenity_prelude::{
-    self as serenity, futures::StreamExt, ChannelId, Colour, CreateEmbed, CreateMessage, Message,
-    ReactionType, Timestamp, UserId,
+    self as serenity, futures::StreamExt, ChannelId, Colour, CreateEmbed, CreateMessage, GuildId,
+    Message, MessageId, ReactionType, Timestamp, UserId,
 };
+use regex::Regex;
 use sqlx::query;
 use std::{collections::HashSet, sync::Arc};
 
@@ -35,7 +36,11 @@ pub async fn handle_message(
         .fetch_all(&mut *conn)
         .await?;
     for target in &user_settings {
-        if target.afk.unwrap() != 0 {
+        let afk = match target.afk {
+            Some(afk) => afk,
+            None => continue,
+        };
+        if afk != 0 {
             let user_id = UserId::new(target.user_id);
             let user = ctx.http.get_user(user_id).await?;
             if new_message.author.id == user_id {
@@ -330,6 +335,27 @@ pub async fn handle_message(
                                     attachments_desc.len()
                                 ));
                                 message_parts.extend(attachments_desc);
+                            }
+                        }
+                    }
+                    let re =
+                        Regex::new(r"https://discord\.com/channels/(\d+)/(\d+)/(\d+)").unwrap();
+                    if let Some(url) = re.captures(&content) {
+                        let guild_id = GuildId::new(url[1].parse().unwrap());
+                        if let Ok(linked_guild) = ctx.http.get_guild(guild_id).await {
+                            if let Ok(channels) = linked_guild.channels(&ctx.http).await {
+                                let channel_id = ChannelId::new(url[2].parse().unwrap());
+                                if let Some(linked_channel) = channels.get(&channel_id) {
+                                    let message_id = MessageId::new(url[3].parse().unwrap());
+                                    if let Ok(linked_message) =
+                                        linked_channel.message(&ctx.http, message_id).await
+                                    {
+                                        message_parts.push(format!(
+                                            "\n{} linked to a message sent in: {}, sent by: {} and had this content: {}",
+                                            author_name, linked_guild.name, linked_message.author.name, linked_message.content
+                                        ));
+                                    }
+                                }
                             }
                         }
                     }

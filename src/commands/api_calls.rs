@@ -1,15 +1,18 @@
-use crate::types::{Context, Error};
-use crate::utils::{ai_response_simple, get_gifs};
-
-use poise::serenity_prelude::{
-    ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment, CreateButton,
-    CreateEmbed, CreateInteractionResponse, EditMessage,
+use crate::{
+    types::{Context, Error},
+    utils::{ai_response_simple, get_gifs},
 };
-use poise::CreateReply;
+
+use poise::{
+    serenity_prelude::{
+        futures::StreamExt, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
+        CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage,
+    },
+    CreateReply,
+};
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use serenity::futures::StreamExt;
 use sqlx::{query, Row};
 use std::{env, time::Duration};
 use urlencoding::encode;

@@ -1,18 +1,19 @@
-use crate::types::{Context, Error};
-use crate::utils::{ai_response_simple, quote_image};
+use crate::{
+    types::{Context, Error},
+    utils::{ai_response_simple, quote_image},
+};
 
 use image::load_from_memory;
-use poise::serenity_prelude::{
-    self as serenity, ChannelId, CreateAttachment, CreateEmbed, CreateMessage, EditChannel,
-};
-use poise::{builtins, CreateReply};
-use serenity::{
-    builder::{CreatePoll, CreatePollAnswer},
-    model::{channel::Channel, Timestamp},
-    nonmax::NonMaxU16,
+use poise::{
+    builtins,
+    serenity_prelude::{
+        nonmax::NonMaxU16, Channel, ChannelId, CreateAttachment, CreateEmbed, CreateMessage,
+        EditChannel, Timestamp, User,
+    },
+    CreateReply,
 };
 use sqlx::{query, query_as};
-use std::{path::Path, process, sync::Arc, time::Duration};
+use std::{path::Path, process, sync::Arc};
 use tokio::fs::remove_file;
 
 /// When you want to find the imposter
@@ -52,7 +53,7 @@ pub async fn birthday(
     ctx: Context<'_>,
     #[description = "User to congratulate"]
     #[rest]
-    user: serenity::User,
+    user: User,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let member = ctx.http().get_member(guild_id, user.id).await?;
@@ -102,7 +103,7 @@ pub async fn help(
     Ok(())
 }
 
-struct User {
+struct UserCount {
     user_id: u64,
     message_count: u64,
 }
@@ -128,7 +129,7 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
         "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_owned()
     };
     let mut users = query_as!(
-        User,
+        UserCount,
         "SELECT message_count, user_id FROM user_settings WHERE guild_id = ?",
         u64::from(ctx.guild_id().unwrap())
     )
@@ -182,6 +183,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
 
     let message_url = reply.link();
     let content = reply.content.to_string();
+    let client = &ctx.data().req_client;
     if reply.webhook_id.is_none() {
         if let Some(guild_id) = ctx.guild_id() {
             let member = ctx.http().get_member(guild_id, reply.author.id).await?;
@@ -189,7 +191,9 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
                 let avatar_url = member
                     .avatar_url()
                     .unwrap_or(reply.author.avatar_url().unwrap());
-                let avatar_bytes = reqwest::get(&avatar_url)
+                let avatar_bytes = client
+                    .get(&avatar_url)
+                    .send()
                     .await
                     .unwrap()
                     .bytes()
@@ -206,7 +210,9 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     } else {
         let avatar_image = {
             let avatar_url = reply.author.avatar_url().unwrap();
-            let avatar_bytes = reqwest::get(&avatar_url)
+            let avatar_bytes = client
+                .get(&avatar_url)
+                .send()
                 .await
                 .unwrap()
                 .bytes()

@@ -1,8 +1,11 @@
 use crate::types::Error;
 
-use poise::serenity_prelude::{Context, Reaction};
+use poise::serenity_prelude::{self as serenity, Reaction};
 
-pub async fn handle_reaction_add(ctx: &Context, add_reaction: &Reaction) -> Result<(), Error> {
+pub async fn handle_reaction_add(
+    ctx: &serenity::Context,
+    add_reaction: &Reaction,
+) -> Result<(), Error> {
     if let Some(guild) = add_reaction.channel(&ctx.http).await?.guild() {
         if let Some(topic) = guild.topic {
             if topic.contains("ai-chat") {

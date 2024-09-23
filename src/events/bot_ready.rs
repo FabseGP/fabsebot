@@ -1,12 +1,12 @@
-use crate::types::Error;
+use crate::types::{Error, Data};
 
 use anyhow::Context;
-use poise::serenity_prelude::{
-    self as serenity, ActivityData, CreateAttachment, EditProfile, OnlineStatus, Ready,
+use poise::{serenity_prelude::{
+    self as serenity, ActivityData, CreateAttachment, EditProfile, OnlineStatus, Ready}, builtins, FrameworkContext
 };
 
-pub async fn handle_ready(ctx: &serenity::Context, data_about_bot: &Ready) -> Result<(), Error> {
-    tracing::info!("Logged in as {}", data_about_bot.user.name);
+pub async fn handle_ready(ctx: &serenity::Context, data_about_bot: &Ready, framework_context: FrameworkContext<'_, Data, Error>) -> Result<(), Error> {
+    tracing::info!("Logged in as {} in {} servers", data_about_bot.user.name, data_about_bot.guilds.len());
     let activity = ActivityData::listening("You Could Be Mine");
     let avatar = CreateAttachment::url(
         &ctx.http,
@@ -30,5 +30,6 @@ pub async fn handle_ready(ctx: &serenity::Context, data_about_bot: &Ready) -> Re
         )
         .await
         .context("Failed to edit bot profile")?;
+    builtins::register_globally(&framework_context.serenity_context.http, &framework_context.options().commands).await?;
     Ok(())
 }

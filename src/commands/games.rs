@@ -2,11 +2,11 @@ use crate::types::{Context, Error};
 
 use poise::{
     futures_util::{Stream, StreamExt},
-    serenity_prelude as serenity, CreateReply,
-};
-use serenity::{
-    futures, ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton,
-    CreateEmbed, CreateInteractionResponse, EditMessage,
+    serenity_prelude::{
+        futures, ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton,
+        CreateEmbed, CreateInteractionResponse, EditMessage, User,
+    },
+    CreateReply,
 };
 use std::{collections::HashMap, time::Duration};
 
@@ -23,7 +23,7 @@ async fn autocomplete_choice<'a>(
 #[poise::command(prefix_command, slash_command)]
 pub async fn rps(
     ctx: Context<'_>,
-    #[description = "Target"] user: serenity::User,
+    #[description = "Target"] user: User,
     #[description = "Your choice: rock, paper, or scissor"]
     #[autocomplete = "autocomplete_choice"]
     #[rest]

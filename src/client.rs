@@ -5,7 +5,7 @@ use crate::{
         message_delete::handle_message_delete, message_sent::handle_message,
         reaction_add::handle_reaction_add,
     },
-    types::{ClientData, Context as PoiseContext, Data, Error, CLIENT_DATA},
+    types::{ClientData, Data, Error, CLIENT_DATA},
 };
 use anyhow::Context;
 use fastrand::Rng;
@@ -33,14 +33,6 @@ async fn on_error(error: FrameworkError<'_, Data, Error>) {
             }
         }
     }
-}
-
-#[poise::command(prefix_command, owners_only)]
-async fn register_commands(ctx: PoiseContext<'_>) -> anyhow::Result<()> {
-    let commands = &ctx.framework().options().commands;
-    builtins::register_globally(ctx.http(), commands).await?;
-    ctx.reply("Successfully registered slash commands!").await?;
-    Ok(())
 }
 
 async fn dynamic_prefix(
@@ -86,7 +78,7 @@ async fn event_handler(
     let ctx = framework.serenity_context;
 
     match event {
-        FullEvent::Ready { data_about_bot } => handle_ready(ctx, data_about_bot).await?,
+        FullEvent::Ready { data_about_bot } => handle_ready(ctx, data_about_bot, framework).await?,
         FullEvent::Message { new_message } => handle_message(ctx, data, new_message).await?,
         FullEvent::ReactionAdd { add_reaction } => handle_reaction_add(ctx, add_reaction).await?,
         FullEvent::GuildCreate { guild, is_new } => {
@@ -134,7 +126,6 @@ pub async fn start() -> anyhow::Result<()> {
         .options(FrameworkOptions {
             event_handler: |framework, event| Box::pin(event_handler(framework, event)),
             commands: vec![
-                register_commands(),
                 animanga::anime_scene(),
                 api_calls::ai_anime(),
                 api_calls::ai_image(),

@@ -10,7 +10,8 @@ pub async fn handle_guild_create(
     guild: &Guild,
     is_new: &Option<bool>,
 ) -> Result<(), Error> {
-    if is_new.is_some() {
+    if let Some(new_guild) = is_new {
+        if *new_guild {
         let mut conn = data
             .db
             .acquire()
@@ -20,6 +21,6 @@ pub async fn handle_guild_create(
         query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id)
             .execute(&mut *conn)
             .await?;
-    }
+    } }
     Ok(())
 }

@@ -2,11 +2,10 @@ use crate::types::{Context, Error};
 
 use poise::{
     futures_util::{Stream, StreamExt},
-    serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder},
+    serenity_prelude::{futures, CreateEmbed, EmbedMessageBuilding, MessageBuilder},
     CreateReply,
 };
 use serde::Deserialize;
-use serenity::futures;
 use songbird::{
     driver::Bitrate,
     input::{Compose, YoutubeDl},
