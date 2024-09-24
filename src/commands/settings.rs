@@ -129,14 +129,15 @@ pub async fn set_dead_chat(
         let admin_perms = permissions.administrator();
         if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
             if let Some(guild_id) = ctx.guild_id() {
+                let channel_id = channel.id().to_string();
                 query!(
                     "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)
                     ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
                     guild_id.get(),
                     occurrence,
-                    channel.id().to_string(),
+                    channel_id,
                     occurrence,
-                    channel.id().to_string()
+                    channel_id,
                 )
                 .execute(&mut *ctx.data().db.acquire().await?)
                 .await?;
@@ -222,12 +223,13 @@ pub async fn set_quote_channel(
         let admin_perms = permissions.administrator();
         if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
             if let Some(guild_id) = ctx.guild_id() {
+                let channel_id = channel.id().to_string();
                 query!(
                     "INSERT INTO guild_settings (guild_id, quotes_channel) VALUES (?, ?)
                     ON DUPLICATE KEY UPDATE quotes_channel = ?",
                     guild_id.get(),
-                    channel.id().to_string(),
-                    channel.id().to_string(),
+                    channel_id,
+                    channel_id,
                 )
                 .execute(&mut *ctx.data().db.acquire().await?)
                 .await?;
@@ -263,12 +265,13 @@ pub async fn set_spoiler_channel(
         let admin_perms = permissions.administrator();
         if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
             if let Some(guild_id) = ctx.guild_id() {
+                let channel_id = channel.id().to_string();
                 query!(
                     "INSERT INTO guild_settings (guild_id, spoiler_channel) VALUES (?, ?)
                     ON DUPLICATE KEY UPDATE quotes_channel = ?",
                     guild_id.get(),
-                    channel.id().to_string(),
-                    channel.id().to_string()
+                    channel_id,
+                    channel_id,
                 )
                 .execute(&mut *ctx.data().db.acquire().await?)
                 .await?;

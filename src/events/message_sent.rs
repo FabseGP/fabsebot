@@ -23,9 +23,12 @@ pub async fn handle_message(
     if new_message.author.bot() {
         return Ok(());
     }
+    let guild_id = match new_message.guild_id {
+        Some(id) => u64::from(id),
+        None => return Ok(())  
+    };
     let content = new_message.content.to_lowercase();
-    let guild_id: u64 = new_message.guild_id.unwrap().into();
-    let user_id: u64 = new_message.author.id.into();
+    let user_id = u64::from(new_message.author.id);
     let mut conn = data
         .db
         .acquire()
@@ -91,9 +94,7 @@ pub async fn handle_message(
                 .execute(&mut *conn)
                 .await?;
             } else if new_message.mentions_user_id(user_id) {
-                let message_link = new_message.link();
-                let author_name = new_message.author.display_name();
-                let pinged_link = format!("{};{}", author_name, message_link);
+                let pinged_link = format!("{};{}", new_message.author.display_name(), new_message.link());
                 query!(
                     "UPDATE user_settings SET pinged_links = IF(pinged_links IS NULL, ?, CONCAT(pinged_links, ',', ?)) WHERE guild_id = ? AND user_id = ?",
                     pinged_link,
