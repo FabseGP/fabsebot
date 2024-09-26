@@ -631,10 +631,7 @@ pub async fn translate(
             }
         },
     };
-    let target_lang = match target {
-        Some(language) => language,
-        None => "en".to_owned(),
-    };
+    let target_lang = target.unwrap_or_else(|| "en".to_string());
     let form_data = json!({
         "q": content,
         "source": "auto",
@@ -673,7 +670,7 @@ pub async fn translate(
                                 data.detected_language.confidence
                             ))
                             .color(0x33d17a)
-                            .field("Original:", content, false)
+                            .field("Original:", &content, false)
                             .field("Translation:", &data.translated_text, false),
                     )
                     .components(components),
@@ -722,19 +719,20 @@ pub async fn translate(
                             data.detected_language.confidence
                         ))
                         .color(0x33d17a)
+                        .field("Original: ", &content, false)
                         .field(
                             "Translation:",
-                            if index == 0 {
+                            if state.index == 0 {
                                 &data.translated_text
                             } else {
-                                &data.alternatives[index - 1]
+                                &data.alternatives[state.index - 1]
                             },
                             false,
                         );
 
                     let new_components = if state.index == 0 {
                         vec![CreateActionRow::Buttons(vec![next_button])]
-                    } else if state.index == len {
+                    } else if state.index == len - 1 {
                         vec![CreateActionRow::Buttons(vec![prev_button])]
                     } else {
                         vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
