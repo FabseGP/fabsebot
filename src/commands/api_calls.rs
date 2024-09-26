@@ -595,6 +595,7 @@ pub async fn roast(ctx: Context<'_>, #[description = "Target"] user: User) -> Re
 
 #[derive(Deserialize)]
 struct FabseTranslate {
+    alternatives: Vec<String>,
     #[serde(rename = "detectedLanguage")]
     detected_language: FabseLanguage,
     #[serde(rename = "translatedText")]
@@ -637,7 +638,8 @@ pub async fn translate(
     let form_data = json!({
         "q": content,
         "source": "auto",
-        "target": target_lang
+        "target": target_lang,
+        "alternatives": 3,
     });
     let client = &ctx.data().req_client;
     let server = env::var("TRANSLATE_SERVER")?;
@@ -646,9 +648,73 @@ pub async fn translate(
     if response.status().is_success() {
         let data: FabseTranslate = response.json().await?;
         if !data.translated_text.is_empty() {
+            let len = data.alternatives.len();
+            let index = 0;
+            let next_id = format!("{}_next_{}", ctx.id(), index);
+            let prev_id = format!("{}_prev_{}", ctx.id(), index);
+            let mut state = State {
+                next_id,
+                prev_id,
+                index,
+                len,
+            };
+            let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
+                .style(ButtonStyle::Primary)
+                .label("➡️")]);
+            let components = if len > 1 { vec![next_button] } else { vec![] };
             ctx.send(
-                CreateReply::default().embed(
-                    CreateEmbed::default()
+                CreateReply::default()
+                    .embed(
+                        CreateEmbed::default()
+                            .title(format!(
+                                "Translation from {} to {} with {}% confidence",
+                                data.detected_language.language,
+                                target_lang,
+                                data.detected_language.confidence
+                            ))
+                            .color(0x33d17a)
+                            .field("Original:", content, false)
+                            .field("Translation:", &data.translated_text, false),
+                    )
+                    .components(components),
+            )
+            .await?;
+            if len > 1 {
+                while let Some(interaction) =
+                    ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                        .timeout(Duration::from_secs(600))
+                        .filter(move |interaction| {
+                            let next_id_clone = state.next_id.clone();
+                            let prev_id_clone = state.prev_id.clone();
+                            let id = interaction.data.custom_id.as_str();
+                            id == next_id_clone.as_str() || id == prev_id_clone.as_str()
+                        })
+                        .await
+                {
+                    let choice = &interaction.data.custom_id.as_str();
+
+                    interaction
+                        .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                        .await?;
+
+                    if choice.contains("next") && state.index < state.len - 1 {
+                        state.index += 1;
+                    } else if choice.contains("prev") && state.index > 0 {
+                        state.index -= 1;
+                    }
+
+                    state.next_id = format!("{}_next_{}", ctx.id(), state.index);
+                    state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
+
+                    let next_button = CreateButton::new(&state.next_id)
+                        .style(ButtonStyle::Primary)
+                        .label("➡️");
+
+                    let prev_button = CreateButton::new(&state.prev_id)
+                        .style(ButtonStyle::Primary)
+                        .label("⬅️");
+
+                    let new_embed = CreateEmbed::default()
                         .title(format!(
                             "Translation from {} to {} with {}% confidence",
                             data.detected_language.language,
@@ -656,11 +722,35 @@ pub async fn translate(
                             data.detected_language.confidence
                         ))
                         .color(0x33d17a)
-                        .field("Original:", content, false)
-                        .field("Translation:", &data.translated_text, false),
-                ),
-            )
-            .await?;
+                        .field(
+                            "Translation:",
+                            if index == 0 {
+                                &data.translated_text
+                            } else {
+                                &data.alternatives[index - 1]
+                            },
+                            false,
+                        );
+
+                    let new_components = if state.index == 0 {
+                        vec![CreateActionRow::Buttons(vec![next_button])]
+                    } else if state.index == len {
+                        vec![CreateActionRow::Buttons(vec![prev_button])]
+                    } else {
+                        vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                    };
+
+                    let mut msg = interaction.message;
+
+                    msg.edit(
+                        ctx.http(),
+                        EditMessage::default()
+                            .embed(new_embed)
+                            .components(new_components),
+                    )
+                    .await?;
+                }
+            }
         } else {
             ctx.send(CreateReply::default().content("Too dangerous to translate"))
                 .await?;

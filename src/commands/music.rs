@@ -89,19 +89,17 @@ pub async fn add_playlist(
 /// Join your current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
-    let guild = match ctx.guild() {
-        Some(guild) => guild.clone(),
-        None => return Ok(()),
-    };
-    if let Some(channel_id) = guild
-        .voice_states
-        .get(&ctx.author().id)
-        .and_then(|voice_state| voice_state.channel_id)
-    {
+    if let Some(guild_id) = ctx.guild_id() {
+        let channel_id = ctx
+            .guild()
+            .unwrap()
+            .voice_states
+            .get(&ctx.author().id)
+            .and_then(|voice_state| voice_state.channel_id);
         let manager = &ctx.data().music_manager;
-        manager.join(guild.id, channel_id).await?;
+        manager.join(guild_id, channel_id.unwrap()).await?;
+        ctx.reply("I've joined the party").await?;
     }
-    ctx.reply("I've joined the party").await?;
     Ok(())
 }
 
