@@ -22,15 +22,17 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
         "Discord doesn't label this server as being large"
     };
 
-    let thumbnail = if let Some(banner) = guild.banner.clone() {
-        banner.to_string()
-    } else if let Some(icon_hash) = &guild.icon {
+    let thumbnail = match guild.banner.clone() {
+        Some(banner) => banner.to_string(),
+        None => match &guild.icon {
+            Some(icon_hash) =>
         format!(
             "https://cdn.discordapp.com/icons/{}/{}.png",
             guild.id, icon_hash
-        )
-    } else {
+        ),
+        None =>
         "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_owned()
+        }
     };
     let owner_user = guild.owner_id.to_user(&ctx.http()).await?;
     let embed = CreateEmbed::default()

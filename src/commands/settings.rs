@@ -58,10 +58,9 @@ pub async fn set_afk(
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
-        let embed_reason = if let Some(input) = reason {
-            input
-        } else {
-            "Didn't renew life subscription".to_owned()
+        let embed_reason = match reason {
+            Some(input) => input,
+            None => "Didn't renew life subscription".to_owned(),
         };
         ctx.send(
             CreateReply::default().embed(

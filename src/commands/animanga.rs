@@ -28,10 +28,9 @@ struct AnimeTitle {
 
 impl Display for AnimeTitle {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(english_title) = &self.english {
-            write!(f, "{}", english_title)
-        } else {
-            write!(f, "bruh")
+        match &self.english {
+            Some(english_title) => write!(f, "{}", english_title),
+            None => write!(f, "bruh"),
         }
     }
 }

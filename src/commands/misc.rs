@@ -118,15 +118,17 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
         }
     };
 
-    let thumbnail = if let Some(banner) = guild.banner.clone() {
-        banner.to_string()
-    } else if let Some(icon_hash) = &guild.icon {
+    let thumbnail = match guild.banner.clone() {
+    Some(banner) => banner.to_string(),
+    None => match &guild.icon {
+        Some(icon_hash) =>
         format!(
             "https://cdn.discordapp.com/icons/{}/{}.png",
             guild.id, icon_hash
-        )
-    } else {
-        "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_owned()
+        ),
+        None =>
+            "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_owned()
+        }
     };
     let mut users = query_as!(
         UserCount,
@@ -174,23 +176,21 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
         .channel_id()
         .message(&ctx.http(), ctx.id().into())
         .await?;
-    let reply = if let Some(ref_msg) = msg.referenced_message {
-        ref_msg
-    } else {
-        ctx.reply("Bruh, reply to a message").await?;
-        return Ok(());
+    let reply = match msg.referenced_message {
+        Some(ref_msg) => ref_msg,
+        None => {
+            ctx.reply("Bruh, reply to a message").await?;
+            return Ok(());
+        }
     };
 
     let message_url = reply.link();
     let content = reply.content.to_string();
     let client = &ctx.data().req_client;
-    if reply.webhook_id.is_none() {
-        if let Some(guild_id) = ctx.guild_id() {
-            let member = ctx.http().get_member(guild_id, reply.author.id).await?;
+    match reply.webhook_id {
+        Some(_) => {
             let avatar_image = {
-                let avatar_url = member
-                    .avatar_url()
-                    .unwrap_or(reply.author.avatar_url().unwrap());
+                let avatar_url = reply.author.avatar_url().unwrap();
                 let avatar_bytes = client
                     .get(&avatar_url)
                     .send()
@@ -201,31 +201,37 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
                     .unwrap();
                 load_from_memory(&avatar_bytes).unwrap().to_rgba8()
             };
-            let name = member.display_name();
+            let name = reply.author.display_name();
             quote_image(&avatar_image, name, &content)
                 .await
                 .save("quote.webp")
                 .unwrap();
         }
-    } else {
-        let avatar_image = {
-            let avatar_url = reply.author.avatar_url().unwrap();
-            let avatar_bytes = client
-                .get(&avatar_url)
-                .send()
-                .await
-                .unwrap()
-                .bytes()
-                .await
-                .unwrap();
-            load_from_memory(&avatar_bytes).unwrap().to_rgba8()
-        };
-        let name = reply.author.display_name();
-        quote_image(&avatar_image, name, &content)
-            .await
-            .save("quote.webp")
-            .unwrap();
-    }
+        None => {
+            if let Some(guild_id) = ctx.guild_id() {
+                let member = ctx.http().get_member(guild_id, reply.author.id).await?;
+                let avatar_image = {
+                    let avatar_url = member
+                        .avatar_url()
+                        .unwrap_or(reply.author.avatar_url().unwrap());
+                    let avatar_bytes = client
+                        .get(&avatar_url)
+                        .send()
+                        .await
+                        .unwrap()
+                        .bytes()
+                        .await
+                        .unwrap();
+                    load_from_memory(&avatar_bytes).unwrap().to_rgba8()
+                };
+                let name = member.display_name();
+                quote_image(&avatar_image, name, &content)
+                    .await
+                    .save("quote.webp")
+                    .unwrap();
+            }
+        }
+    };
     let paths = [CreateAttachment::path("quote.webp").await?];
     ctx.channel_id()
         .send_files(

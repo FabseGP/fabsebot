@@ -8,8 +8,8 @@ use image::{
 };
 use imageproc::drawing::{draw_text_mut, text_size};
 use poise::serenity_prelude::{
-    self as serenity, builder::CreateAttachment, Colour, CreateEmbed, ExecuteWebhook, GuildId,
-    Message, Timestamp,
+    self as serenity, builder::CreateAttachment, ChannelId, ExecuteWebhook, GuildId, Message,
+    Webhook,
 };
 use regex::Regex;
 use serde::Deserialize;
@@ -127,14 +127,6 @@ pub async fn ai_response_simple(role: String, prompt: String) -> Result<String, 
         .await?;
     let output = resp.json::<FabseAIText>().await?;
     Ok(output.result.response)
-}
-
-pub fn embed_builder<'a>(title: &'a str, url: &'a str, colour: Colour) -> CreateEmbed<'a> {
-    CreateEmbed::new()
-        .title(title)
-        .image(url)
-        .color(colour)
-        .timestamp(Timestamp::now())
 }
 
 pub async fn emoji_id(
@@ -390,31 +382,63 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
     img
 }
 
-pub async fn spoiler_message(ctx: &serenity::Context, message: &Message, text: &str) {
-    let avatar_url = message.author.avatar_url().unwrap();
-    let username = message.author.display_name();
-    let mut is_first = true;
-    let client = get_http_client();
-    for attachment in &message.attachments {
-        let target = &attachment.url.to_string();
-        let response = client.get(target).send().await;
-        let download = response.unwrap().bytes().await;
-        let filename = format!("SPOILER_{}", &attachment.filename);
-        let file = File::create(&filename);
-        let download_bytes = match download {
-            Ok(bytes) => bytes,
-            Err(_) => {
-                continue;
+pub async fn spoiler_message(
+    ctx: &serenity::Context,
+    message: &Message,
+    text: &str,
+) -> Result<(), Error> {
+    if let Some(avatar_url) = message.author.avatar_url() {
+        let username = message.author.display_name();
+        let mut is_first = true;
+        let client = get_http_client();
+        for attachment in &message.attachments {
+            let target = &attachment.url.to_string();
+            let response = client.get(target).send().await;
+            let download = response.unwrap().bytes().await;
+            let filename = format!("SPOILER_{}", &attachment.filename);
+            let file = File::create(&filename);
+            let download_bytes = match download {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    continue;
+                }
+            };
+            file.unwrap().write_all(&download_bytes)?;
+            let webhook_try = webhook_find(ctx, message.channel_id).await?;
+            if let Some(webhook) = webhook_try {
+                let attachment = CreateAttachment::path(Path::new(&filename)).await?;
+                if is_first {
+                    webhook
+                        .execute(
+                            &ctx.http,
+                            false,
+                            ExecuteWebhook::default()
+                                .username(username)
+                                .avatar_url(avatar_url.as_str())
+                                .content(text)
+                                .add_file(attachment),
+                        )
+                        .await?;
+                    is_first = false;
+                } else {
+                    webhook
+                        .execute(
+                            &ctx.http,
+                            false,
+                            ExecuteWebhook::default()
+                                .username(username)
+                                .avatar_url(avatar_url.as_str())
+                                .add_file(attachment),
+                        )
+                        .await?;
+                }
             }
-        };
-        let _ = file.unwrap().write_all(&download_bytes);
-        let index = if is_first { 0 } else { 1 };
-        webhook_file(ctx, message, username, &avatar_url, text, &filename, index).await;
-        is_first = false;
-        let _ = fs::remove_file(&filename);
+            fs::remove_file(&filename)?;
+        }
+        let reason: Option<&str> = Some("");
+        message.delete(&ctx.http, reason).await?;
     }
-    let reason: Option<&str> = Some("");
-    let _ = message.delete(&ctx.http, reason).await;
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -426,132 +450,57 @@ struct WaifuData {
     url: String,
 }
 
-pub async fn get_waifu() -> String {
+pub async fn get_waifu() -> Result<String, Error> {
     let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
     let client = get_http_client();
-    let request = client.get(request_url).send().await.unwrap();
-    let url: WaifuResponse = request.json().await.unwrap();
-    if !url.images[0].url.is_empty() {
-        url.images[0].url.to_owned()
-    } else {
-        "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned()
-    }
+    let request = client.get(request_url).send().await?;
+    let resp: WaifuResponse = request.json().await?;
+    let url = {
+        if !resp.images[0].url.is_empty() {
+            resp.images[0].url.to_owned()
+        } else {
+            "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned()
+        }
+    };
+
+    Ok(url)
 }
 
-pub async fn webhook_message(
+pub async fn webhook_find(
     ctx: &serenity::Context,
-    message: &Message,
-    name: &str,
-    url: &str,
-    output: &str,
-) {
-    let channel_id = message.channel_id;
-    let webhook_info = json!({
-        "name": name,
-        "avatar": url
-    });
-    let existing_webhooks = match channel_id.webhooks(&ctx.http).await {
-        Ok(webhooks) => webhooks,
-        Err(_) => {
-            return;
-        }
+    channel_id: ChannelId,
+) -> Result<Option<Webhook>, Error> {
+    let existing_webhooks_get = match channel_id.webhooks(&ctx.http).await {
+        Ok(webhooks) => Some(webhooks),
+        Err(_) => None,
     };
-    if existing_webhooks.len() >= 15 {
-        let webhooks_to_delete = existing_webhooks.len() - 14;
-        for webhook in existing_webhooks.iter().take(webhooks_to_delete) {
-            let _ = (ctx.http).delete_webhook(webhook.id, None).await;
+    let webhook = match existing_webhooks_get {
+        Some(existing_webhooks) => {
+            if existing_webhooks.len() >= 15 {
+                let webhooks_to_delete = existing_webhooks.len() - 14;
+                for webhook in existing_webhooks.iter().take(webhooks_to_delete) {
+                    ctx.http.delete_webhook(webhook.id, None).await?;
+                }
+            }
+            match existing_webhooks
+                .into_iter()
+                .find(|webhook| webhook.name.as_deref() == Some("fabsebots"))
+            {
+                Some(existing_webhook) => Some(existing_webhook),
+                None => {
+                    let webhook_info = json!({
+                        "name": "fabsebot",
+                        "avatar": "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png"
+                    });
+                    Some(
+                        ctx.http
+                            .create_webhook(channel_id, &webhook_info, None)
+                            .await?,
+                    )
+                }
+            }
         }
-    }
-    let webhook = {
-        if let Some(existing_webhook) = existing_webhooks
-            .iter()
-            .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
-        {
-            existing_webhook
-        } else {
-            &ctx.http
-                .create_webhook(channel_id, &webhook_info, None)
-                .await
-                .unwrap()
-        }
+        None => None,
     };
-
-    let _ = webhook
-        .execute(
-            &ctx.http,
-            false,
-            ExecuteWebhook::new()
-                .username(name)
-                .avatar_url(url)
-                .content(output),
-        )
-        .await;
-}
-
-pub async fn webhook_file(
-    ctx: &serenity::Context,
-    message: &Message,
-    name: &str,
-    url: &str,
-    text: &str,
-    path: &str,
-    mode: i32,
-) {
-    let channel_id = message.channel_id;
-    let webhook_info = json!({
-        "name": "test",
-        "avatar": url
-    });
-    let attachment = CreateAttachment::path(Path::new(path)).await;
-    let existing_webhooks = match channel_id.webhooks(&ctx.http).await {
-        Ok(webhooks) => webhooks,
-        Err(_) => {
-            return;
-        }
-    };
-    if existing_webhooks.len() >= 15 {
-        let webhooks_to_delete = existing_webhooks.len() - 14;
-        for webhook in existing_webhooks.iter().take(webhooks_to_delete) {
-            let _ = (ctx.http).delete_webhook(webhook.id, None).await;
-        }
-    }
-
-    let webhook = {
-        if let Some(existing_webhook) = existing_webhooks
-            .iter()
-            .find(|webhook| webhook.name.as_deref() == Some("fabsemanbots"))
-        {
-            existing_webhook
-        } else {
-            &ctx.http
-                .create_webhook(channel_id, &webhook_info, None)
-                .await
-                .unwrap()
-        }
-    };
-
-    if mode == 0 {
-        let _ = webhook
-            .execute(
-                &ctx.http,
-                false,
-                ExecuteWebhook::new()
-                    .username(name)
-                    .avatar_url(url)
-                    .content(text)
-                    .add_file(attachment.unwrap()),
-            )
-            .await;
-    } else {
-        let _ = webhook
-            .execute(
-                &ctx.http,
-                false,
-                ExecuteWebhook::new()
-                    .username(name)
-                    .avatar_url(url)
-                    .add_file(attachment.unwrap()),
-            )
-            .await;
-    }
+    Ok(webhook)
 }

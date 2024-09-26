@@ -1,15 +1,12 @@
 use crate::{
     types::{ChatMessage, Data, Error},
-    utils::{
-        ai_image_desc, ai_response, embed_builder, get_gifs, get_waifu, spoiler_message,
-        webhook_message,
-    },
+    utils::{ai_image_desc, ai_response, get_gifs, get_waifu, spoiler_message, webhook_find},
 };
 
 use anyhow::Context;
 use poise::serenity_prelude::{
-    self as serenity, futures::StreamExt, ChannelId, Colour, CreateEmbed, CreateMessage, GuildId,
-    Message, MessageId, ReactionType, Timestamp, UserId,
+    self as serenity, futures::StreamExt, ChannelId, CreateEmbed, CreateMessage, ExecuteWebhook,
+    GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
 use regex::Regex;
 use sqlx::query;
@@ -25,7 +22,7 @@ pub async fn handle_message(
     }
     let guild_id = match new_message.guild_id {
         Some(id) => u64::from(id),
-        None => return Ok(())  
+        None => return Ok(()),
     };
     let content = new_message.content.to_lowercase();
     let user_id = u64::from(new_message.author.id);
@@ -35,14 +32,6 @@ pub async fn handle_message(
         .await
         .context("Failed to acquire database connection")?;
     let mut rng = data.rng_thread.lock().await;
-    let sql_guild = query!("SELECT guild_id FROM guilds WHERE guild_id = ?", guild_id)
-        .fetch_one(&mut *conn)
-        .await;
-    if sql_guild.is_err() {
-        query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id)
-            .execute(&mut *conn)
-            .await?;
-    }
     let user_settings = query!("SELECT * FROM user_settings WHERE guild_id = ?", guild_id)
         .fetch_all(&mut *conn)
         .await?;
@@ -71,7 +60,7 @@ pub async fn handle_message(
                     )
                     .await?;
                 if !entries[0].is_empty() {
-                    let mut e = CreateEmbed::new();
+                    let mut e = CreateEmbed::default();
                     e = e.colour(0xED333B).title("Pings you retrieved:");
                     for entry in entries {
                         let parts: Vec<&str> = entry.split(';').collect();
@@ -94,7 +83,11 @@ pub async fn handle_message(
                 .execute(&mut *conn)
                 .await?;
             } else if new_message.mentions_user_id(user_id) {
-                let pinged_link = format!("{};{}", new_message.author.display_name(), new_message.link());
+                let pinged_link = format!(
+                    "{};{}",
+                    new_message.author.display_name(),
+                    new_message.link()
+                );
                 query!(
                     "UPDATE user_settings SET pinged_links = IF(pinged_links IS NULL, ?, CONCAT(pinged_links, ',', ?)) WHERE guild_id = ? AND user_id = ?",
                     pinged_link,
@@ -104,10 +97,9 @@ pub async fn handle_message(
                 )
                 .execute(&mut *conn)
                 .await?;
-                let reason = if let Some(input) = &target.afk_reason {
-                    input
-                } else {
-                    &"didn't renew life subscription".to_owned()
+                let reason = match &target.afk_reason {
+                    Some(input) => input,
+                    None => &"didn't renew life subscription".to_owned(),
                 };
                 new_message
                     .reply(
@@ -123,26 +115,26 @@ pub async fn handle_message(
         }
         if content.contains(&format!("<@{}>", target.user_id)) && !content.contains("!user") {
             if let Some(ping_content) = &target.ping_content {
-                let media = {
-                    if let Some(ping_media) = &target.ping_media {
+                let media = match &target.ping_media {
+                    Some(ping_media) => {
                         if ping_media.to_lowercase() == "waifu" {
-                            &get_waifu().await
+                            &get_waifu().await?
                         } else {
                             ping_media
                         }
-                    } else {
-                        &"".to_owned()
                     }
+                    None => &"".to_owned(),
                 };
                 new_message
                     .channel_id
                     .send_message(
                         &ctx.http,
-                        CreateMessage::default().embed(embed_builder(
-                            ping_content,
-                            media,
-                            Colour(0x00b0f4),
-                        )),
+                        CreateMessage::default().embed(
+                            CreateEmbed::default()
+                                .title(ping_content)
+                                .image(media)
+                                .colour(0x00b0f4),
+                        ),
                     )
                     .await?;
             }
@@ -156,37 +148,29 @@ pub async fn handle_message(
     )
     .execute(&mut *conn)
     .await?;
-    if let Some(Some(channel)) = query!(
-        "SELECT spoiler_channel FROM guild_settings WHERE guild_id = ?",
+    if let Some(guild_settings) = query!(
+        "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel FROM guild_settings WHERE guild_id = ?",
         guild_id
     )
     .fetch_optional(&mut *conn)
-    .await?
-    .map(|record| record.spoiler_channel)
-    {
-        let spoiler_channel = ChannelId::new(channel);
-        if new_message.channel_id == spoiler_channel {
-            spoiler_message(ctx, new_message, &new_message.content).await;
+    .await? {
+        if let Some(spoiler_channel) = guild_settings.spoiler_channel {
+            if new_message.channel_id == ChannelId::new(spoiler_channel) {
+                spoiler_message(ctx, new_message, &new_message.content).await?;
+            }
         }
-    }
-    if let Some(record) = query!(
-        "SELECT dead_chat_channel, dead_chat_rate FROM guild_settings WHERE guild_id = ?",
-        guild_id
-    )
-    .fetch_optional(&mut *conn)
-    .await?
-    {
-        if let (Some(channel), Some(rate)) = (record.dead_chat_channel, record.dead_chat_rate) {
+        if let (Some(channel), Some(rate)) = (guild_settings.dead_chat_channel, guild_settings.dead_chat_rate) {
             let dead_chat_channel = ChannelId::new(channel);
             let last_message_time = {
                 let mut messages = dead_chat_channel.messages_iter(&ctx).boxed();
-                if let Some(message_result) = messages.next().await {
-                    match message_result {
-                        Ok(message) => Some(message.timestamp.timestamp()),
-                        Err(_) => None,
-                    }
-                } else {
-                    None
+                match messages.next().await {
+                    Some(message_result) => {
+                        match message_result {
+                            Ok(message) => Some(message.timestamp.timestamp()),
+                            Err(_) => None,
+                        }
+                    },
+                    None => None
                 }
             };
             if let Some(last_time) = last_message_time {
@@ -269,30 +253,32 @@ pub async fn handle_message(
                             author_name, ref_name, ref_content
                         ));
                     }
-                    if let Some(guild_id) = new_message.guild_id {
-                        if let Ok(author_member) =
-                            guild_id.member(&ctx.http, new_message.author.id).await
-                        {
-                            if let Some(guild) = guild_id.to_guild_cached(&ctx.cache) {
-                                let roles: Vec<String> = author_member
-                                    .roles
-                                    .iter()
-                                    .filter_map(|role_id| guild.roles.get(role_id))
-                                    .map(|role| role.name.clone().to_string())
-                                    .collect();
-                                if !roles.is_empty() {
-                                    message_parts.push(format!(
-                                        "{} has the following roles: {}",
-                                        author_name,
-                                        roles.join(", ")
-                                    ));
-                                }
+                    let guild_id_typed = GuildId::new(guild_id);
+                    if let Ok(author_member) = guild_id_typed
+                        .member(&ctx.http, new_message.author.id)
+                        .await
+                    {
+                        if let Some(guild) = guild_id_typed.to_guild_cached(&ctx.cache) {
+                            let roles: Vec<String> = author_member
+                                .roles
+                                .iter()
+                                .filter_map(|role_id| guild.roles.get(role_id))
+                                .map(|role| role.name.clone().to_string())
+                                .collect();
+                            if !roles.is_empty() {
+                                message_parts.push(format!(
+                                    "{} has the following roles: {}",
+                                    author_name,
+                                    roles.join(", ")
+                                ));
                             }
-                            let mut mentioned_users = Vec::new();
-                            for target in &new_message.mentions {
-                                if let Some(target_member) = target.member.as_ref() {
-                                    let target_roles: String = {
-                                        if let Some(guild) = guild_id.to_guild_cached(&ctx.cache) {
+                        }
+                        let mut mentioned_users = Vec::new();
+                        for target in &new_message.mentions {
+                            if let Some(target_member) = target.member.as_ref() {
+                                let target_roles: String =
+                                    match guild_id_typed.to_guild_cached(&ctx.cache) {
+                                        Some(guild) => {
                                             let roles: Vec<String> = target_member
                                                 .roles
                                                 .iter()
@@ -300,72 +286,77 @@ pub async fn handle_message(
                                                 .map(|role| role.name.clone().to_string())
                                                 .collect();
                                             roles.join(",")
-                                        } else {
-                                            "Not roles found".to_owned()
                                         }
+                                        None => "Not roles found".to_owned(),
                                     };
-                                    let pfp_desc = {
-                                        let client = data.req_client.clone();
-                                        let pfp = client.get(target.static_face()).send().await?;
-                                        if pfp.status().is_success() {
-                                            let binary_pfp = pfp.bytes().await?.to_vec();
-                                            ai_image_desc(binary_pfp).await?
-                                        } else {
-                                            "Unable to describe".to_owned()
-                                        }
-                                    };
-                                    let user_info = format!(
-                                        "{} was mentioned. Roles: {}. Profile picture: {}",
-                                        target.display_name(),
-                                        target_roles,
-                                        pfp_desc
-                                    );
-                                    mentioned_users.push(user_info);
-                                }
+                                let pfp_desc = {
+                                    let client = &data.req_client;
+                                    let pfp = client.get(target.static_face()).send().await?;
+                                    if pfp.status().is_success() {
+                                        let binary_pfp = pfp.bytes().await?.to_vec();
+                                        ai_image_desc(binary_pfp).await?
+                                    } else {
+                                        "Unable to describe".to_owned()
+                                    }
+                                };
+                                let user_info = format!(
+                                    "{} was mentioned. Roles: {}. Profile picture: {}",
+                                    target.display_name(),
+                                    target_roles,
+                                    pfp_desc
+                                );
+                                mentioned_users.push(user_info);
                             }
-                            if !mentioned_users.is_empty() {
-                                message_parts.push(format!(
-                                    "{} user(s) were mentioned:",
-                                    mentioned_users.len()
-                                ));
-                                message_parts.extend(mentioned_users);
+                        }
+                        if !mentioned_users.is_empty() {
+                            message_parts
+                                .push(format!("{} user(s) were mentioned:", mentioned_users.len()));
+                            message_parts.extend(mentioned_users);
+                        }
+                        let mut attachments_desc = Vec::new();
+                        for attachment in &new_message.attachments {
+                            if attachment.dimensions().is_some() {
+                                let file = attachment.download().await?;
+                                let description = ai_image_desc(file).await?;
+                                attachments_desc.push(description);
                             }
-                            let mut attachments_desc = Vec::new();
-                            for attachment in &new_message.attachments {
-                                if attachment.dimensions().is_some() {
-                                    let file = attachment.download().await?;
-                                    let description = ai_image_desc(file).await?;
-                                    attachments_desc.push(description);
-                                }
-                            }
-                            if !attachments_desc.is_empty() {
-                                message_parts.push(format!(
-                                    "{} image(s) were sent:",
-                                    attachments_desc.len()
-                                ));
-                                message_parts.extend(attachments_desc);
-                            }
+                        }
+                        if !attachments_desc.is_empty() {
+                            message_parts
+                                .push(format!("{} image(s) were sent:", attachments_desc.len()));
+                            message_parts.extend(attachments_desc);
                         }
                     }
                     let re =
                         Regex::new(r"https://discord\.com/channels/(\d+)/(\d+)/(\d+)").unwrap();
                     if let Some(url) = re.captures(&content) {
                         let guild_id = GuildId::new(url[1].parse().unwrap());
-                        if let Ok(linked_guild) = ctx.http.get_guild(guild_id).await {
-                            if let Ok(channels) = linked_guild.channels(&ctx.http).await {
-                                let channel_id = ChannelId::new(url[2].parse().unwrap());
-                                if let Some(linked_channel) = channels.get(&channel_id) {
-                                    let message_id = MessageId::new(url[3].parse().unwrap());
-                                    if let Ok(linked_message) =
-                                        linked_channel.message(&ctx.http, message_id).await
-                                    {
-                                        message_parts.push(format!(
-                                            "\n{} linked to a message sent in: {}, sent by: {} and had this content: {}",
-                                            author_name, linked_guild.name, linked_message.author.name, linked_message.content
-                                        ));
+                        let channel_id = ChannelId::new(url[2].parse().unwrap());
+                        let message_id = MessageId::new(url[3].parse().unwrap());
+                        let cache_guild = ctx.cache.guild(guild_id).map(|g| g.clone());
+                        let (guild_name, message) = match cache_guild {
+                            Some(guild) => {
+                                let message = match guild.channels.get(&channel_id).cloned() {
+                                    Some(channel) => {
+                                        Some(channel.message(&ctx.http, message_id).await?.clone())
                                     }
-                                }
+                                    None => None,
+                                };
+                                (guild.name.clone(), message)
                             }
+                            None => {
+                                let guild = ctx.http.get_guild(guild_id).await?;
+                                let channels = guild.channels(&ctx.http).await?;
+                                let channel = channels.get(&channel_id).unwrap();
+                                let message = Some(channel.message(&ctx.http, message_id).await?);
+                                (guild.name, message)
+                            }
+                        };
+                        if let Some(linked_message) = message {
+                            message_parts.push(format!(
+                                "\n{} linked to a message sent in: {}, sent by: {} and had this content: {}",
+                                author_name, guild_name, linked_message.author.name, linked_message.content
+                            ));
                         }
                     }
                     message_parts.join("\n")
@@ -391,15 +382,16 @@ pub async fn handle_message(
                             system_content.push_str(format!("- {}", user).as_str());
                         }
                     }
-                    if let Some(system_message) =
-                        history.iter_mut().find(|msg| msg.role == "system")
-                    {
-                        system_message.content = system_content;
-                    } else {
-                        history.push(ChatMessage {
-                            role: "system".to_owned(),
-                            content: system_content,
-                        });
+                    match history.iter_mut().find(|msg| msg.role == "system") {
+                        Some(system_message) => {
+                            system_message.content = system_content;
+                        }
+                        None => {
+                            history.push(ChatMessage {
+                                role: "system".to_owned(),
+                                content: system_content,
+                            });
+                        }
                     }
                     history.push(ChatMessage {
                         role: "user".to_owned(),
@@ -457,11 +449,12 @@ pub async fn handle_message(
             .channel_id
             .send_message(
                 &ctx.http,
-                CreateMessage::default().embed(embed_builder(
-                    "why ping me bitch, go get a life!",
-                    "https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif",
-                    Colour(0x00b0f4),
-                )),
+                CreateMessage::default().embed(
+                    CreateEmbed::default()
+                        .title("why ping me bitch, go get a life!")
+                        .image("https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif")
+                        .colour(0x00b0f4),
+                ),
             )
             .await?;
     } else if content.contains("<@1014524859532980255>") && !content.contains("!user") {
@@ -470,22 +463,19 @@ pub async fn handle_message(
             .channel_id
             .send_message(
                 &ctx.http,
-                CreateMessage::default().embed(embed_builder(
-                    "fabseman is out to open source life",
-                    urls[rng.usize(..urls.len())].as_str(),
-                    Colour(0xf8e45c),
-                )),
+                CreateMessage::default().embed(
+                    CreateEmbed::default()
+                        .title("fabseman is out to open source life")
+                        .image(urls[rng.usize(..urls.len())].as_str())
+                        .colour(0xf8e45c),
+                ),
             )
             .await?;
     } else if content == "fabse" || content == "fabseman" {
-        webhook_message(
-            ctx,
-            new_message,
-            "yotsuba",
-            "https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png",
-            "# such magnificence",
-        )
-        .await;
+        let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
+        if let Some(webhook) = webhook_try {
+            webhook.execute(&ctx.http, false, ExecuteWebhook::default().username("yotsuba").avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png").content("# such magnificence")).await?;
+        }
         if let Ok(reaction) = ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>") {
             new_message.react(&ctx.http, reaction).await?;
         }
@@ -507,11 +497,12 @@ pub async fn handle_message(
             .channel_id
             .send_message(
                 &ctx.http,
-                CreateMessage::default().embed(embed_builder(
-                    "your queen has arrived",
-                    furina_gifs[rng.usize(..furina_gifs.len())],
-                    Colour(0xf8e45c),
-                )),
+                CreateMessage::default().embed(
+                    CreateEmbed::default()
+                        .title("your queen has arrived")
+                        .image(furina_gifs[rng.usize(..furina_gifs.len())])
+                        .colour(0xf8e45c),
+                ),
             )
             .await?;
     } else if content.contains("kafka") {
@@ -531,11 +522,12 @@ pub async fn handle_message(
             .channel_id
             .send_message(
                 &ctx.http,
-                CreateMessage::default().embed(embed_builder(
-                    "your queen has arrived",
-                    kafka_gifs[rng.usize(..kafka_gifs.len())],
-                    Colour(0xf8e45c),
-                )),
+                CreateMessage::default().embed(
+                    CreateEmbed::default()
+                        .title("your queen has arrived")
+                        .image(kafka_gifs[rng.usize(..kafka_gifs.len())])
+                        .colour(0xf8e45c),
+                ),
             )
             .await?;
     } else if content.contains("kinich") {
@@ -548,11 +540,12 @@ pub async fn handle_message(
             .channel_id
             .send_message(
                 &ctx.http,
-                CreateMessage::default().embed(embed_builder(
-                    "pls destroy lily's oven",
-                    kinich_gifs[rng.usize(..kinich_gifs.len())],
-                    Colour(0xf8e45c),
-                )),
+                CreateMessage::default().embed(
+                    CreateEmbed::default()
+                        .title("pls destroy lily's oven")
+                        .image(kinich_gifs[rng.usize(..kinich_gifs.len())])
+                        .colour(0xf8e45c),
+                ),
             )
             .await?;
     } else if content.contains("fabse") {
@@ -562,14 +555,19 @@ pub async fn handle_message(
     } else if content.contains("kurukuru_seseren") {
         let count = content.matches("kurukuru_seseren").count();
         let response = "<a:kurukuru_seseren:1284745756883816469>".repeat(count);
-        webhook_message(
-            ctx,
-            new_message,
-            "vilbot",
-            "https://i.postimg.cc/44t5vzWB/IMG-0014.png",
-            &response,
-        )
-        .await;
+        let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
+        if let Some(webhook) = webhook_try {
+            webhook
+                .execute(
+                    &ctx.http,
+                    false,
+                    ExecuteWebhook::default()
+                        .username("vilbot")
+                        .avatar_url("https://i.postimg.cc/44t5vzWB/IMG-0014.png")
+                        .content(response),
+                )
+                .await?;
+        }
     }
 
     Ok(())

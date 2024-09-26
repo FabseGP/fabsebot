@@ -1,6 +1,6 @@
 use crate::{
     types::{Context, Error},
-    utils::{ai_response_simple, get_gifs},
+    utils::{ai_response_simple, get_gifs, get_waifu},
 };
 
 use poise::{
@@ -161,11 +161,12 @@ pub async fn ai_summarize(
         .channel_id()
         .message(&ctx.http(), ctx.id().into())
         .await?;
-    let reply = if let Some(ref_msg) = msg.referenced_message {
-        ref_msg
-    } else {
-        ctx.reply("Bruh, reply to a message").await?;
-        return Ok(());
+    let reply = match msg.referenced_message {
+        Some(ref_msg) => ref_msg,
+        None => {
+            ctx.reply("Bruh, reply to a message").await?;
+            return Ok(());
+        }
     };
     let client = &ctx.data().req_client;
     let api_key = env::var("CLOUDFLARE_TOKEN")?;
@@ -425,7 +426,7 @@ pub async fn github_search(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    ctx.defer().await.unwrap();
+    ctx.defer().await?;
     let client = &ctx.data().req_client;
     let api_key = env::var("GITHUB_TOKEN")?;
     let request = client
@@ -504,92 +505,96 @@ pub async fn roast(
     #[description = "Target"] user: poise::serenity_prelude::User,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let guild_id = ctx.guild_id().unwrap();
-    let guild_roles = {
-        let guild = ctx.partial_guild().await.unwrap();
-        guild.roles.clone()
-    };
-    let member = ctx.http().get_member(guild_id, user.id).await?;
-    let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
-    let banner_url = ctx
-        .http()
-        .get_user(user.id)
-        .await
-        .unwrap()
-        .banner_url()
-        .unwrap_or("user has no banner".to_owned());
-    let roles: Vec<String> = member
-        .roles
-        .iter()
-        .filter_map(|role_id| guild_roles.get(role_id))
-        .map(|role| role.name.clone().to_string())
-        .collect();
-    let name = member.display_name();
-    let account_date = user.created_at();
-    let join_date = member.joined_at.unwrap();
-    let message_count = {
-        let id: u64 = guild_id.into();
-        let mut conn = ctx.data().db.acquire().await?;
-        let result =
-            query("SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?")
-                .bind(id)
-                .bind(user.name.to_string())
-                .fetch_one(&mut *conn)
-                .await;
-        let result_filtered: Option<u64> = match result {
-            Ok(row) => Some(row.try_get("messages").unwrap()),
-            Err(_) => None,
+    if let Some(guild_id) = ctx.guild_id() {
+        let (guild_roles, member) = {
+            let guild = ctx.partial_guild().await.unwrap();
+            (
+                guild.roles.clone(),
+                guild.member(&ctx.http(), user.id).await?.clone(),
+            )
         };
-        result_filtered.map_or("unknown message count".to_owned(), |count| {
-            count.to_string()
-        })
-    };
-    let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
-
-    let messages_string = {
-        let mut collected_messages = Vec::new();
-        let mut count = 0;
-
-        while let Some(message_result) = messages.next().await {
-            if let Ok(message) = message_result {
-                if message.author.id == user.id {
-                    let formatted_message = format!("{}:{}", count + 1, message.content);
-                    collected_messages.push(formatted_message);
-                    count += 1;
-                }
-            } else {
-                break;
-            }
-            if count >= 25 {
-                break;
-            }
-        }
-
-        collected_messages.join(",")
-    };
-
-    let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
-    let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target".to_owned();
-    let resp = ai_response_simple(role, description).await?;
-
-    if !resp.is_empty() {
-        let response_chars: Vec<char> = resp.chars().collect();
-        let chunks = response_chars.chunks(1024);
-        let mut embed = CreateEmbed::default();
-        embed = embed.title(format!("Roasting {}", name)).color(0xFF7800);
-        for (i, chunk) in chunks.enumerate() {
-            let chunk_str: String = chunk.iter().collect();
-            let field_name = if i == 0 {
-                "Response:".to_owned()
-            } else {
-                format!("Response (cont. {})", i + 1)
+        let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
+        let banner_url = ctx
+            .http()
+            .get_user(user.id)
+            .await
+            .unwrap()
+            .banner_url()
+            .unwrap_or("user has no banner".to_owned());
+        let roles: Vec<String> = member
+            .roles
+            .iter()
+            .filter_map(|role_id| guild_roles.get(role_id))
+            .map(|role| role.name.clone().to_string())
+            .collect();
+        let name = member.display_name();
+        let account_date = user.created_at();
+        let join_date = member.joined_at.unwrap();
+        let message_count = {
+            let id: u64 = guild_id.into();
+            let mut conn = ctx.data().db.acquire().await?;
+            let result =
+                query("SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?")
+                    .bind(id)
+                    .bind(user.name.to_string())
+                    .fetch_one(&mut *conn)
+                    .await;
+            let result_filtered: Option<u64> = match result {
+                Ok(row) => Some(row.try_get("messages").unwrap()),
+                Err(_) => None,
             };
-            embed = embed.field(field_name, chunk_str, false);
+            result_filtered.map_or("unknown message count".to_owned(), |count| {
+                count.to_string()
+            })
+        };
+        let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
+
+        let messages_string = {
+            let mut collected_messages = Vec::new();
+            let mut count = 0;
+
+            while let Some(message_result) = messages.next().await {
+                match message_result {
+                    Ok(message) => {
+                        if message.author.id == user.id {
+                            let formatted_message = format!("{}:{}", count + 1, message.content);
+                            collected_messages.push(formatted_message);
+                            count += 1;
+                        }
+                    }
+                    Err(_) => break,
+                }
+                if count >= 25 {
+                    break;
+                }
+            }
+
+            collected_messages.join(",")
+        };
+
+        let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
+        let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target".to_owned();
+        let resp = ai_response_simple(role, description).await?;
+
+        if !resp.is_empty() {
+            let response_chars: Vec<char> = resp.chars().collect();
+            let chunks = response_chars.chunks(1024);
+            let mut embed = CreateEmbed::default();
+            embed = embed.title(format!("Roasting {}", name)).color(0xFF7800);
+            for (i, chunk) in chunks.enumerate() {
+                let chunk_str: String = chunk.iter().collect();
+                let field_name = if i == 0 {
+                    "Response:".to_owned()
+                } else {
+                    format!("Response (cont. {})", i + 1)
+                };
+                embed = embed.field(field_name, chunk_str, false);
+            }
+            ctx.send(CreateReply::default().embed(embed)).await?;
+        } else {
+            ctx.send(CreateReply::default().content(format!("{}'s life is already roasted", name)))
+                .await?;
         }
-        ctx.send(CreateReply::default().embed(embed)).await?;
-    } else {
-        ctx.send(CreateReply::default().content(format!("{}'s life is already roasted", name)))
-            .await?;
     }
     Ok(())
 }
@@ -621,20 +626,19 @@ pub async fn translate(
         .channel_id()
         .message(&ctx.http(), ctx.id().into())
         .await?;
-    let content = {
-        if let Some(ref_msg) = msg.referenced_message {
-            ref_msg.content.to_string()
-        } else if let Some(query) = sentence {
-            query
-        } else {
-            ctx.reply("Bruh, give me smth to translate").await?;
-            return Ok(());
-        }
+    let content = match msg.referenced_message {
+        Some(ref_msg) => ref_msg.content.to_string(),
+        None => match sentence {
+            Some(query) => query,
+            None => {
+                ctx.reply("Bruh, give me smth to translate").await?;
+                return Ok(());
+            }
+        },
     };
-    let target_lang = if let Some(language) = target {
-        language
-    } else {
-        "en".to_owned()
+    let target_lang = match target {
+        Some(language) => language,
+        None => "en".to_owned(),
     };
     let form_data = json!({
         "q": content,
@@ -693,7 +697,7 @@ pub async fn urban(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    ctx.defer().await.unwrap();
+    ctx.defer().await?;
     let request_url = format!(
         "https://api.urbandictionary.com/v0/define?term={search}",
         search = encode(&input)
@@ -825,28 +829,18 @@ pub async fn urban(
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct WaifuResponse {
-    images: Vec<WaifuData>,
-}
-#[derive(Deserialize)]
-struct WaifuData {
-    url: String,
-}
-
 /// Do I need to explain it?
 #[poise::command(prefix_command, slash_command)]
 pub async fn waifu(ctx: Context<'_>) -> Result<(), Error> {
-    let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
-    let client = &ctx.data().req_client;
-    let request = client.get(request_url).send().await?;
-    let url: WaifuResponse = request.json().await.unwrap();
-    if !url.images[0].url.is_empty() {
-        ctx.send(CreateReply::default().content(&url.images[0].url))
-            .await?;
-    } else {
-        ctx.send(CreateReply::default().content("life is not waifuing"))
-            .await?;
+    let resp = get_waifu().await;
+    match resp {
+        Ok(url) => {
+            ctx.send(CreateReply::default().content(url)).await?;
+        }
+        Err(_) => {
+            ctx.send(CreateReply::default().content("life is not waifuing"))
+                .await?;
+        }
     }
     Ok(())
 }
