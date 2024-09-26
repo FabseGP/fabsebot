@@ -68,7 +68,7 @@ pub async fn add_playlist(
                         let mut handler = handler_lock.lock().await;
                         for track in payload.tracks.data {
                             let search = format! {"{} {}", track.title, track.artist.name};
-                            let src = YoutubeDl::new_search(ctx.data().req_client.clone(), search);
+                            let src = YoutubeDl::new_search(client.clone(), search);
                             handler.enqueue_input(src.into()).await;
                         }
                         ctx.reply("Added playlist to queue").await?;
@@ -89,17 +89,19 @@ pub async fn add_playlist(
 /// Join your current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
-    if let Some(guild_id) = ctx.guild_id() {
-        let channel_id = ctx
-            .guild()
-            .unwrap()
-            .voice_states
-            .get(&ctx.author().id)
-            .and_then(|voice_state| voice_state.channel_id);
+    let guild = match ctx.guild() {
+        Some(guild) => guild.clone(),
+        None => return Ok(()),
+    };
+    if let Some(channel_id) = guild
+        .voice_states
+        .get(&ctx.author().id)
+        .and_then(|voice_state| voice_state.channel_id)
+    {
         let manager = &ctx.data().music_manager;
-        manager.join(guild_id, channel_id.unwrap()).await?;
-        ctx.reply("I've joined the party").await?;
+        manager.join(guild.id, channel_id).await?;
     }
+    ctx.reply("I've joined the party").await?;
     Ok(())
 }
 
@@ -190,7 +192,7 @@ pub async fn play_song(
                             let mut e = CreateEmbed::default();
                             e = e
                                 .colour(0xED333B)
-                                .field("Added by: ", ctx.author().to_string(), false)
+                                .field("Added by: ", ctx.author().display_name(), false)
                                 .url(url);
                             if let Some(artist) = artist {
                                 e = e.field("Artist:", artist, true);
@@ -206,14 +208,16 @@ pub async fn play_song(
                                 match source_url {
                                     Some(u) => {
                                         e = e.description(
-                                            MessageBuilder::new()
+                                            MessageBuilder::default()
                                                 .push_named_link_safe(title.as_str(), u.as_str())
                                                 .build(),
                                         );
                                     }
                                     None => {
                                         e = e.description(
-                                            MessageBuilder::new().push_safe(title.as_str()).build(),
+                                            MessageBuilder::default()
+                                                .push_safe(title.as_str())
+                                                .build(),
                                         );
                                     }
                                 }

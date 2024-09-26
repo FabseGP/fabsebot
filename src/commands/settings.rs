@@ -12,7 +12,7 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
     if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
         let admin_perms = permissions.administrator();
         if ctx.author().id == 1014524859532980255
-            || ctx.author().id == ctx.partial_guild().await.unwrap().owner_id
+            || ctx.author().id == ctx.guild().unwrap().owner_id
             || admin_perms
         {
             if let Some(guild_id) = ctx.guild_id() {
@@ -126,7 +126,7 @@ pub async fn set_dead_chat(
 ) -> Result<(), Error> {
     if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
         let admin_perms = permissions.administrator();
-        if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
+        if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
             if let Some(guild_id) = ctx.guild_id() {
                 let channel_id = channel.id().to_string();
                 query!(
@@ -171,7 +171,7 @@ pub async fn set_prefix(
     if characters.len() < 5 && !characters.is_empty() {
         if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
             let admin_perms = permissions.administrator();
-            if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
+            if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
                 if let Some(guild_id) = ctx.guild_id() {
                     query!(
                         "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?)
@@ -220,7 +220,7 @@ pub async fn set_quote_channel(
 ) -> Result<(), Error> {
     if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
         let admin_perms = permissions.administrator();
-        if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
+        if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
             if let Some(guild_id) = ctx.guild_id() {
                 let channel_id = channel.id().to_string();
                 query!(
@@ -262,7 +262,7 @@ pub async fn set_spoiler_channel(
 ) -> Result<(), Error> {
     if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
         let admin_perms = permissions.administrator();
-        if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
+        if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
             if let Some(guild_id) = ctx.guild_id() {
                 let channel_id = channel.id().to_string();
                 query!(
@@ -337,7 +337,7 @@ pub async fn set_word_track(
     if word.len() < 50 {
         if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
             let admin_perms = permissions.administrator();
-            if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id || admin_perms {
+            if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
                 if let Some(guild_id) = ctx.guild_id() {
                     query!(
                         "INSERT INTO words_count (guild_id, word) VALUES (?, ?)

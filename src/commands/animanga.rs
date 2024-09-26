@@ -30,7 +30,7 @@ impl Display for AnimeTitle {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.english {
             Some(english_title) => write!(f, "{}", english_title),
-            None => write!(f, "bruh"),
+            None => write!(f, "Bruh"),
         }
     }
 }
@@ -44,8 +44,8 @@ pub async fn anime_scene(
     input: String,
 ) -> Result<(), Error> {
     let request_url = format!(
-        "https://api.trace.moe/search?cutBorders&anilistInfo&url={input}",
-        input = encode(&input)
+        "https://api.trace.moe/search?cutBorders&anilistInfo&url={}",
+        encode(&input)
     );
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;

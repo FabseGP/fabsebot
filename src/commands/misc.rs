@@ -55,22 +55,24 @@ pub async fn birthday(
     #[rest]
     user: User,
 ) -> Result<(), Error> {
-    if let Some(guild_id) = ctx.guild_id() {
-        let member = ctx.http().get_member(guild_id, user.id).await?;
-        let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
-        let name = member.display_name();
-        ctx.send(
-            CreateReply::default().embed(
-                CreateEmbed::default()
-                    .title(format!("HAPPY BIRTHDAY {}!", name))
-                    .thumbnail(avatar_url)
-                    .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
-                    .color(0xFF5733)
-                    .timestamp(Timestamp::now()),
-            ),
-        )
-        .await?;
-    }
+    let guild = match ctx.guild() {
+        Some(guild) => guild.clone(),
+        None => return Ok(()),
+    };
+    let member = guild.member(ctx.http(), user.id).await?;
+    let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
+    let name = member.display_name();
+    ctx.send(
+        CreateReply::default().embed(
+            CreateEmbed::default()
+                .title(format!("HAPPY BIRTHDAY {}!", name))
+                .thumbnail(avatar_url)
+                .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
+                .color(0xFF5733)
+                .timestamp(Timestamp::now()),
+        ),
+    )
+    .await?;
     Ok(())
 }
 
@@ -157,8 +159,8 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn ohitsyou(ctx: Context<'_>) -> Result<(), Error> {
     let resp = ai_response_simple(
-        "you're a tsundere".to_owned(),
-        "generate a one-line love-hate greeting".to_owned(),
+        "you're a tsundere",
+        "generate a one-line love-hate greeting",
     )
     .await?;
     if !resp.is_empty() {
@@ -208,28 +210,30 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
                 .unwrap();
         }
         None => {
-            if let Some(guild_id) = ctx.guild_id() {
-                let member = ctx.http().get_member(guild_id, reply.author.id).await?;
-                let avatar_image = {
-                    let avatar_url = member
-                        .avatar_url()
-                        .unwrap_or(reply.author.avatar_url().unwrap());
-                    let avatar_bytes = client
-                        .get(&avatar_url)
-                        .send()
-                        .await
-                        .unwrap()
-                        .bytes()
-                        .await
-                        .unwrap();
-                    load_from_memory(&avatar_bytes).unwrap().to_rgba8()
-                };
-                let name = member.display_name();
-                quote_image(&avatar_image, name, &content)
+            let guild = match ctx.guild() {
+                Some(guild) => guild.clone(),
+                None => return Ok(()),
+            };
+            let member = guild.member(ctx.http(), reply.author.id).await?;
+            let avatar_image = {
+                let avatar_url = member
+                    .avatar_url()
+                    .unwrap_or(reply.author.avatar_url().unwrap());
+                let avatar_bytes = client
+                    .get(&avatar_url)
+                    .send()
                     .await
-                    .save("quote.webp")
+                    .unwrap()
+                    .bytes()
+                    .await
                     .unwrap();
-            }
+                load_from_memory(&avatar_bytes).unwrap().to_rgba8()
+            };
+            let name = member.display_name();
+            quote_image(&avatar_image, name, &content)
+                .await
+                .save("quote.webp")
+                .unwrap();
         }
     };
     let paths = [CreateAttachment::path("quote.webp").await?];
@@ -237,7 +241,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
         .send_files(
             ctx.http(),
             paths.clone(),
-            CreateMessage::new().content(&message_url),
+            CreateMessage::default().content(&message_url),
         )
         .await?;
 
@@ -251,7 +255,11 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
         if let Some(channel) = record.quotes_channel {
             let quote_channel = ChannelId::new(channel);
             quote_channel
-                .send_files(ctx.http(), paths, CreateMessage::new().content(message_url))
+                .send_files(
+                    ctx.http(),
+                    paths,
+                    CreateMessage::default().content(message_url),
+                )
                 .await?;
         }
     }
@@ -268,11 +276,11 @@ pub async fn slow_mode(
 ) -> Result<(), Error> {
     if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
         let admin_perms = permissions.administrator();
-        if ctx.author().id == ctx.partial_guild().await.unwrap().owner_id
+        if ctx.author().id == ctx.guild().unwrap().owner_id
             || admin_perms
             || ctx.author().id == 1014524859532980255
         {
-            let settings = EditChannel::new().rate_limit_per_user(duration);
+            let settings = EditChannel::default().rate_limit_per_user(duration);
             channel.id().edit(ctx.http(), settings).await?;
             ctx.send(
                 CreateReply::default()

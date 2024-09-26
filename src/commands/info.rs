@@ -22,7 +22,7 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
         "Discord doesn't label this server as being large"
     };
 
-    let thumbnail = match guild.banner.clone() {
+    let thumbnail = match &guild.banner {
         Some(banner) => banner.to_string(),
         None => match &guild.icon {
             Some(icon_hash) =>
@@ -57,13 +57,16 @@ pub async fn user_info(
     #[rest]
     user: User,
 ) -> Result<(), Error> {
-    if let Some(guild_id) = ctx.guild_id() {
-        let member = ctx.http().get_member(guild_id, user.id).await?;
-        let embed = CreateEmbed::new()
-            .title(member.display_name())
-            .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))
-            .field("Account created at: ", user.created_at().to_string(), false);
-        ctx.send(CreateReply::default().embed(embed)).await?;
-    }
+    let guild = match ctx.guild() {
+        Some(guild) => guild.clone(),
+        None => return Ok(()),
+    };
+    let member = guild.member(ctx.http(), user.id).await?;
+    let embed = CreateEmbed::default()
+        .title(member.display_name())
+        .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))
+        .field("Account created at: ", user.created_at().to_string(), false);
+    ctx.send(CreateReply::default().embed(embed)).await?;
+
     Ok(())
 }

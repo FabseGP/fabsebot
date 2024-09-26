@@ -113,7 +113,7 @@ pub async fn rps(
                 }
             };
 
-            let mut msg = interaction.message.clone();
+            let mut msg = interaction.message;
 
             let new_embed = CreateEmbed::default()
                 .title(&response)
@@ -122,7 +122,7 @@ pub async fn rps(
 
             msg.edit(
                 ctx.http(),
-                EditMessage::new().embed(new_embed).components(vec![]),
+                EditMessage::default().embed(new_embed).components(vec![]),
             )
             .await?;
         }

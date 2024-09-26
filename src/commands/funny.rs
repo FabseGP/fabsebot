@@ -61,10 +61,11 @@ pub async fn user_misuse(
             || ctx.author().id == 1014524859532980255
             || ctx.author().id == 999604056072929321
         {
-            let member = {
-                let guild = ctx.partial_guild().await.unwrap();
-                guild.member(&ctx.http(), user.id).await?.clone()
+            let guild = match ctx.guild() {
+                Some(guild) => guild.clone(),
+                None => return Ok(()),
             };
+            let member = guild.member(ctx.http(), user.id).await?;
             let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
             let name = member.display_name();
             let channel_id = ctx.channel_id();

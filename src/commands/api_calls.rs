@@ -6,13 +6,13 @@ use crate::{
 use poise::{
     serenity_prelude::{
         futures::StreamExt, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
-        CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage,
+        CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage, User,
     },
     CreateReply,
 };
 use regex::Regex;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::{query, Row};
 use std::{env, time::Duration};
 use urlencoding::encode;
@@ -202,7 +202,7 @@ pub async fn ai_text(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let resp = ai_response_simple(role, prompt.clone()).await?;
+    let resp = ai_response_simple(&role, &prompt).await?;
     if !resp.is_empty() {
         let response_chars: Vec<char> = resp.chars().collect();
         let chunks = response_chars.chunks(1024);
@@ -210,10 +210,9 @@ pub async fn ai_text(
         embed = embed.title(prompt).color(0xFF7800);
         for (i, chunk) in chunks.enumerate() {
             let chunk_str: String = chunk.iter().collect();
-            let field_name = if i == 0 {
-                "Response:".to_owned()
-            } else {
-                format!("Response (cont. {})", i + 1)
+            let field_name = match i {
+                0 => "Response:".to_owned(),
+                _ => format!("Response (cont. {})", i + 1),
             };
             embed = embed.field(field_name, chunk_str, false);
         }
@@ -259,7 +258,7 @@ pub async fn anilist_anime(
         .body(query)
         .send()
         .await?;
-    let data: serde_json::Value = resp.json().await?;
+    let data: Value = resp.json().await?;
     let anime_data = &data["data"]["Media"];
 
     if anime_data.is_null() {
@@ -267,13 +266,13 @@ pub async fn anilist_anime(
         return Ok(());
     }
 
-    let id = anime_data["id"].as_u64().unwrap();
-    let title = anime_data["title"]["romaji"].as_str().unwrap_or("Unknown");
+    let id = anime_data["id"].to_string();
+    let title = anime_data["title"]["romaji"].to_string();
 
     let embed = CreateEmbed::default()
         .title("Anime")
-        .field("ID", id.to_string(), false)
-        .field("Title (Romaji)", title.to_owned(), false)
+        .field("ID", id, false)
+        .field("Title (Romaji)", title, false)
         .color(0x33d17a);
 
     ctx.send(CreateReply::default().embed(embed)).await?;
@@ -325,15 +324,15 @@ pub async fn gif(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    let resp = get_gifs(input.clone()).await;
+    let resp = get_gifs(&input).await;
     if let Ok(urls) = resp {
         let len = urls.len();
         let index = 0;
         let next_id = format!("{}_next_{}", ctx.id(), index);
         let prev_id = format!("{}_prev_{}", ctx.id(), index);
         let mut state = State {
-            next_id: next_id.clone(),
-            prev_id: prev_id.clone(),
+            next_id,
+            prev_id,
             index,
             len,
         };
@@ -391,11 +390,11 @@ pub async fn gif(
                     vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
                 };
 
-                let mut msg = interaction.message.clone();
+                let mut msg = interaction.message;
 
                 msg.edit(
                     ctx.http(),
-                    EditMessage::new()
+                    EditMessage::default()
                         .embed(new_embed)
                         .components(new_components),
                 )
@@ -437,7 +436,7 @@ pub async fn github_search(
         .bearer_auth(api_key)
         .send()
         .await?;
-    let data: GithubResponse = request.json().await.unwrap();
+    let data: GithubResponse = request.json().await?;
     if !data.items.is_empty() {
         ctx.say(data.items[0].url.clone()).await?;
     } else {
@@ -461,7 +460,7 @@ pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
     let client = &data.req_client;
     let rng = &mut data.rng_thread.lock().await;
     let request = client.get(request_url).send().await?;
-    let data: JokeResponse = request.json().await.unwrap();
+    let data: JokeResponse = request.json().await?;
     if !data.joke.is_empty() {
         ctx.send(CreateReply::default().content(&data.joke)).await?;
     } else {
@@ -500,19 +499,15 @@ pub async fn memegen(
 
 /// When someone offended you
 #[poise::command(prefix_command, slash_command)]
-pub async fn roast(
-    ctx: Context<'_>,
-    #[description = "Target"] user: poise::serenity_prelude::User,
-) -> Result<(), Error> {
+pub async fn roast(ctx: Context<'_>, #[description = "Target"] user: User) -> Result<(), Error> {
     ctx.defer().await?;
     if let Some(guild_id) = ctx.guild_id() {
-        let (guild_roles, member) = {
-            let guild = ctx.partial_guild().await.unwrap();
-            (
-                guild.roles.clone(),
-                guild.member(&ctx.http(), user.id).await?.clone(),
-            )
+        let guild = match ctx.guild() {
+            Some(guild) => guild.clone(),
+            None => return Ok(()),
         };
+        let guild_roles = guild.roles.clone();
+        let member = guild.member(ctx.http(), user.id).await?;
         let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
         let banner_url = ctx
             .http()
@@ -525,13 +520,13 @@ pub async fn roast(
             .roles
             .iter()
             .filter_map(|role_id| guild_roles.get(role_id))
-            .map(|role| role.name.clone().to_string())
+            .map(|role| role.name.to_string())
             .collect();
         let name = member.display_name();
         let account_date = user.created_at();
         let join_date = member.joined_at.unwrap();
         let message_count = {
-            let id: u64 = guild_id.into();
+            let id = u64::from(guild_id);
             let mut conn = ctx.data().db.acquire().await?;
             let result =
                 query("SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?")
@@ -574,7 +569,7 @@ pub async fn roast(
 
         let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
         let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target".to_owned();
-        let resp = ai_response_simple(role, description).await?;
+        let resp = ai_response_simple(&role, &description).await?;
 
         if !resp.is_empty() {
             let response_chars: Vec<char> = resp.chars().collect();
@@ -583,10 +578,9 @@ pub async fn roast(
             embed = embed.title(format!("Roasting {}", name)).color(0xFF7800);
             for (i, chunk) in chunks.enumerate() {
                 let chunk_str: String = chunk.iter().collect();
-                let field_name = if i == 0 {
-                    "Response:".to_owned()
-                } else {
-                    format!("Response (cont. {})", i + 1)
+                let field_name = match i {
+                    0 => "Response:".to_owned(),
+                    _ => format!("Response (cont. {})", i + 1),
                 };
                 embed = embed.field(field_name, chunk_str, false);
             }
@@ -699,20 +693,20 @@ pub async fn urban(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let request_url = format!(
-        "https://api.urbandictionary.com/v0/define?term={search}",
-        search = encode(&input)
+        "https://api.urbandictionary.com/v0/define?term={}",
+        encode(&input)
     );
     let client = &ctx.data().req_client;
     let request = client.get(request_url).send().await?;
-    let data: UrbanResponse = request.json().await.unwrap();
+    let data: UrbanResponse = request.json().await?;
     if !data.list.is_empty() {
         let len = data.list.len();
         let index = 0;
         let next_id = format!("{}_next_{}", ctx.id(), index);
         let prev_id = format!("{}_prev_{}", ctx.id(), index);
         let mut state = State {
-            next_id: next_id.clone(),
-            prev_id: prev_id.clone(),
+            next_id,
+            prev_id,
             index,
             len,
         };
@@ -811,11 +805,11 @@ pub async fn urban(
                     vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
                 };
 
-                let mut msg = interaction.message.clone();
+                let mut msg = interaction.message;
 
                 msg.edit(
                     ctx.http(),
-                    EditMessage::new()
+                    EditMessage::default()
                         .embed(new_embed)
                         .components(new_components),
                 )

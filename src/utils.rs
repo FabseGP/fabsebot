@@ -108,7 +108,7 @@ pub async fn ai_response_local(messages: Vec<ChatMessage>) -> Result<String, Err
     }
 }
 
-pub async fn ai_response_simple(role: String, prompt: String) -> Result<String, Error> {
+pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Error> {
     let client = get_http_client();
     let api_key = env::var("CLOUDFLARE_TOKEN")?;
     let gateway = env::var("CLOUDFLARE_GATEWAY")?;
@@ -162,11 +162,11 @@ struct GifObject {
     url: String,
 }
 
-pub async fn get_gifs(input: String) -> Result<Vec<String>, Error> {
+pub async fn get_gifs(input: &str) -> Result<Vec<String>, Error> {
     let api_key = env::var("TENOR_TOKEN")?;
     let request_url = format!(
         "https://tenor.googleapis.com/v2/search?q={}&key={}&contentfilter=medium&limit=40",
-        encode(&input),
+        encode(input),
         api_key,
     );
     let client = get_http_client();
