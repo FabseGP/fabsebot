@@ -7,42 +7,88 @@ use image::load_from_memory;
 use poise::{
     builtins,
     serenity_prelude::{
-        nonmax::NonMaxU16, Channel, ChannelId, CreateAttachment, CreateEmbed, CreateMessage,
-        EditChannel, User,
+        nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
+        CreateActionRow, CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse,
+        CreateMessage, EditChannel, EditMessage, User, UserId,
     },
     CreateReply,
 };
 use sqlx::{query, query_as};
-use std::{path::Path, process};
+use std::{collections::HashSet, path::Path, process, time::Duration};
 use tokio::fs::remove_file;
 
 /// When you want to find the imposter
 #[poise::command(slash_command)]
 pub async fn anony_poll(
     ctx: Context<'_>,
+    #[description = "Question"] title: String,
     #[description = "Comma-separated options"] options: String,
-    #[description = "Title"] title: String,
     #[description = "Duration in minutes"] duration: u64,
 ) -> Result<(), Error> {
-    let option_list: Vec<String> = options
+    let options_list: Vec<String> = options
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    if option_list.len() < 2 {
+    if options_list.len() < 2 {
         ctx.say("Bruh, 1 option ain't gonna cut it for a poll")
             .await?;
         return Ok(());
     }
-    let mut embed = CreateEmbed::default()
-        .title(title)
-        .field("Choices: ", "", false)
-        .color(0xFF5733);
-    let buttons: Vec<usize> = (1..option_list.len()).collect();
-    for option in option_list {
-        embed = embed.field("", option, false);
+    let mut embed = CreateEmbed::default().title(title.clone()).color(0xFF5733);
+    let mut buttons: Vec<CreateButton> = Vec::new();
+    let mut vote_counts: Vec<u32> = vec![0; options_list.len()];
+    let mut voted_users: HashSet<UserId> = HashSet::new();
+    for (index, option) in options_list.iter().enumerate() {
+        embed = embed.field(option.to_owned(), "0", false);
+        buttons.push(
+            CreateButton::new(format!("{}_{}", index, ctx.id()))
+                .style(ButtonStyle::Primary)
+                .label(index.to_string()),
+        );
     }
-    ctx.send(CreateReply::default().embed(embed)).await?;
+    let components = vec![CreateActionRow::Buttons(buttons)];
+    ctx.send(CreateReply::default().embed(embed).components(components))
+        .await?;
+
+    let id_cloned = ctx.id();
+    let options_count = options_list.len();
+
+    while let Some(interaction) =
+        ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+            .timeout(Duration::from_secs(duration * 60))
+            .filter(move |interaction| {
+                let id = interaction.data.custom_id.as_str();
+                (0..options_count).any(|index| {
+                    let expected_id = format!("{}_{}", index, id_cloned);
+                    id == expected_id
+                })
+            })
+            .await
+    {
+        let user_id = interaction.user.id;
+        if voted_users.contains(&user_id) {
+            continue;
+        }
+        let choice = &interaction.data.custom_id;
+
+        interaction
+            .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+            .await?;
+
+        let index = choice.split('_').next().unwrap().parse::<usize>().unwrap();
+        vote_counts[index] += 1;
+        voted_users.insert(user_id);
+
+        let mut new_embed = CreateEmbed::default().title(title.clone()).color(0xFF5733);
+        for (i, option) in options_list.iter().enumerate() {
+            new_embed = new_embed.field(option.to_owned(), vote_counts[i].to_string(), false);
+        }
+
+        let mut msg = interaction.message;
+        msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
+            .await?;
+    }
 
     Ok(())
 }

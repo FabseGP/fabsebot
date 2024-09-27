@@ -17,7 +17,8 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
     let size = match guild.large() {
         true => "Large",
         _ => "Not large",
-    }.to_string();
+    }
+    .to_string();
     let thumbnail = match &guild.banner {
         Some(banner) => banner.to_string(),
         None => match &guild.icon {
@@ -78,7 +79,8 @@ pub async fn user_info(
     let user_mfa = match user.mfa_enabled() {
         true => "MFA enabled",
         false => "MFA disabled",
-    }.to_string();
+    }
+    .to_string();
     let empty = "".to_string();
     let embed = CreateEmbed::default()
         .title(member.display_name())
