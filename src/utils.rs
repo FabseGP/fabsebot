@@ -63,12 +63,13 @@ pub async fn ai_response(content: Vec<ChatMessage>) -> Result<String, Error> {
     let gateway = env::var("CLOUDFLARE_GATEWAY")?;
     let resp = client
         .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-8b-instruct",
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-70b-instruct",
             gateway
         ))
         .bearer_auth(api_key)
         .json(&json!({
-            "messages": content
+            "messages": content,
+            "max_tokens": 1024,
         }))
         .send()
         .await?;
@@ -114,7 +115,7 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Erro
     let gateway = env::var("CLOUDFLARE_GATEWAY")?;
     let resp = client
         .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-8b-instruct",
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-70b-instruct",
             gateway
         ))
         .bearer_auth(api_key)

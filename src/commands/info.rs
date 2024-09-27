@@ -1,7 +1,7 @@
 use crate::types::{Context, Error};
 
 use poise::{
-    serenity_prelude::{CreateEmbed, User},
+    serenity_prelude::{CreateEmbed, Member},
     CreateReply,
 };
 
@@ -15,9 +15,9 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
         }
     };
     let size = match guild.large() {
-        true => "Discord labels this server as being large",
-        _ => "Discord doesn't label this server as being large",
-    };
+        true => "Large",
+        _ => "Not large",
+    }.to_string();
     let thumbnail = match &guild.banner {
         Some(banner) => banner.to_string(),
         None => match &guild.icon {
@@ -29,15 +29,37 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
         },
     };
     let owner_user = guild.owner_id.to_user(&ctx.http()).await?;
+    let guild_description = guild.description.unwrap_or_default().to_string();
+    let guild_id = guild.id.to_string();
+    let guild_boosters = guild.premium_subscription_count.unwrap().to_string();
+    let owner_name = owner_user.display_name().to_string();
+    let guild_creation = guild.id.created_at().to_string();
+    let guild_emojis_len = guild.emojis.len().to_string();
+    let guild_roles_len = guild.roles.len().to_string();
+    let guild_stickers_len = guild.stickers.len().to_string();
+    let guild_member_count = format!("{}/{}", guild.member_count, guild.max_members.unwrap());
+    let guild_channels = guild.channels.len().to_string();
+    let empty = "".to_string();
     let embed = CreateEmbed::default()
         .title(guild.name.to_string())
+        .description(guild_description)
         .thumbnail(thumbnail)
-        .field("Owner ID: ", owner_user.display_name(), false)
-        .field("Emoji count: ", guild.emojis.len().to_string(), false)
-        .field("Role count: ", guild.roles.len().to_string(), false)
-        .field("Sticker count: ", guild.stickers.len().to_string(), false)
-        .field("Members count: ", guild.member_count.to_string(), false)
-        .field("Server size: ", size, false);
+        .fields(vec![
+            ("Guild ID:", &guild_id, true),
+            ("Guild boosters:", &guild_boosters, true),
+            ("", &empty, false),
+            ("Owner:", &owner_name, true),
+            ("Creation date:", &guild_creation, true),
+            ("", &empty, false),
+            ("Emoji count:", &guild_emojis_len, true),
+            ("Sticker count:", &guild_stickers_len, true),
+            ("", &empty, false),
+            ("Members count:", &guild_member_count, true),
+            ("Role count:", &guild_roles_len, true),
+            ("", &empty, false),
+            ("Channels:", &guild_channels, true),
+            ("Server size:", &size, true),
+        ]);
     ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
 }
@@ -48,17 +70,26 @@ pub async fn user_info(
     ctx: Context<'_>,
     #[description = "Target"]
     #[rest]
-    user: User,
+    member: Member,
 ) -> Result<(), Error> {
-    let guild = match ctx.guild() {
-        Some(guild) => guild.clone(),
-        None => return Ok(()),
-    };
-    let member = guild.member(ctx.http(), user.id).await?;
+    let user = ctx.http().get_user(member.user.id).await?;
+    let user_created = user.created_at().to_string();
+    let member_joined = member.joined_at.unwrap().to_string();
+    let user_mfa = match user.mfa_enabled() {
+        true => "MFA enabled",
+        false => "MFA disabled",
+    }.to_string();
+    let empty = "".to_string();
     let embed = CreateEmbed::default()
         .title(member.display_name())
         .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))
-        .field("Account created at: ", user.created_at().to_string(), false);
+        .fields(vec![
+            ("Creation date:", &user_created, true),
+            ("Joined date:", &member_joined, true),
+            ("", &empty, false),
+            ("Security:", &user_mfa, false),
+        ])
+        .colour(user.accent_colour.unwrap());
     ctx.send(CreateReply::default().embed(embed)).await?;
 
     Ok(())

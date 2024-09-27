@@ -272,7 +272,7 @@ pub async fn anilist_anime(
     let embed = CreateEmbed::default()
         .title("Anime")
         .field("ID", id, false)
-        .field("Title (Romaji)", title, false)
+        .field("Title", title, false)
         .color(0x33d17a);
 
     ctx.send(CreateReply::default().embed(embed)).await?;
@@ -721,7 +721,7 @@ pub async fn translate(
                             data.detected_language.confidence
                         ))
                         .color(0x33d17a)
-                        .field("Original: ", &content, false)
+                        .field("Original:", &content, false)
                         .field(
                             "Translation:",
                             if state.index == 0 {

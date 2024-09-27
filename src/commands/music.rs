@@ -187,7 +187,7 @@ pub async fn play_song(
                             let mut e = CreateEmbed::default();
                             e = e
                                 .colour(0xED333B)
-                                .field("Added by: ", ctx.author().display_name(), false)
+                                .field("Added by:", ctx.author().display_name(), false)
                                 .url(url);
                             if let Some(artist) = artist {
                                 e = e.field("Artist:", artist, true);
