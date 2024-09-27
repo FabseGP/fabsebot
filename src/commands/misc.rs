@@ -51,7 +51,7 @@ pub async fn anony_poll(
     ctx.send(CreateReply::default().embed(embed).components(components))
         .await?;
 
-    let id_cloned = ctx.id();
+    let id_borrow = ctx.id();
     let options_count = options_list.len();
 
     while let Some(interaction) =
@@ -60,7 +60,7 @@ pub async fn anony_poll(
             .filter(move |interaction| {
                 let id = interaction.data.custom_id.as_str();
                 (0..options_count).any(|index| {
-                    let expected_id = format!("{}_{}", index, id_cloned);
+                    let expected_id = format!("{}_{}", index, id_borrow);
                     id == expected_id
                 })
             })
@@ -161,7 +161,7 @@ struct UserCount {
 #[poise::command(prefix_command, slash_command)]
 pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     let guild = match ctx.guild() {
-        Some(g) => g.clone(),
+        Some(guild) => guild.clone(),
         None => {
             return Ok(());
         }

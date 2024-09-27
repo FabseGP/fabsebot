@@ -13,6 +13,7 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+type ChatHashMap = HashMap<u64, HashMap<u64, Vec<ChatMessage>>>;
 pub type Error = anyhow::Error;
 pub type Context<'a> = poise::Context<'a, Data, Error>;
 
@@ -20,7 +21,7 @@ pub struct Data {
     pub db: sqlx::MySqlPool,
     pub req_client: Client,
     pub music_manager: Arc<Songbird>,
-    pub conversations: Arc<Mutex<HashMap<u64, HashMap<u64, Vec<ChatMessage>>>>>,
+    pub conversations: Arc<Mutex<ChatHashMap>>,
     pub rng_thread: Arc<Mutex<Rng>>,
 }
 
