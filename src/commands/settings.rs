@@ -7,36 +7,25 @@ use poise::{
 use sqlx::query;
 
 /// To reset or not to reset, that's the question
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
 pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
-    if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
-        let admin_perms = permissions.administrator();
-        if ctx.author().id == 1014524859532980255
-            || ctx.author().id == ctx.guild().unwrap().owner_id
-            || admin_perms
-        {
-            if let Some(guild_id) = ctx.guild_id() {
-                query!(
-                    "REPLACE INTO guild_settings (guild_id) VALUES (?)",
-                    guild_id.get()
-                )
-                .execute(&mut *ctx.data().db.acquire().await?)
-                .await?;
-                ctx.send(
-                    CreateReply::default()
-                        .content("Server settings resetted... probably")
-                        .ephemeral(true),
-                )
-                .await?;
-            }
-        } else {
-            ctx.send(
-                CreateReply::default()
-                    .content("Hush, you're either not the owner or don't have admin perms")
-                    .ephemeral(true),
-            )
-            .await?;
-        }
+    if let Some(guild_id) = ctx.guild_id() {
+        query!(
+            "REPLACE INTO guild_settings (guild_id) VALUES (?)",
+            guild_id.get()
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.send(
+            CreateReply::default()
+                .content("Server settings resetted... probably")
+                .ephemeral(true),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -77,7 +66,11 @@ pub async fn set_afk(
 }
 
 /// When you need ai in your life
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
 pub async fn set_chatbot_channel(ctx: Context<'_>) -> Result<(), Error> {
     ctx.send(
         CreateReply::default()
@@ -118,18 +111,18 @@ pub async fn set_chatbot_role(
 }
 
 /// Configure the occurence of dead chat gifs
-#[poise::command(slash_command)]
+#[poise::command(
+    slash_command,
+    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
 pub async fn set_dead_chat(
     ctx: Context<'_>,
     #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: u8,
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
-    if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
-        let admin_perms = permissions.administrator();
-        if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
-            if let Some(guild_id) = ctx.guild_id() {
-                let channel_id = channel.id().to_string();
-                query!(
+    if let Some(guild_id) = ctx.guild_id() {
+        let channel_id = channel.id().to_string();
+        query!(
                     "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)
                     ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
                     guild_id.get(),
@@ -140,71 +133,12 @@ pub async fn set_dead_chat(
                 )
                 .execute(&mut *ctx.data().db.acquire().await?)
                 .await?;
-                ctx.send(
-                    CreateReply::default()
-                        .content(format!(
-                            "Dead chat gifs will only be sent every {} minute(s) in {}... probably",
-                            occurrence, channel
-                        ))
-                        .ephemeral(true),
-                )
-                .await?;
-            }
-        } else {
-            ctx.send(
-                CreateReply::default()
-                    .content("Hush, you're either not the owner or don't have admin perms")
-                    .ephemeral(true),
-            )
-            .await?;
-        }
-    }
-    Ok(())
-}
-
-/// Configure which prefix to use for commands
-#[poise::command(prefix_command, slash_command)]
-pub async fn set_prefix(
-    ctx: Context<'_>,
-    #[description = "Character(s) to use as prefix for commands"] characters: String,
-) -> Result<(), Error> {
-    if characters.len() < 5 && !characters.is_empty() {
-        if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
-            let admin_perms = permissions.administrator();
-            if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
-                if let Some(guild_id) = ctx.guild_id() {
-                    query!(
-                        "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?)
-                        ON DUPLICATE KEY UPDATE prefix = ?",
-                        guild_id.get(),
-                        characters,
-                        characters
-                    )
-                    .execute(&mut *ctx.data().db.acquire().await?)
-                    .await?;
-                    ctx.send(
-                        CreateReply::default()
-                            .content(format!(
-                                "{} set as the prefix for commands... probably",
-                                characters
-                            ))
-                            .ephemeral(true),
-                    )
-                    .await?;
-                }
-            } else {
-                ctx.send(
-                    CreateReply::default()
-                        .content("Hush, you're either not the owner or don't have admin perms")
-                        .ephemeral(true),
-                )
-                .await?;
-            }
-        }
-    } else {
         ctx.send(
             CreateReply::default()
-                .content("Maximum 5 characters are allowed as prefix")
+                .content(format!(
+                    "Dead chat gifs will only be sent every {} minute(s) in {}... probably",
+                    occurrence, channel
+                ))
                 .ephemeral(true),
         )
         .await?;
@@ -212,40 +146,33 @@ pub async fn set_prefix(
     Ok(())
 }
 
-/// Configure where to send quotes
-#[poise::command(slash_command)]
-pub async fn set_quote_channel(
+/// Configure which prefix to use for commands
+#[poise::command(
+    prefix_command,
+    slash_command,
+    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
+pub async fn set_prefix(
     ctx: Context<'_>,
-    #[description = "Channel to send quoted messages to"] channel: Channel,
+    #[description = "Character(s) to use as prefix for commands, maximum 5"] characters: String,
 ) -> Result<(), Error> {
-    if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
-        let admin_perms = permissions.administrator();
-        if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
-            if let Some(guild_id) = ctx.guild_id() {
-                let channel_id = channel.id().to_string();
-                query!(
-                    "INSERT INTO guild_settings (guild_id, quotes_channel) VALUES (?, ?)
-                    ON DUPLICATE KEY UPDATE quotes_channel = ?",
-                    guild_id.get(),
-                    channel_id,
-                    channel_id,
-                )
-                .execute(&mut *ctx.data().db.acquire().await?)
-                .await?;
-                ctx.send(
-                    CreateReply::default()
-                        .content(format!(
-                            "Quoted messages will be sent to {}... probably",
-                            channel
-                        ))
-                        .ephemeral(true),
-                )
-                .await?;
-            }
-        } else {
+    if characters.len() < 5 && !characters.is_empty() {
+        if let Some(guild_id) = ctx.guild_id() {
+            query!(
+                "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?)
+                        ON DUPLICATE KEY UPDATE prefix = ?",
+                guild_id.get(),
+                characters,
+                characters
+            )
+            .execute(&mut *ctx.data().db.acquire().await?)
+            .await?;
             ctx.send(
                 CreateReply::default()
-                    .content("Hush, you're either not the owner or don't have admin perms")
+                    .content(format!(
+                        "{} set as the prefix for commands... probably",
+                        characters
+                    ))
                     .ephemeral(true),
             )
             .await?;
@@ -254,44 +181,68 @@ pub async fn set_quote_channel(
     Ok(())
 }
 
+/// Configure where to send quotes
+#[poise::command(
+    slash_command,
+    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
+pub async fn set_quote_channel(
+    ctx: Context<'_>,
+    #[description = "Channel to send quoted messages to"] channel: Channel,
+) -> Result<(), Error> {
+    if let Some(guild_id) = ctx.guild_id() {
+        let channel_id = channel.id().to_string();
+        query!(
+            "INSERT INTO guild_settings (guild_id, quotes_channel) VALUES (?, ?)
+                    ON DUPLICATE KEY UPDATE quotes_channel = ?",
+            guild_id.get(),
+            channel_id,
+            channel_id,
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.send(
+            CreateReply::default()
+                .content(format!(
+                    "Quoted messages will be sent to {}... probably",
+                    channel
+                ))
+                .ephemeral(true),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 /// Configure a channel to always spoiler messages
-#[poise::command(slash_command)]
+#[poise::command(
+    slash_command,
+    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
 pub async fn set_spoiler_channel(
     ctx: Context<'_>,
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
-    if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
-        let admin_perms = permissions.administrator();
-        if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
-            if let Some(guild_id) = ctx.guild_id() {
-                let channel_id = channel.id().to_string();
-                query!(
-                    "INSERT INTO guild_settings (guild_id, spoiler_channel) VALUES (?, ?)
+    if let Some(guild_id) = ctx.guild_id() {
+        let channel_id = channel.id().to_string();
+        query!(
+            "INSERT INTO guild_settings (guild_id, spoiler_channel) VALUES (?, ?)
                     ON DUPLICATE KEY UPDATE quotes_channel = ?",
-                    guild_id.get(),
-                    channel_id,
-                    channel_id,
-                )
-                .execute(&mut *ctx.data().db.acquire().await?)
-                .await?;
-                ctx.send(
-                    CreateReply::default()
-                        .content(format!(
-                            "Spoilered messages will be sent to {}... probably",
-                            channel
-                        ))
-                        .ephemeral(true),
-                )
-                .await?;
-            }
-        } else {
-            ctx.send(
-                CreateReply::default()
-                    .content("Hush, you're either not the owner or don't have admin perms")
-                    .ephemeral(true),
-            )
-            .await?;
-        }
+            guild_id.get(),
+            channel_id,
+            channel_id,
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.send(
+            CreateReply::default()
+                .content(format!(
+                    "Spoilered messages will be sent to {}... probably",
+                    channel
+                ))
+                .ephemeral(true),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -328,49 +279,33 @@ pub async fn set_user_ping(
     Ok(())
 }
 
-/// Configure where to send quotes
-#[poise::command(slash_command)]
+/// Configure words to track count of
+#[poise::command(
+    slash_command,
+    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
 pub async fn set_word_track(
     ctx: Context<'_>,
-    #[description = "Word to track count of"] word: String,
+    #[description = "Word to track count of, maximum 50 characters in length"] word: String,
 ) -> Result<(), Error> {
     if word.len() < 50 {
-        if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
-            let admin_perms = permissions.administrator();
-            if ctx.author().id == ctx.guild().unwrap().owner_id || admin_perms {
-                if let Some(guild_id) = ctx.guild_id() {
-                    query!(
-                        "INSERT INTO words_count (guild_id, word) VALUES (?, ?)
+        if let Some(guild_id) = ctx.guild_id() {
+            query!(
+                "INSERT INTO words_count (guild_id, word) VALUES (?, ?)
                         ON DUPLICATE KEY UPDATE word = ?, count = 0",
-                        guild_id.get(),
-                        word,
-                        word,
-                    )
-                    .execute(&mut *ctx.data().db.acquire().await?)
-                    .await?;
-                    ctx.send(
-                        CreateReply::default()
-                            .content(format!("The count of {} will be tracked... probably", word))
-                            .ephemeral(true),
-                    )
-                    .await?;
-                }
-            } else {
-                ctx.send(
-                    CreateReply::default()
-                        .content("Hush, you're either not the owner or don't have admin perms")
-                        .ephemeral(true),
-                )
-                .await?;
-            }
+                guild_id.get(),
+                word,
+                word,
+            )
+            .execute(&mut *ctx.data().db.acquire().await?)
+            .await?;
+            ctx.send(
+                CreateReply::default()
+                    .content(format!("The count of {} will be tracked... probably", word))
+                    .ephemeral(true),
+            )
+            .await?;
         }
-    } else {
-        ctx.send(
-            CreateReply::default()
-                .content("Maximum 50 characters are allowed as a word")
-                .ephemeral(true),
-        )
-        .await?;
     }
     Ok(())
 }

@@ -56,53 +56,39 @@ pub async fn user_misuse(
     #[rest]
     message: String,
 ) -> Result<(), Error> {
-    if let Some(guild_id) = ctx.guild_id() {
-        if guild_id != 1103723321683611698
-            || ctx.author().id == 1014524859532980255
-            || ctx.author().id == 999604056072929321
-        {
-            let guild = match ctx.guild() {
-                Some(guild) => guild.clone(),
-                None => return Ok(()),
-            };
-            let member = guild.member(ctx.http(), user.id).await?;
-            let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
-            let name = member.display_name();
-            let channel_id = ctx.channel_id();
-            let webhook_try = webhook_find(ctx.serenity_context(), channel_id).await?;
-            if let Some(webhook) = webhook_try {
-                webhook
-                    .execute(
-                        ctx.http(),
-                        false,
-                        ExecuteWebhook::default()
-                            .username(name)
-                            .avatar_url(avatar_url)
-                            .content(message),
-                    )
-                    .await?;
-            }
-            if ctx.prefix() != "/" {
-                let reason: Option<&str> = Some("anonymous");
-                ctx.channel_id()
-                    .delete_message(ctx.http(), ctx.id().into(), reason)
-                    .await?;
-            } else {
-                ctx.send(
-                    CreateReply::default()
-                        .content("you're going to hell")
-                        .ephemeral(true),
-                )
-                .await?;
-            }
-        } else {
-            ctx.send(
-                CreateReply::default()
-                    .content("you're not fabseman, hush!")
-                    .ephemeral(true),
+    let guild = match ctx.guild() {
+        Some(guild) => guild.clone(),
+        None => return Ok(()),
+    };
+    let member = guild.member(ctx.http(), user.id).await?;
+    let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
+    let name = member.display_name();
+    let channel_id = ctx.channel_id();
+    let webhook_try = webhook_find(ctx.serenity_context(), channel_id).await?;
+    if let Some(webhook) = webhook_try {
+        webhook
+            .execute(
+                ctx.http(),
+                false,
+                ExecuteWebhook::default()
+                    .username(name)
+                    .avatar_url(avatar_url)
+                    .content(message),
             )
             .await?;
-        }
+    }
+    if ctx.prefix() != "/" {
+        let reason: Option<&str> = Some("anonymous");
+        ctx.channel_id()
+            .delete_message(ctx.http(), ctx.id().into(), reason)
+            .await?;
+    } else {
+        ctx.send(
+            CreateReply::default()
+                .content("you're going to hell")
+                .ephemeral(true),
+        )
+        .await?;
     }
 
     Ok(())

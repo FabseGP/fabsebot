@@ -109,7 +109,7 @@ pub async fn rps(
                             .await
                             .unwrap_or(user.name.to_string())
                     ),
-                    None => "You both suck!".to_string(),
+                    None => "You both suck!".to_owned(),
                 }
             };
 

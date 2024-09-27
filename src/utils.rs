@@ -172,12 +172,12 @@ pub async fn get_gifs(input: &str) -> Result<Vec<String>, Error> {
     let client = get_http_client();
     let request = client.get(request_url).send().await?;
     let urls: GifResponse = request.json().await?;
-    let payload = urls
+    let payload: Vec<String> = urls
         .results
         .iter()
         .filter_map(|result| result.media_formats.gif.as_ref())
         .map(|media| media.url.clone())
-        .collect::<Vec<String>>();
+        .collect();
 
     Ok(payload)
 }

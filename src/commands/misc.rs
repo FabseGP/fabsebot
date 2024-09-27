@@ -8,12 +8,12 @@ use poise::{
     builtins,
     serenity_prelude::{
         nonmax::NonMaxU16, Channel, ChannelId, CreateAttachment, CreateEmbed, CreateMessage,
-        EditChannel, Timestamp, User,
+        EditChannel, User,
     },
     CreateReply,
 };
 use sqlx::{query, query_as};
-use std::{path::Path, process, sync::Arc};
+use std::{path::Path, process};
 use tokio::fs::remove_file;
 
 /// When you want to find the imposter
@@ -57,7 +57,9 @@ pub async fn birthday(
 ) -> Result<(), Error> {
     let guild = match ctx.guild() {
         Some(guild) => guild.clone(),
-        None => return Ok(()),
+        None => {
+            return Ok(());
+        }
     };
     let member = guild.member(ctx.http(), user.id).await?;
     let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
@@ -68,8 +70,7 @@ pub async fn birthday(
                 .title(format!("HAPPY BIRTHDAY {}!", name))
                 .thumbnail(avatar_url)
                 .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
-                .color(0xFF5733)
-                .timestamp(Timestamp::now()),
+                .color(0xFF5733),
         ),
     )
     .await?;
@@ -90,7 +91,7 @@ pub async fn end_pgo(_: Context<'_>) -> Result<(), Error> {
 pub async fn help(
     ctx: Context<'_>,
     #[description = "Command to show help about"]
-    #[autocomplete = "poise::builtins::autocomplete_command"]
+    #[autocomplete = "builtins::autocomplete_command"]
     command: Option<String>,
 ) -> Result<(), Error> {
     builtins::pretty_help(
@@ -114,7 +115,7 @@ struct UserCount {
 #[poise::command(prefix_command, slash_command)]
 pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     let guild = match ctx.guild() {
-        Some(g) => Arc::new(g.clone()),
+        Some(g) => g.clone(),
         None => {
             return Ok(());
         }
@@ -129,7 +130,7 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
     let mut users = query_as!(
         UserCount,
         "SELECT message_count, user_id FROM user_settings WHERE guild_id = ?",
-        u64::from(ctx.guild_id().unwrap())
+        u64::from(guild.id)
     )
     .fetch_all(&mut *ctx.data().db.acquire().await?)
     .await?;
@@ -206,7 +207,9 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
         None => {
             let guild = match ctx.guild() {
                 Some(guild) => guild.clone(),
-                None => return Ok(()),
+                None => {
+                    return Ok(());
+                }
             };
             let member = guild.member(ctx.http(), reply.author.id).await?;
             let avatar_image = {
@@ -239,22 +242,24 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
         )
         .await?;
 
-    if let Ok(record) = query!(
-        "SELECT quotes_channel FROM guild_settings WHERE guild_id = ?",
-        ctx.guild_id().unwrap().get()
-    )
-    .fetch_one(&mut *ctx.data().db.acquire().await?)
-    .await
-    {
-        if let Some(channel) = record.quotes_channel {
-            let quote_channel = ChannelId::new(channel);
-            quote_channel
-                .send_files(
-                    ctx.http(),
-                    paths,
-                    CreateMessage::default().content(message_url),
-                )
-                .await?;
+    if let Some(guild_id) = ctx.guild_id() {
+        if let Ok(record) = query!(
+            "SELECT quotes_channel FROM guild_settings WHERE guild_id = ?",
+            guild_id.get()
+        )
+        .fetch_one(&mut *ctx.data().db.acquire().await?)
+        .await
+        {
+            if let Some(channel) = record.quotes_channel {
+                let quote_channel = ChannelId::new(channel);
+                quote_channel
+                    .send_files(
+                        ctx.http(),
+                        paths,
+                        CreateMessage::default().content(message_url),
+                    )
+                    .await?;
+            }
         }
     }
     remove_file(Path::new("quote.webp")).await?;
@@ -262,35 +267,26 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 /// When your users are yapping
-#[poise::command(slash_command)]
+#[poise::command(
+    slash_command,
+    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
 pub async fn slow_mode(
     ctx: Context<'_>,
     #[description = "Channel to rate limit"] channel: Channel,
     #[description = "Duration of rate limit in seconds"] duration: NonMaxU16,
 ) -> Result<(), Error> {
-    if let Some(permissions) = ctx.author_member().await.unwrap().permissions {
-        let admin_perms = permissions.administrator();
-        if ctx.author().id == ctx.guild().unwrap().owner_id
-            || admin_perms
-            || ctx.author().id == 1014524859532980255
-        {
-            let settings = EditChannel::default().rate_limit_per_user(duration);
-            channel.id().edit(ctx.http(), settings).await?;
-            ctx.send(
-                CreateReply::default()
-                    .content(format!("channel is ratelimited for {} seconds", duration))
-                    .ephemeral(true),
-            )
-            .await?;
-        } else {
-            ctx.send(
-                CreateReply::default()
-                    .content("hush, you're not permitted to use this command")
-                    .ephemeral(true),
-            )
-            .await?;
-        }
-    }
+    let settings = EditChannel::default().rate_limit_per_user(duration);
+    channel.id().edit(ctx.http(), settings).await?;
+    ctx.send(
+        CreateReply::default()
+            .content(format!(
+                "{} is ratelimited for {} seconds",
+                channel, duration
+            ))
+            .ephemeral(true),
+    )
+    .await?;
     Ok(())
 }
 
@@ -331,18 +327,22 @@ pub async fn troll(ctx: Context<'_>) -> Result<(), Error> {
 /// Hmm, I wonder how pure we are
 #[poise::command(prefix_command, slash_command)]
 pub async fn word_count(ctx: Context<'_>) -> Result<(), Error> {
-    let id: u64 = ctx.guild_id().unwrap().into();
-    if let Ok(record) = query!("SELECT word, count FROM words_count WHERE guild_id = ?", id)
+    if let Some(guild_id) = ctx.guild_id() {
+        if let Ok(record) = query!(
+            "SELECT word, count FROM words_count WHERE guild_id = ?",
+            guild_id.get()
+        )
         .fetch_one(&mut *ctx.data().db.acquire().await?)
         .await
-    {
-        ctx.reply(format!(
-            "{} was counted {} times, I'm not sure if that's a good thing or not tho",
-            record.word, record.count
-        ))
-        .await?;
-    } else {
-        ctx.reply("hmm, no words were counted... peace?").await?;
+        {
+            ctx.reply(format!(
+                "{} was counted {} times, I'm not sure if that's a good thing or not tho",
+                record.word, record.count
+            ))
+            .await?;
+        } else {
+            ctx.reply("hmm, no words were counted... peace?").await?;
+        }
     }
     Ok(())
 }

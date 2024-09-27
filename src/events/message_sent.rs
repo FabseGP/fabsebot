@@ -22,7 +22,9 @@ pub async fn handle_message(
     }
     let guild_id = match new_message.guild_id {
         Some(id) => u64::from(id),
-        None => return Ok(()),
+        None => {
+            return Ok(());
+        }
     };
     let content = new_message.content.to_lowercase();
     let user_id = u64::from(new_message.author.id);

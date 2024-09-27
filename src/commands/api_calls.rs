@@ -382,12 +382,14 @@ pub async fn gif(
                     .title(input.clone())
                     .image(&urls[state.index]);
 
-                let new_components = if state.index == 0 {
-                    vec![CreateActionRow::Buttons(vec![next_button])]
-                } else if state.index == len - 1 {
-                    vec![CreateActionRow::Buttons(vec![prev_button])]
-                } else {
-                    vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                let new_components = {
+                    if state.index == 0 {
+                        vec![CreateActionRow::Buttons(vec![next_button])]
+                    } else if state.index == len - 1 {
+                        vec![CreateActionRow::Buttons(vec![prev_button])]
+                    } else {
+                        vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                    }
                 };
 
                 let mut msg = interaction.message;
