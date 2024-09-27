@@ -119,18 +119,12 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
-
-    let thumbnail = match guild.banner.clone() {
-    Some(banner) => banner.to_string(),
-    None => match &guild.icon {
-        Some(icon_hash) =>
-        format!(
-            "https://cdn.discordapp.com/icons/{}/{}.png",
-            guild.id, icon_hash
-        ),
-        None =>
-            "https://external-content.duckduckgo.com/iu/?u=http%3A%2F%2Fvignette1.wikia.nocookie.net%2Fpokemon%2Fimages%2Fe%2Fe2%2F054Psyduck_Pokemon_Mystery_Dungeon_Red_and_Blue_Rescue_Teams.png%2Frevision%2Flatest%3Fcb%3D20150106002458&f=1&nofb=1&ipt=b7e9fef392b547546f7aded0dbc11449fe38587bfc507022a8f103995eaf8dd0&ipo=images".to_owned()
-        }
+    let thumbnail = match guild.banner_url() {
+        Some(banner) => banner,
+        None => match guild.icon_url() {
+            Some(icon) => icon,
+            None => "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned(),
+        },
     };
     let mut users = query_as!(
         UserCount,
