@@ -458,14 +458,14 @@ struct JokeResponse {
 pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
     let request_url =
         "https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
-    let data = ctx.data();
-    let client = &data.req_client;
-    let rng = &mut data.rng_thread.lock().await;
+    let ctx_data = ctx.data();
+    let client = &ctx_data.req_client;
     let request = client.get(request_url).send().await?;
     let data: JokeResponse = request.json().await?;
     if !data.joke.is_empty() {
         ctx.send(CreateReply::default().content(&data.joke)).await?;
     } else {
+        let rng = &mut ctx_data.rng_thread.lock().await;
         let roasts = [
             "your life",
             "you're not funny",
