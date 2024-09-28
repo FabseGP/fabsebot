@@ -69,7 +69,6 @@ pub async fn ai_response(content: Vec<ChatMessage>) -> Result<String, Error> {
         .bearer_auth(api_key)
         .json(&json!({
             "messages": content,
-            "max_tokens": 1024,
         }))
         .send()
         .await?;

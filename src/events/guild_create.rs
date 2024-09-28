@@ -17,10 +17,12 @@ pub async fn handle_guild_create(
                 .acquire()
                 .await
                 .context("Failed to acquire database connection")?;
-            let guild_id: u64 = guild.id.into();
-            query!("INSERT IGNORE INTO guilds (guild_id) VALUES (?)", guild_id)
-                .execute(&mut *conn)
-                .await?;
+            query!(
+                "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
+                u64::from(guild.id)
+            )
+            .execute(&mut *conn)
+            .await?;
         }
     }
     Ok(())
