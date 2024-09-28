@@ -194,7 +194,6 @@ pub async fn start() -> anyhow::Result<()> {
         .build();
     let intents = GatewayIntents::non_privileged()
         | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGE_REACTIONS
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MEMBERS
         | GatewayIntents::GUILD_MESSAGES
