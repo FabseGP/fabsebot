@@ -13,7 +13,7 @@ use poise::{
     builtins,
     serenity_prelude::{cache::Settings, Client, FullEvent, GatewayIntents},
     EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
-    PrefixFrameworkOptions,
+    PrefixFrameworkOptions, Prefix,
 };
 use reqwest::Client as http_client;
 use songbird::Songbird;
@@ -183,8 +183,8 @@ pub async fn start() -> anyhow::Result<()> {
                     3600,
                 )))),
                 additional_prefixes: vec![
-                    poise::Prefix::Literal("fabsebot"),
-                    poise::Prefix::Literal("hey fabsebot"),
+                    Prefix::Literal("fabsebot"),
+                    Prefix::Literal("hey fabsebot"),
                 ],
                 ..Default::default()
             },
@@ -195,14 +195,10 @@ pub async fn start() -> anyhow::Result<()> {
     let intents = GatewayIntents::non_privileged()
         | GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::DIRECT_MESSAGE_REACTIONS
-        | GatewayIntents::DIRECT_MESSAGE_TYPING
         | GatewayIntents::GUILDS
-        | GatewayIntents::GUILD_EMOJIS_AND_STICKERS
         | GatewayIntents::GUILD_MEMBERS
         | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::GUILD_MESSAGE_REACTIONS
-        | GatewayIntents::GUILD_MESSAGE_TYPING
-        | GatewayIntents::GUILD_PRESENCES
         | GatewayIntents::GUILD_VOICE_STATES
         | GatewayIntents::MESSAGE_CONTENT;
     let token = env::var("DISCORD_TOKEN").context("DISCORD_TOKEN not set in environment")?;

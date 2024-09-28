@@ -1,8 +1,8 @@
 use fastrand::Rng;
 use once_cell::sync::{Lazy, OnceCell};
+use poise::serenity_prelude::ShardManager;
 use reqwest::Client;
 use serde::Serialize;
-use serenity::gateway::ShardManager;
 use songbird::Songbird;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
