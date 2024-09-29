@@ -18,31 +18,31 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
         true => "Large",
         _ => "Not large",
     }
-    .to_string();
+    .to_owned();
     let thumbnail = match &guild.banner {
-        Some(banner) => banner.to_string(),
+        Some(banner) => banner.as_str(),
         None => match &guild.icon {
-            Some(icon_hash) => format!(
+            Some(icon_hash) => &format!(
                 "https://cdn.discordapp.com/icons/{}/{}.png",
                 guild.id, icon_hash
             ),
-            None => "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned(),
+            None => "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif",
         },
     };
     let owner_user = guild.owner_id.to_user(&ctx.http()).await?;
-    let guild_description = guild.description.unwrap_or_default().to_string();
+    let guild_description = guild.description.unwrap_or_default().into_string();
     let guild_id = guild.id.to_string();
     let guild_boosters = guild.premium_subscription_count.unwrap().to_string();
-    let owner_name = owner_user.display_name().to_string();
+    let owner_name = owner_user.display_name().to_owned();
     let guild_creation = guild.id.created_at().to_string();
     let guild_emojis_len = guild.emojis.len().to_string();
     let guild_roles_len = guild.roles.len().to_string();
     let guild_stickers_len = guild.stickers.len().to_string();
     let guild_member_count = format!("{}/{}", guild.member_count, guild.max_members.unwrap());
     let guild_channels = guild.channels.len().to_string();
-    let empty = "".to_string();
+    let empty = "".to_owned();
     let embed = CreateEmbed::default()
-        .title(guild.name.to_string())
+        .title(guild.name.into_string())
         .description(guild_description)
         .thumbnail(thumbnail)
         .fields(vec![
@@ -80,8 +80,8 @@ pub async fn user_info(
         true => "MFA enabled",
         false => "MFA disabled",
     }
-    .to_string();
-    let empty = "".to_string();
+    .to_owned();
+    let empty = "".to_owned();
     let embed = CreateEmbed::default()
         .title(member.display_name())
         .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))

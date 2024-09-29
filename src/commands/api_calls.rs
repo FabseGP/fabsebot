@@ -178,7 +178,7 @@ pub async fn ai_summarize(
             gateway
         ))
         .bearer_auth(api_key)
-        .json(&json!({"input_text": reply.content.to_string(),
+        .json(&json!({"input_text": reply.content,
             "max_length": length
         }))
         .send()
@@ -341,7 +341,7 @@ pub async fn gif(
             .style(ButtonStyle::Primary)
             .label("➡️")]);
         let components = if len > 1 { vec![next_button] } else { vec![] };
-        let embed = CreateEmbed::default().title(input.clone()).image(&urls[0]);
+        let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
         ctx.send(CreateReply::default().embed(embed).components(components))
             .await?;
         if len > 1 {
@@ -349,10 +349,8 @@ pub async fn gif(
                 ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                     .timeout(Duration::from_secs(600))
                     .filter(move |interaction| {
-                        let next_id_clone = state.next_id.clone();
-                        let prev_id_clone = state.prev_id.clone();
                         let id = interaction.data.custom_id.as_str();
-                        id == next_id_clone.as_str() || id == prev_id_clone.as_str()
+                        id == state.next_id.as_str() || id == state.prev_id.as_str()
                     })
                     .await
             {
@@ -380,7 +378,7 @@ pub async fn gif(
                     .label("⬅️");
 
                 let new_embed = CreateEmbed::default()
-                    .title(input.clone())
+                    .title(input.as_str())
                     .image(&urls[state.index]);
 
                 let new_components = {
@@ -441,7 +439,7 @@ pub async fn github_search(
         .await?;
     let data: GithubResponse = request.json().await?;
     if !data.items.is_empty() {
-        ctx.say(data.items[0].url.clone()).await?;
+        ctx.say(data.items[0].url.as_str()).await?;
     } else {
         ctx.send(CreateReply::default().content(format!("**Like you, {} don't exist**", input)))
             .await?;
@@ -507,9 +505,10 @@ pub async fn roast(ctx: Context<'_>, #[description = "Target"] user: User) -> Re
     if let Some(guild_id) = ctx.guild_id() {
         let guild = match ctx.guild() {
             Some(guild) => guild.clone(),
-            None => return Ok(()),
+            None => {
+                return Ok(());
+            }
         };
-        let guild_roles = guild.roles.clone();
         let member = guild.member(ctx.http(), user.id).await?;
         let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
         let banner_url = ctx
@@ -522,7 +521,7 @@ pub async fn roast(ctx: Context<'_>, #[description = "Target"] user: User) -> Re
         let roles: Vec<String> = member
             .roles
             .iter()
-            .filter_map(|role_id| guild_roles.get(role_id))
+            .filter_map(|role_id| guild.roles.get(role_id))
             .map(|role| role.name.to_string())
             .collect();
         let name = member.display_name();
@@ -534,7 +533,7 @@ pub async fn roast(ctx: Context<'_>, #[description = "Target"] user: User) -> Re
             let result =
                 query("SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?")
                     .bind(id)
-                    .bind(user.name.to_string())
+                    .bind(user.name.into_string())
                     .fetch_one(&mut *conn)
                     .await;
             let result_filtered: Option<u64> = match result {
@@ -571,8 +570,8 @@ pub async fn roast(ctx: Context<'_>, #[description = "Target"] user: User) -> Re
         };
 
         let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
-        let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target".to_owned();
-        let resp = ai_response_simple(&role, &description).await?;
+        let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target";
+        let resp = ai_response_simple(role, &description).await?;
 
         if !resp.is_empty() {
             let response_chars: Vec<char> = resp.chars().collect();
@@ -625,7 +624,7 @@ pub async fn translate(
         .message(&ctx.http(), ctx.id().into())
         .await?;
     let content = match msg.referenced_message {
-        Some(ref_msg) => ref_msg.content.to_string(),
+        Some(ref_msg) => ref_msg.content.into_string(),
         None => match sentence {
             Some(query) => query,
             None => {
@@ -634,7 +633,10 @@ pub async fn translate(
             }
         },
     };
-    let target_lang = target.unwrap_or_else(|| "en".to_string());
+    let target_lang = match target {
+        Some(lang) => lang,
+        None => "en".to_owned(),
+    };
     let form_data = json!({
         "q": content,
         "source": "auto",
@@ -684,10 +686,8 @@ pub async fn translate(
                     ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                         .timeout(Duration::from_secs(600))
                         .filter(move |interaction| {
-                            let next_id_clone = state.next_id.clone();
-                            let prev_id_clone = state.prev_id.clone();
                             let id = interaction.data.custom_id.as_str();
-                            id == next_id_clone.as_str() || id == prev_id_clone.as_str()
+                            id == state.next_id.as_str() || id == state.prev_id.as_str()
                         })
                         .await
                 {
@@ -832,10 +832,8 @@ pub async fn urban(
                 ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                     .timeout(Duration::from_secs(600))
                     .filter(move |interaction| {
-                        let next_id_clone = state.next_id.clone();
-                        let prev_id_clone = state.prev_id.clone();
                         let id = interaction.data.custom_id.as_str();
-                        id == next_id_clone.as_str() || id == prev_id_clone.as_str()
+                        id == state.next_id.as_str() || id == state.prev_id.as_str()
                     })
                     .await
             {

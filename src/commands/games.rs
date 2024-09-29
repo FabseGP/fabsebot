@@ -43,13 +43,13 @@ pub async fn rps(
         let scissor_id = format!("{}_scissor", ctx.id());
 
         let components = vec![CreateActionRow::Buttons(vec![
-            CreateButton::new(rock_id.clone())
+            CreateButton::new(rock_id.as_str())
                 .style(ButtonStyle::Primary)
                 .label("🪨"),
-            CreateButton::new(paper_id.clone())
+            CreateButton::new(paper_id.as_str())
                 .style(ButtonStyle::Primary)
                 .label("🧻"),
-            CreateButton::new(scissor_id.clone())
+            CreateButton::new(scissor_id.as_str())
                 .style(ButtonStyle::Primary)
                 .label("✂️"),
         ])];
@@ -100,14 +100,14 @@ pub async fn rps(
                             ctx.author()
                                 .nick_in(ctx.http(), ctx.guild_id().unwrap())
                                 .await
-                                .unwrap_or(ctx.author().name.to_string())
+                                .unwrap_or(ctx.author().display_name().to_owned())
                         )
                     }
                     Some(_) => format!(
                         "{} won!",
                         user.nick_in(ctx.http(), ctx.guild_id().unwrap())
                             .await
-                            .unwrap_or(user.name.to_string())
+                            .unwrap_or(user.name.into_string())
                     ),
                     None => "You both suck!".to_owned(),
                 }

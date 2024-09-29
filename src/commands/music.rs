@@ -170,9 +170,9 @@ pub async fn play_song(
                 let mut handler = handler_lock.lock().await;
                 configure_call(&mut handler);
                 let mut src = if url.starts_with("http") {
-                    YoutubeDl::new(ctx.data().req_client.clone(), url.clone())
+                    YoutubeDl::new(ctx.data().req_client.clone(), url.to_owned())
                 } else {
-                    YoutubeDl::new_search(ctx.data().req_client.clone(), url.clone())
+                    YoutubeDl::new_search(ctx.data().req_client.clone(), url.to_owned())
                 };
                 let metadata = src.aux_metadata().await;
                 handler.enqueue_input(src.into()).await;

@@ -47,9 +47,9 @@ pub async fn set_afk(
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
-        let embed_reason = match reason {
+        let embed_reason = match &reason {
             Some(input) => input,
-            None => "Didn't renew life subscription".to_owned(),
+            None => "Didn't renew life subscription",
         };
         ctx.send(
             CreateReply::default().embed(
@@ -123,16 +123,16 @@ pub async fn set_dead_chat(
     if let Some(guild_id) = ctx.guild_id() {
         let channel_id = channel.id().to_string();
         query!(
-                    "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)
-                    ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
-                    guild_id.get(),
-                    occurrence,
-                    channel_id,
-                    occurrence,
-                    channel_id,
-                )
-                .execute(&mut *ctx.data().db.acquire().await?)
-                .await?;
+            "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
+            guild_id.get(),
+            occurrence,
+            channel_id,
+            occurrence,
+            channel_id,
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
         ctx.send(
             CreateReply::default()
                 .content(format!(
@@ -160,7 +160,7 @@ pub async fn set_prefix(
         if let Some(guild_id) = ctx.guild_id() {
             query!(
                 "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?)
-                        ON DUPLICATE KEY UPDATE prefix = ?",
+                ON DUPLICATE KEY UPDATE prefix = ?",
                 guild_id.get(),
                 characters,
                 characters
@@ -194,7 +194,7 @@ pub async fn set_quote_channel(
         let channel_id = channel.id().to_string();
         query!(
             "INSERT INTO guild_settings (guild_id, quotes_channel) VALUES (?, ?)
-                    ON DUPLICATE KEY UPDATE quotes_channel = ?",
+            ON DUPLICATE KEY UPDATE quotes_channel = ?",
             guild_id.get(),
             channel_id,
             channel_id,
@@ -227,7 +227,7 @@ pub async fn set_spoiler_channel(
         let channel_id = channel.id().to_string();
         query!(
             "INSERT INTO guild_settings (guild_id, spoiler_channel) VALUES (?, ?)
-                    ON DUPLICATE KEY UPDATE quotes_channel = ?",
+            ON DUPLICATE KEY UPDATE quotes_channel = ?",
             guild_id.get(),
             channel_id,
             channel_id,
@@ -292,7 +292,7 @@ pub async fn set_word_track(
         if let Some(guild_id) = ctx.guild_id() {
             query!(
                 "INSERT INTO words_count (guild_id, word) VALUES (?, ?)
-                        ON DUPLICATE KEY UPDATE word = ?, count = 0",
+                ON DUPLICATE KEY UPDATE word = ?, count = 0",
                 guild_id.get(),
                 word,
                 word,

@@ -35,12 +35,12 @@ pub async fn anony_poll(
             .await?;
         return Ok(());
     }
-    let mut embed = CreateEmbed::default().title(title.clone()).color(0xFF5733);
+    let mut embed = CreateEmbed::default().title(title.as_str()).color(0xFF5733);
     let mut buttons: Vec<CreateButton> = Vec::new();
     let mut vote_counts: Vec<u32> = vec![0; options_list.len()];
     let mut voted_users: HashSet<UserId> = HashSet::new();
     for (index, option) in options_list.iter().enumerate() {
-        embed = embed.field(option.to_owned(), "0", false);
+        embed = embed.field(option, "0", false);
         buttons.push(
             CreateButton::new(format!("{}_{}", index, ctx.id()))
                 .style(ButtonStyle::Primary)
@@ -80,9 +80,9 @@ pub async fn anony_poll(
         vote_counts[index] += 1;
         voted_users.insert(user_id);
 
-        let mut new_embed = CreateEmbed::default().title(title.clone()).color(0xFF5733);
+        let mut new_embed = CreateEmbed::default().title(title.as_str()).color(0xFF5733);
         for (i, option) in options_list.iter().enumerate() {
-            new_embed = new_embed.field(option.to_owned(), vote_counts[i].to_string(), false);
+            new_embed = new_embed.field(option, vote_counts[i].to_string(), false);
         }
 
         let mut msg = interaction.message;
@@ -228,7 +228,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     };
 
     let message_url = reply.link();
-    let content = reply.content.to_string();
+    let content = reply.content;
     let client = &ctx.data().req_client;
     match reply.webhook_id {
         Some(_) => {

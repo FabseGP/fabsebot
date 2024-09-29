@@ -58,7 +58,9 @@ pub async fn user_misuse(
 ) -> Result<(), Error> {
     let guild = match ctx.guild() {
         Some(guild) => guild.clone(),
-        None => return Ok(()),
+        None => {
+            return Ok(());
+        }
     };
     let member = guild.member(ctx.http(), user.id).await?;
     let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());

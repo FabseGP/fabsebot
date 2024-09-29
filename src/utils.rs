@@ -176,7 +176,7 @@ pub async fn get_gifs(input: &str) -> Result<Vec<String>, Error> {
         .results
         .iter()
         .filter_map(|result| result.media_formats.gif.as_ref())
-        .map(|media| media.url.clone())
+        .map(|media| media.url.to_owned())
         .collect();
 
     Ok(payload)
@@ -392,7 +392,7 @@ pub async fn spoiler_message(
         let mut is_first = true;
         let client = get_http_client();
         for attachment in &message.attachments {
-            let target = &attachment.url.to_string();
+            let target = attachment.url.as_str();
             let response = client.get(target).send().await;
             let download = response.unwrap().bytes().await;
             let filename = format!("SPOILER_{}", &attachment.filename);
@@ -457,11 +457,12 @@ pub async fn get_waifu() -> Result<String, Error> {
     let resp: WaifuResponse = request.json().await?;
     let url = {
         if !resp.images[0].url.is_empty() {
-            resp.images[0].url.to_owned()
+            &resp.images[0].url
         } else {
-            "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned()
+            "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif"
         }
-    };
+    }
+    .to_owned();
 
     Ok(url)
 }
