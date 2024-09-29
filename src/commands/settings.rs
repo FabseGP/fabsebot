@@ -1,4 +1,4 @@
-use crate::types::{Context, Error};
+use crate::types::{Error, SContext};
 
 use poise::{
     serenity_prelude::{Channel, CreateEmbed},
@@ -12,7 +12,7 @@ use sqlx::query;
     slash_command,
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
-pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
             "REPLACE INTO guild_settings (guild_id) VALUES (?)",
@@ -33,7 +33,7 @@ pub async fn reset_settings(ctx: Context<'_>) -> Result<(), Error> {
 /// When you want to escape discord
 #[poise::command(slash_command)]
 pub async fn set_afk(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Reason for afk"] reason: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
@@ -71,7 +71,7 @@ pub async fn set_afk(
     slash_command,
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
-pub async fn set_chatbot_channel(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn set_chatbot_channel(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.send(
         CreateReply::default()
             .content("To enable ai-sama, create a channel with the topic set to 'ai-chat'")
@@ -84,7 +84,7 @@ pub async fn set_chatbot_channel(ctx: Context<'_>) -> Result<(), Error> {
 /// Configure the role for the chatbot individually for each user
 #[poise::command(prefix_command, slash_command)]
 pub async fn set_chatbot_role(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "The role the bot should take; if not set, then default role"] role: Option<
         String,
     >,
@@ -116,7 +116,7 @@ pub async fn set_chatbot_role(
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
 pub async fn set_dead_chat(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: u8,
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
@@ -153,7 +153,7 @@ pub async fn set_dead_chat(
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
 pub async fn set_prefix(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Character(s) to use as prefix for commands, maximum 5"] characters: String,
 ) -> Result<(), Error> {
     if characters.len() < 5 && !characters.is_empty() {
@@ -187,7 +187,7 @@ pub async fn set_prefix(
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
 pub async fn set_quote_channel(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
@@ -220,7 +220,7 @@ pub async fn set_quote_channel(
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
 pub async fn set_spoiler_channel(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
@@ -247,10 +247,10 @@ pub async fn set_spoiler_channel(
     Ok(())
 }
 
-/// Custom embed sent on user ping
+/// Configure custom embed sent on user ping
 #[poise::command(slash_command)]
 pub async fn set_user_ping(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Message to send"] content: String,
     #[description = "Image/gif to send. Write waifu to get a random waifu pic"] media: Option<
         String,
@@ -285,7 +285,7 @@ pub async fn set_user_ping(
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
 pub async fn set_word_track(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Word to track count of, maximum 50 characters in length"] word: String,
 ) -> Result<(), Error> {
     if word.len() < 50 {

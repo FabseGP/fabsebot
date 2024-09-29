@@ -1,5 +1,5 @@
 use crate::{
-    types::{Context, Error},
+    types::{Error, SContext, HTTP_CLIENT},
     utils::{ai_response_simple, quote_image},
 };
 
@@ -20,7 +20,7 @@ use tokio::fs::remove_file;
 /// When you want to find the imposter
 #[poise::command(slash_command)]
 pub async fn anony_poll(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Question"] title: String,
     #[description = "Comma-separated options"] options: String,
     #[description = "Duration in minutes"] duration: u64,
@@ -96,7 +96,7 @@ pub async fn anony_poll(
 /// Send a birthday wish to a user
 #[poise::command(prefix_command, slash_command)]
 pub async fn birthday(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "User to congratulate"]
     #[rest]
     user: User,
@@ -125,7 +125,7 @@ pub async fn birthday(
 
 /// Ignore this command
 #[poise::command(prefix_command, owners_only)]
-pub async fn end_pgo(_: Context<'_>) -> Result<(), Error> {
+pub async fn end_pgo(_: SContext<'_>) -> Result<(), Error> {
     process::exit(0);
 
     #[allow(unreachable_code)]
@@ -135,7 +135,7 @@ pub async fn end_pgo(_: Context<'_>) -> Result<(), Error> {
 /// When you need some help
 #[poise::command(prefix_command, slash_command)]
 pub async fn help(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Command to show help about"]
     #[autocomplete = "builtins::autocomplete_command"]
     command: Option<String>,
@@ -159,7 +159,7 @@ struct UserCount {
 
 /// Leaderboard of lifeless ppl
 #[poise::command(prefix_command, slash_command)]
-pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
     let guild = match ctx.guild() {
         Some(guild) => guild.clone(),
         None => {
@@ -198,7 +198,7 @@ pub async fn leaderboard(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Oh it's you
 #[poise::command(prefix_command, slash_command)]
-pub async fn ohitsyou(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     let resp = ai_response_simple(
         "you're a tsundere",
         "generate a one-line love-hate greeting",
@@ -214,7 +214,7 @@ pub async fn ohitsyou(ctx: Context<'_>) -> Result<(), Error> {
 
 /// When your memory is not enough
 #[poise::command(prefix_command, slash_command)]
-pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
     let msg = ctx
         .channel_id()
         .message(&ctx.http(), ctx.id().into())
@@ -229,12 +229,11 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
 
     let message_url = reply.link();
     let content = reply.content;
-    let client = &ctx.data().req_client;
     match reply.webhook_id {
         Some(_) => {
             let avatar_image = {
                 let avatar_url = reply.author.avatar_url().unwrap();
-                let avatar_bytes = client
+                let avatar_bytes = HTTP_CLIENT
                     .get(&avatar_url)
                     .send()
                     .await
@@ -262,7 +261,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
                 let avatar_url = member
                     .avatar_url()
                     .unwrap_or(reply.author.avatar_url().unwrap());
-                let avatar_bytes = client
+                let avatar_bytes = HTTP_CLIENT
                     .get(&avatar_url)
                     .send()
                     .await
@@ -318,7 +317,7 @@ pub async fn quote(ctx: Context<'_>) -> Result<(), Error> {
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
 pub async fn slow_mode(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Channel to rate limit"] channel: Channel,
     #[description = "Duration of rate limit in seconds"] duration: NonMaxU16,
 ) -> Result<(), Error> {
@@ -338,7 +337,7 @@ pub async fn slow_mode(
 
 /// Do you dare?
 #[poise::command(slash_command, prefix_command)]
-pub async fn troll(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn troll(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.send(
         CreateReply::default()
             .content(
@@ -372,7 +371,7 @@ pub async fn troll(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Hmm, I wonder how pure we are
 #[poise::command(prefix_command, slash_command)]
-pub async fn word_count(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         if let Ok(record) = query!(
             "SELECT word, count FROM words_count WHERE guild_id = ?",

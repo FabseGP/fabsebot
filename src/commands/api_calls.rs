@@ -1,5 +1,8 @@
 use crate::{
-    types::{Context, Error},
+    types::{
+        Error, SContext, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, GITHUB_TOKEN, HTTP_CLIENT,
+        TRANSLATE_SERVER,
+    },
     utils::{ai_response_simple, get_gifs, get_waifu},
 };
 
@@ -14,7 +17,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{query, Row};
-use std::{env, time::Duration};
+use std::time::Duration;
 use tracing::warn;
 use urlencoding::encode;
 
@@ -33,7 +36,7 @@ struct EventResponse {
 /// Anime image
 #[poise::command(prefix_command, slash_command)]
 pub async fn ai_anime(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Prompt"]
     #[rest]
     prompt: String,
@@ -41,7 +44,6 @@ pub async fn ai_anime(
     ctx.defer().await?;
     let url = "https://cagliostrolab-animagine-xl-3-1.hf.space/call/run";
     let data = ctx.data();
-    let client = &data.req_client;
     let rng = &mut data.rng_thread.lock().await;
     let request_body = json!({
         "data": [
@@ -62,7 +64,7 @@ pub async fn ai_anime(
             true,
         ]
     });
-    let resp = match client.post(url).json(&request_body).send().await {
+    let resp = match HTTP_CLIENT.post(url).json(&request_body).send().await {
         Ok(response) => response,
         Err(e) => {
             ctx.send(
@@ -79,7 +81,7 @@ pub async fn ai_anime(
             let status_url = format!("{}/{}", url, payload.event_id);
             let path_regex = Regex::new(r#""path":\s*"(.*?)""#).unwrap();
             loop {
-                let status_resp = client.get(&status_url).send().await?;
+                let status_resp = HTTP_CLIENT.get(&status_url).send().await?;
                 let status_text = status_resp.text().await?;
                 if status_text.contains("event: complete") {
                     if let Some(captures) = path_regex.captures(&status_text) {
@@ -88,7 +90,7 @@ pub async fn ai_anime(
                                 "https://cagliostrolab-animagine-xl-3-1.hf.space/file={}",
                                 path.as_str()
                             );
-                            let image_data = client.get(&image_url).send().await?;
+                            let image_data = HTTP_CLIENT.get(&image_url).send().await?;
                             let image_data = image_data.bytes().await?.to_vec();
                             let file = CreateAttachment::bytes(image_data, "output.png");
                             ctx.send(CreateReply::default().attachment(file)).await?;
@@ -111,21 +113,18 @@ pub async fn ai_anime(
 /// Did someone say AI image?
 #[poise::command(prefix_command, slash_command)]
 pub async fn ai_image(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Prompt"]
     #[rest]
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let client = &ctx.data().req_client;
-    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
-    let api_key = env::var("CLOUDFLARE_TOKEN")?;
-    let resp = client
+    let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/lykon/dreamshaper-8-lcm",
-            gateway
+            *CLOUDFLARE_GATEWAY
         ))
-        .bearer_auth(api_key)
+        .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&json!({ "prompt": prompt }))
         .send()
         .await?;
@@ -154,7 +153,7 @@ struct AIResponseSummary {
 /// Did someone say AI summarize?
 #[poise::command(prefix_command, slash_command)]
 pub async fn ai_summarize(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Maximum length of summary in words"] length: u64,
 ) -> Result<(), Error> {
     ctx.defer().await?;
@@ -169,15 +168,12 @@ pub async fn ai_summarize(
             return Ok(());
         }
     };
-    let client = &ctx.data().req_client;
-    let api_key = env::var("CLOUDFLARE_TOKEN")?;
-    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
-    let resp = client
+    let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/facebook/bart-large-cnn",
-            gateway
+            *CLOUDFLARE_GATEWAY
         ))
-        .bearer_auth(api_key)
+        .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&json!({"input_text": reply.content,
             "max_length": length
         }))
@@ -196,7 +192,7 @@ pub async fn ai_summarize(
 /// Did someone say AI text?
 #[poise::command(slash_command)]
 pub async fn ai_text(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "AI personality, e.g. *you're an evil assistant*"] role: String,
     #[description = "Prompt"]
     #[rest]
@@ -228,12 +224,11 @@ pub async fn ai_text(
 /// When the other bot sucks
 #[poise::command(prefix_command, slash_command)]
 pub async fn anilist_anime(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Anime to search"]
     #[rest]
     anime: String,
 ) -> Result<(), Error> {
-    let client = &ctx.data().req_client;
     let query = format!(
         r#"{{
         "query": "query ($search: String) {{
@@ -252,7 +247,7 @@ pub async fn anilist_anime(
     }}"#,
         anime
     );
-    let resp = client
+    let resp = HTTP_CLIENT
         .post("https://graphql.anilist.co/")
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
@@ -288,7 +283,7 @@ struct EightBallResponse {
 /// When you need a wise opinion
 #[poise::command(prefix_command, slash_command)]
 pub async fn eightball(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Your question"]
     #[rest]
     question: String,
@@ -297,8 +292,7 @@ pub async fn eightball(
         "https://eightballapi.com/api/biased?question={query}&lucky=false",
         query = encode(&question)
     );
-    let client = &ctx.data().req_client;
-    let request = client.get(request_url).send().await?;
+    let request = HTTP_CLIENT.get(request_url).send().await?;
     let judging: EightBallResponse = request.json().await?;
     if !judging.reading.is_empty() {
         ctx.send(
@@ -320,7 +314,7 @@ pub async fn eightball(
 /// Gifing
 #[poise::command(prefix_command, slash_command)]
 pub async fn gif(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Search gif"]
     #[rest]
     input: String,
@@ -421,20 +415,18 @@ struct GithubSearch {
 /// When you need open source in your life
 #[poise::command(prefix_command, slash_command)]
 pub async fn github_search(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Search query"]
     #[rest]
     input: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let client = &ctx.data().req_client;
-    let api_key = env::var("GITHUB_TOKEN")?;
-    let request = client
+    let request = HTTP_CLIENT
         .get(format!("https://api.github.com/search/code?q={}", input))
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "fabseman")
-        .bearer_auth(api_key)
+        .bearer_auth(&*GITHUB_TOKEN)
         .send()
         .await?;
     let data: GithubResponse = request.json().await?;
@@ -454,12 +446,11 @@ struct JokeResponse {
 
 /// When your life isn't fun anymore
 #[poise::command(prefix_command, slash_command)]
-pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
     let request_url =
         "https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
     let ctx_data = ctx.data();
-    let client = &ctx_data.req_client;
-    let request = client.get(request_url).send().await?;
+    let request = HTTP_CLIENT.get(request_url).send().await?;
     let data: JokeResponse = request.json().await?;
     if !data.joke.is_empty() {
         ctx.send(CreateReply::default().content(&data.joke)).await?;
@@ -482,7 +473,7 @@ pub async fn joke(ctx: Context<'_>) -> Result<(), Error> {
 /// When there aren't enough memes
 #[poise::command(prefix_command, slash_command)]
 pub async fn memegen(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Top-left text"] top_left: String,
     #[description = "Top-right text"] top_right: String,
     #[description = "Bottom text"] bottom: String,
@@ -500,7 +491,7 @@ pub async fn memegen(
 
 /// When someone offended you
 #[poise::command(prefix_command, slash_command)]
-pub async fn roast(ctx: Context<'_>, #[description = "Target"] user: User) -> Result<(), Error> {
+pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> Result<(), Error> {
     ctx.defer().await?;
     if let Some(guild_id) = ctx.guild_id() {
         let guild = match ctx.guild() {
@@ -613,7 +604,7 @@ struct FabseLanguage {
 /// When you stumble on some ancient sayings
 #[poise::command(prefix_command, slash_command)]
 pub async fn translate(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Language to be translated to, e.g. en"] target: Option<String>,
     #[description = "What should be translated"]
     #[rest]
@@ -643,9 +634,11 @@ pub async fn translate(
         "target": target_lang,
         "alternatives": 3,
     });
-    let client = &ctx.data().req_client;
-    let server = env::var("TRANSLATE_SERVER")?;
-    let response = client.post(server).json(&form_data).send().await?;
+    let response = HTTP_CLIENT
+        .post(&*TRANSLATE_SERVER)
+        .json(&form_data)
+        .send()
+        .await?;
 
     if response.status().is_success() {
         let data: FabseTranslate = response.json().await?;
@@ -777,7 +770,7 @@ struct UrbanDict {
 /// The holy moly urbandictionary
 #[poise::command(prefix_command, slash_command)]
 pub async fn urban(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Word(s) to lookup"]
     #[rest]
     input: String,
@@ -787,8 +780,7 @@ pub async fn urban(
         "https://api.urbandictionary.com/v0/define?term={}",
         encode(&input)
     );
-    let client = &ctx.data().req_client;
-    let request = client.get(request_url).send().await?;
+    let request = HTTP_CLIENT.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await?;
     if !data.list.is_empty() {
         let len = data.list.len();
@@ -914,7 +906,7 @@ pub async fn urban(
 
 /// Do I need to explain it?
 #[poise::command(prefix_command, slash_command)]
-pub async fn waifu(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn waifu(ctx: SContext<'_>) -> Result<(), Error> {
     let resp = get_waifu().await;
     match resp {
         Ok(url) => {

@@ -1,4 +1,4 @@
-use crate::types::{Context, Error};
+use crate::types::{Error, SContext, HTTP_CLIENT};
 
 use poise::{
     serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder},
@@ -46,7 +46,7 @@ fn configure_call(handler: &mut Call) {
 /// Play all songs in a playlist from Deezer
 #[poise::command(prefix_command, slash_command)]
 pub async fn add_playlist(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "ID of the playlist in mind"]
     #[rest]
     playlist_id: String,
@@ -56,8 +56,7 @@ pub async fn add_playlist(
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {
             Some(handler_lock) => {
-                let client = &ctx.data().req_client;
-                let request = client
+                let request = HTTP_CLIENT
                     .get(format!("https://api.deezer.com/playlist/{}", playlist_id))
                     .send()
                     .await?;
@@ -67,7 +66,7 @@ pub async fn add_playlist(
                         let mut handler = handler_lock.lock().await;
                         for track in payload.tracks.data {
                             let search = format! {"{} {}", track.title, track.artist.name};
-                            let src = YoutubeDl::new_search(client.clone(), search);
+                            let src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
                             handler.enqueue_input(src.into()).await;
                         }
                         ctx.reply("Added playlist to queue").await?;
@@ -85,7 +84,7 @@ pub async fn add_playlist(
 
 /// Join your current voice channel
 #[poise::command(prefix_command, slash_command)]
-pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let channel_id = ctx
             .guild()
@@ -102,7 +101,7 @@ pub async fn join_voice(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Leave the current voice channel
 #[poise::command(prefix_command, slash_command)]
-pub async fn leave_voice(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let manager = &ctx.data().music_manager;
         let handler = manager.get(guild_id);
@@ -122,7 +121,7 @@ pub async fn leave_voice(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Continue/pause the current playing song
 #[poise::command(prefix_command, slash_command)]
-pub async fn pause_continue_song(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {
@@ -157,7 +156,7 @@ pub async fn pause_continue_song(ctx: Context<'_>) -> Result<(), Error> {
 /// Play song / add song to queue in the current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn play_song(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Link to the song or query to search"]
     #[rest]
     url: String,
@@ -170,9 +169,9 @@ pub async fn play_song(
                 let mut handler = handler_lock.lock().await;
                 configure_call(&mut handler);
                 let mut src = if url.starts_with("http") {
-                    YoutubeDl::new(ctx.data().req_client.clone(), url.to_owned())
+                    YoutubeDl::new(HTTP_CLIENT.clone(), url.to_owned())
                 } else {
-                    YoutubeDl::new_search(ctx.data().req_client.clone(), url.to_owned())
+                    YoutubeDl::new_search(HTTP_CLIENT.clone(), url.to_owned())
                 };
                 let metadata = src.aux_metadata().await;
                 handler.enqueue_input(src.into()).await;
@@ -242,7 +241,7 @@ pub async fn play_song(
 /// Seek current playing song backward
 #[poise::command(prefix_command, slash_command)]
 pub async fn seek_song_backward(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Seconds to seek"] seconds: u64,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
@@ -274,7 +273,7 @@ pub async fn seek_song_backward(
 /// Seek current playing song forward
 #[poise::command(prefix_command, slash_command)]
 pub async fn seek_song_forward(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Seconds to seek"] seconds: u64,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
@@ -305,7 +304,7 @@ pub async fn seek_song_forward(
 
 /// Skip to the next song in queue
 #[poise::command(prefix_command, slash_command)]
-pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {
@@ -332,7 +331,7 @@ pub async fn skip_song(ctx: Context<'_>) -> Result<(), Error> {
 
 /// Stop current playing song
 #[poise::command(prefix_command, slash_command)]
-pub async fn stop_song(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn stop_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {

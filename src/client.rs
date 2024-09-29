@@ -15,7 +15,6 @@ use poise::{
     EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
     Prefix, PrefixFrameworkOptions,
 };
-use reqwest::Client as http_client;
 use songbird::Songbird;
 use sqlx::{migrate, mysql, query};
 use std::{borrow::Cow, collections::HashMap, env, sync::Arc, time::Duration};
@@ -115,7 +114,6 @@ pub async fn start() -> anyhow::Result<()> {
     let manager = Songbird::serenity();
     let user_data = Data {
         db: database,
-        req_client: http_client::new(),
         music_manager: Arc::clone(&manager),
         conversations: Arc::new(Mutex::new(HashMap::new())),
         rng_thread: Arc::new(Mutex::new(Rng::new())),
@@ -212,9 +210,9 @@ pub async fn start() -> anyhow::Result<()> {
             if let Err(e) = client.start().await {
                 warn!("Client error: {:?}", e);
             }
-            let client_data = Arc::new(ClientData {
+            let client_data = ClientData {
                 shard_manager: client.shard_manager.clone(),
-            });
+            };
             if CLIENT_DATA.set(client_data).is_err() {
                 error!("Failed to set CLIENT_DATA");
             }

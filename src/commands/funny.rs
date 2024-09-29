@@ -1,5 +1,5 @@
 use crate::{
-    types::{Context, Error},
+    types::{Error, SContext},
     utils::webhook_find,
 };
 
@@ -11,7 +11,7 @@ use poise::{
 /// Send an anonymous message
 #[poise::command(slash_command)]
 pub async fn anonymous(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Channel to send message"] channel: ChannelId,
     #[description = "Message to send"]
     #[rest]
@@ -31,7 +31,7 @@ pub async fn anonymous(
 /// Misuse other users dm
 #[poise::command(prefix_command, slash_command)]
 pub async fn user_dm(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Target"] user: User,
     #[description = "Message to be sent"] message: String,
 ) -> Result<(), Error> {
@@ -50,7 +50,7 @@ pub async fn user_dm(
 /// Send message as an another user
 #[poise::command(prefix_command, slash_command)]
 pub async fn user_misuse(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Target"] user: User,
     #[description = "Message to send"]
     #[rest]

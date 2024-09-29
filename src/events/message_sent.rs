@@ -1,5 +1,5 @@
 use crate::{
-    types::{ChatMessage, Data, Error},
+    types::{ChatMessage, Data, Error, HTTP_CLIENT},
     utils::{ai_image_desc, ai_response, get_gifs, get_waifu, spoiler_message, webhook_find},
 };
 
@@ -274,9 +274,10 @@ pub async fn handle_message(
                                             roles.join(",")
                                         };
                                         let pfp_desc = {
-                                            let client = &data.req_client;
-                                            let pfp =
-                                                client.get(target.static_face()).send().await?;
+                                            let pfp = HTTP_CLIENT
+                                                .get(target.static_face())
+                                                .send()
+                                                .await?;
                                             if pfp.status().is_success() {
                                                 let binary_pfp = pfp.bytes().await?.to_vec();
                                                 &ai_image_desc(&binary_pfp).await?

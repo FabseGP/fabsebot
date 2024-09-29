@@ -1,4 +1,4 @@
-use crate::types::{Context, Error};
+use crate::types::{Error, SContext, HTTP_CLIENT};
 
 use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use serde::Deserialize;
@@ -38,7 +38,7 @@ impl Display for AnimeTitle {
 /// What anime was that scene from?
 #[poise::command(prefix_command, slash_command)]
 pub async fn anime_scene(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Link to anime image"]
     #[rest]
     input: String,
@@ -47,8 +47,7 @@ pub async fn anime_scene(
         "https://api.trace.moe/search?cutBorders&anilistInfo&url={}",
         encode(&input)
     );
-    let client = &ctx.data().req_client;
-    let request = client.get(request_url).send().await?;
+    let request = HTTP_CLIENT.get(request_url).send().await?;
     let scene: Option<MoeResponse> = request.json().await?;
     if let Some(payload) = scene {
         if !payload.result[0].video.is_empty() {

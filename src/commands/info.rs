@@ -1,4 +1,4 @@
-use crate::types::{Context, Error};
+use crate::types::{Error, SContext};
 
 use poise::{
     serenity_prelude::{CreateEmbed, Member},
@@ -7,7 +7,7 @@ use poise::{
 
 /// Get server information
 #[poise::command(prefix_command, slash_command)]
-pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
     let guild = match ctx.guild() {
         Some(g) => g.clone(),
         None => {
@@ -68,7 +68,7 @@ pub async fn server_info(ctx: Context<'_>) -> Result<(), Error> {
 /// Leak other users private data
 #[poise::command(prefix_command, slash_command)]
 pub async fn user_info(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Target"]
     #[rest]
     member: Member,

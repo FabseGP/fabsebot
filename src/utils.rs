@@ -1,4 +1,6 @@
-use crate::types::{get_http_client, ChatMessage, Error};
+use crate::types::{
+    ChatMessage, Error, AI_SERVER, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, HTTP_CLIENT, TENOR_TOKEN,
+};
 
 use ab_glyph::{FontArc, PxScale};
 use anyhow::anyhow;
@@ -14,8 +16,12 @@ use poise::serenity_prelude::{
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
-use std::{cmp::Ordering, env, fs, fs::File, io::Write, path::Path};
+use std::{cmp::Ordering, path::Path};
 use textwrap::wrap;
+use tokio::{
+    fs::{remove_file, File},
+    io::AsyncWriteExt,
+};
 use urlencoding::encode;
 
 #[derive(Deserialize)]
@@ -27,16 +33,13 @@ struct AIResponseImageDesc {
     description: String,
 }
 
-pub async fn ai_image_desc(content: &Vec<u8>) -> Result<String, Error> {
-    let client = get_http_client();
-    let api_key = env::var("CLOUDFLARE_TOKEN")?;
-    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
-    let resp = client
+pub async fn ai_image_desc(content: &[u8]) -> Result<String, Error> {
+    let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/llava-hf/llava-1.5-7b-hf",
-            gateway
+            *CLOUDFLARE_GATEWAY
         ))
-        .bearer_auth(api_key)
+        .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&json!({
             "image": content,
             "prompt": "Generate a detailed caption for this image"
@@ -57,16 +60,13 @@ struct AIResponseText {
     response: String,
 }
 
-pub async fn ai_response(content: &Vec<ChatMessage>) -> Result<String, Error> {
-    let client = get_http_client();
-    let api_key = env::var("CLOUDFLARE_TOKEN")?;
-    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
-    let resp = client
+pub async fn ai_response(content: &[ChatMessage]) -> Result<String, Error> {
+    let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-70b-instruct",
-            gateway
+            *CLOUDFLARE_GATEWAY
         ))
-        .bearer_auth(api_key)
+        .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&json!({
             "messages": content,
         }))
@@ -87,11 +87,9 @@ struct LocalAIText {
     content: String,
 }
 
-pub async fn ai_response_local(messages: &Vec<ChatMessage>) -> Result<String, Error> {
-    let client = get_http_client();
-    let server = env::var("AI_SERVER")?;
-    let resp = client
-        .post(server)
+pub async fn ai_response_local(messages: &[ChatMessage]) -> Result<String, Error> {
+    let resp = HTTP_CLIENT
+        .post(&*AI_SERVER)
         .json(&json!({
             "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
             "stream": false,
@@ -109,15 +107,12 @@ pub async fn ai_response_local(messages: &Vec<ChatMessage>) -> Result<String, Er
 }
 
 pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Error> {
-    let client = get_http_client();
-    let api_key = env::var("CLOUDFLARE_TOKEN")?;
-    let gateway = env::var("CLOUDFLARE_GATEWAY")?;
-    let resp = client
+    let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-70b-instruct",
-            gateway
+            *CLOUDFLARE_GATEWAY
         ))
-        .bearer_auth(api_key)
+        .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&json!({
             "messages": [
                 { "role": "system", "content": role },
@@ -136,11 +131,16 @@ pub async fn emoji_id(
     emoji_name: &str,
 ) -> Result<String, Error> {
     let guild_emojis = guild_id.emojis(&ctx.http).await?;
-    let emoji = guild_emojis.iter().find(|e| e.name == emoji_name);
-    match emoji {
-        Some(emoji) => Ok(emoji.to_string()),
-        None => Err(anyhow!("Emoji not found")),
-    }
+    guild_emojis
+        .iter()
+        .find_map(|e| {
+            if e.name == emoji_name {
+                Some(e.to_string())
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| anyhow!("Emoji not found"))
 }
 
 #[derive(Deserialize)]
@@ -164,23 +164,50 @@ struct GifObject {
 }
 
 pub async fn get_gifs(input: &str) -> Result<Vec<String>, Error> {
-    let api_key = env::var("TENOR_TOKEN")?;
     let request_url = format!(
         "https://tenor.googleapis.com/v2/search?q={}&key={}&contentfilter=medium&limit=40",
         encode(input),
-        api_key,
+        *TENOR_TOKEN,
     );
-    let client = get_http_client();
-    let request = client.get(request_url).send().await?;
+    let request = HTTP_CLIENT.get(request_url).send().await?;
     let urls: GifResponse = request.json().await?;
     let payload: Vec<String> = urls
         .results
         .iter()
-        .filter_map(|result| result.media_formats.gif.as_ref())
-        .map(|media| media.url.to_owned())
+        .filter_map(|result| {
+            result
+                .media_formats
+                .gif
+                .as_ref()
+                .map(|media| media.url.to_owned())
+        })
         .collect();
 
     Ok(payload)
+}
+
+#[derive(Deserialize)]
+struct WaifuResponse {
+    images: Vec<WaifuData>,
+}
+#[derive(Deserialize)]
+struct WaifuData {
+    url: String,
+}
+
+pub async fn get_waifu() -> Result<String, Error> {
+    let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
+    let request = HTTP_CLIENT.get(request_url).send().await?;
+    let resp: WaifuResponse = request.json().await?;
+    let url = resp
+        .images
+        .first()
+        .map(|img| img.url.clone())
+        .unwrap_or_else(|| {
+            "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned()
+        });
+
+    Ok(url)
 }
 
 pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) -> RgbaImage {
@@ -323,8 +350,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
             "https://cdn.discordapp.com/emojis/{}.webp?size={}quality=lossless",
             emoji_id, emoji_height
         );
-        let client = get_http_client();
-        let emoji_bytes = client
+        let emoji_bytes = HTTP_CLIENT
             .get(&emoji_url)
             .send()
             .await
@@ -391,20 +417,19 @@ pub async fn spoiler_message(
     if let Some(avatar_url) = message.author.avatar_url() {
         let username = message.author.display_name();
         let mut is_first = true;
-        let client = get_http_client();
         for attachment in &message.attachments {
             let target = attachment.url.as_str();
-            let response = client.get(target).send().await;
+            let response = HTTP_CLIENT.get(target).send().await;
             let download = response.unwrap().bytes().await;
             let filename = format!("SPOILER_{}", &attachment.filename);
-            let file = File::create(&filename);
+            let mut file = File::create(&filename).await?;
             let download_bytes = match download {
                 Ok(bytes) => bytes,
                 Err(_) => {
                     continue;
                 }
             };
-            file.unwrap().write_all(&download_bytes)?;
+            file.write_all(&download_bytes).await?;
             let webhook_try = webhook_find(ctx, message.channel_id).await?;
             if let Some(webhook) = webhook_try {
                 let attachment = CreateAttachment::path(Path::new(&filename)).await?;
@@ -434,38 +459,11 @@ pub async fn spoiler_message(
                         .await?;
                 }
             }
-            fs::remove_file(&filename)?;
+            remove_file(&filename).await?;
         }
-        let reason: Option<&str> = Some("");
-        message.delete(&ctx.http, reason).await?;
+        message.delete(&ctx.http, None).await?;
     }
     Ok(())
-}
-
-#[derive(Deserialize)]
-struct WaifuResponse {
-    images: Vec<WaifuData>,
-}
-#[derive(Deserialize)]
-struct WaifuData {
-    url: String,
-}
-
-pub async fn get_waifu() -> Result<String, Error> {
-    let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
-    let client = get_http_client();
-    let request = client.get(request_url).send().await?;
-    let resp: WaifuResponse = request.json().await?;
-    let url = {
-        if !resp.images[0].url.is_empty() {
-            &resp.images[0].url
-        } else {
-            "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif"
-        }
-    }
-    .to_owned();
-
-    Ok(url)
 }
 
 pub async fn webhook_find(
@@ -479,8 +477,7 @@ pub async fn webhook_find(
     let webhook = match existing_webhooks_get {
         Some(existing_webhooks) => {
             if existing_webhooks.len() >= 15 {
-                let webhooks_to_delete = existing_webhooks.len() - 14;
-                for webhook in existing_webhooks.iter().take(webhooks_to_delete) {
+                for webhook in existing_webhooks.iter().take(existing_webhooks.len() - 14) {
                     ctx.http.delete_webhook(webhook.id, None).await?;
                 }
             }

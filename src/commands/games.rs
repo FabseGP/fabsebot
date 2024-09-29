@@ -1,4 +1,4 @@
-use crate::types::{Context, Error};
+use crate::types::{Error, SContext};
 
 use poise::{
     futures_util::{Stream, StreamExt},
@@ -11,7 +11,7 @@ use poise::{
 use std::{collections::HashMap, time::Duration};
 
 async fn autocomplete_choice<'a>(
-    _ctx: Context<'_>,
+    _ctx: SContext<'_>,
     partial: &'a str,
 ) -> impl Stream<Item = String> + 'a {
     futures::stream::iter(&["rock", "paper", "scissor"])
@@ -22,7 +22,7 @@ async fn autocomplete_choice<'a>(
 /// Get rekt by an another user in rps
 #[poise::command(prefix_command, slash_command)]
 pub async fn rps(
-    ctx: Context<'_>,
+    ctx: SContext<'_>,
     #[description = "Target"] user: User,
     #[description = "Your choice: rock, paper, or scissor"]
     #[autocomplete = "autocomplete_choice"]
