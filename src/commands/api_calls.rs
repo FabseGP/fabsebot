@@ -15,6 +15,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{query, Row};
 use std::{env, time::Duration};
+use tracing::warn;
 use urlencoding::encode;
 
 struct State {
@@ -68,7 +69,7 @@ pub async fn ai_anime(
                 CreateReply::default().content("AI-sama is currently down, blame the americans"),
             )
             .await?;
-            tracing::warn!("Generating an AI-image failed with this error: {}", e);
+            warn!("Generating an AI-image failed with this error: {}", e);
             return Ok(());
         }
     };

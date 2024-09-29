@@ -13,23 +13,24 @@ use poise::{
     builtins,
     serenity_prelude::{cache::Settings, Client, FullEvent, GatewayIntents},
     EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
-    PrefixFrameworkOptions, Prefix,
+    Prefix, PrefixFrameworkOptions,
 };
 use reqwest::Client as http_client;
 use songbird::Songbird;
-use sqlx::query;
+use sqlx::{migrate, mysql, query};
 use std::{borrow::Cow, collections::HashMap, env, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
+use tracing::{error, warn};
 
 async fn on_error(error: FrameworkError<'_, Data, Error>) {
     match error {
         FrameworkError::Command { error, ctx, .. } => {
-            tracing::warn!("Error in command `{}`: {:?}", ctx.command().name, error);
+            warn!("Error in command `{}`: {:?}", ctx.command().name, error);
         }
         FrameworkError::UnknownCommand { .. } => {}
         error => {
             if let Err(e) = builtins::on_error(error).await {
-                tracing::warn!("Error while handling error: {:?}", e);
+                warn!("Error while handling error: {:?}", e);
             }
         }
     }
@@ -97,20 +98,13 @@ async fn event_handler(
 
 pub async fn start() -> anyhow::Result<()> {
     dotenvy::dotenv().context("Failed to load .env file")?;
-    let sql_user = env::var("MARIADB_USER").context("MARIADB_USER not set in environment")?;
-    let sql_password =
-        env::var("MARIADB_PASSWORD").context("MARIADB_PASSWORD not set in environment")?;
-    let sql_database =
-        env::var("MARIADB_DATABASE").context("MARIADB_DATABASE not set in environment")?;
-    let database = sqlx::mysql::MySqlPoolOptions::new()
+    let database_url = env::var("DATABASE_URL").context("DATABASE_URL not set in environment")?;
+    let database = mysql::MySqlPoolOptions::new()
         .max_connections(5)
-        .connect(&format!(
-            "mariadb://{}:{}@localhost/{}",
-            sql_user, sql_password, sql_database
-        ))
+        .connect(&database_url)
         .await
         .context("Failed to connect to database")?;
-    sqlx::migrate!("./migrations")
+    migrate!("./migrations")
         .run(&database)
         .await
         .context("Failed to run database migrations")?;
@@ -212,17 +206,17 @@ pub async fn start() -> anyhow::Result<()> {
     match client {
         Ok(mut client) => {
             if let Err(e) = client.start().await {
-                tracing::warn!("Client error: {:?}", e);
+                warn!("Client error: {:?}", e);
             }
             let client_data = Arc::new(ClientData {
                 shard_manager: client.shard_manager.clone(),
             });
             if CLIENT_DATA.set(client_data).is_err() {
-                tracing::error!("Failed to set CLIENT_DATA");
+                error!("Failed to set CLIENT_DATA");
             }
         }
         Err(e) => {
-            tracing::warn!("Error creating client: {:?}", e);
+            warn!("Error creating client: {:?}", e);
         }
     }
     Ok(())

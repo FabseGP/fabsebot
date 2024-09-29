@@ -8,13 +8,14 @@ use poise::{
     },
     FrameworkContext,
 };
+use tracing::info;
 
 pub async fn handle_ready(
     ctx: &serenity::Context,
     data_about_bot: &Ready,
     framework_context: FrameworkContext<'_, Data, Error>,
 ) -> Result<(), Error> {
-    tracing::info!(
+    info!(
         "Logged in as {} in {} servers",
         data_about_bot.user.name,
         data_about_bot.guilds.len()

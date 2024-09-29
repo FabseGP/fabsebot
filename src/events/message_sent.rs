@@ -9,7 +9,7 @@ use poise::serenity_prelude::{
     ExecuteWebhook, GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
 use regex::Regex;
-use sqlx::query;
+use sqlx::{query, Acquire};
 use std::{collections::HashSet, sync::Arc};
 
 pub async fn handle_message(
@@ -26,16 +26,17 @@ pub async fn handle_message(
             return Ok(());
         }
     };
-    let content = new_message.content.to_lowercase();
     let user_id = u64::from(new_message.author.id);
+    let content = new_message.content.to_lowercase();
+    let mut rng = data.rng_thread.lock().await;
     let mut conn = data
         .db
         .acquire()
         .await
         .context("Failed to acquire database connection")?;
-    let mut rng = data.rng_thread.lock().await;
+    let mut tx = conn.begin().await.context("Failed to acquire savepoint")?;
     let user_settings = query!("SELECT * FROM user_settings WHERE guild_id = ?", guild_id)
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *tx)
         .await?;
     for target in &user_settings {
         let afk = match target.afk {
@@ -81,7 +82,7 @@ pub async fn handle_message(
                     guild_id,
                     target.user_id,
                 )
-                .execute(&mut *conn)
+                .execute(&mut *tx)
                 .await?;
             } else if new_message.mentions_user_id(user_id) {
                 let pinged_link = format!(
@@ -96,7 +97,7 @@ pub async fn handle_message(
                     guild_id,
                     target.user_id,
                 )
-                .execute(&mut *conn)
+                .execute(&mut *tx)
                 .await?;
                 let reason = match &target.afk_reason {
                     Some(input) => input,
@@ -148,13 +149,13 @@ pub async fn handle_message(
         guild_id,
         user_id,
     )
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await?;
     if let Some(guild_settings) = query!(
         "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel FROM guild_settings WHERE guild_id = ?",
         guild_id
     )
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *tx)
     .await? {
         if let Some(spoiler_channel) = guild_settings.spoiler_channel {
             if new_message.channel_id == ChannelId::new(spoiler_channel) {
@@ -187,7 +188,7 @@ pub async fn handle_message(
         }
     }
     if let Ok(records) = query!("SELECT word FROM words_count WHERE guild_id = ?", guild_id)
-        .fetch_all(&mut *conn)
+        .fetch_all(&mut *tx)
         .await
     {
         let words: Vec<String> = records.iter().map(|row| row.word.clone()).collect();
@@ -198,11 +199,14 @@ pub async fn handle_message(
                     guild_id,
                     word
                 )
-                .execute(&mut *conn)
+                .execute(&mut *tx)
                 .await?;
             }
         }
     }
+    tx.commit()
+        .await
+        .context("Failed to commit sql-transaction")?;
     if let Some(topic) = new_message.guild_channel(&ctx.http).await?.topic {
         if topic.contains("ai-chat") {
             if content == "clear" {
