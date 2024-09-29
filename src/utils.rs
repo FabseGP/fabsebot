@@ -27,7 +27,7 @@ struct AIResponseImageDesc {
     description: String,
 }
 
-pub async fn ai_image_desc(content: Vec<u8>) -> Result<String, Error> {
+pub async fn ai_image_desc(content: &Vec<u8>) -> Result<String, Error> {
     let client = get_http_client();
     let api_key = env::var("CLOUDFLARE_TOKEN")?;
     let gateway = env::var("CLOUDFLARE_GATEWAY")?;
@@ -43,7 +43,7 @@ pub async fn ai_image_desc(content: Vec<u8>) -> Result<String, Error> {
         }))
         .send()
         .await?;
-    let output = resp.json::<FabseAIImageDesc>().await?;
+    let output: FabseAIImageDesc = resp.json().await?;
 
     Ok(output.result.description)
 }
@@ -57,7 +57,7 @@ struct AIResponseText {
     response: String,
 }
 
-pub async fn ai_response(content: Vec<ChatMessage>) -> Result<String, Error> {
+pub async fn ai_response(content: &Vec<ChatMessage>) -> Result<String, Error> {
     let client = get_http_client();
     let api_key = env::var("CLOUDFLARE_TOKEN")?;
     let gateway = env::var("CLOUDFLARE_GATEWAY")?;
@@ -72,7 +72,7 @@ pub async fn ai_response(content: Vec<ChatMessage>) -> Result<String, Error> {
         }))
         .send()
         .await?;
-    let output = resp.json::<FabseAIText>().await?;
+    let output: FabseAIText = resp.json().await?;
 
     Ok(output.result.response)
 }
@@ -87,7 +87,7 @@ struct LocalAIText {
     content: String,
 }
 
-pub async fn ai_response_local(messages: Vec<ChatMessage>) -> Result<String, Error> {
+pub async fn ai_response_local(messages: &Vec<ChatMessage>) -> Result<String, Error> {
     let client = get_http_client();
     let server = env::var("AI_SERVER")?;
     let resp = client
@@ -101,7 +101,7 @@ pub async fn ai_response_local(messages: Vec<ChatMessage>) -> Result<String, Err
         .await?;
 
     if resp.status().is_success() {
-        let output = resp.json::<LocalAIResponse>().await?;
+        let output: LocalAIResponse = resp.json().await?;
         Ok(output.message.content)
     } else {
         ai_response(messages).await
@@ -118,14 +118,15 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Erro
             gateway
         ))
         .bearer_auth(api_key)
-        .json(&json!({"messages": [
+        .json(&json!({
+            "messages": [
                 { "role": "system", "content": role },
                 { "role": "user", "content": prompt }
             ]
         }))
         .send()
         .await?;
-    let output = resp.json::<FabseAIText>().await?;
+    let output: FabseAIText = resp.json().await?;
     Ok(output.result.response)
 }
 
@@ -219,7 +220,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
                 .is_ascii_digit()
         {
             let mut jindex = index + 1;
-            let mut numbers: Vec<String> = Vec::new();
+            let mut numbers = Vec::new();
             while jindex < len {
                 if quoted_content.chars().nth(jindex).unwrap() != '<'
                     && quoted_content.chars().nth(jindex).unwrap().is_ascii_digit()
