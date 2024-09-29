@@ -99,8 +99,12 @@ async fn event_handler(
 pub async fn start() -> anyhow::Result<()> {
     dotenvy::dotenv().context("Failed to load .env file")?;
     let database_url = env::var("DATABASE_URL").context("DATABASE_URL not set in environment")?;
+    let max_db_conns: u32 = env::var("DATABASE_MAX_CONNS")
+        .context("DATABASE_MAX_CONNS not set in environment")?
+        .parse()
+        .context("Failed to parse DATABASE_MAX_CONNS")?;
     let database = mysql::MySqlPoolOptions::new()
-        .max_connections(5)
+        .max_connections(max_db_conns)
         .connect(&database_url)
         .await
         .context("Failed to connect to database")?;
