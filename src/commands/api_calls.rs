@@ -888,7 +888,7 @@ pub async fn urban(
                         (field_name, chunk_str.replace(['[', ']'], ""), false)
                     })
                     .collect();
-                fields.push((
+                new_fields.push((
                     "Example:".to_owned(),
                     data.list[0].example.replace(['[', ']'], ""),
                     false,
