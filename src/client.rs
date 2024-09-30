@@ -8,7 +8,6 @@ use crate::{
     types::{ClientData, Data, Error, CLIENT_DATA},
 };
 use anyhow::Context;
-use fastrand::Rng;
 use poise::{
     builtins,
     serenity_prelude::{cache::Settings, Client, FullEvent, GatewayIntents},
@@ -116,7 +115,6 @@ pub async fn start() -> anyhow::Result<()> {
         db: database,
         music_manager: Arc::clone(&manager),
         conversations: Arc::new(Mutex::new(HashMap::new())),
-        rng_thread: Arc::new(Mutex::new(Rng::new())),
     };
     let framework = Framework::builder()
         .options(FrameworkOptions {

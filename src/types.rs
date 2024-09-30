@@ -21,7 +21,6 @@ pub struct Data {
     pub db: sqlx::MySqlPool,
     pub music_manager: Arc<Songbird>,
     pub conversations: Arc<Mutex<ChatHashMap>>,
-    pub rng_thread: Arc<Mutex<Rng>>,
 }
 
 pub struct ClientData {
@@ -30,15 +29,17 @@ pub struct ClientData {
 
 pub static CLIENT_DATA: OnceCell<ClientData> = OnceCell::new();
 pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(Client::new);
-pub static CLOUDFLARE_TOKEN: Lazy<String> =
-    Lazy::new(|| env::var("CLOUDFLARE_TOKEN").expect("CLOUDFLARE_TOKEN must be set"));
-pub static CLOUDFLARE_GATEWAY: Lazy<String> =
-    Lazy::new(|| env::var("CLOUDFLARE_GATEWAY").expect("CLOUDFLARE_GATEWAY must be set"));
-pub static AI_SERVER: Lazy<String> =
-    Lazy::new(|| env::var("AI_SERVER").expect("AI_SERVER must be set"));
-pub static TENOR_TOKEN: Lazy<String> =
-    Lazy::new(|| env::var("TENOR_TOKEN").expect("TENOR_TOKEN must be set"));
-pub static GITHUB_TOKEN: Lazy<String> =
-    Lazy::new(|| env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN must be set"));
-pub static TRANSLATE_SERVER: Lazy<String> =
-    Lazy::new(|| env::var("TRANSLATE_SERVER").expect("TRANSLATE_SERVER must be set"));
+pub static RNG: Lazy<Mutex<Rng>> = Lazy::new(|| Mutex::new(Rng::new()));
+
+macro_rules! load_env {
+    ($name:expr) => {
+        Lazy::new(|| env::var($name).unwrap_or_else(|_| panic!("{} must be set", $name)))
+    };
+}
+
+pub static CLOUDFLARE_TOKEN: Lazy<String> = load_env!("CLOUDFLARE_TOKEN");
+pub static CLOUDFLARE_GATEWAY: Lazy<String> = load_env!("CLOUDFLARE_GATEWAY");
+pub static AI_SERVER: Lazy<String> = load_env!("AI_SERVER");
+pub static TENOR_TOKEN: Lazy<String> = load_env!("TENOR_TOKEN");
+pub static GITHUB_TOKEN: Lazy<String> = load_env!("GITHUB_TOKEN");
+pub static TRANSLATE_SERVER: Lazy<String> = load_env!("TRANSLATE_SERVER");

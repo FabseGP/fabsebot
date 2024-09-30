@@ -1,5 +1,5 @@
 use crate::{
-    types::{ChatMessage, Data, Error, HTTP_CLIENT},
+    types::{ChatMessage, Data, Error, HTTP_CLIENT, RNG},
     utils::{ai_image_desc, ai_response, get_gifs, get_waifu, spoiler_message, webhook_find},
 };
 
@@ -21,7 +21,6 @@ pub async fn handle_message(
         return Ok(());
     }
     let content = new_message.content.to_lowercase();
-    let mut rng = data.rng_thread.lock().await;
     if let Some(id) = new_message.guild_id {
         let guild_id = u64::from(id);
         let user_id = u64::from(new_message.author.id);
@@ -180,7 +179,7 @@ pub async fn handle_message(
                     if current_time - last_time > rate as i64 * 60 {
                         let urls = get_gifs("dead chat").await?;
                         dead_chat_channel
-                            .say(&ctx.http, urls[rng.usize(..urls.len())].as_str())
+                            .say(&ctx.http, urls[RNG.lock().await.usize(..urls.len())].as_str())
                             .await?;
                     }
                 }
@@ -481,7 +480,7 @@ pub async fn handle_message(
                 CreateMessage::default().embed(
                     CreateEmbed::default()
                         .title("fabseman is out to open source life")
-                        .image(urls[rng.usize(..urls.len())].as_str())
+                        .image(urls[RNG.lock().await.usize(..urls.len())].as_str())
                         .colour(0xf8e45c),
                 ),
             )
@@ -515,7 +514,7 @@ pub async fn handle_message(
                 CreateMessage::default().embed(
                     CreateEmbed::default()
                         .title("your queen has arrived")
-                        .image(furina_gifs[rng.usize(..furina_gifs.len())])
+                        .image(furina_gifs[RNG.lock().await.usize(..furina_gifs.len())])
                         .colour(0xf8e45c),
                 ),
             )
@@ -540,7 +539,7 @@ pub async fn handle_message(
                 CreateMessage::default().embed(
                     CreateEmbed::default()
                         .title("your queen has arrived")
-                        .image(kafka_gifs[rng.usize(..kafka_gifs.len())])
+                        .image(kafka_gifs[RNG.lock().await.usize(..kafka_gifs.len())])
                         .colour(0xf8e45c),
                 ),
             )
@@ -558,7 +557,7 @@ pub async fn handle_message(
                 CreateMessage::default().embed(
                     CreateEmbed::default()
                         .title("pls destroy lily's oven")
-                        .image(kinich_gifs[rng.usize(..kinich_gifs.len())])
+                        .image(kinich_gifs[RNG.lock().await.usize(..kinich_gifs.len())])
                         .colour(0xf8e45c),
                 ),
             )

@@ -1,6 +1,6 @@
 use crate::{
     types::{
-        Error, SContext, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, GITHUB_TOKEN, HTTP_CLIENT,
+        Error, SContext, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, GITHUB_TOKEN, HTTP_CLIENT, RNG,
         TRANSLATE_SERVER,
     },
     utils::{ai_response_simple, get_gifs, get_waifu},
@@ -43,13 +43,11 @@ pub async fn ai_anime(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let url = "https://cagliostrolab-animagine-xl-3-1.hf.space/call/run";
-    let data = ctx.data();
-    let rng = &mut data.rng_thread.lock().await;
     let request_body = json!({
         "data": [
             prompt,
             "",
-            rng.usize(..2147483647),
+            RNG.lock().await.usize(..2147483647),
             2048,
             2048,
             7,
@@ -455,13 +453,11 @@ struct JokeResponse {
 pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
     let request_url =
         "https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
-    let ctx_data = ctx.data();
     let request = HTTP_CLIENT.get(request_url).send().await?;
     let data: JokeResponse = request.json().await?;
     if !data.joke.is_empty() {
         ctx.send(CreateReply::default().content(&data.joke)).await?;
     } else {
-        let rng = &mut ctx_data.rng_thread.lock().await;
         let roasts = [
             "your life",
             "you're not funny",
@@ -470,7 +466,7 @@ pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
             "I don't like you",
             "you smell",
         ];
-        ctx.send(CreateReply::default().content(roasts[rng.usize(..roasts.len())]))
+        ctx.send(CreateReply::default().content(roasts[RNG.lock().await.usize(..roasts.len())]))
             .await?;
     }
     Ok(())
