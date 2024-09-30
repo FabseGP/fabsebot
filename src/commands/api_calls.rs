@@ -203,16 +203,22 @@ pub async fn ai_text(
     if !resp.is_empty() {
         let response_chars: Vec<char> = resp.chars().collect();
         let chunks = response_chars.chunks(1024);
-        let mut embed = CreateEmbed::default();
-        embed = embed.title(prompt).color(0xFF7800);
-        for (i, chunk) in chunks.enumerate() {
-            let chunk_str: String = chunk.iter().collect();
-            let field_name = match i {
-                0 => "Response:".to_owned(),
-                _ => format!("Response (cont. {})", i + 1),
-            };
-            embed = embed.field(field_name, chunk_str, false);
-        }
+        let fields: Vec<(String, String, bool)> = chunks
+            .enumerate()
+            .map(|(i, chunk)| {
+                let field_name = if i == 0 {
+                    "Response:".to_owned()
+                } else {
+                    format!("Response (cont. {}):", i + 1)
+                };
+                let chunk_str: String = chunk.iter().collect();
+                (field_name, chunk_str, false)
+            })
+            .collect();
+        let embed = CreateEmbed::default()
+            .title(prompt)
+            .color(0xFF7800)
+            .fields(fields);
         ctx.send(CreateReply::default().embed(embed)).await?;
     } else {
         ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to ask", prompt)))
@@ -319,6 +325,7 @@ pub async fn gif(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
     let resp = get_gifs(&input).await;
     if let Ok(urls) = resp {
         let len = urls.len();
@@ -420,7 +427,6 @@ pub async fn github_search(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
     let request = HTTP_CLIENT
         .get(format!("https://api.github.com/search/code?q={}", input))
         .header("Accept", "application/vnd.github+json")
@@ -567,16 +573,23 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
         if !resp.is_empty() {
             let response_chars: Vec<char> = resp.chars().collect();
             let chunks = response_chars.chunks(1024);
-            let mut embed = CreateEmbed::default();
-            embed = embed.title(format!("Roasting {}", name)).color(0xFF7800);
-            for (i, chunk) in chunks.enumerate() {
-                let chunk_str: String = chunk.iter().collect();
-                let field_name = match i {
-                    0 => "Response:".to_owned(),
-                    _ => format!("Response (cont. {})", i + 1),
-                };
-                embed = embed.field(field_name, chunk_str, false);
-            }
+
+            let fields: Vec<(String, String, bool)> = chunks
+                .enumerate()
+                .map(|(i, chunk)| {
+                    let field_name = if i == 0 {
+                        "Response:".to_owned()
+                    } else {
+                        format!("Response (cont. {}):", i + 1)
+                    };
+                    let chunk_str: String = chunk.iter().collect();
+                    (field_name, chunk_str, false)
+                })
+                .collect();
+            let embed = CreateEmbed::default()
+                .title(format!("Roasting {}", name))
+                .color(0xFF7800)
+                .fields(fields);
             ctx.send(CreateReply::default().embed(embed)).await?;
         } else {
             ctx.send(CreateReply::default().content(format!("{}'s life is already roasted", name)))
@@ -610,6 +623,7 @@ pub async fn translate(
     #[rest]
     sentence: Option<String>,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
     let msg = ctx
         .channel_id()
         .message(&ctx.http(), ctx.id().into())
@@ -799,22 +813,28 @@ pub async fn urban(
         let components = if len > 1 { vec![next_button] } else { vec![] };
         let response_chars: Vec<char> = data.list[0].definition.chars().collect();
         let chunks = response_chars.chunks(1024);
-        let mut embed = CreateEmbed::default();
-        embed = embed.title(&data.list[0].word).color(0xEFFF00);
-        for (i, chunk) in chunks.enumerate() {
-            let chunk_str: String = chunk.iter().collect();
-            let field_name = if i == 0 {
-                "Definition:".to_owned()
-            } else {
-                format!("Response (cont. {})", i + 1)
-            };
-            embed = embed.field(field_name, chunk_str.replace(['[', ']'], ""), false);
-        }
-        embed = embed.field(
-            "Example:",
+
+        let mut fields: Vec<(String, String, bool)> = chunks
+            .enumerate()
+            .map(|(i, chunk)| {
+                let field_name = if i == 0 {
+                    "Definition:".to_owned()
+                } else {
+                    format!("Response (cont. {}):", i + 1)
+                };
+                let chunk_str: String = chunk.iter().collect();
+                (field_name, chunk_str.replace(['[', ']'], ""), false)
+            })
+            .collect();
+        fields.push((
+            "Example:".to_owned(),
             data.list[0].example.replace(['[', ']'], ""),
             false,
-        );
+        ));
+        let embed = CreateEmbed::default()
+            .title(&data.list[0].word)
+            .color(0xEFFF00)
+            .fields(fields);
 
         ctx.send(CreateReply::default().embed(embed).components(components))
             .await?;
@@ -856,27 +876,28 @@ pub async fn urban(
                     data.list[state.index].definition.chars().collect();
                 let new_chunks = new_response_chars.chunks(1024);
 
-                let mut new_embed = CreateEmbed::default();
-                new_embed = new_embed
-                    .title(&data.list[state.index].word)
-                    .color(0xEFFF00);
-
-                for (i, chunk) in new_chunks.enumerate() {
-                    let chunk_str: String = chunk.iter().collect();
-                    let field_name = if i == 0 {
-                        "Definition:".to_owned()
-                    } else {
-                        format!("Response (cont. {})", i + 1)
-                    };
-                    new_embed =
-                        new_embed.field(field_name, chunk_str.replace(['[', ']'], ""), false);
-                }
-
-                new_embed = new_embed.field(
-                    "Example:",
-                    data.list[state.index].example.replace(['[', ']'], ""),
+                let mut new_fields: Vec<(String, String, bool)> = new_chunks
+                    .enumerate()
+                    .map(|(i, new_chunks)| {
+                        let field_name = if i == 0 {
+                            "Definition:".to_owned()
+                        } else {
+                            format!("Response (cont. {}):", i + 1)
+                        };
+                        let chunk_str: String = new_chunks.iter().collect();
+                        (field_name, chunk_str.replace(['[', ']'], ""), false)
+                    })
+                    .collect();
+                fields.push((
+                    "Example:".to_owned(),
+                    data.list[0].example.replace(['[', ']'], ""),
                     false,
-                );
+                ));
+
+                let new_embed = CreateEmbed::default()
+                    .title(&data.list[state.index].word)
+                    .color(0xEFFF00)
+                    .fields(new_fields);
 
                 let new_components = if state.index == 0 {
                     vec![CreateActionRow::Buttons(vec![next_button])]

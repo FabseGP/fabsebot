@@ -11,7 +11,7 @@ use songbird::{
     tracks::PlayMode,
     Call, Config,
 };
-use std::{num::NonZeroUsize, time::Duration};
+use std::{borrow::Cow, num::NonZeroUsize, time::Duration};
 
 #[derive(Deserialize)]
 struct DeezerResponse {
@@ -51,8 +51,8 @@ pub async fn add_playlist(
     #[rest]
     playlist_id: String,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
     if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {
             Some(handler_lock) => {
@@ -85,16 +85,25 @@ pub async fn add_playlist(
 /// Join your current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
-    if let Some(guild_id) = ctx.guild_id() {
-        let channel_id = ctx
-            .guild()
-            .unwrap()
-            .voice_states
-            .get(&ctx.author().id)
-            .and_then(|voice_state| voice_state.channel_id);
-        let manager = &ctx.data().music_manager;
-        manager.join(guild_id, channel_id.unwrap()).await?;
-        ctx.reply("I've joined the party").await?;
+    let guild = match ctx.guild() {
+        Some(g) => g.clone(),
+        None => {
+            return Ok(());
+        }
+    };
+    match guild
+        .voice_states
+        .get(&ctx.author().id)
+        .and_then(|voice_state| voice_state.channel_id)
+    {
+        Some(id) => {
+            let manager = &ctx.data().music_manager;
+            manager.join(guild.id, id).await?;
+            ctx.reply("I've joined the party").await?;
+        }
+        None => {
+            return Ok(());
+        }
     }
     Ok(())
 }
@@ -123,6 +132,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {
             Some(handler_lock) => {
@@ -161,17 +171,18 @@ pub async fn play_song(
     #[rest]
     url: String,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
     if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {
             Some(handler_lock) => {
                 let mut handler = handler_lock.lock().await;
                 configure_call(&mut handler);
-                let mut src = if url.starts_with("http") {
-                    YoutubeDl::new(HTTP_CLIENT.clone(), url.to_owned())
+                let url_cow: Cow<'static, str> = Cow::Owned(url);
+                let mut src = if url_cow.starts_with("http") {
+                    YoutubeDl::new(HTTP_CLIENT.clone(), url_cow.clone())
                 } else {
-                    YoutubeDl::new_search(HTTP_CLIENT.clone(), url.to_owned())
+                    YoutubeDl::new_search(HTTP_CLIENT.clone(), url_cow.clone())
                 };
                 let metadata = src.aux_metadata().await;
                 handler.enqueue_input(src.into()).await;
@@ -183,11 +194,10 @@ pub async fn play_song(
                         let source_url = &m.source_url;
                         let duration = &m.duration;
                         ctx.send(CreateReply::default().embed({
-                            let mut e = CreateEmbed::default();
-                            e = e
+                            let mut e = CreateEmbed::default()
                                 .colour(0xED333B)
                                 .field("Added by:", ctx.author().display_name(), false)
-                                .url(url);
+                                .url(url_cow);
                             if let Some(artist) = artist {
                                 e = e.field("Artist:", artist, true);
                             }
@@ -245,6 +255,7 @@ pub async fn seek_song_backward(
     #[description = "Seconds to seek"] seconds: u64,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {
             Some(handler_lock) => {
@@ -255,9 +266,14 @@ pub async fn seek_song_backward(
                     if let Ok(current_playback_info) = current_playback.get_info().await {
                         let current_position = current_playback_info.position;
                         let seek = current_position - Duration::from_secs(seconds);
-                        current_playback.seek_async(seek).await?;
-                        ctx.reply(format!("Seeked {} seconds backward", seconds))
+                        if !seek.is_zero() {
+                            current_playback.seek_async(seek).await?;
+                            ctx.reply(format!("Seeked {} seconds backward", seconds))
+                                .await?;
+                        } else {
+                            ctx.reply("Can't seek back for more seconds than what already have been played")
                             .await?;
+                        }
                     }
                 }
             }

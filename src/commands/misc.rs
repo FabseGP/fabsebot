@@ -9,7 +9,7 @@ use poise::{
     serenity_prelude::{
         nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
         CreateActionRow, CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse,
-        CreateMessage, EditChannel, EditMessage, User, UserId,
+        CreateMessage, EditChannel, EditMessage, User,
     },
     CreateReply,
 };
@@ -25,9 +25,9 @@ pub async fn anony_poll(
     #[description = "Comma-separated options"] options: String,
     #[description = "Duration in minutes"] duration: u64,
 ) -> Result<(), Error> {
-    let options_list: Vec<String> = options
+    let options_list: Vec<&str> = options
         .split(',')
-        .map(|s| s.trim().to_string())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
         .collect();
     if options_list.len() < 2 {
@@ -35,21 +35,28 @@ pub async fn anony_poll(
             .await?;
         return Ok(());
     }
-    let mut embed = CreateEmbed::default().title(title.as_str()).color(0xFF5733);
-    let mut buttons: Vec<CreateButton> = Vec::new();
-    let mut vote_counts: Vec<u32> = vec![0; options_list.len()];
-    let mut voted_users: HashSet<UserId> = HashSet::new();
-    for (index, option) in options_list.iter().enumerate() {
-        embed = embed.field(option, "0", false);
-        buttons.push(
-            CreateButton::new(format!("{}_{}", index, ctx.id()))
+    let embed = CreateEmbed::default()
+        .title(title.as_str())
+        .color(0xFF5733)
+        .fields(options_list.iter().map(|&option| (option, "0", false)));
+    let buttons: Vec<CreateButton> = options_list
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            CreateButton::new(format!("option_{}", index))
                 .style(ButtonStyle::Primary)
-                .label(index.to_string()),
-        );
-    }
-    let components = vec![CreateActionRow::Buttons(buttons)];
-    ctx.send(CreateReply::default().embed(embed).components(components))
-        .await?;
+                .label((index + 1).to_string())
+        })
+        .collect();
+    ctx.send(
+        CreateReply::default()
+            .embed(embed)
+            .components(vec![CreateActionRow::Buttons(buttons)]),
+    )
+    .await?;
+
+    let mut vote_counts = vec![0; options_list.len()];
+    let mut voted_users = HashSet::new();
 
     let id_borrow = ctx.id();
     let options_count = options_list.len();
@@ -67,27 +74,27 @@ pub async fn anony_poll(
             .await
     {
         let user_id = interaction.user.id;
-        if voted_users.contains(&user_id) {
-            continue;
+        if voted_users.insert(user_id) {
+            let choice = &interaction.data.custom_id;
+
+            interaction
+                .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                .await?;
+
+            let index = choice.split('_').next().unwrap().parse::<usize>().unwrap();
+            vote_counts[index] += 1;
+
+            let new_embed = CreateEmbed::default().title(&title).color(0xFF5733).fields(
+                options_list
+                    .iter()
+                    .zip(vote_counts.iter())
+                    .map(|(&option, &count)| (option, count.to_string(), false)),
+            );
+
+            let mut msg = interaction.message;
+            msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
+                .await?;
         }
-        let choice = &interaction.data.custom_id;
-
-        interaction
-            .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-            .await?;
-
-        let index = choice.split('_').next().unwrap().parse::<usize>().unwrap();
-        vote_counts[index] += 1;
-        voted_users.insert(user_id);
-
-        let mut new_embed = CreateEmbed::default().title(title.as_str()).color(0xFF5733);
-        for (i, option) in options_list.iter().enumerate() {
-            new_embed = new_embed.field(option, vote_counts[i].to_string(), false);
-        }
-
-        let mut msg = interaction.message;
-        msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
-            .await?;
     }
 
     Ok(())
@@ -199,6 +206,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 /// Oh it's you
 #[poise::command(prefix_command, slash_command)]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
+    ctx.defer().await?;
     let resp = ai_response_simple(
         "you're a tsundere",
         "generate a one-line love-hate greeting",
@@ -215,6 +223,7 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 /// When your memory is not enough
 #[poise::command(prefix_command, slash_command)]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
+    ctx.defer().await?;
     let msg = ctx
         .channel_id()
         .message(&ctx.http(), ctx.id().into())
@@ -226,22 +235,28 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
-
     let message_url = reply.link();
     let content = reply.content;
     match reply.webhook_id {
         Some(_) => {
-            let avatar_image = {
-                let avatar_url = reply.author.avatar_url().unwrap();
-                let avatar_bytes = HTTP_CLIENT
-                    .get(&avatar_url)
-                    .send()
-                    .await
-                    .unwrap()
-                    .bytes()
-                    .await
-                    .unwrap();
-                load_from_memory(&avatar_bytes).unwrap().to_rgba8()
+            let avatar_image = match reply.author.avatar_url() {
+                Some(avatar_url) => match HTTP_CLIENT.get(&avatar_url).send().await {
+                    Ok(resp) => match resp.bytes().await {
+                        Ok(avatar_bytes) => match load_from_memory(&avatar_bytes) {
+                            Ok(mem_bytes) => mem_bytes.to_rgba8(),
+                            Err(_) => {
+                                return Ok(());
+                            }
+                        },
+                        Err(_) => {
+                            return Ok(());
+                        }
+                    },
+                    Err(_) => return Ok(()),
+                },
+                None => {
+                    return Ok(());
+                }
             };
             let name = reply.author.display_name();
             quote_image(&avatar_image, name, &content)
@@ -258,18 +273,29 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             };
             let member = guild.member(ctx.http(), reply.author.id).await?;
             let avatar_image = {
-                let avatar_url = member
-                    .avatar_url()
-                    .unwrap_or(reply.author.avatar_url().unwrap());
-                let avatar_bytes = HTTP_CLIENT
-                    .get(&avatar_url)
-                    .send()
-                    .await
-                    .unwrap()
-                    .bytes()
-                    .await
-                    .unwrap();
-                load_from_memory(&avatar_bytes).unwrap().to_rgba8()
+                let avatar_url = match member.avatar_url() {
+                    Some(url) => url,
+                    None => match reply.author.avatar_url() {
+                        Some(url) => url,
+                        None => {
+                            return Ok(());
+                        }
+                    },
+                };
+                match HTTP_CLIENT.get(&avatar_url).send().await {
+                    Ok(resp) => match resp.bytes().await {
+                        Ok(avatar_bytes) => match load_from_memory(&avatar_bytes) {
+                            Ok(mem_bytes) => mem_bytes.to_rgba8(),
+                            Err(_) => {
+                                return Ok(());
+                            }
+                        },
+                        Err(_) => {
+                            return Ok(());
+                        }
+                    },
+                    Err(_) => return Ok(()),
+                }
             };
             let name = member.display_name();
             quote_image(&avatar_image, name, &content)
