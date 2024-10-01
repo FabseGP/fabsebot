@@ -635,7 +635,7 @@ pub async fn translate(
         },
     };
     let target_lang = match target {
-        Some(lang) => lang,
+        Some(lang) => lang.to_lowercase(),
         None => "en".to_owned(),
     };
     let form_data = json!({
