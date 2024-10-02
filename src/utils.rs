@@ -1,5 +1,6 @@
 use crate::types::{
-    ChatMessage, Error, AI_SERVER, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, HTTP_CLIENT, TENOR_TOKEN,
+    ChatMessage, Error, AI_SERVER, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, HTTP_CLIENT, QUOTE_REGEX,
+    TENOR_TOKEN,
 };
 
 use ab_glyph::{FontArc, PxScale};
@@ -13,7 +14,6 @@ use poise::serenity_prelude::{
     self as serenity, builder::CreateAttachment, ChannelId, ExecuteWebhook, GuildId, Message,
     Webhook,
 };
-use regex::Regex;
 use serde::Deserialize;
 use serde_json::json;
 use std::{cmp::Ordering, path::Path};
@@ -264,10 +264,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
         index += 1;
     }
 
-    let pattern = r#"<:[A-Za-z0-9_]+:[0-9]+>"#;
-    let re = Regex::new(pattern).unwrap();
-
-    let content_filtered = re.replace_all(quoted_content, "");
+    let content_filtered = QUOTE_REGEX.replace_all(quoted_content, "");
 
     let mut wrapped_length = 20;
     let mut wrapped_lines = wrap(&content_filtered, wrapped_length);

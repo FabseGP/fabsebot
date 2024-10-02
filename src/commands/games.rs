@@ -8,7 +8,8 @@ use poise::{
     },
     CreateReply,
 };
-use std::{collections::HashMap, time::Duration};
+use rustc_hash::FxHashMap;
+use std::time::Duration;
 
 async fn autocomplete_choice<'a>(
     _ctx: SContext<'_>,
@@ -78,8 +79,11 @@ pub async fn rps(
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                 .await?;
 
-            let outcomes =
-                HashMap::from([("rock", "scissor"), ("paper", "rock"), ("scissor", "paper")]);
+            let outcomes: FxHashMap<&str, &str> =
+                [("rock", "scissor"), ("paper", "rock"), ("scissor", "paper")]
+                    .iter()
+                    .cloned()
+                    .collect();
 
             let response = {
                 let result = if target_choice.contains(&author_choice) {

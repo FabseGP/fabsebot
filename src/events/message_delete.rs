@@ -1,7 +1,7 @@
 use crate::types::Error;
 
 use poise::serenity_prelude::{
-    self as serenity, audit_log, ChannelId, CreateMessage, GuildId, MessageId,
+    self as serenity, audit_log, ChannelId, CreateEmbed, CreateMessage, GuildId, MessageId,
 };
 
 pub async fn handle_message_delete(
@@ -57,7 +57,8 @@ pub async fn handle_message_delete(
                                 if let Some((content, embeds)) = deleted_content {
                                     let mut message = CreateMessage::default().content(content);
                                     if !embeds.is_empty() {
-                                        message = message.embed(embeds[0].clone().into());
+                                        message =
+                                            message.embed(CreateEmbed::from(embeds[0].clone()));
                                     }
                                     channel_id.send_message(&ctx.http, message).await?;
                                 }

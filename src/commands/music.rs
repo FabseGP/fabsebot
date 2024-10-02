@@ -7,7 +7,7 @@ use poise::{
 use serde::Deserialize;
 use songbird::{
     driver::Bitrate,
-    input::{Compose, YoutubeDl},
+    input::{Compose, Input, YoutubeDl},
     tracks::PlayMode,
     Call, Config,
 };
@@ -67,7 +67,7 @@ pub async fn add_playlist(
                         for track in payload.tracks.data {
                             let search = format! {"{} {}", track.title, track.artist.name};
                             let src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
-                            handler.enqueue_input(src.into()).await;
+                            handler.enqueue_input(Input::from(src)).await;
                         }
                         ctx.reply("Added playlist to queue").await?;
                     }
@@ -185,7 +185,7 @@ pub async fn play_song(
                     YoutubeDl::new_search(HTTP_CLIENT.clone(), url_cow.clone())
                 };
                 let metadata = src.aux_metadata().await;
-                handler.enqueue_input(src.into()).await;
+                handler.enqueue_input(Input::from(src)).await;
                 match metadata {
                     Ok(m) => {
                         let artist = &m.artist;

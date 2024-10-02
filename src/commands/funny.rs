@@ -4,7 +4,7 @@ use crate::{
 };
 
 use poise::{
-    serenity_prelude::{ChannelId, ExecuteWebhook, User},
+    serenity_prelude::{ChannelId, ExecuteWebhook, MessageId, User},
     CreateReply,
 };
 
@@ -82,7 +82,7 @@ pub async fn user_misuse(
     if ctx.prefix() != "/" {
         let reason: Option<&str> = Some("anonymous");
         ctx.channel_id()
-            .delete_message(ctx.http(), ctx.id().into(), reason)
+            .delete_message(ctx.http(), MessageId::new(ctx.id()), reason)
             .await?;
     } else {
         ctx.send(

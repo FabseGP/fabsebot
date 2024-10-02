@@ -866,6 +866,7 @@ dependencies = [
  "poise",
  "regex",
  "reqwest",
+ "rustc-hash",
  "serde",
  "serde_json",
  "serenity",

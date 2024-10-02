@@ -9,16 +9,15 @@ use crate::{
 use poise::{
     serenity_prelude::{
         futures::StreamExt, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
-        CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage, User,
+        CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage,
+        MessageId, User,
     },
     CreateReply,
 };
-use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{query, Row};
 use std::time::Duration;
-use tracing::warn;
 use urlencoding::encode;
 
 struct State {
@@ -26,86 +25,6 @@ struct State {
     prev_id: String,
     index: usize,
     len: usize,
-}
-
-#[derive(Deserialize)]
-struct EventResponse {
-    event_id: String,
-}
-
-/// Anime image
-#[poise::command(prefix_command, slash_command)]
-pub async fn ai_anime(
-    ctx: SContext<'_>,
-    #[description = "Prompt"]
-    #[rest]
-    prompt: String,
-) -> Result<(), Error> {
-    ctx.defer().await?;
-    let url = "https://cagliostrolab-animagine-xl-3-1.hf.space/call/run";
-    let request_body = json!({
-        "data": [
-            prompt,
-            "",
-            RNG.lock().await.usize(..2147483647),
-            2048,
-            2048,
-            7,
-            28,
-            "Euler a",
-            "1024 x 1024",
-            "(None)",
-            "Heavy v3.1",
-            false,
-            0,
-            1,
-            true,
-        ]
-    });
-    let resp = match HTTP_CLIENT.post(url).json(&request_body).send().await {
-        Ok(response) => response,
-        Err(e) => {
-            ctx.send(
-                CreateReply::default().content("AI-sama is currently down, blame the americans"),
-            )
-            .await?;
-            warn!("Generating an AI-image failed with this error: {}", e);
-            return Ok(());
-        }
-    };
-    let output: Option<EventResponse> = resp.json().await?;
-    if let Some(payload) = output {
-        if !payload.event_id.is_empty() {
-            let status_url = format!("{}/{}", url, payload.event_id);
-            let path_regex = Regex::new(r#""path":\s*"(.*?)""#).unwrap();
-            loop {
-                let status_resp = HTTP_CLIENT.get(&status_url).send().await?;
-                let status_text = status_resp.text().await?;
-                if status_text.contains("event: complete") {
-                    if let Some(captures) = path_regex.captures(&status_text) {
-                        if let Some(path) = captures.get(1) {
-                            let image_url = format!(
-                                "https://cagliostrolab-animagine-xl-3-1.hf.space/file={}",
-                                path.as_str()
-                            );
-                            let image_data = HTTP_CLIENT.get(&image_url).send().await?;
-                            let image_data = image_data.bytes().await?.to_vec();
-                            let file = CreateAttachment::bytes(image_data, "output.png");
-                            ctx.send(CreateReply::default().attachment(file)).await?;
-                            break;
-                        }
-                    }
-                }
-            }
-        } else {
-            ctx.send(
-                CreateReply::default()
-                    .content(format!("\"{}\" is too dangerous to generate", prompt)),
-            )
-            .await?;
-        }
-    }
-    Ok(())
 }
 
 /// Did someone say AI image?
@@ -157,7 +76,7 @@ pub async fn ai_summarize(
     ctx.defer().await?;
     let msg = ctx
         .channel_id()
-        .message(&ctx.http(), ctx.id().into())
+        .message(&ctx.http(), MessageId::from(ctx.id()))
         .await?;
     let reply = match msg.referenced_message {
         Some(ref_msg) => ref_msg,
@@ -622,7 +541,7 @@ pub async fn translate(
     ctx.defer().await?;
     let msg = ctx
         .channel_id()
-        .message(&ctx.http(), ctx.id().into())
+        .message(&ctx.http(), MessageId::new(ctx.id()))
         .await?;
     let content = match msg.referenced_message {
         Some(ref_msg) => ref_msg.content.into_string(),

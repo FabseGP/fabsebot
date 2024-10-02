@@ -9,12 +9,13 @@ use poise::{
     serenity_prelude::{
         nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
         CreateActionRow, CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse,
-        CreateMessage, EditChannel, EditMessage, User,
+        CreateMessage, EditChannel, EditMessage, MessageId, User, UserId,
     },
     CreateReply,
 };
+use rustc_hash::FxHashSet;
 use sqlx::{query, query_as};
-use std::{collections::HashSet, path::Path, process, time::Duration};
+use std::{path::Path, process, time::Duration};
 use tokio::fs::remove_file;
 
 /// When you want to find the imposter
@@ -56,7 +57,7 @@ pub async fn anony_poll(
     .await?;
 
     let mut vote_counts = vec![0; options_list.len()];
-    let mut voted_users = HashSet::new();
+    let mut voted_users = FxHashSet::default();
 
     let id_borrow = ctx.id();
     let options_count = options_list.len();
@@ -193,7 +194,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
         .thumbnail(thumbnail)
         .color(0xFF5733);
     for user in users.into_iter() {
-        if let Ok(target) = ctx.http().get_user(user.user_id.into()).await {
+        if let Ok(target) = ctx.http().get_user(UserId::new(user.user_id)).await {
             let user_name = target.display_name().to_owned();
             embed = embed.field(user_name, user.message_count.to_string(), false);
         }
@@ -226,7 +227,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
     let msg = ctx
         .channel_id()
-        .message(&ctx.http(), ctx.id().into())
+        .message(&ctx.http(), MessageId::new(ctx.id()))
         .await?;
     let reply = match msg.referenced_message {
         Some(ref_msg) => ref_msg,

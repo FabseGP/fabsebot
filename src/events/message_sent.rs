@@ -1,5 +1,5 @@
 use crate::{
-    types::{ChatMessage, Data, Error, HTTP_CLIENT, RNG},
+    types::{ChatMessage, Data, Error, CHANNEL_REGEX, HTTP_CLIENT, RNG},
     utils::{ai_image_desc, ai_response, get_gifs, get_waifu, spoiler_message, webhook_find},
 };
 
@@ -8,9 +8,9 @@ use poise::serenity_prelude::{
     self as serenity, futures::StreamExt, ChannelId, CreateEmbed, CreateMessage, EditMessage,
     ExecuteWebhook, GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
-use regex::Regex;
+use rustc_hash::FxHashSet;
 use sqlx::{query, Acquire};
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 pub async fn handle_message(
     ctx: &serenity::Context,
@@ -212,7 +212,7 @@ pub async fn handle_message(
                     conversations
                         .entry(guild_id)
                         .or_default()
-                        .remove(&new_message.channel_id.into());
+                        .remove(&u64::from(new_message.channel_id));
                     new_message
                         .reply(&ctx.http, "Conversation cleared!")
                         .await?;
@@ -322,9 +322,7 @@ pub async fn handle_message(
                                 }
                             }
                         }
-                        let re =
-                            Regex::new(r"https://discord\.com/channels/(\d+)/(\d+)/(\d+)").unwrap();
-                        if let Some(url) = re.captures(&content) {
+                        if let Some(url) = CHANNEL_REGEX.captures(&content) {
                             let guild_id = GuildId::new(url[1].parse().unwrap());
                             let channel_id = ChannelId::new(url[2].parse().unwrap());
                             let message_id = MessageId::new(url[3].parse().unwrap());
@@ -378,9 +376,9 @@ pub async fn handle_message(
                         let history = conversations
                             .entry(guild_id)
                             .or_default()
-                            .entry(new_message.channel_id.into())
+                            .entry(u64::from(new_message.channel_id))
                             .or_default();
-                        let mut unique_users = HashSet::new();
+                        let mut unique_users = FxHashSet::default();
                         for message in history.iter() {
                             if message.role == "user" {
                                 if let Some(user_name) = message.content.split(':').next() {
@@ -420,7 +418,7 @@ pub async fn handle_message(
                             let mut conversations = data.conversations.lock().await;
                             if let Some(history) = conversations
                                 .get_mut(&guild_id)
-                                .and_then(|gc| gc.get_mut(&new_message.channel_id.into()))
+                                .and_then(|gc| gc.get_mut(&u64::from(new_message.channel_id)))
                             {
                                 history.push(ChatMessage {
                                     role: "assistant".to_owned(),
@@ -441,7 +439,7 @@ pub async fn handle_message(
                             let mut conversations = data.conversations.lock().await;
                             if let Some(history) = conversations
                                 .get_mut(&guild_id)
-                                .and_then(|gc| gc.get_mut(&new_message.channel_id.into()))
+                                .and_then(|gc| gc.get_mut(&u64::from(new_message.channel_id)))
                             {
                                 history.clear();
                                 history.push(ChatMessage {

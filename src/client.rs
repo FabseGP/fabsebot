@@ -14,9 +14,10 @@ use poise::{
     EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
     Prefix, PrefixFrameworkOptions,
 };
+use rustc_hash::FxHashMap;
 use songbird::Songbird;
 use sqlx::{migrate, mysql, query};
-use std::{borrow::Cow, collections::HashMap, env, sync::Arc, time::Duration};
+use std::{borrow::Cow, env, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tracing::{error, warn};
 
@@ -114,14 +115,13 @@ pub async fn start() -> anyhow::Result<()> {
     let user_data = Data {
         db: database,
         music_manager: Arc::clone(&manager),
-        conversations: Arc::new(Mutex::new(HashMap::new())),
+        conversations: Arc::new(Mutex::new(FxHashMap::default())),
     };
     let framework = Framework::builder()
         .options(FrameworkOptions {
             event_handler: |framework, event| Box::pin(event_handler(framework, event)),
             commands: vec![
                 animanga::anime_scene(),
-                api_calls::ai_anime(),
                 api_calls::ai_image(),
                 api_calls::ai_summarize(),
                 api_calls::ai_text(),
