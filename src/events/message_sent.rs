@@ -247,7 +247,6 @@ pub async fn handle_message(
                                 guild.member(&ctx.http, new_message.author.id).await
                             {
                                 let guild_roles = guild.roles.clone();
-                                let mut mentioned_users = Vec::new();
                                 let roles: Vec<&str> = author_member
                                     .roles
                                     .iter()
@@ -261,59 +260,63 @@ pub async fn handle_message(
                                         roles.join(", ")
                                     ));
                                 }
-                                for target in &new_message.mentions {
-                                    if let Some(target_member) = target.member.as_ref() {
-                                        let target_roles = {
-                                            let roles: Vec<&str> = target_member
-                                                .roles
-                                                .iter()
-                                                .filter_map(|role_id| guild_roles.get(role_id))
-                                                .map(|role| role.name.as_str())
-                                                .collect();
-                                            roles.join(",")
-                                        };
-                                        let pfp_desc = {
-                                            let pfp = HTTP_CLIENT
-                                                .get(target.static_face())
-                                                .send()
-                                                .await?;
-                                            if pfp.status().is_success() {
-                                                let binary_pfp = pfp.bytes().await?.to_vec();
-                                                &ai_image_desc(&binary_pfp).await?
-                                            } else {
-                                                "Unable to describe"
-                                            }
-                                        };
-                                        let user_info = format!(
-                                            "{} was mentioned. Roles: {}. Profile picture: {}",
-                                            target.display_name(),
-                                            target_roles,
-                                            pfp_desc
-                                        );
-                                        mentioned_users.push(user_info);
+                                let mentioned_users_len = new_message.mentions.len() as usize;
+                                if mentioned_users_len != 0 {
+                                    let mut mentioned_users =
+                                        Vec::with_capacity(mentioned_users_len);
+                                    for target in &new_message.mentions {
+                                        if let Some(target_member) = target.member.as_ref() {
+                                            let target_roles = {
+                                                let roles: Vec<&str> = target_member
+                                                    .roles
+                                                    .iter()
+                                                    .filter_map(|role_id| guild_roles.get(role_id))
+                                                    .map(|role| role.name.as_str())
+                                                    .collect();
+                                                roles.join(",")
+                                            };
+                                            let pfp_desc = {
+                                                let pfp = HTTP_CLIENT
+                                                    .get(target.static_face())
+                                                    .send()
+                                                    .await?;
+                                                if pfp.status().is_success() {
+                                                    let binary_pfp = pfp.bytes().await?.to_vec();
+                                                    &ai_image_desc(&binary_pfp).await?
+                                                } else {
+                                                    "Unable to describe"
+                                                }
+                                            };
+                                            let user_info = format!(
+                                                "{} was mentioned. Roles: {}. Profile picture: {}",
+                                                target.display_name(),
+                                                target_roles,
+                                                pfp_desc
+                                            );
+                                            mentioned_users.push(user_info);
+                                        }
                                     }
-                                }
-                                if !mentioned_users.is_empty() {
                                     message_parts.push(format!(
                                         "{} user(s) were mentioned:",
                                         mentioned_users.len()
                                     ));
                                     message_parts.extend(mentioned_users);
                                 }
-                                let mut attachments_desc = Vec::new();
-                                for attachment in &new_message.attachments {
-                                    match attachment.dimensions() {
-                                        Some(_) => {
-                                            let file = attachment.download().await?;
-                                            let description = ai_image_desc(&file).await?;
-                                            attachments_desc.push(description);
-                                        }
-                                        None => {
-                                            attachments_desc.push("not an image".to_string());
+                                let attachments_len = new_message.attachments.len() as usize;
+                                if attachments_len != 0 {
+                                    let mut attachments_desc = Vec::with_capacity(attachments_len);
+                                    for attachment in &new_message.attachments {
+                                        match attachment.dimensions() {
+                                            Some(_) => {
+                                                let file = attachment.download().await?;
+                                                let description = ai_image_desc(&file).await?;
+                                                attachments_desc.push(description);
+                                            }
+                                            None => {
+                                                attachments_desc.push("not an image".to_string());
+                                            }
                                         }
                                     }
-                                }
-                                if !attachments_desc.is_empty() {
                                     message_parts.push(format!(
                                         "{} image(s) were sent:",
                                         attachments_desc.len()
@@ -348,10 +351,10 @@ pub async fn handle_message(
                                                 );
                                                 (guild.name.into_string(), message)
                                             }
-                                            None => ("Unknown".to_string(), None),
+                                            None => ("Unknown".to_owned(), None),
                                         }
                                     }
-                                    Err(_) => ("Unknown".to_string(), None),
+                                    Err(_) => ("Unknown".to_owned(), None),
                                 },
                             };
                             match message {
