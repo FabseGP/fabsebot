@@ -149,11 +149,11 @@ pub async fn handle_message(
         .execute(&mut *tx)
         .await?;
         if let Some(guild_settings) = query!(
-                "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel FROM guild_settings WHERE guild_id = ?",
-                guild_id
-            )
-            .fetch_optional(&mut *tx)
-            .await?
+            "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel FROM guild_settings WHERE guild_id = ?",
+            guild_id
+        )
+        .fetch_optional(&mut *tx)
+        .await?
         {
             if let Some(spoiler_channel) = guild_settings.spoiler_channel {
                 if new_message.channel_id == ChannelId::new(spoiler_channel) {

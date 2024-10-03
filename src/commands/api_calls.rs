@@ -123,10 +123,9 @@ pub async fn ai_text(
         let fields: Vec<(String, String, bool)> = chunks
             .enumerate()
             .map(|(i, chunk)| {
-                let field_name = if i == 0 {
-                    "Response:".to_owned()
-                } else {
-                    format!("Response (cont. {}):", i + 1)
+                let field_name = match i {
+                    0 => "Response:".to_owned(),
+                    _ => format!("Response (cont. {}):", i + 1),
                 };
                 let chunk_str: String = chunk.iter().collect();
                 (field_name, chunk_str, false)
@@ -492,10 +491,9 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             let fields: Vec<(String, String, bool)> = chunks
                 .enumerate()
                 .map(|(i, chunk)| {
-                    let field_name = if i == 0 {
-                        "Response:".to_owned()
-                    } else {
-                        format!("Response (cont. {}):", i + 1)
+                    let field_name = match i {
+                        0 => "Response:".to_owned(),
+                        _ => format!("Response (cont. {}):", i + 1),
                     };
                     let chunk_str: String = chunk.iter().collect();
                     (field_name, chunk_str, false)
@@ -732,10 +730,9 @@ pub async fn urban(
         let mut fields: Vec<(String, String, bool)> = chunks
             .enumerate()
             .map(|(i, chunk)| {
-                let field_name = if i == 0 {
-                    "Definition:".to_owned()
-                } else {
-                    format!("Response (cont. {}):", i + 1)
+                let field_name = match i {
+                    0 => "Definition:".to_owned(),
+                    _ => format!("Response (cont. {}):", i + 1),
                 };
                 let chunk_str: String = chunk.iter().collect();
                 (field_name, chunk_str.replace(['[', ']'], ""), false)
@@ -794,10 +791,9 @@ pub async fn urban(
                 let mut new_fields: Vec<(String, String, bool)> = new_chunks
                     .enumerate()
                     .map(|(i, new_chunks)| {
-                        let field_name = if i == 0 {
-                            "Definition:".to_owned()
-                        } else {
-                            format!("Response (cont. {}):", i + 1)
+                        let field_name = match i {
+                            0 => "Definition:".to_owned(),
+                            _ => format!("Response (cont. {}):", i + 1),
                         };
                         let chunk_str: String = new_chunks.iter().collect();
                         (field_name, chunk_str.replace(['[', ']'], ""), false)

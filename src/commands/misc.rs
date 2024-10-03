@@ -181,24 +181,33 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             None => "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned(),
         },
     };
-    let mut users = query_as!(
+    let users = query_as!(
         UserCount,
-        "SELECT message_count, user_id FROM user_settings WHERE guild_id = ?",
+        "SELECT message_count, user_id FROM user_settings WHERE guild_id = ? ORDER BY message_count DESC LIMIT 25",
         u64::from(guild.id)
     )
     .fetch_all(&mut *ctx.data().db.acquire().await?)
     .await?;
-    users.sort_by(|a, b| b.message_count.cmp(&a.message_count));
-    let mut embed = CreateEmbed::default()
-        .title("Server leaderboard of sent messages")
-        .thumbnail(thumbnail)
-        .color(0xFF5733);
-    for user in users.into_iter() {
+
+    let user_count = users.len();
+    let mut fields = Vec::with_capacity(user_count);
+    for (index, user) in users.iter().enumerate() {
         if let Ok(target) = ctx.http().get_user(UserId::new(user.user_id)).await {
             let user_name = target.display_name().to_owned();
-            embed = embed.field(user_name, user.message_count.to_string(), false);
+            let rank = index + 1;
+            fields.push((
+                format!("#{} {}", rank, user_name),
+                user.message_count.to_string(),
+                false,
+            ));
         }
     }
+
+    let embed = CreateEmbed::default()
+        .title(format!("Top {} users by message count", user_count))
+        .thumbnail(thumbnail)
+        .color(0xFF5733)
+        .fields(fields);
 
     ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
