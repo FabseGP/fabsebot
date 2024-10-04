@@ -6,7 +6,7 @@ use poise::{
 };
 use serde::Deserialize;
 use songbird::{
-    driver::Bitrate,
+    driver::{Bitrate, DecodeMode},
     input::{Compose, Input, YoutubeDl},
     tracks::PlayMode,
     Call, Config,
@@ -36,9 +36,10 @@ struct DeezerArtist {
 
 fn configure_call(handler: &mut Call) {
     let new_config = Config::default()
+        .decode_mode(DecodeMode::Pass)
         .use_softclip(false)
-        .playout_buffer_length(NonZeroUsize::new(750).unwrap())
-        .playout_spike_length(375);
+        .playout_buffer_length(NonZeroUsize::new(500).unwrap())
+        .playout_spike_length(250);
     handler.set_config(new_config);
     handler.set_bitrate(Bitrate::Max);
 }
