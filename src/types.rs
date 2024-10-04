@@ -6,6 +6,7 @@ use reqwest::Client;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 use songbird::Songbird;
+use sqlx::MySqlPool;
 use std::{env, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -14,22 +15,21 @@ pub struct ChatMessage {
     pub role: String,
     pub content: String,
 }
-
 type ChatHashMap = FxHashMap<u64, FxHashMap<u64, Vec<ChatMessage>>>;
-pub type Error = anyhow::Error;
-pub type SContext<'a> = poise::Context<'a, Data, Error>;
 
 pub struct Data {
-    pub db: sqlx::MySqlPool,
+    pub db: MySqlPool,
     pub music_manager: Arc<Songbird>,
     pub conversations: Arc<Mutex<ChatHashMap>>,
 }
+pub type Error = anyhow::Error;
+pub type SContext<'a> = poise::Context<'a, Data, Error>;
 
 pub struct ClientData {
     pub shard_manager: Arc<ShardManager>,
 }
-
 pub static CLIENT_DATA: OnceCell<ClientData> = OnceCell::new();
+
 pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(Client::new);
 pub static RNG: Lazy<Mutex<Rng>> = Lazy::new(|| Mutex::new(Rng::new()));
 

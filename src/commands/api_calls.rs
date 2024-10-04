@@ -458,7 +458,7 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
         let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
         let messages_string = {
-            let mut collected_messages = Vec::new();
+            let mut collected_messages = Vec::with_capacity(25);
             let mut count = 0;
 
             while let Some(message_result) = messages.next().await {

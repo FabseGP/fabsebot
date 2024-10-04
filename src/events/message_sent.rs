@@ -246,7 +246,7 @@ pub async fn handle_message(
                             if let Ok(author_member) =
                                 guild.member(&ctx.http, new_message.author.id).await
                             {
-                                let guild_roles = guild.roles.clone();
+                                let guild_roles = &guild.roles;
                                 let roles: Vec<&str> = author_member
                                     .roles
                                     .iter()

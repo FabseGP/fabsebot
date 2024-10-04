@@ -201,7 +201,7 @@ pub async fn start() -> anyhow::Result<()> {
         .framework(framework)
         .voice_manager::<Songbird>(manager)
         .cache_settings(cache_settings)
-        .data(Arc::new(user_data) as _)
+        .data(Arc::new(user_data))
         .await;
     match client {
         Ok(mut client) => {
