@@ -543,7 +543,7 @@ pub async fn handle_message(
                     );
                 let mut preview_message = CreateMessage::default()
                     .embed(embed)
-                    .allowed_mentions(CreateAllowedMentions::default().replied_user(true));
+                    .allowed_mentions(CreateAllowedMentions::default().replied_user(false));
                 if ref_msg.channel_id == new_message.channel_id {
                     preview_message = preview_message.reference_message(&ref_msg);
                 }
