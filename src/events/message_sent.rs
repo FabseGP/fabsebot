@@ -5,11 +5,12 @@ use crate::{
 
 use anyhow::Context;
 use poise::serenity_prelude::{
-    self as serenity, futures::StreamExt, ChannelId, CreateEmbed, CreateMessage, EditMessage,
-    ExecuteWebhook, GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
+    self as serenity, ChannelId, CreateEmbed, CreateMessage, EditMessage, ExecuteWebhook,
+    GetMessages, GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
 use sqlx::{query, Acquire};
 use std::sync::Arc;
+use tokio::try_join;
 
 pub async fn handle_message(
     ctx: &serenity::Context,
@@ -28,10 +29,24 @@ pub async fn handle_message(
             .acquire()
             .await
             .context("Failed to acquire database connection")?;
+        let (user_settings, guild_settings, words) = {
+            let mut conn1 = data.db.acquire().await?;
+            let mut conn2 = data.db.acquire().await?;
+            let mut conn3 = data.db.acquire().await?;
+            try_join!(
+                query!("SELECT * FROM user_settings WHERE guild_id = ?", guild_id)
+                    .fetch_all(&mut *conn1),
+                query!(
+                    "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel
+                         FROM guild_settings WHERE guild_id = ?",
+                    guild_id
+                )
+                .fetch_optional(&mut *conn2),
+                query!("SELECT word FROM words_count WHERE guild_id = ?", guild_id)
+                    .fetch_all(&mut *conn3)
+            )?
+        };
         let mut tx = conn.begin().await.context("Failed to acquire savepoint")?;
-        let user_settings = query!("SELECT * FROM user_settings WHERE guild_id = ?", guild_id)
-            .fetch_all(&mut *tx)
-            .await?;
         for target in &user_settings {
             let afk = match target.afk {
                 Some(afk) => afk,
@@ -147,30 +162,26 @@ pub async fn handle_message(
         )
         .execute(&mut *tx)
         .await?;
-        if let Some(guild_settings) = query!(
-            "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel FROM guild_settings WHERE guild_id = ?",
-            guild_id
-        )
-        .fetch_optional(&mut *tx)
-        .await?
-        {
+        if let Some(guild_settings) = guild_settings {
             if let Some(spoiler_channel) = guild_settings.spoiler_channel {
                 if new_message.channel_id == ChannelId::new(spoiler_channel) {
                     spoiler_message(ctx, new_message, &new_message.content).await?;
                 }
             }
-            if let (Some(channel), Some(rate)) = (guild_settings.dead_chat_channel, guild_settings.dead_chat_rate) {
+            if let (Some(channel), Some(rate)) = (
+                guild_settings.dead_chat_channel,
+                guild_settings.dead_chat_rate,
+            ) {
                 let dead_chat_channel = ChannelId::new(channel);
                 let last_message_time = {
-                    let mut messages = dead_chat_channel.messages_iter(&ctx).boxed();
-                    match messages.next().await {
-                        Some(message_result) => {
-                            match message_result {
-                                Ok(message) => Some(message.timestamp.timestamp()),
-                                Err(_) => None,
-                            }
-                        },
-                        None => None
+                    let messages = dead_chat_channel
+                        .messages(&ctx.http, GetMessages::default().limit(1))
+                        .await;
+                    match messages {
+                        Ok(message_result) => {
+                            message_result.first().map(|msg| msg.timestamp.timestamp())
+                        }
+                        Err(_) => None,
                     }
                 };
                 if let Some(last_time) = last_message_time {
@@ -178,27 +189,25 @@ pub async fn handle_message(
                     if current_time - last_time > rate as i64 * 60 {
                         let urls = get_gifs("dead chat").await?;
                         dead_chat_channel
-                            .say(&ctx.http, urls[RNG.lock().await.usize(..urls.len())].as_str())
+                            .say(
+                                &ctx.http,
+                                urls[RNG.lock().await.usize(..urls.len())].as_str(),
+                            )
                             .await?;
                     }
                 }
             }
         }
-        if let Ok(records) = query!("SELECT word FROM words_count WHERE guild_id = ?", guild_id)
-            .fetch_all(&mut *tx)
-            .await
-        {
-            let words: Vec<&str> = records.iter().map(|row| row.word.as_str()).collect();
-            for word in words.iter() {
-                if content.contains(word) {
-                    query!(
-                        "UPDATE words_count SET count = count + 1 WHERE guild_id = ? AND word = ?",
-                        guild_id,
-                        word
-                    )
-                    .execute(&mut *tx)
-                    .await?;
-                }
+        let words: Vec<&str> = words.iter().map(|row| row.word.as_str()).collect();
+        for word in words.iter() {
+            if content.contains(word) {
+                query!(
+                    "UPDATE words_count SET count = count + 1 WHERE guild_id = ? AND word = ?",
+                    guild_id,
+                    word
+                )
+                .execute(&mut *tx)
+                .await?;
             }
         }
         tx.commit()
@@ -312,7 +321,7 @@ pub async fn handle_message(
                                                 attachments_desc.push(description);
                                             }
                                             None => {
-                                                attachments_desc.push("not an image".to_string());
+                                                attachments_desc.push("not an image".to_owned());
                                             }
                                         }
                                     }
@@ -439,10 +448,11 @@ pub async fn handle_message(
                                 }
                             }
                             if response.len() >= 2000 {
-                                let (first, second) =
-                                    response.split_at(response.char_indices().nth(2000).unwrap().0);
-                                new_message.reply(&ctx.http, first).await?;
-                                new_message.reply(&ctx.http, second).await?;
+                                for chunk in response.chars().collect::<Vec<_>>().chunks(2000) {
+                                    new_message
+                                        .reply(&ctx.http, chunk.iter().collect::<String>())
+                                        .await?;
+                                }
                             } else {
                                 new_message.reply(&ctx.http, response).await?;
                             }
