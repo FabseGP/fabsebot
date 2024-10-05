@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ab_glyph = "0"
 anyhow = "1"
+dashmap = { version = "6", features = ["inline"] }
 dotenvy = "0"
 fastrand = "2"
 image = { version = "0", default-features = false, features = ["avif", "rayon", "webp"] }
@@ -14,7 +15,6 @@ once_cell = "1"
 poise = { git = "https://github.com/serenity-rs/poise", branch = "serenity-next" }
 regex = "1"
 reqwest = { version = "0", default-features = false, features = ["json", "rustls-tls"] }
-rustc-hash = { version = "2", features = ["nightly"] }
 serde = { version = "1", features = ["serde_derive"] }
 serde_json = "1"
 serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "gateway", "model", "rustls_backend", "voice"] }

@@ -8,7 +8,6 @@ use poise::serenity_prelude::{
     self as serenity, futures::StreamExt, ChannelId, CreateEmbed, CreateMessage, EditMessage,
     ExecuteWebhook, GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
-use rustc_hash::FxHashSet;
 use sqlx::{query, Acquire};
 use std::sync::Arc;
 
@@ -208,7 +207,7 @@ pub async fn handle_message(
         if let Some(topic) = new_message.guild_channel(&ctx.http).await?.topic {
             if topic.contains("ai-chat") {
                 if content == "clear" {
-                    let mut conversations = data.conversations.lock().await;
+                    let conversations = &data.conversations;
                     conversations
                         .entry(guild_id)
                         .or_default()
@@ -375,27 +374,37 @@ pub async fn handle_message(
                         message_parts.join("\n")
                     };
                     let history_clone = {
-                        let mut conversations = data.conversations.lock().await;
-                        let history = conversations
-                            .entry(guild_id)
-                            .or_default()
+                        let conversations = &data.conversations;
+                        let conversations_entry = conversations.entry(guild_id).or_default();
+                        let mut history = conversations_entry
                             .entry(u64::from(new_message.channel_id))
                             .or_default();
-                        let mut unique_users = FxHashSet::default();
-                        for message in history.iter() {
-                            if message.role == "user" {
-                                if let Some(user_name) = message.content.split(':').next() {
-                                    unique_users.insert(user_name.trim());
+
+                        let unique_users: Vec<&str> = history
+                            .iter()
+                            .filter_map(|message| {
+                                if message.role == "user" {
+                                    message.content.split(':').next().map(str::trim)
+                                } else {
+                                    None
                                 }
-                            }
-                        }
+                            })
+                            .collect();
+
                         if !unique_users.is_empty() {
                             system_content.push_str("Current users in the conversation: ");
-                            for user in unique_users {
-                                system_content.push_str(format!("- {}", user).as_str());
-                            }
+                            system_content.push_str(
+                                &unique_users
+                                    .iter()
+                                    .map(|user| format!("- {}", user))
+                                    .collect::<Vec<_>>()
+                                    .join("\n"),
+                            );
                         }
-                        match history.iter_mut().find(|msg| msg.role == "system") {
+
+                        let system_message = history.iter_mut().find(|msg| msg.role == "system");
+
+                        match system_message {
                             Some(system_message) => {
                                 system_message.content = system_content;
                             }
@@ -418,15 +427,16 @@ pub async fn handle_message(
                     };
                     match ai_response(&history_clone).await {
                         Ok(response) => {
-                            let mut conversations = data.conversations.lock().await;
-                            if let Some(history) = conversations
-                                .get_mut(&guild_id)
-                                .and_then(|gc| gc.get_mut(&u64::from(new_message.channel_id)))
-                            {
-                                history.push(ChatMessage {
-                                    role: "assistant".to_owned(),
-                                    content: response.to_owned(),
-                                });
+                            let conversations = &data.conversations;
+                            if let Some(guild_conversations) = conversations.get_mut(&guild_id) {
+                                if let Some(mut history) =
+                                    guild_conversations.get_mut(&u64::from(new_message.channel_id))
+                                {
+                                    history.push(ChatMessage {
+                                        role: "assistant".to_owned(),
+                                        content: response.to_owned(),
+                                    });
+                                }
                             }
                             if response.len() >= 2000 {
                                 let (first, second) =
@@ -439,16 +449,17 @@ pub async fn handle_message(
                         }
                         Err(_) => {
                             let error_msg = "Sorry, I had to forget our convo, too boring!";
-                            let mut conversations = data.conversations.lock().await;
-                            if let Some(history) = conversations
-                                .get_mut(&guild_id)
-                                .and_then(|gc| gc.get_mut(&u64::from(new_message.channel_id)))
-                            {
-                                history.clear();
-                                history.push(ChatMessage {
-                                    role: "assistant".to_owned(),
-                                    content: error_msg.to_owned(),
-                                });
+                            let conversations = &data.conversations;
+                            if let Some(guild_conversations) = conversations.get_mut(&guild_id) {
+                                if let Some(mut history) =
+                                    guild_conversations.get_mut(&u64::from(new_message.channel_id))
+                                {
+                                    history.clear();
+                                    history.push(ChatMessage {
+                                        role: "assistant".to_owned(),
+                                        content: error_msg.to_owned(),
+                                    });
+                                }
                             }
                             new_message.reply(&ctx.http, error_msg).await?;
                         }

@@ -3,6 +3,7 @@ use crate::{
     utils::{ai_response_simple, quote_image},
 };
 
+use dashmap::DashSet;
 use image::load_from_memory;
 use poise::{
     builtins,
@@ -13,7 +14,6 @@ use poise::{
     },
     CreateReply,
 };
-use rustc_hash::FxHashSet;
 use sqlx::{query, query_as};
 use std::{path::Path, process, time::Duration};
 use tokio::fs::remove_file;
@@ -57,7 +57,7 @@ pub async fn anony_poll(
     .await?;
 
     let mut vote_counts = vec![0; options_list.len()];
-    let mut voted_users = FxHashSet::default();
+    let voted_users = DashSet::new();
 
     let id_borrow = ctx.id();
     let options_count = options_list.len();

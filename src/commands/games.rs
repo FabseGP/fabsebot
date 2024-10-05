@@ -1,5 +1,6 @@
 use crate::types::{Error, SContext};
 
+use dashmap::DashMap;
 use poise::{
     futures_util::{Stream, StreamExt},
     serenity_prelude::{
@@ -8,7 +9,6 @@ use poise::{
     },
     CreateReply,
 };
-use rustc_hash::FxHashMap;
 use std::time::Duration;
 
 async fn autocomplete_choice<'a>(
@@ -79,17 +79,17 @@ pub async fn rps(
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                 .await?;
 
-            let outcomes: FxHashMap<&str, &str> =
+            let outcomes: DashMap<&str, &str> =
                 [("rock", "scissor"), ("paper", "rock"), ("scissor", "paper")]
                     .iter()
                     .cloned()
                     .collect();
 
             let response = {
-                let result = if target_choice.contains(&author_choice) {
+                let result = if target_choice == &author_choice {
                     None
-                } else if let Some(&v) = outcomes.get(&author_choice.as_str()) {
-                    if target_choice.contains(v) {
+                } else if let Some(v) = outcomes.get(&author_choice.as_str()) {
+                    if target_choice == v.key() {
                         Some(&author_choice)
                     } else {
                         Some(target_choice)

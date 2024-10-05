@@ -1,9 +1,9 @@
+use dashmap::DashMap;
 use fastrand::Rng;
 use once_cell::sync::{Lazy, OnceCell};
 use poise::serenity_prelude::ShardManager;
 use regex::Regex;
 use reqwest::Client;
-use rustc_hash::FxHashMap;
 use serde::Serialize;
 use songbird::Songbird;
 use sqlx::MySqlPool;
@@ -15,12 +15,12 @@ pub struct ChatMessage {
     pub role: String,
     pub content: String,
 }
-type ChatHashMap = FxHashMap<u64, FxHashMap<u64, Vec<ChatMessage>>>;
+type ChatHashMap = DashMap<u64, DashMap<u64, Vec<ChatMessage>>>;
 
 pub struct Data {
     pub db: MySqlPool,
     pub music_manager: Arc<Songbird>,
-    pub conversations: Arc<Mutex<ChatHashMap>>,
+    pub conversations: Arc<ChatHashMap>,
 }
 pub type Error = anyhow::Error;
 pub type SContext<'a> = poise::Context<'a, Data, Error>;

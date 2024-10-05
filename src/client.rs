@@ -8,17 +8,16 @@ use crate::{
     types::{ClientData, Data, Error, CLIENT_DATA},
 };
 use anyhow::Context;
+use dashmap::DashMap;
 use poise::{
     builtins,
     serenity_prelude::{cache::Settings, Client, FullEvent, GatewayIntents},
     EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
     Prefix, PrefixFrameworkOptions,
 };
-use rustc_hash::FxHashMap;
 use songbird::Songbird;
 use sqlx::{migrate, mysql, query};
 use std::{borrow::Cow, env, sync::Arc, time::Duration};
-use tokio::sync::Mutex;
 use tracing::{error, warn};
 
 async fn on_error(error: FrameworkError<'_, Data, Error>) {
@@ -115,7 +114,7 @@ pub async fn start() -> anyhow::Result<()> {
     let user_data = Data {
         db: database,
         music_manager: Arc::clone(&manager),
-        conversations: Arc::new(Mutex::new(FxHashMap::default())),
+        conversations: Arc::new(DashMap::default()),
     };
     let framework = Framework::builder()
         .options(FrameworkOptions {

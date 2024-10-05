@@ -858,6 +858,7 @@ version = "0.5.0"
 dependencies = [
  "ab_glyph",
  "anyhow",
+ "dashmap",
  "dotenvy",
  "fastrand",
  "image",
@@ -866,7 +867,6 @@ dependencies = [
  "poise",
  "regex",
  "reqwest",
- "rustc-hash",
  "serde",
  "serde_json",
  "serenity",
