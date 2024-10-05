@@ -214,7 +214,12 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// Oh it's you
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
     let resp = ai_response_simple(

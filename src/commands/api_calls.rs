@@ -107,7 +107,11 @@ pub async fn ai_summarize(
 }
 
 /// Did someone say AI text?
-#[poise::command(slash_command)]
+#[poise::command(
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn ai_text(
     ctx: SContext<'_>,
     #[description = "AI personality, e.g. *you're an evil assistant*"] role: String,
@@ -203,7 +207,12 @@ struct EightBallResponse {
 }
 
 /// When you need a wise opinion
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn eightball(
     ctx: SContext<'_>,
     #[description = "Your question"]
@@ -244,80 +253,85 @@ pub async fn gif(
     ctx.defer().await?;
     let resp = get_gifs(&input).await;
     if let Ok(urls) = resp {
-        let len = urls.len();
-        let index = 0;
-        let next_id = format!("{}_next_{}", ctx.id(), index);
-        let prev_id = format!("{}_prev_{}", ctx.id(), index);
-        let mut state = State {
-            next_id,
-            prev_id,
-            index,
-            len,
-        };
-        let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
-            .style(ButtonStyle::Primary)
-            .label("➡️")]);
-        let components = if len > 1 { vec![next_button] } else { vec![] };
-        let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
-        ctx.send(CreateReply::default().embed(embed).components(components))
-            .await?;
-        if len > 1 {
-            while let Some(interaction) =
-                ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                    .timeout(Duration::from_secs(600))
-                    .filter(move |interaction| {
-                        let id = interaction.data.custom_id.as_str();
-                        id == state.next_id.as_str() || id == state.prev_id.as_str()
-                    })
-                    .await
-            {
-                let choice = &interaction.data.custom_id.as_str();
-
-                interaction
-                    .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-                    .await?;
-
-                if choice.contains("next") && state.index < state.len - 1 {
-                    state.index += 1;
-                } else if choice.contains("prev") && state.index > 0 {
-                    state.index -= 1;
-                }
-
-                state.next_id = format!("{}_next_{}", ctx.id(), state.index);
-                state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
-
-                let next_button = CreateButton::new(&state.next_id)
-                    .style(ButtonStyle::Primary)
-                    .label("➡️");
-
-                let prev_button = CreateButton::new(&state.prev_id)
-                    .style(ButtonStyle::Primary)
-                    .label("⬅️");
-
-                let new_embed = CreateEmbed::default()
-                    .title(input.as_str())
-                    .image(&urls[state.index]);
-
-                let new_components = {
-                    if state.index == 0 {
-                        vec![CreateActionRow::Buttons(vec![next_button])]
-                    } else if state.index == len - 1 {
-                        vec![CreateActionRow::Buttons(vec![prev_button])]
-                    } else {
-                        vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
-                    }
-                };
-
-                let mut msg = interaction.message;
-
-                msg.edit(
-                    ctx.http(),
-                    EditMessage::default()
-                        .embed(new_embed)
-                        .components(new_components),
-                )
+        if ctx.guild_id().is_some() {
+            let len = urls.len();
+            let index = 0;
+            let next_id = format!("{}_next_{}", ctx.id(), index);
+            let prev_id = format!("{}_prev_{}", ctx.id(), index);
+            let mut state = State {
+                next_id,
+                prev_id,
+                index,
+                len,
+            };
+            let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
+                .style(ButtonStyle::Primary)
+                .label("➡️")]);
+            let components = if len > 1 { vec![next_button] } else { vec![] };
+            let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
+            ctx.send(CreateReply::default().embed(embed).components(components))
                 .await?;
+            if len > 1 {
+                while let Some(interaction) =
+                    ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                        .timeout(Duration::from_secs(600))
+                        .filter(move |interaction| {
+                            let id = interaction.data.custom_id.as_str();
+                            id == state.next_id.as_str() || id == state.prev_id.as_str()
+                        })
+                        .await
+                {
+                    let choice = &interaction.data.custom_id.as_str();
+
+                    interaction
+                        .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                        .await?;
+
+                    if choice.contains("next") && state.index < state.len - 1 {
+                        state.index += 1;
+                    } else if choice.contains("prev") && state.index > 0 {
+                        state.index -= 1;
+                    }
+
+                    state.next_id = format!("{}_next_{}", ctx.id(), state.index);
+                    state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
+
+                    let next_button = CreateButton::new(&state.next_id)
+                        .style(ButtonStyle::Primary)
+                        .label("➡️");
+
+                    let prev_button = CreateButton::new(&state.prev_id)
+                        .style(ButtonStyle::Primary)
+                        .label("⬅️");
+
+                    let new_embed = CreateEmbed::default()
+                        .title(input.as_str())
+                        .image(&urls[state.index]);
+
+                    let new_components = {
+                        if state.index == 0 {
+                            vec![CreateActionRow::Buttons(vec![next_button])]
+                        } else if state.index == len - 1 {
+                            vec![CreateActionRow::Buttons(vec![prev_button])]
+                        } else {
+                            vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                        }
+                    };
+
+                    let mut msg = interaction.message;
+
+                    msg.edit(
+                        ctx.http(),
+                        EditMessage::default()
+                            .embed(new_embed)
+                            .components(new_components),
+                    )
+                    .await?;
+                }
             }
+        } else {
+            let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
+            ctx.send(CreateReply::default().embed(embed)).await?;
         }
     } else {
         ctx.send(CreateReply::default().content("Life is not gifing"))
@@ -528,7 +542,12 @@ struct FabseLanguage {
 }
 
 /// When you stumble on some ancient sayings
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn translate(
     ctx: SContext<'_>,
     #[description = "Language to be translated to, e.g. en"] target: Option<String>,
@@ -537,12 +556,23 @@ pub async fn translate(
     sentence: Option<String>,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let msg = ctx
-        .channel_id()
-        .message(&ctx.http(), MessageId::new(ctx.id()))
-        .await?;
-    let content = match msg.referenced_message {
-        Some(ref_msg) => ref_msg.content.into_string(),
+    let content = match ctx.guild_id() {
+        Some(_) => {
+            let msg = ctx
+                .channel_id()
+                .message(&ctx.http(), MessageId::new(ctx.id()))
+                .await?;
+            match msg.referenced_message {
+                Some(ref_msg) => ref_msg.content.into_string(),
+                None => match sentence {
+                    Some(query) => query,
+                    None => {
+                        ctx.reply("Bruh, give me smth to translate").await?;
+                        return Ok(());
+                    }
+                },
+            }
+        }
         None => match sentence {
             Some(query) => query,
             None => {
@@ -570,7 +600,195 @@ pub async fn translate(
     if response.status().is_success() {
         let data: FabseTranslate = response.json().await?;
         if !data.translated_text.is_empty() {
-            let len = data.alternatives.len();
+            if ctx.guild_id().is_some() {
+                let len = data.alternatives.len();
+                let index = 0;
+                let next_id = format!("{}_next_{}", ctx.id(), index);
+                let prev_id = format!("{}_prev_{}", ctx.id(), index);
+                let mut state = State {
+                    next_id,
+                    prev_id,
+                    index,
+                    len,
+                };
+                let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
+                    .style(ButtonStyle::Primary)
+                    .label("➡️")]);
+                let components = if len > 1 { vec![next_button] } else { vec![] };
+                ctx.send(
+                    CreateReply::default()
+                        .embed(
+                            CreateEmbed::default()
+                                .title(format!(
+                                    "Translation from {} to {} with {}% confidence",
+                                    data.detected_language.language,
+                                    target_lang,
+                                    data.detected_language.confidence
+                                ))
+                                .color(0x33d17a)
+                                .field("Original:", &content, false)
+                                .field("Translation:", &data.translated_text, false),
+                        )
+                        .components(components),
+                )
+                .await?;
+                if len > 1 {
+                    while let Some(interaction) =
+                        ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                            .timeout(Duration::from_secs(600))
+                            .filter(move |interaction| {
+                                let id = interaction.data.custom_id.as_str();
+                                id == state.next_id.as_str() || id == state.prev_id.as_str()
+                            })
+                            .await
+                    {
+                        let choice = &interaction.data.custom_id.as_str();
+
+                        interaction
+                            .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                            .await?;
+
+                        if choice.contains("next") && state.index < state.len - 1 {
+                            state.index += 1;
+                        } else if choice.contains("prev") && state.index > 0 {
+                            state.index -= 1;
+                        }
+
+                        state.next_id = format!("{}_next_{}", ctx.id(), state.index);
+                        state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
+
+                        let next_button = CreateButton::new(&state.next_id)
+                            .style(ButtonStyle::Primary)
+                            .label("➡️");
+
+                        let prev_button = CreateButton::new(&state.prev_id)
+                            .style(ButtonStyle::Primary)
+                            .label("⬅️");
+
+                        let new_embed = CreateEmbed::default()
+                            .title(format!(
+                                "Translation from {} to {} with {}% confidence",
+                                data.detected_language.language,
+                                target_lang,
+                                data.detected_language.confidence
+                            ))
+                            .color(0x33d17a)
+                            .field("Original:", &content, false)
+                            .field(
+                                "Translation:",
+                                if state.index == 0 {
+                                    &data.translated_text
+                                } else {
+                                    &data.alternatives[state.index - 1]
+                                },
+                                false,
+                            );
+
+                        let new_components = if state.index == 0 {
+                            vec![CreateActionRow::Buttons(vec![next_button])]
+                        } else if state.index == len - 1 {
+                            vec![CreateActionRow::Buttons(vec![prev_button])]
+                        } else {
+                            vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                        };
+
+                        let mut msg = interaction.message;
+
+                        msg.edit(
+                            ctx.http(),
+                            EditMessage::default()
+                                .embed(new_embed)
+                                .components(new_components),
+                        )
+                        .await?;
+                    }
+                }
+            } else {
+                ctx.send(
+                    CreateReply::default().embed(
+                        CreateEmbed::default()
+                            .title(format!(
+                                "Translation from {} to {} with {}% confidence",
+                                data.detected_language.language,
+                                target_lang,
+                                data.detected_language.confidence
+                            ))
+                            .color(0x33d17a)
+                            .field("Original:", &content, false)
+                            .field("Translation:", &data.translated_text, false),
+                    ),
+                )
+                .await?;
+            }
+        } else {
+            ctx.send(CreateReply::default().content("Too dangerous to translate"))
+                .await?;
+        }
+    } else {
+        ctx.send(CreateReply::default().content("My translator is currently busy, pls standby"))
+            .await?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct UrbanResponse {
+    list: Vec<UrbanDict>,
+}
+#[derive(Deserialize)]
+struct UrbanDict {
+    definition: String,
+    example: String,
+    word: String,
+}
+
+/// The holy moly urbandictionary
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
+pub async fn urban(
+    ctx: SContext<'_>,
+    #[description = "Word(s) to lookup"]
+    #[rest]
+    input: String,
+) -> Result<(), Error> {
+    ctx.defer().await?;
+    let request_url = format!(
+        "https://api.urbandictionary.com/v0/define?term={}",
+        encode(&input)
+    );
+    let request = HTTP_CLIENT.get(request_url).send().await?;
+    let data: UrbanResponse = request.json().await?;
+    if !data.list.is_empty() {
+        let response_chars: Vec<char> = data.list[0].definition.chars().collect();
+        let chunks = response_chars.chunks(1024);
+
+        let mut fields: Vec<(String, String, bool)> = chunks
+            .enumerate()
+            .map(|(i, chunk)| {
+                let field_name = match i {
+                    0 => "Definition:".to_owned(),
+                    _ => format!("Response (cont. {}):", i + 1),
+                };
+                let chunk_str: String = chunk.iter().collect();
+                (field_name, chunk_str.replace(['[', ']'], ""), false)
+            })
+            .collect();
+        fields.push((
+            "Example:".to_owned(),
+            data.list[0].example.replace(['[', ']'], ""),
+            false,
+        ));
+        let embed = CreateEmbed::default()
+            .title(&data.list[0].word)
+            .color(0xEFFF00)
+            .fields(fields);
+
+        if ctx.guild_id().is_some() {
+            let len = data.list.len();
             let index = 0;
             let next_id = format!("{}_next_{}", ctx.id(), index);
             let prev_id = format!("{}_prev_{}", ctx.id(), index);
@@ -584,23 +802,10 @@ pub async fn translate(
                 .style(ButtonStyle::Primary)
                 .label("➡️")]);
             let components = if len > 1 { vec![next_button] } else { vec![] };
-            ctx.send(
-                CreateReply::default()
-                    .embed(
-                        CreateEmbed::default()
-                            .title(format!(
-                                "Translation from {} to {} with {}% confidence",
-                                data.detected_language.language,
-                                target_lang,
-                                data.detected_language.confidence
-                            ))
-                            .color(0x33d17a)
-                            .field("Original:", &content, false)
-                            .field("Translation:", &data.translated_text, false),
-                    )
-                    .components(components),
-            )
-            .await?;
+
+            ctx.send(CreateReply::default().embed(embed).components(components))
+                .await?;
+
             if len > 1 {
                 while let Some(interaction) =
                     ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
@@ -634,24 +839,31 @@ pub async fn translate(
                         .style(ButtonStyle::Primary)
                         .label("⬅️");
 
+                    let new_response_chars: Vec<char> =
+                        data.list[state.index].definition.chars().collect();
+                    let new_chunks = new_response_chars.chunks(1024);
+
+                    let mut new_fields: Vec<(String, String, bool)> = new_chunks
+                        .enumerate()
+                        .map(|(i, new_chunks)| {
+                            let field_name = match i {
+                                0 => "Definition:".to_owned(),
+                                _ => format!("Response (cont. {}):", i + 1),
+                            };
+                            let chunk_str: String = new_chunks.iter().collect();
+                            (field_name, chunk_str.replace(['[', ']'], ""), false)
+                        })
+                        .collect();
+                    new_fields.push((
+                        "Example:".to_owned(),
+                        data.list[0].example.replace(['[', ']'], ""),
+                        false,
+                    ));
+
                     let new_embed = CreateEmbed::default()
-                        .title(format!(
-                            "Translation from {} to {} with {}% confidence",
-                            data.detected_language.language,
-                            target_lang,
-                            data.detected_language.confidence
-                        ))
-                        .color(0x33d17a)
-                        .field("Original:", &content, false)
-                        .field(
-                            "Translation:",
-                            if state.index == 0 {
-                                &data.translated_text
-                            } else {
-                                &data.alternatives[state.index - 1]
-                            },
-                            false,
-                        );
+                        .title(&data.list[state.index].word)
+                        .color(0xEFFF00)
+                        .fields(new_fields);
 
                     let new_components = if state.index == 0 {
                         vec![CreateActionRow::Buttons(vec![next_button])]
@@ -673,161 +885,7 @@ pub async fn translate(
                 }
             }
         } else {
-            ctx.send(CreateReply::default().content("Too dangerous to translate"))
-                .await?;
-        }
-    } else {
-        ctx.send(CreateReply::default().content("My translator is currently busy, pls standby"))
-            .await?;
-    }
-    Ok(())
-}
-
-#[derive(Deserialize)]
-struct UrbanResponse {
-    list: Vec<UrbanDict>,
-}
-#[derive(Deserialize)]
-struct UrbanDict {
-    definition: String,
-    example: String,
-    word: String,
-}
-
-/// The holy moly urbandictionary
-#[poise::command(prefix_command, slash_command)]
-pub async fn urban(
-    ctx: SContext<'_>,
-    #[description = "Word(s) to lookup"]
-    #[rest]
-    input: String,
-) -> Result<(), Error> {
-    ctx.defer().await?;
-    let request_url = format!(
-        "https://api.urbandictionary.com/v0/define?term={}",
-        encode(&input)
-    );
-    let request = HTTP_CLIENT.get(request_url).send().await?;
-    let data: UrbanResponse = request.json().await?;
-    if !data.list.is_empty() {
-        let len = data.list.len();
-        let index = 0;
-        let next_id = format!("{}_next_{}", ctx.id(), index);
-        let prev_id = format!("{}_prev_{}", ctx.id(), index);
-        let mut state = State {
-            next_id,
-            prev_id,
-            index,
-            len,
-        };
-        let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
-            .style(ButtonStyle::Primary)
-            .label("➡️")]);
-        let components = if len > 1 { vec![next_button] } else { vec![] };
-        let response_chars: Vec<char> = data.list[0].definition.chars().collect();
-        let chunks = response_chars.chunks(1024);
-
-        let mut fields: Vec<(String, String, bool)> = chunks
-            .enumerate()
-            .map(|(i, chunk)| {
-                let field_name = match i {
-                    0 => "Definition:".to_owned(),
-                    _ => format!("Response (cont. {}):", i + 1),
-                };
-                let chunk_str: String = chunk.iter().collect();
-                (field_name, chunk_str.replace(['[', ']'], ""), false)
-            })
-            .collect();
-        fields.push((
-            "Example:".to_owned(),
-            data.list[0].example.replace(['[', ']'], ""),
-            false,
-        ));
-        let embed = CreateEmbed::default()
-            .title(&data.list[0].word)
-            .color(0xEFFF00)
-            .fields(fields);
-
-        ctx.send(CreateReply::default().embed(embed).components(components))
-            .await?;
-
-        if len > 1 {
-            while let Some(interaction) =
-                ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                    .timeout(Duration::from_secs(600))
-                    .filter(move |interaction| {
-                        let id = interaction.data.custom_id.as_str();
-                        id == state.next_id.as_str() || id == state.prev_id.as_str()
-                    })
-                    .await
-            {
-                let choice = &interaction.data.custom_id.as_str();
-
-                interaction
-                    .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-                    .await?;
-
-                if choice.contains("next") && state.index < state.len - 1 {
-                    state.index += 1;
-                } else if choice.contains("prev") && state.index > 0 {
-                    state.index -= 1;
-                }
-
-                state.next_id = format!("{}_next_{}", ctx.id(), state.index);
-                state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
-
-                let next_button = CreateButton::new(&state.next_id)
-                    .style(ButtonStyle::Primary)
-                    .label("➡️");
-
-                let prev_button = CreateButton::new(&state.prev_id)
-                    .style(ButtonStyle::Primary)
-                    .label("⬅️");
-
-                let new_response_chars: Vec<char> =
-                    data.list[state.index].definition.chars().collect();
-                let new_chunks = new_response_chars.chunks(1024);
-
-                let mut new_fields: Vec<(String, String, bool)> = new_chunks
-                    .enumerate()
-                    .map(|(i, new_chunks)| {
-                        let field_name = match i {
-                            0 => "Definition:".to_owned(),
-                            _ => format!("Response (cont. {}):", i + 1),
-                        };
-                        let chunk_str: String = new_chunks.iter().collect();
-                        (field_name, chunk_str.replace(['[', ']'], ""), false)
-                    })
-                    .collect();
-                new_fields.push((
-                    "Example:".to_owned(),
-                    data.list[0].example.replace(['[', ']'], ""),
-                    false,
-                ));
-
-                let new_embed = CreateEmbed::default()
-                    .title(&data.list[state.index].word)
-                    .color(0xEFFF00)
-                    .fields(new_fields);
-
-                let new_components = if state.index == 0 {
-                    vec![CreateActionRow::Buttons(vec![next_button])]
-                } else if state.index == len - 1 {
-                    vec![CreateActionRow::Buttons(vec![prev_button])]
-                } else {
-                    vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
-                };
-
-                let mut msg = interaction.message;
-
-                msg.edit(
-                    ctx.http(),
-                    EditMessage::default()
-                        .embed(new_embed)
-                        .components(new_components),
-                )
-                .await?;
-            }
+            ctx.send(CreateReply::default().embed(embed)).await?;
         }
     } else {
         ctx.send(CreateReply::default().content(format!("**Like you, {} don't exist**", input)))
