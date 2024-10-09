@@ -15,7 +15,7 @@ use poise::{
     CreateReply,
 };
 use sqlx::{query, query_as};
-use std::{path::Path, process, time::Duration};
+use std::{borrow::Cow, path::Path, process, time::Duration};
 use tokio::fs::remove_file;
 
 /// When you want to find the imposter
@@ -40,6 +40,7 @@ pub async fn anony_poll(
         .title(title.as_str())
         .color(0xFF5733)
         .fields(options_list.iter().map(|&option| (option, "0", false)));
+
     let buttons: Vec<CreateButton> = options_list
         .iter()
         .enumerate()
@@ -49,10 +50,11 @@ pub async fn anony_poll(
                 .label((index + 1).to_string())
         })
         .collect();
+
     ctx.send(
         CreateReply::default()
             .embed(embed)
-            .components(vec![CreateActionRow::Buttons(buttons)]),
+            .components(&[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]),
     )
     .await?;
 

@@ -17,7 +17,7 @@ use poise::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::{query, Row};
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 use urlencoding::encode;
 
 struct State {
@@ -264,14 +264,18 @@ pub async fn gif(
                 index,
                 len,
             };
-            let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
-                .style(ButtonStyle::Primary)
-                .label("➡️")]);
-            let components = if len > 1 { vec![next_button] } else { vec![] };
             let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
-            ctx.send(CreateReply::default().embed(embed).components(components))
-                .await?;
+
             if len > 1 {
+                let next_button = [CreateButton::new(&state.next_id)
+                    .style(ButtonStyle::Primary)
+                    .label("➡️")];
+                ctx.send(
+                    CreateReply::default()
+                        .embed(embed)
+                        .components(&[CreateActionRow::buttons(&next_button)]),
+                )
+                .await?;
                 while let Some(interaction) =
                     ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                         .timeout(Duration::from_secs(600))
@@ -296,13 +300,14 @@ pub async fn gif(
                     state.next_id = format!("{}_next_{}", ctx.id(), state.index);
                     state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
 
-                    let next_button = CreateButton::new(&state.next_id)
-                        .style(ButtonStyle::Primary)
-                        .label("➡️");
-
-                    let prev_button = CreateButton::new(&state.prev_id)
-                        .style(ButtonStyle::Primary)
-                        .label("⬅️");
+                    let buttons = [
+                        CreateButton::new(&state.prev_id)
+                            .style(ButtonStyle::Primary)
+                            .label("⬅️"),
+                        CreateButton::new(&state.next_id)
+                            .style(ButtonStyle::Primary)
+                            .label("➡️"),
+                    ];
 
                     let new_embed = CreateEmbed::default()
                         .title(input.as_str())
@@ -310,11 +315,11 @@ pub async fn gif(
 
                     let new_components = {
                         if state.index == 0 {
-                            vec![CreateActionRow::Buttons(vec![next_button])]
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
                         } else if state.index == len - 1 {
-                            vec![CreateActionRow::Buttons(vec![prev_button])]
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
                         } else {
-                            vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
                         }
                     };
 
@@ -324,10 +329,12 @@ pub async fn gif(
                         ctx.http(),
                         EditMessage::default()
                             .embed(new_embed)
-                            .components(new_components),
+                            .components(&new_components),
                     )
                     .await?;
                 }
+            } else {
+                ctx.send(CreateReply::default().embed(embed)).await?;
             }
         } else {
             let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
@@ -611,28 +618,26 @@ pub async fn translate(
                     index,
                     len,
                 };
-                let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
-                    .style(ButtonStyle::Primary)
-                    .label("➡️")]);
-                let components = if len > 1 { vec![next_button] } else { vec![] };
-                ctx.send(
-                    CreateReply::default()
-                        .embed(
-                            CreateEmbed::default()
-                                .title(format!(
-                                    "Translation from {} to {} with {}% confidence",
-                                    data.detected_language.language,
-                                    target_lang,
-                                    data.detected_language.confidence
-                                ))
-                                .color(0x33d17a)
-                                .field("Original:", &content, false)
-                                .field("Translation:", &data.translated_text, false),
-                        )
-                        .components(components),
-                )
-                .await?;
+                let embed = CreateEmbed::default()
+                    .title(format!(
+                        "Translation from {} to {} with {}% confidence",
+                        data.detected_language.language,
+                        target_lang,
+                        data.detected_language.confidence
+                    ))
+                    .color(0x33d17a)
+                    .field("Original:", &content, false)
+                    .field("Translation:", &data.translated_text, false);
                 if len > 1 {
+                    let next_button = [CreateButton::new(&state.next_id)
+                        .style(ButtonStyle::Primary)
+                        .label("➡️")];
+                    ctx.send(
+                        CreateReply::default()
+                            .embed(embed)
+                            .components(&[CreateActionRow::buttons(&next_button)]),
+                    )
+                    .await?;
                     while let Some(interaction) =
                         ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                             .timeout(Duration::from_secs(600))
@@ -657,13 +662,14 @@ pub async fn translate(
                         state.next_id = format!("{}_next_{}", ctx.id(), state.index);
                         state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
 
-                        let next_button = CreateButton::new(&state.next_id)
-                            .style(ButtonStyle::Primary)
-                            .label("➡️");
-
-                        let prev_button = CreateButton::new(&state.prev_id)
-                            .style(ButtonStyle::Primary)
-                            .label("⬅️");
+                        let buttons = [
+                            CreateButton::new(&state.prev_id)
+                                .style(ButtonStyle::Primary)
+                                .label("⬅️"),
+                            CreateButton::new(&state.next_id)
+                                .style(ButtonStyle::Primary)
+                                .label("➡️"),
+                        ];
 
                         let new_embed = CreateEmbed::default()
                             .title(format!(
@@ -684,12 +690,14 @@ pub async fn translate(
                                 false,
                             );
 
-                        let new_components = if state.index == 0 {
-                            vec![CreateActionRow::Buttons(vec![next_button])]
-                        } else if state.index == len - 1 {
-                            vec![CreateActionRow::Buttons(vec![prev_button])]
-                        } else {
-                            vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                        let new_components = {
+                            if state.index == 0 {
+                                [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+                            } else if state.index == len - 1 {
+                                [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+                            } else {
+                                [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+                            }
                         };
 
                         let mut msg = interaction.message;
@@ -698,10 +706,12 @@ pub async fn translate(
                             ctx.http(),
                             EditMessage::default()
                                 .embed(new_embed)
-                                .components(new_components),
+                                .components(&new_components),
                         )
                         .await?;
                     }
+                } else {
+                    ctx.send(CreateReply::default().embed(embed)).await?;
                 }
             } else {
                 ctx.send(
@@ -798,15 +808,17 @@ pub async fn urban(
                 index,
                 len,
             };
-            let next_button = CreateActionRow::Buttons(vec![CreateButton::new(&state.next_id)
-                .style(ButtonStyle::Primary)
-                .label("➡️")]);
-            let components = if len > 1 { vec![next_button] } else { vec![] };
-
-            ctx.send(CreateReply::default().embed(embed).components(components))
-                .await?;
 
             if len > 1 {
+                let next_button = [CreateButton::new(&state.next_id)
+                    .style(ButtonStyle::Primary)
+                    .label("➡️")];
+                ctx.send(
+                    CreateReply::default()
+                        .embed(embed)
+                        .components(&[CreateActionRow::buttons(&next_button)]),
+                )
+                .await?;
                 while let Some(interaction) =
                     ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                         .timeout(Duration::from_secs(600))
@@ -831,13 +843,14 @@ pub async fn urban(
                     state.next_id = format!("{}_next_{}", ctx.id(), state.index);
                     state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
 
-                    let next_button = CreateButton::new(&state.next_id)
-                        .style(ButtonStyle::Primary)
-                        .label("➡️");
-
-                    let prev_button = CreateButton::new(&state.prev_id)
-                        .style(ButtonStyle::Primary)
-                        .label("⬅️");
+                    let buttons = [
+                        CreateButton::new(&state.prev_id)
+                            .style(ButtonStyle::Primary)
+                            .label("⬅️"),
+                        CreateButton::new(&state.next_id)
+                            .style(ButtonStyle::Primary)
+                            .label("➡️"),
+                    ];
 
                     let new_response_chars: Vec<char> =
                         data.list[state.index].definition.chars().collect();
@@ -865,12 +878,14 @@ pub async fn urban(
                         .color(0xEFFF00)
                         .fields(new_fields);
 
-                    let new_components = if state.index == 0 {
-                        vec![CreateActionRow::Buttons(vec![next_button])]
-                    } else if state.index == len - 1 {
-                        vec![CreateActionRow::Buttons(vec![prev_button])]
-                    } else {
-                        vec![CreateActionRow::Buttons(vec![prev_button, next_button])]
+                    let new_components = {
+                        if state.index == 0 {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+                        } else if state.index == len - 1 {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+                        } else {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+                        }
                     };
 
                     let mut msg = interaction.message;
@@ -879,10 +894,12 @@ pub async fn urban(
                         ctx.http(),
                         EditMessage::default()
                             .embed(new_embed)
-                            .components(new_components),
+                            .components(&new_components),
                     )
                     .await?;
                 }
+            } else {
+                ctx.send(CreateReply::default().embed(embed)).await?;
             }
         } else {
             ctx.send(CreateReply::default().embed(embed)).await?;

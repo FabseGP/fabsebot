@@ -9,7 +9,7 @@ use poise::{
     },
     CreateReply,
 };
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
 async fn autocomplete_choice<'a>(
     _ctx: SContext<'_>,
@@ -43,7 +43,7 @@ pub async fn rps(
         let paper_id = format!("{}_paper", ctx.id());
         let scissor_id = format!("{}_scissor", ctx.id());
 
-        let components = vec![CreateActionRow::Buttons(vec![
+        let buttons = [
             CreateButton::new(rock_id.as_str())
                 .style(ButtonStyle::Primary)
                 .label("🪨"),
@@ -53,15 +53,19 @@ pub async fn rps(
             CreateButton::new(scissor_id.as_str())
                 .style(ButtonStyle::Primary)
                 .label("✂️"),
-        ])];
+        ];
 
         let embed = CreateEmbed::default()
             .title("Rock paper scissors...")
             .color(0xf6d32d)
             .description("Make a choice within 60s...");
 
-        ctx.send(CreateReply::default().embed(embed).components(components))
-            .await?;
+        ctx.send(
+            CreateReply::default()
+                .embed(embed)
+                .components(&[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]),
+        )
+        .await?;
 
         if let Some(interaction) =
             ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
