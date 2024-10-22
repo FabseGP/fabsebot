@@ -4,13 +4,37 @@ mod events;
 mod types;
 mod utils;
 
-use tracing::subscriber;
-use tracing_subscriber::FmtSubscriber;
+use opentelemetry::trace::TracerProvider;
+use opentelemetry::{global, KeyValue};
+use opentelemetry_otlp::{new_exporter, new_pipeline, WithExportConfig};
+use opentelemetry_sdk::{runtime, trace, Resource};
+use tracing::Level;
+use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{filter::LevelFilter, fmt, layer::SubscriberExt, registry};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let subscriber = FmtSubscriber::new();
-    subscriber::set_global_default(subscriber)?;
+    let provider = new_pipeline()
+        .tracing()
+        .with_exporter(
+            new_exporter()
+                .tonic()
+                .with_endpoint("http://localhost:4317"),
+        )
+        .with_trace_config(trace::Config::default().with_resource(Resource::new(vec![
+            KeyValue::new("service.name", "fabsebot"),
+        ])))
+        .install_batch(runtime::Tokio)?;
+    global::set_tracer_provider(provider.clone());
+    let tracer = provider.tracer("fabsebot");
+    let telemetry_layer = OpenTelemetryLayer::new(tracer);
+    let fmt_layer = fmt::layer();
+    registry()
+        .with(LevelFilter::from_level(Level::INFO))
+        .with(fmt_layer)
+        .with(telemetry_layer)
+        .init();
     client::start().await?;
     Ok(())
 }

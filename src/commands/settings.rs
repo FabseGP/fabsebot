@@ -15,8 +15,14 @@ use sqlx::query;
 pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
-            "REPLACE INTO guild_settings (guild_id) VALUES (?)",
-            guild_id.get()
+            "UPDATE guild_settings
+            SET dead_chat_rate = NULL,
+                dead_chat_channel = NULL,
+                quotes_channel = NULL,
+                spoiler_channel = NULL,
+                prefix = NULL
+            WHERE guild_id = $1",
+            i64::from(guild_id)
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -38,11 +44,14 @@ pub async fn set_afk(
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
-            "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason) VALUES (?, ?, TRUE, ?)
-            ON DUPLICATE KEY UPDATE afk = TRUE, afk_reason = ?",
-            guild_id.get(),
-            u64::from(ctx.author().id),
-            reason,
+            "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason)
+            VALUES ($1, $2, TRUE, $3)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                afk = TRUE,
+                afk_reason = $3",
+            i64::from(guild_id),
+            i64::from(ctx.author().id),
             reason,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
@@ -91,11 +100,13 @@ pub async fn set_chatbot_role(
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
-            "INSERT INTO user_settings (guild_id, user_id, chatbot_role) VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE chatbot_role = ?",
-            guild_id.get(),
-            u64::from(ctx.author().id),
-            role,
+            "INSERT INTO user_settings (guild_id, user_id, chatbot_role)
+            VALUES ($1, $2, $3)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                chatbot_role = $3",
+            i64::from(guild_id),
+            i64::from(ctx.author().id),
             role,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
@@ -117,19 +128,20 @@ pub async fn set_chatbot_role(
 )]
 pub async fn set_dead_chat(
     ctx: SContext<'_>,
-    #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: u8,
+    #[description = "How often (in minutes) a dead chat gif should be sent"] occurrence: i64,
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let channel_id = channel.id().to_string();
         query!(
-            "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel) VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE dead_chat_rate = ?, dead_chat_channel = ?",
-            guild_id.get(),
+            "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel)
+            VALUES ($1, $2, $3)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                dead_chat_rate = $2, 
+                dead_chat_channel = $3",
+            i64::from(guild_id),
             occurrence,
-            channel_id,
-            occurrence,
-            channel_id,
+            i64::from(channel.id()),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -137,7 +149,8 @@ pub async fn set_dead_chat(
             CreateReply::default()
                 .content(format!(
                     "Dead chat gifs will only be sent every {} minute(s) in {}... probably",
-                    occurrence, channel
+                    occurrence,
+                    channel.id(),
                 ))
                 .ephemeral(true),
         )
@@ -154,30 +167,31 @@ pub async fn set_dead_chat(
 )]
 pub async fn set_prefix(
     ctx: SContext<'_>,
-    #[description = "Character(s) to use as prefix for commands, maximum 5"] characters: String,
+    #[description = "Character(s) to use as prefix for commands"] characters: String,
 ) -> Result<(), Error> {
-    if characters.len() < 5 && !characters.is_empty() {
-        if let Some(guild_id) = ctx.guild_id() {
-            query!(
-                "INSERT INTO guild_settings (guild_id, prefix) VALUES (?, ?)
-                ON DUPLICATE KEY UPDATE prefix = ?",
-                guild_id.get(),
-                characters,
-                characters
-            )
-            .execute(&mut *ctx.data().db.acquire().await?)
-            .await?;
-            ctx.send(
-                CreateReply::default()
-                    .content(format!(
-                        "{} set as the prefix for commands... probably",
-                        characters
-                    ))
-                    .ephemeral(true),
-            )
-            .await?;
-        }
+    if let Some(guild_id) = ctx.guild_id() {
+        query!(
+            "INSERT INTO guild_settings (guild_id, prefix)
+            VALUES ($1, $2)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                prefix = $2",
+            i64::from(guild_id),
+            characters,
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.send(
+            CreateReply::default()
+                .content(format!(
+                    "{} set as the prefix for commands... probably",
+                    characters
+                ))
+                .ephemeral(true),
+        )
+        .await?;
     }
+
     Ok(())
 }
 
@@ -191,13 +205,14 @@ pub async fn set_quote_channel(
     #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let channel_id = channel.id().to_string();
         query!(
-            "INSERT INTO guild_settings (guild_id, quotes_channel) VALUES (?, ?)
-            ON DUPLICATE KEY UPDATE quotes_channel = ?",
-            guild_id.get(),
-            channel_id,
-            channel_id,
+            "INSERT INTO guild_settings (guild_id, quotes_channel)
+            VALUES ($1, $2)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                quotes_channel = $2",
+            i64::from(guild_id),
+            i64::from(channel.id()),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -205,7 +220,7 @@ pub async fn set_quote_channel(
             CreateReply::default()
                 .content(format!(
                     "Quoted messages will be sent to {}... probably",
-                    channel
+                    channel.id()
                 ))
                 .ephemeral(true),
         )
@@ -224,13 +239,14 @@ pub async fn set_spoiler_channel(
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let channel_id = channel.id().to_string();
         query!(
-            "INSERT INTO guild_settings (guild_id, spoiler_channel) VALUES (?, ?)
-            ON DUPLICATE KEY UPDATE quotes_channel = ?",
-            guild_id.get(),
-            channel_id,
-            channel_id,
+            "INSERT INTO guild_settings (guild_id, spoiler_channel)
+            VALUES ($1, $2)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                quotes_channel = $2",
+            i64::from(guild_id),
+            i64::from(channel.id()),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -238,7 +254,7 @@ pub async fn set_spoiler_channel(
             CreateReply::default()
                 .content(format!(
                     "Spoilered messages will be sent to {}... probably",
-                    channel
+                    channel.id()
                 ))
                 .ephemeral(true),
         )
@@ -258,12 +274,14 @@ pub async fn set_user_ping(
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
-            "INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media) VALUES (?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE ping_content = ?, ping_media = ?",
-            guild_id.get(),
-            u64::from(ctx.author().id),
-            content,
-            media,
+            "INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET 
+                ping_content = $3, 
+                ping_media = $4",
+            i64::from(guild_id),
+            i64::from(ctx.author().id),
             content,
             media,
         )
@@ -286,26 +304,28 @@ pub async fn set_user_ping(
 )]
 pub async fn set_word_track(
     ctx: SContext<'_>,
-    #[description = "Word to track count of, maximum 50 characters in length"] word: String,
+    #[description = "Word to track count of"] word: String,
 ) -> Result<(), Error> {
-    if word.len() < 50 {
-        if let Some(guild_id) = ctx.guild_id() {
-            query!(
-                "INSERT INTO words_count (guild_id, word) VALUES (?, ?)
-                ON DUPLICATE KEY UPDATE word = ?, count = 0",
-                guild_id.get(),
-                word,
-                word,
-            )
-            .execute(&mut *ctx.data().db.acquire().await?)
-            .await?;
-            ctx.send(
-                CreateReply::default()
-                    .content(format!("The count of {} will be tracked... probably", word))
-                    .ephemeral(true),
-            )
-            .await?;
-        }
+    if let Some(guild_id) = ctx.guild_id() {
+        query!(
+            "INSERT INTO words_count (guild_id, word)
+            VALUES ($1, $2)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                word = $2, 
+                count = 0",
+            i64::from(guild_id),
+            word,
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.send(
+            CreateReply::default()
+                .content(format!("The count of {} will be tracked... probably", word))
+                .ephemeral(true),
+        )
+        .await?;
     }
+
     Ok(())
 }

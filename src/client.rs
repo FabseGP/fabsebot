@@ -2,8 +2,8 @@ use crate::{
     commands::{animanga, api_calls, funny, games, info, misc, music, settings},
     events::{
         bot_ready::handle_ready, guild_create::handle_guild_create,
-        message_delete::handle_message_delete, message_sent::handle_message,
-        reaction_add::handle_reaction_add,
+        http_ratelimit::handle_ratelimit, message_delete::handle_message_delete,
+        message_sent::handle_message, reaction_add::handle_reaction_add,
     },
     types::{ClientData, Data, Error, CLIENT_DATA},
 };
@@ -16,7 +16,7 @@ use poise::{
     Prefix, PrefixFrameworkOptions,
 };
 use songbird::Songbird;
-use sqlx::{migrate, mysql, query};
+use sqlx::{migrate, postgres::PgPoolOptions, query};
 use std::{borrow::Cow, env, sync::Arc, time::Duration};
 use tracing::{error, warn};
 
@@ -47,8 +47,8 @@ async fn dynamic_prefix(
                 .await
                 .context("Failed to acquire database connection")?;
             if let Some(record) = query!(
-                "SELECT prefix FROM guild_settings WHERE guild_id = ?",
-                id.get()
+                "SELECT prefix FROM guild_settings WHERE guild_id = $1",
+                i64::from(id),
             )
             .fetch_optional(&mut *conn)
             .await
@@ -88,6 +88,7 @@ async fn event_handler(
             guild_id,
             deleted_message_id,
         } => handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id).await?,
+        FullEvent::Ratelimit { data } => handle_ratelimit(data).await?,
         _ => {}
     }
 
@@ -101,7 +102,7 @@ pub async fn start() -> anyhow::Result<()> {
         .context("DATABASE_MAX_CONNS not set in environment")?
         .parse()
         .context("Failed to parse DATABASE_MAX_CONNS")?;
-    let database = mysql::MySqlPoolOptions::new()
+    let database = PgPoolOptions::new()
         .max_connections(max_db_conns)
         .connect(&database_url)
         .await

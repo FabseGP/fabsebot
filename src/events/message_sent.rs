@@ -23,27 +23,36 @@ pub async fn handle_message(
     }
     let content = new_message.content.to_lowercase();
     if let Some(id) = new_message.guild_id {
-        let guild_id = u64::from(id);
-        let user_id = u64::from(new_message.author.id);
+        let guild_id = i64::from(id);
+        let user_id = i64::from(new_message.author.id);
         let mut conn = data
             .db
             .acquire()
             .await
             .context("Failed to acquire database connection")?;
+        query!(
+            "INSERT INTO guilds (guild_id)
+            VALUES ($1)
+            ON CONFLICT (guild_id)
+            DO NOTHING",
+            guild_id,
+        )
+        .execute(&mut *conn)
+        .await?;
         let (user_settings, guild_settings, words) = {
             let mut conn1 = data.db.acquire().await?;
             let mut conn2 = data.db.acquire().await?;
             let mut conn3 = data.db.acquire().await?;
             try_join!(
-                query!("SELECT * FROM user_settings WHERE guild_id = ?", guild_id)
+                query!("SELECT * FROM user_settings WHERE guild_id = $1", guild_id)
                     .fetch_all(&mut *conn1),
                 query!(
                     "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel
-                         FROM guild_settings WHERE guild_id = ?",
+                    FROM guild_settings WHERE guild_id = $1",
                     guild_id
                 )
                 .fetch_optional(&mut *conn2),
-                query!("SELECT word FROM words_count WHERE guild_id = ?", guild_id)
+                query!("SELECT word FROM words_count WHERE guild_id = $1", guild_id)
                     .fetch_all(&mut *conn3)
             )?
         };
@@ -53,8 +62,10 @@ pub async fn handle_message(
                 Some(afk) => afk,
                 None => continue,
             };
-            if afk != 0 {
-                let user_id = UserId::new(target.user_id);
+            if afk {
+                let user_id = UserId::new(
+                    u64::try_from(target.user_id).expect("user id out of bounds for u64"),
+                );
                 let user = ctx.http.get_user(user_id).await?;
                 if new_message.author.id == user_id {
                     let entries: Vec<&str> = target
@@ -89,7 +100,7 @@ pub async fn handle_message(
                             .await?;
                     }
                     query!(
-                        "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = ? AND user_id = ?",
+                        "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
                         guild_id,
                         target.user_id,
                     )
@@ -102,8 +113,9 @@ pub async fn handle_message(
                         new_message.link()
                     );
                     query!(
-                        "UPDATE user_settings SET pinged_links = IF(pinged_links IS NULL, ?, CONCAT(pinged_links, ',', ?)) WHERE guild_id = ? AND user_id = ?",
-                        pinged_link,
+                        "UPDATE user_settings 
+                        SET pinged_links = COALESCE(pinged_links || ',' || $1, $1) 
+                        WHERE guild_id = $2 AND user_id = $3",
                         pinged_link,
                         guild_id,
                         target.user_id,
@@ -156,8 +168,10 @@ pub async fn handle_message(
             }
         }
         query!(
-            "INSERT INTO user_settings (guild_id, user_id, message_count) VALUES (?, ?, 1)
-            ON DUPLICATE KEY UPDATE message_count = message_count + 1",
+            "INSERT INTO user_settings (guild_id, user_id, message_count) VALUES ($1, $2, 1)
+            ON CONFLICT(guild_id, user_id) 
+            DO UPDATE SET
+                message_count = user_settings.message_count + 1",
             guild_id,
             user_id,
         )
@@ -165,15 +179,21 @@ pub async fn handle_message(
         .await?;
         if let Some(guild_settings) = guild_settings {
             if let Some(spoiler_channel) = guild_settings.spoiler_channel {
-                if new_message.channel_id == ChannelId::new(spoiler_channel) {
+                if new_message.channel_id
+                    == ChannelId::new(
+                        u64::try_from(spoiler_channel).expect("channel id out of bounds for u64"),
+                    )
+                {
                     spoiler_message(ctx, new_message, &new_message.content).await?;
                 }
             }
-            if let (Some(channel), Some(rate)) = (
+            if let (Some(dead_channel), Some(dead_chat_rate)) = (
                 guild_settings.dead_chat_channel,
                 guild_settings.dead_chat_rate,
             ) {
-                let dead_chat_channel = ChannelId::new(channel);
+                let dead_chat_channel = ChannelId::new(
+                    u64::try_from(dead_channel).expect("channel id out of bounds for u64"),
+                );
                 let last_message_time = {
                     let messages = dead_chat_channel
                         .messages(&ctx.http, GetMessages::default().limit(1))
@@ -187,7 +207,7 @@ pub async fn handle_message(
                 };
                 if let Some(last_time) = last_message_time {
                     let current_time = Timestamp::now().timestamp();
-                    if current_time - last_time > rate as i64 * 60 {
+                    if current_time - last_time > dead_chat_rate * 60 {
                         let urls = get_gifs("dead chat").await?;
                         dead_chat_channel
                             .say(
@@ -203,7 +223,7 @@ pub async fn handle_message(
         for word in words.iter() {
             if content.contains(word) {
                 query!(
-                    "UPDATE words_count SET count = count + 1 WHERE guild_id = ? AND word = ?",
+                    "UPDATE words_count SET count = count + 1 WHERE guild_id = $1 AND word = $2",
                     guild_id,
                     word
                 )
@@ -228,9 +248,9 @@ pub async fn handle_message(
             if content == "clear" {
                 let conversations = &data.conversations;
                 conversations
-                    .entry(guild_id)
+                    .entry(id)
                     .or_default()
-                    .remove(&u64::from(new_message.channel_id));
+                    .remove(&new_message.channel_id);
                 new_message
                     .reply(&ctx.http, "Conversation cleared!")
                     .await?;
@@ -261,7 +281,12 @@ pub async fn handle_message(
                             author_name, ref_name, reply.content
                         ));
                     }
-                    let guild_opt = ctx.cache.guild(GuildId::new(guild_id)).map(|g| g.clone());
+                    let guild_opt = ctx
+                        .cache
+                        .guild(GuildId::new(
+                            u64::try_from(guild_id).expect("guild id out of bounds for u64"),
+                        ))
+                        .map(|g| g.clone());
                     if let Some(guild) = guild_opt {
                         if let Ok(author_member) =
                             guild.member(&ctx.http, new_message.author.id).await
@@ -394,9 +419,9 @@ pub async fn handle_message(
                 };
                 let history_clone = {
                     let conversations = &data.conversations;
-                    let conversations_entry = conversations.entry(guild_id).or_default();
+                    let conversations_entry = conversations.entry(id).or_default();
                     let mut history = conversations_entry
-                        .entry(u64::from(new_message.channel_id))
+                        .entry(new_message.channel_id)
                         .or_default();
 
                     let unique_users: Vec<&str> = history
@@ -447,9 +472,9 @@ pub async fn handle_message(
                 match ai_response(&history_clone).await {
                     Ok(response) => {
                         let conversations = &data.conversations;
-                        if let Some(guild_conversations) = conversations.get_mut(&guild_id) {
+                        if let Some(guild_conversations) = conversations.get_mut(&id) {
                             if let Some(mut history) =
-                                guild_conversations.get_mut(&u64::from(new_message.channel_id))
+                                guild_conversations.get_mut(&new_message.channel_id)
                             {
                                 history.push(ChatMessage {
                                     role: "assistant".to_owned(),
@@ -470,9 +495,9 @@ pub async fn handle_message(
                     Err(_) => {
                         let error_msg = "Sorry, I had to forget our convo, too boring!";
                         let conversations = &data.conversations;
-                        if let Some(guild_conversations) = conversations.get_mut(&guild_id) {
+                        if let Some(guild_conversations) = conversations.get_mut(&id) {
                             if let Some(mut history) =
-                                guild_conversations.get_mut(&u64::from(new_message.channel_id))
+                                guild_conversations.get_mut(&new_message.channel_id)
                             {
                                 history.clear();
                                 history.push(ChatMessage {

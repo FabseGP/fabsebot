@@ -163,8 +163,8 @@ pub async fn help(
 }
 
 struct UserCount {
-    user_id: u64,
-    message_count: u64,
+    user_id: i64,
+    message_count: i64,
 }
 
 /// Leaderboard of lifeless ppl
@@ -185,8 +185,9 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
     };
     let users = query_as!(
         UserCount,
-        "SELECT message_count, user_id FROM user_settings WHERE guild_id = ? ORDER BY message_count DESC LIMIT 25",
-        u64::from(guild.id)
+        "SELECT message_count, user_id FROM user_settings WHERE guild_id = $1
+        ORDER BY message_count DESC LIMIT 25",
+        i64::from(guild.id)
     )
     .fetch_all(&mut *ctx.data().db.acquire().await?)
     .await?;
@@ -194,7 +195,13 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
     let user_count = users.len();
     let mut fields = Vec::with_capacity(user_count);
     for (index, user) in users.iter().enumerate() {
-        if let Ok(target) = ctx.http().get_user(UserId::new(user.user_id)).await {
+        if let Ok(target) = ctx
+            .http()
+            .get_user(UserId::new(
+                u64::try_from(user.user_id).expect("user id out of bounds for u64"),
+            ))
+            .await
+        {
             let user_name = target.display_name().to_owned();
             let rank = index + 1;
             fields.push((
@@ -332,14 +339,16 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 
     if let Some(guild_id) = ctx.guild_id() {
         if let Ok(record) = query!(
-            "SELECT quotes_channel FROM guild_settings WHERE guild_id = ?",
-            guild_id.get()
+            "SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
+            i64::from(guild_id),
         )
         .fetch_one(&mut *ctx.data().db.acquire().await?)
         .await
         {
             if let Some(channel) = record.quotes_channel {
-                let quote_channel = ChannelId::new(channel);
+                let quote_channel = ChannelId::new(
+                    u64::try_from(channel).expect("channel id out of bounds for u64"),
+                );
                 quote_channel
                     .send_files(
                         ctx.http(),
@@ -417,8 +426,8 @@ pub async fn troll(ctx: SContext<'_>) -> Result<(), Error> {
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         if let Ok(record) = query!(
-            "SELECT word, count FROM words_count WHERE guild_id = ?",
-            guild_id.get()
+            "SELECT word, count FROM words_count WHERE guild_id = $1",
+            i64::from(guild_id),
         )
         .fetch_one(&mut *ctx.data().db.acquire().await?)
         .await

@@ -16,7 +16,7 @@ use poise::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::{query, Row};
+use sqlx::query;
 use std::{borrow::Cow, time::Duration};
 use urlencoding::encode;
 
@@ -460,21 +460,19 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
         let account_date = user.created_at();
         let join_date = member.joined_at.unwrap();
         let message_count = {
-            let id = u64::from(guild_id);
             let mut conn = ctx.data().db.acquire().await?;
-            let result =
-                query("SELECT messages FROM message_count WHERE guild_id = ? AND user_name = ?")
-                    .bind(id)
-                    .bind(user.name.into_string())
-                    .fetch_one(&mut *conn)
-                    .await;
-            let result_filtered: Option<u64> = match result {
-                Ok(row) => Some(row.try_get("messages").unwrap()),
-                Err(_) => None,
-            };
-            result_filtered.map_or("unknown message count".to_owned(), |count| {
-                count.to_string()
-            })
+            let result = query!(
+                "SELECT message_count FROM user_settings WHERE guild_id = $1 AND user_id = $2",
+                i64::from(guild_id),
+                i64::from(user.id),
+            )
+            .fetch_one(&mut *conn)
+            .await;
+            if let Ok(count) = result {
+                count.message_count.to_string()
+            } else {
+                "unknown message count".to_owned()
+            }
         };
         let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 

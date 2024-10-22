@@ -1,7 +1,8 @@
 use crate::types::{Error, SContext, HTTP_CLIENT};
 
 use poise::{
-    serenity_prelude::{CreateEmbed, EmbedMessageBuilding, MessageBuilder},
+    async_trait,
+    serenity_prelude::{ChannelId, CreateEmbed, EmbedMessageBuilding, Http, MessageBuilder},
     CreateReply,
 };
 use serde::Deserialize;
@@ -9,9 +10,10 @@ use songbird::{
     driver::Bitrate,
     input::{Compose, Input, YoutubeDl},
     tracks::PlayMode,
-    Call, Config,
+    Call, Config, Event as SongbirdEvent, EventContext, EventHandler as VoiceEventHandler,
+    TrackEvent,
 };
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 
 #[derive(Deserialize)]
 struct DeezerResponse {
@@ -34,6 +36,20 @@ struct DeezerArtist {
     name: String,
 }
 
+async fn voice_check(ctx: SContext<'_>) -> Result<bool, Error> {
+    match ctx.guild_id() {
+        Some(guild_id) => match ctx.data().music_manager.get(guild_id) {
+            Some(_) => Ok(true),
+            None => {
+                ctx.reply("Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel first")
+                    .await?;
+                Ok(false)
+            }
+        },
+        None => Ok(false),
+    }
+}
+
 fn configure_call(handler: &mut Call) {
     let new_config = Config::default().use_softclip(false);
     handler.set_config(new_config);
@@ -41,7 +57,7 @@ fn configure_call(handler: &mut Call) {
 }
 
 /// Play all songs in a playlist from Deezer
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(prefix_command, slash_command, check = "voice_check")]
 pub async fn add_playlist(
     ctx: SContext<'_>,
     #[description = "ID of the playlist in mind"]
@@ -79,6 +95,25 @@ pub async fn add_playlist(
     Ok(())
 }
 
+struct TrackEndNotifier {
+    channel_id: ChannelId,
+    http: Arc<Http>,
+}
+
+#[async_trait]
+impl VoiceEventHandler for TrackEndNotifier {
+    async fn act(&self, ctx: &EventContext<'_>) -> Option<SongbirdEvent> {
+        if let EventContext::Track(track_list) = ctx {
+            let _ = self
+                .channel_id
+                .say(&self.http, &format!("Tracks ended: {}.", track_list.len()))
+                .await;
+        }
+
+        None
+    }
+}
+
 /// Join your current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
@@ -93,10 +128,24 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
         .get(&ctx.author().id)
         .and_then(|voice_state| voice_state.channel_id)
     {
-        Some(id) => {
+        Some(channel_id) => {
             let manager = &ctx.data().music_manager;
-            manager.join(guild.id, id).await?;
-            ctx.reply("I've joined the party").await?;
+            match manager.join(guild.id, channel_id).await {
+                Ok(handler_lock) => {
+                    let mut handle = handler_lock.lock().await;
+                    handle.add_global_event(
+                        SongbirdEvent::Track(TrackEvent::End),
+                        TrackEndNotifier {
+                            channel_id,
+                            http: ctx.serenity_context().http.clone(),
+                        },
+                    );
+                    ctx.reply("I've joined the party").await?;
+                }
+                Err(_) => {
+                    ctx.reply("I don't wanna join").await?;
+                }
+            }
         }
         None => {
             return Ok(());

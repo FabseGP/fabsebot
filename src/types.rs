@@ -1,12 +1,12 @@
 use dashmap::DashMap;
 use fastrand::Rng;
 use once_cell::sync::{Lazy, OnceCell};
-use poise::serenity_prelude::ShardManager;
+use poise::serenity_prelude::{ChannelId, GuildId, ShardManager};
 use regex::Regex;
 use reqwest::Client;
 use serde::Serialize;
 use songbird::Songbird;
-use sqlx::MySqlPool;
+use sqlx::PgPool;
 use std::{env, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -15,10 +15,10 @@ pub struct ChatMessage {
     pub role: String,
     pub content: String,
 }
-type ChatHashMap = DashMap<u64, DashMap<u64, Vec<ChatMessage>>>;
+type ChatHashMap = DashMap<GuildId, DashMap<ChannelId, Vec<ChatMessage>>>;
 
 pub struct Data {
-    pub db: MySqlPool,
+    pub db: PgPool,
     pub music_manager: Arc<Songbird>,
     pub conversations: Arc<ChatHashMap>,
 }

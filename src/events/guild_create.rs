@@ -18,8 +18,11 @@ pub async fn handle_guild_create(
                 .await
                 .context("Failed to acquire database connection")?;
             query!(
-                "INSERT IGNORE INTO guilds (guild_id) VALUES (?)",
-                u64::from(guild.id)
+                "INSERT INTO guilds (guild_id)
+                VALUES ($1)
+                ON CONFLICT (guild_id)
+                DO NOTHING",
+                i64::from(guild.id)
             )
             .execute(&mut *conn)
             .await?;
