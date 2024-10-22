@@ -30,6 +30,15 @@ pub async fn handle_message(
             .acquire()
             .await
             .context("Failed to acquire database connection")?;
+        query!(
+            "INSERT INTO guilds (guild_id)
+            VALUES ($1)
+            ON CONFLICT (guild_id)
+            DO NOTHING",
+            guild_id,
+        )
+        .execute(&mut *conn)
+        .await?;
         let (user_settings, guild_settings, words) = {
             let mut conn1 = data.db.acquire().await?;
             let mut conn2 = data.db.acquire().await?;
