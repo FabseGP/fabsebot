@@ -202,10 +202,9 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             ))
             .await
         {
-            let user_name = target.display_name().to_owned();
             let rank = index + 1;
             fields.push((
-                format!("#{} {}", rank, user_name),
+                format!("#{} {}", rank, target.display_name()),
                 user.message_count.to_string(),
                 false,
             ));

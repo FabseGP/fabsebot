@@ -201,8 +201,9 @@ pub async fn get_waifu() -> Result<String, Error> {
     let resp: WaifuResponse = request.json().await?;
     let url = resp
         .images
-        .first()
-        .map(|img| img.url.clone())
+        .into_iter()
+        .next()
+        .map(|img| img.url)
         .unwrap_or_else(|| {
             "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned()
         });

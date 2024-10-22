@@ -450,11 +450,11 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             .unwrap()
             .banner_url()
             .unwrap_or("user has no banner".to_owned());
-        let roles: Vec<String> = member
+        let roles: Vec<&str> = member
             .roles
             .iter()
             .filter_map(|role_id| guild.roles.get(role_id))
-            .map(|role| role.name.to_string())
+            .map(|role| role.name.as_str())
             .collect();
         let name = member.display_name();
         let account_date = user.created_at();
@@ -469,9 +469,9 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             .fetch_one(&mut *conn)
             .await;
             if let Ok(count) = result {
-                count.message_count.to_string()
+                count.message_count
             } else {
-                "unknown message count".to_owned()
+                0
             }
         };
         let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();

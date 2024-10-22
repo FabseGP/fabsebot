@@ -30,15 +30,6 @@ pub async fn handle_message(
             .acquire()
             .await
             .context("Failed to acquire database connection")?;
-        query!(
-            "INSERT INTO guilds (guild_id)
-            VALUES ($1)
-            ON CONFLICT (guild_id)
-            DO NOTHING",
-            guild_id,
-        )
-        .execute(&mut *conn)
-        .await?;
         let (user_settings, guild_settings, words) = {
             let mut conn1 = data.db.acquire().await?;
             let mut conn2 = data.db.acquire().await?;
@@ -268,9 +259,9 @@ pub async fn handle_message(
                     let mut message_parts = Vec::with_capacity(3);
                     message_parts.push(
                         user_settings
-                            .iter()
+                            .into_iter()
                             .find(|setting| setting.user_id == user_id)
-                            .and_then(|setting| setting.chatbot_role.clone())
+                            .and_then(|setting| setting.chatbot_role)
                             .unwrap_or(default_bot_role),
                     );
                     message_parts.push(format!("You're talking to {}", author_name));
@@ -345,15 +336,10 @@ pub async fn handle_message(
                             if attachments_len != 0 {
                                 let mut attachments_desc = Vec::with_capacity(attachments_len);
                                 for attachment in &new_message.attachments {
-                                    match attachment.dimensions() {
-                                        Some(_) => {
-                                            let file = attachment.download().await?;
-                                            let description = ai_image_desc(&file).await?;
-                                            attachments_desc.push(description);
-                                        }
-                                        None => {
-                                            attachments_desc.push("not an image".to_owned());
-                                        }
+                                    if attachment.dimensions().is_some() {
+                                        let file = attachment.download().await?;
+                                        let description = ai_image_desc(&file).await?;
+                                        attachments_desc.push(description);
                                     }
                                 }
                                 message_parts.push(format!(
@@ -542,17 +528,15 @@ pub async fn handle_message(
                     },
                 };
                 if let Some(ref_msg) = message {
-                    let author_name = ref_msg.author.display_name().to_string();
-                    let author_url = ref_msg.author.avatar_url();
                     let author_accent = ctx.http.get_user(ref_msg.author.id).await?.accent_colour;
                     let embed = CreateEmbed::default()
                         .colour(author_accent.unwrap_or(Colour::new(0xFA6300)))
                         .description(ref_msg.content.to_string())
                         .author(
-                            CreateEmbedAuthor::new(&author_name).icon_url(
-                                author_url
-                                    .as_deref()
-                                    .unwrap_or("https://cdn.discordapp.com/embed/avatars/0.png"),
+                            CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
+                                ref_msg.author.avatar_url().unwrap_or(
+                                    "https://cdn.discordapp.com/embed/avatars/0.png".to_owned(),
+                                ),
                             ),
                         )
                         .footer(CreateEmbedFooter::new(&channel_name))
