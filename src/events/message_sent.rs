@@ -281,12 +281,7 @@ pub async fn handle_message(
                             author_name, ref_name, reply.content
                         ));
                     }
-                    let guild_opt = ctx
-                        .cache
-                        .guild(GuildId::new(
-                            u64::try_from(guild_id).expect("guild id out of bounds for u64"),
-                        ))
-                        .map(|g| g.clone());
+                    let guild_opt = ctx.cache.guild(id).map(|g| g.clone());
                     if let Some(guild) = guild_opt {
                         if let Ok(author_member) =
                             guild.member(&ctx.http, new_message.author.id).await
