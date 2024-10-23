@@ -299,7 +299,6 @@ pub async fn gif(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
     let resp = get_gifs(&input).await;
     if let Ok(urls) = resp {
         if ctx.guild_id().is_some() {
@@ -820,7 +819,6 @@ pub async fn urban(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
     let request_url = format!(
         "https://api.urbandictionary.com/v0/define?term={}",
         encode(&input)

@@ -178,7 +178,6 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        ctx.defer().await?;
         let manager = &ctx.data().music_manager;
         match manager.get(guild_id) {
             Some(handler_lock) => {
