@@ -311,7 +311,7 @@ pub async fn handle_message(
                                                 .await?;
                                             if pfp.status().is_success() {
                                                 let binary_pfp = pfp.bytes().await?.to_vec();
-                                                &ai_image_desc(&binary_pfp).await?
+                                                &ai_image_desc(&binary_pfp, None).await?
                                             } else {
                                                 "Unable to describe"
                                             }
@@ -337,7 +337,8 @@ pub async fn handle_message(
                                 for attachment in &new_message.attachments {
                                     if attachment.dimensions().is_some() {
                                         let file = attachment.download().await?;
-                                        let description = ai_image_desc(&file).await?;
+                                        let description =
+                                            ai_image_desc(&file, Some(content.as_str())).await?;
                                         attachments_desc.push(description);
                                     }
                                 }

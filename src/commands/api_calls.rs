@@ -6,6 +6,7 @@ use crate::{
     utils::{ai_response_simple, get_gifs, get_waifu},
 };
 
+use base64::{engine::general_purpose, Engine};
 use poise::{
     serenity_prelude::{
         futures::StreamExt, small_fixed_array::FixedString, ButtonStyle,
@@ -26,6 +27,15 @@ struct State {
     len: usize,
 }
 
+#[derive(Deserialize)]
+struct FabseAIImage {
+    result: AIResponseImage,
+}
+#[derive(Deserialize)]
+struct AIResponseImage {
+    image: String,
+}
+
 #[derive(Serialize)]
 struct ImageRequest {
     prompt: String,
@@ -41,21 +51,32 @@ pub async fn ai_image(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let request = ImageRequest {
-        prompt: prompt.to_owned(),
+        prompt: format!("{} {}", prompt, RNG.lock().await.usize(0..1024)),
     };
     let resp = HTTP_CLIENT
         .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/lykon/dreamshaper-8-lcm",
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/black-forest-labs/flux-1-schnell",
             *CLOUDFLARE_GATEWAY
         ))
         .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&request)
         .send()
         .await?;
-    let image_data = resp.bytes().await?.to_vec();
-    if !image_data.is_empty() {
-        let file = CreateAttachment::bytes(image_data, "output.png");
-        ctx.send(CreateReply::default().attachment(file)).await?;
+    let output: FabseAIImage = resp.json().await?;
+    if !output.result.image.is_empty() {
+        match general_purpose::STANDARD.decode(output.result.image) {
+            Ok(image_bytes) => {
+                let file = CreateAttachment::bytes(image_bytes, "output.png");
+                ctx.send(CreateReply::default().attachment(file)).await?;
+            }
+            Err(_) => {
+                ctx.send(
+                    CreateReply::default()
+                        .content(format!("\"{}\" is too dangerous to generate", prompt)),
+                )
+                .await?;
+            }
+        }
     } else {
         ctx.send(
             CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),

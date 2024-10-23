@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ab_glyph = "0"
 anyhow = "1"
+base64 = "0"
 dashmap = { version = "6", features = ["inline"] }
 #deadpool-postgres = "0"
 dotenvy = "0"

@@ -933,6 +933,7 @@ version = "0.5.0"
 dependencies = [
  "ab_glyph",
  "anyhow",
+ "base64 0.22.1",
  "dashmap",
  "dotenvy",
  "fastrand",

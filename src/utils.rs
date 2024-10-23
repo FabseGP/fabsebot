@@ -24,46 +24,55 @@ use tokio::{
 use urlencoding::encode;
 
 #[derive(Deserialize)]
-struct FabseAIImageDesc {
-    result: AIResponseImageDesc,
-}
-#[derive(Deserialize)]
-struct AIResponseImageDesc {
-    description: String,
-}
-
-#[derive(Serialize)]
-struct ImageRequest<'a> {
-    image: &'a [u8],
-    prompt: &'static str,
-}
-
-pub async fn ai_image_desc(content: &[u8]) -> Result<String, Error> {
-    let request = ImageRequest {
-        image: content,
-        prompt: "Generate a detailed caption for this image",
-    };
-    let resp = HTTP_CLIENT
-        .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/llava-hf/llava-1.5-7b-hf",
-            *CLOUDFLARE_GATEWAY
-        ))
-        .bearer_auth(&*CLOUDFLARE_TOKEN)
-        .json(&request)
-        .send()
-        .await?;
-    let output: FabseAIImageDesc = resp.json().await?;
-
-    Ok(output.result.description)
-}
-
-#[derive(Deserialize)]
 struct FabseAIText {
     result: AIResponseText,
 }
 #[derive(Deserialize)]
 struct AIResponseText {
     response: String,
+}
+
+#[derive(Serialize)]
+struct SimpleMessage<'a> {
+    role: &'a str,
+    content: &'a str,
+}
+
+#[derive(Serialize)]
+struct ImageDesc<'a> {
+    messages: Vec<SimpleMessage<'a>>,
+    image: &'a [u8],
+}
+
+pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Result<String, Error> {
+    let request = ImageDesc {
+        messages: vec![
+            SimpleMessage {
+                role: "system",
+                content: "Generate a detailed caption for this image",
+            },
+            SimpleMessage {
+                role: "user",
+                content: match user_context {
+                    Some(context) => context,
+                    None => "What is in this image?",
+                },
+            },
+        ],
+        image: content,
+    };
+    let resp = HTTP_CLIENT
+        .post(format!(
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.2-11b-vision-instruct",
+            *CLOUDFLARE_GATEWAY
+        ))
+        .bearer_auth(&*CLOUDFLARE_TOKEN)
+        .json(&request)
+        .send()
+        .await?;
+    let output: FabseAIText = resp.json().await?;
+
+    Ok(output.result.response)
 }
 
 #[derive(Serialize)]
@@ -123,12 +132,6 @@ pub async fn ai_response_local(messages: &[ChatMessage]) -> Result<String, Error
 #[derive(Serialize)]
 struct SimpleAIRequest<'a> {
     messages: Vec<SimpleMessage<'a>>,
-}
-
-#[derive(Serialize)]
-struct SimpleMessage<'a> {
-    role: &'a str,
-    content: &'a str,
 }
 
 pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Error> {
