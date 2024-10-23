@@ -60,11 +60,12 @@ pub async fn set_afk(
             Some(input) => input,
             None => "Didn't renew life subscription",
         };
+        let user_name = ctx.author().display_name();
         ctx.send(
             CreateReply::default().embed(
                 CreateEmbed::default()
-                    .title(format!("{} killed!", ctx.author().display_name()))
-                    .description(format!("Reason: {}", embed_reason))
+                    .title(format!("{user_name} killed!"))
+                    .description(format!("Reason: {embed_reason}"))
                     .thumbnail(ctx.author().avatar_url().unwrap())
                     .color(0xFF5733),
             ),
@@ -132,6 +133,7 @@ pub async fn set_dead_chat(
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let channel_id = channel.id();
         query!(
             "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel)
             VALUES ($1, $2, $3)
@@ -141,16 +143,14 @@ pub async fn set_dead_chat(
                 dead_chat_channel = $3",
             i64::from(guild_id),
             occurrence,
-            i64::from(channel.id()),
+            i64::from(channel_id),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         ctx.send(
             CreateReply::default()
                 .content(format!(
-                    "Dead chat gifs will only be sent every {} minute(s) in {}... probably",
-                    occurrence,
-                    channel.id(),
+                    "Dead chat gifs will only be sent every {occurrence} minute(s) in {channel_id}... probably",
                 ))
                 .ephemeral(true),
         )
@@ -184,8 +184,7 @@ pub async fn set_prefix(
         ctx.send(
             CreateReply::default()
                 .content(format!(
-                    "{} set as the prefix for commands... probably",
-                    characters
+                    "{characters} set as the prefix for commands... probably"
                 ))
                 .ephemeral(true),
         )
@@ -205,6 +204,7 @@ pub async fn set_quote_channel(
     #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let channel_id = channel.id();
         query!(
             "INSERT INTO guild_settings (guild_id, quotes_channel)
             VALUES ($1, $2)
@@ -212,15 +212,14 @@ pub async fn set_quote_channel(
             DO UPDATE SET
                 quotes_channel = $2",
             i64::from(guild_id),
-            i64::from(channel.id()),
+            i64::from(channel_id),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         ctx.send(
             CreateReply::default()
                 .content(format!(
-                    "Quoted messages will be sent to {}... probably",
-                    channel.id()
+                    "Quoted messages will be sent to {channel_id}... probably"
                 ))
                 .ephemeral(true),
         )
@@ -239,6 +238,7 @@ pub async fn set_spoiler_channel(
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let channel_id = channel.id();
         query!(
             "INSERT INTO guild_settings (guild_id, spoiler_channel)
             VALUES ($1, $2)
@@ -246,15 +246,14 @@ pub async fn set_spoiler_channel(
             DO UPDATE SET
                 quotes_channel = $2",
             i64::from(guild_id),
-            i64::from(channel.id()),
+            i64::from(channel_id),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         ctx.send(
             CreateReply::default()
                 .content(format!(
-                    "Spoilered messages will be sent to {}... probably",
-                    channel.id()
+                    "Spoilered messages will be sent to {channel_id}... probably"
                 ))
                 .ephemeral(true),
         )
@@ -321,7 +320,7 @@ pub async fn set_word_track(
         .await?;
         ctx.send(
             CreateReply::default()
-                .content(format!("The count of {} will be tracked... probably", word))
+                .content(format!("The count of {word} will be tracked... probably"))
                 .ephemeral(true),
         )
         .await?;

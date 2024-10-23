@@ -60,12 +60,12 @@ pub async fn handle_message(
                         .unwrap_or("")
                         .split(',')
                         .collect();
+                    let user_name = user.display_name();
                     let mut response = new_message
                         .reply(
                             &ctx.http,
                             format!(
-                                "Ugh, welcome back {}! Guess I didn't manage to kill you after all",
-                                user.display_name()
+                                "Ugh, welcome back {user_name}! Guess I didn't manage to kill you after all"
                             ),
                         )
                         .await?;
@@ -93,11 +93,9 @@ pub async fn handle_message(
                     .execute(&mut *tx)
                     .await?;
                 } else if new_message.mentions_user_id(user_id) {
-                    let pinged_link = format!(
-                        "{};{}",
-                        new_message.author.display_name(),
-                        new_message.link()
-                    );
+                    let author_name = new_message.author.display_name();
+                    let message_link = new_message.link();
+                    let pinged_link = format!("{author_name};{message_link}");
                     query!(
                         "UPDATE user_settings 
                         SET pinged_links = COALESCE(pinged_links || ',' || $1, $1) 
@@ -112,21 +110,17 @@ pub async fn handle_message(
                         Some(input) => input,
                         None => "Didn't renew life subscription",
                     };
+                    let user_name = user.display_name();
                     new_message
                         .reply(
                             &ctx.http,
-                            format!(
-                                "{} is currently dead. Reason: {}",
-                                user.display_name(),
-                                reason
-                            ),
+                            format!("{user_name} is currently dead. Reason: {reason}"),
                         )
                         .await?;
                 }
             }
-            if content.contains(&format!("<@{}>", target.user_id))
-                && !content.contains("!user_misuse")
-            {
+            let target_id = target.user_id;
+            if content.contains(&format!("<@{target_id}>")) && !content.contains("!user_misuse") {
                 if let Some(ping_content) = &target.ping_content {
                     let media = match &target.ping_media {
                         Some(ping_media) => {
@@ -206,7 +200,7 @@ pub async fn handle_message(
             }
         }
         let words: Vec<&str> = words.iter().map(|row| row.word.as_str()).collect();
-        for word in words.iter() {
+        for word in &words {
             if content.contains(word) {
                 query!(
                     "UPDATE words_count SET count = count + 1 WHERE guild_id = $1 AND word = $2",
@@ -240,7 +234,7 @@ pub async fn handle_message(
                 new_message
                     .reply(&ctx.http, "Conversation cleared!")
                     .await?;
-            } else if !content.starts_with("#") {
+            } else if !content.starts_with('#') {
                 let typing = new_message.channel_id.start_typing(ctx.http.clone());
                 let author_name = new_message.author.display_name();
                 let mut system_content = {
@@ -259,12 +253,12 @@ pub async fn handle_message(
                             .and_then(|setting| setting.chatbot_role)
                             .unwrap_or(default_bot_role),
                     );
-                    message_parts.push(format!("You're talking to {}", author_name));
+                    message_parts.push(format!("You're talking to {author_name}"));
                     if let Some(reply) = &new_message.referenced_message {
                         let ref_name = reply.author.display_name();
+                        let ref_content = reply.content.to_string();
                         message_parts.push(format!(
-                            "{} replied to a message sent by: {} and had this content: {}",
-                            author_name, ref_name, reply.content
+                            "{author_name} replied to a message sent by: {ref_name} and had this content: {ref_content}"
                         ));
                     }
                     let guild_opt = ctx.cache.guild(id).map(|g| g.clone());
@@ -281,10 +275,9 @@ pub async fn handle_message(
                                 })
                                 .collect();
                             if !roles.is_empty() {
+                                let roles_joined = roles.join(", ");
                                 message_parts.push(format!(
-                                    "{} has the following roles: {}",
-                                    author_name,
-                                    roles.join(", ")
+                                    "{author_name} has the following roles: {roles_joined}"
                                 ));
                             }
                             let mentioned_users_len = new_message.mentions.len() as usize;
@@ -310,25 +303,22 @@ pub async fn handle_message(
                                                 .send()
                                                 .await?;
                                             if pfp.status().is_success() {
-                                                let binary_pfp = pfp.bytes().await?.to_vec();
+                                                let binary_pfp = pfp.bytes().await?;
                                                 &ai_image_desc(&binary_pfp, None).await?
                                             } else {
                                                 "Unable to describe"
                                             }
                                         };
+                                        let target_name = target.display_name();
                                         let user_info = format!(
-                                            "{} was mentioned. Roles: {}. Profile picture: {}",
-                                            target.display_name(),
-                                            target_roles,
-                                            pfp_desc
+                                            "{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
                                         );
                                         mentioned_users.push(user_info);
                                     }
                                 }
-                                message_parts.push(format!(
-                                    "{} user(s) were mentioned:",
-                                    mentioned_users.len()
-                                ));
+                                let mentioned_len = mentioned_users.len();
+                                message_parts
+                                    .push(format!("{mentioned_len} user(s) were mentioned:"));
                                 message_parts.extend(mentioned_users);
                             }
                             let attachments_len = new_message.attachments.len() as usize;
@@ -342,10 +332,8 @@ pub async fn handle_message(
                                         attachments_desc.push(description);
                                     }
                                 }
-                                message_parts.push(format!(
-                                    "{} image(s) were sent:",
-                                    attachments_desc.len()
-                                ));
+                                let images_len = attachments_desc.len();
+                                message_parts.push(format!("{images_len} image(s) were sent:"));
                                 message_parts.extend(attachments_desc);
                             }
                         }
@@ -383,15 +371,15 @@ pub async fn handle_message(
                         };
                         match message {
                             Some(linked_message) => {
+                                let link_author = linked_message.author.display_name();
+                                let link_content = linked_message.content;
                                 message_parts.push(format!(
-                                        "{} linked to a message sent in: {}, sent by: {} and had this content: {}",
-                                        author_name, guild_name, linked_message.author.name, linked_message.content
+                                        "{author_name} linked to a message sent in: {guild_name}, sent by: {link_author} and had this content: {link_content}"
                                     ));
                             }
                             None => {
                                 message_parts.push(format!(
-                                    "{} linked to a message in non-accessible guild",
-                                    author_name
+                                    "{author_name} linked to a message in non-accessible guild"
                                 ));
                             }
                         }
@@ -418,13 +406,7 @@ pub async fn handle_message(
 
                     if !unique_users.is_empty() {
                         system_content.push_str("Current users in the conversation: ");
-                        system_content.push_str(
-                            &unique_users
-                                .iter()
-                                .map(|user| format!("- {}", user))
-                                .collect::<Vec<_>>()
-                                .join("\n"),
-                        );
+                        system_content.push_str(&unique_users.join("\n"));
                     }
 
                     let system_message = history.iter_mut().find(|msg| msg.role == "system");
@@ -440,13 +422,10 @@ pub async fn handle_message(
                             });
                         }
                     }
+                    let content_safe = new_message.content_safe(&ctx.cache);
                     history.push(ChatMessage {
                         role: "user".to_owned(),
-                        content: format!(
-                            "User: {}: {}",
-                            author_name,
-                            new_message.content_safe(&ctx.cache)
-                        ),
+                        content: format!("User: {author_name}: {content_safe}"),
                     });
 
                     ai_response(&history).await
@@ -454,16 +433,6 @@ pub async fn handle_message(
                 match response {
                     Ok(response) => {
                         let conversations = &data.conversations;
-                        if let Some(guild_conversations) = conversations.get_mut(&id) {
-                            if let Some(mut history) =
-                                guild_conversations.get_mut(&new_message.channel_id)
-                            {
-                                history.push(ChatMessage {
-                                    role: "assistant".to_owned(),
-                                    content: response.to_owned(),
-                                });
-                            }
-                        }
                         if response.len() >= 2000 {
                             for chunk in response.chars().collect::<Vec<_>>().chunks(2000) {
                                 new_message
@@ -471,7 +440,17 @@ pub async fn handle_message(
                                     .await?;
                             }
                         } else {
-                            new_message.reply(&ctx.http, response).await?;
+                            new_message.reply(&ctx.http, response.as_str()).await?;
+                        }
+                        if let Some(guild_conversations) = conversations.get_mut(&id) {
+                            if let Some(mut history) =
+                                guild_conversations.get_mut(&new_message.channel_id)
+                            {
+                                history.push(ChatMessage {
+                                    role: "assistant".to_owned(),
+                                    content: response,
+                                });
+                            }
                         }
                     }
                     Err(_) => {

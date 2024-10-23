@@ -199,9 +199,9 @@ struct GifObject {
 }
 
 pub async fn get_gifs(input: &str) -> Result<Vec<String>, Error> {
+    let encoded_input = encode(input);
     let request_url = format!(
-        "https://tenor.googleapis.com/v2/search?q={}&key={}&contentfilter=medium&limit=40",
-        encode(input),
+        "https://tenor.googleapis.com/v2/search?q={encoded_input}&key={}&contentfilter=medium&limit=40",
         *TENOR_TOKEN,
     );
     let request = HTTP_CLIENT.get(request_url).send().await?;
@@ -234,14 +234,10 @@ pub async fn get_waifu() -> Result<String, Error> {
     let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
     let request = HTTP_CLIENT.get(request_url).send().await?;
     let resp: WaifuResponse = request.json().await?;
-    let url = resp
-        .images
-        .into_iter()
-        .next()
-        .map(|img| img.url)
-        .unwrap_or_else(|| {
-            "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned()
-        });
+    let url = resp.images.into_iter().next().map_or(
+        "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned(),
+        |img| img.url,
+    );
 
     Ok(url)
 }
@@ -292,7 +288,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
                 } else {
                     break;
                 }
-                jindex += 1
+                jindex += 1;
             }
             emoji_id = numbers.join("");
             break;
@@ -380,8 +376,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
 
     let emoji_image = if !emoji_id.is_empty() {
         let emoji_url = format!(
-            "https://cdn.discordapp.com/emojis/{}.webp?size={}quality=lossless",
-            emoji_id, emoji_height
+            "https://cdn.discordapp.com/emojis/{emoji_id}.webp?size={emoji_height}quality=lossless"
         );
         let emoji_bytes = HTTP_CLIENT
             .get(&emoji_url)
@@ -436,7 +431,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
         author_name_y.try_into().unwrap(),
         author_scale,
         &font_author,
-        format!("- {}", author_name).as_str(),
+        format!("- {author_name}").as_str(),
     );
 
     img
@@ -454,7 +449,8 @@ pub async fn spoiler_message(
             let target = attachment.url.as_str();
             let response = HTTP_CLIENT.get(target).send().await;
             let download = response.unwrap().bytes().await;
-            let filename = format!("SPOILER_{}", &attachment.filename);
+            let attachment_name = &attachment.filename;
+            let filename = format!("SPOILER_{attachment_name}");
             let mut file = File::create(&filename).await?;
             let download_bytes = match download {
                 Ok(bytes) => bytes,

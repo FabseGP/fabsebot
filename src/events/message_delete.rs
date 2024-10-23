@@ -45,12 +45,12 @@ pub async fn handle_message_delete(
                                     .cache
                                     .message(channel_id, deleted_message_id)
                                     .map(|msg| (msg.content.clone(), msg.embeds.clone()));
+                                let evil_name = evil_person.display_name();
                                 channel_id
                                     .send_message(
                                         &ctx.http,
                                         CreateMessage::default().content(format!(
-                                            "Bruh, {} deleted my message, sending it again",
-                                            evil_person.display_name()
+                                            "Bruh, {evil_name} deleted my message, sending it again"
                                         )),
                                     )
                                     .await?;

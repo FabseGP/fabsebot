@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub async fn handle_guild_create(
     data: Arc<Data>,
     guild: &Guild,
-    is_new: &Option<bool>,
+    is_new: Option<&bool>,
 ) -> Result<(), Error> {
     if let Some(new_guild) = is_new {
         if *new_guild {

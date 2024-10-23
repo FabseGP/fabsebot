@@ -17,7 +17,7 @@ async fn autocomplete_choice<'a>(
 ) -> impl Stream<Item = String> + 'a {
     futures::stream::iter(&["rock", "paper", "scissor"])
         .filter(move |name| futures::future::ready(name.starts_with(partial)))
-        .map(|name| name.to_string())
+        .map(|name| (*name).to_string())
 }
 
 /// Get rekt by an another user in rps
@@ -39,9 +39,10 @@ pub async fn rps(
             return Ok(());
         }
 
-        let rock_id = format!("{}_rock", ctx.id());
-        let paper_id = format!("{}_paper", ctx.id());
-        let scissor_id = format!("{}_scissor", ctx.id());
+        let ctx_id = ctx.id();
+        let rock_id = format!("{ctx_id}_rock");
+        let paper_id = format!("{ctx_id}_paper");
+        let scissor_id = format!("{ctx_id}_scissor");
 
         let buttons = [
             CreateButton::new(rock_id.as_str())
@@ -102,20 +103,20 @@ pub async fn rps(
                 };
                 match result {
                     Some(winner) if winner == &author_choice => {
-                        format!(
-                            "{} won!",
-                            ctx.author()
-                                .nick_in(ctx.http(), ctx.guild_id().unwrap())
-                                .await
-                                .unwrap_or(ctx.author().display_name().to_owned())
-                        )
-                    }
-                    Some(_) => format!(
-                        "{} won!",
-                        user.nick_in(ctx.http(), ctx.guild_id().unwrap())
+                        let user_name = ctx
+                            .author()
+                            .nick_in(ctx.http(), ctx.guild_id().unwrap())
                             .await
-                            .unwrap_or(user.name.into_string())
-                    ),
+                            .unwrap_or(ctx.author().display_name().to_owned());
+                        format!("{user_name} won!")
+                    }
+                    Some(_) => {
+                        let user_name = user
+                            .nick_in(ctx.http(), ctx.guild_id().unwrap())
+                            .await
+                            .unwrap_or(user.name.into_string());
+                        format!("{user_name} won!")
+                    }
                     None => "You both suck!".to_owned(),
                 }
             };

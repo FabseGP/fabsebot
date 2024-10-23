@@ -50,8 +50,9 @@ pub async fn ai_image(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
+    let rand_num = RNG.lock().await.usize(0..1024);
     let request = ImageRequest {
-        prompt: format!("{} {}", prompt, RNG.lock().await.usize(0..1024)),
+        prompt: format!("{prompt} {rand_num}"),
     };
     let resp = HTTP_CLIENT
         .post(format!(
@@ -72,14 +73,14 @@ pub async fn ai_image(
             Err(_) => {
                 ctx.send(
                     CreateReply::default()
-                        .content(format!("\"{}\" is too dangerous to generate", prompt)),
+                        .content(format!("\"{prompt}\" is too dangerous to generate")),
                 )
                 .await?;
             }
         }
     } else {
         ctx.send(
-            CreateReply::default().content(format!("\"{}\" is too dangerous to generate", prompt)),
+            CreateReply::default().content(format!("\"{prompt}\" is too dangerous to generate")),
         )
         .await?;
     }
@@ -165,7 +166,10 @@ pub async fn ai_text(
             .map(|(i, chunk)| {
                 let field_name = match i {
                     0 => "Response:".to_owned(),
-                    _ => format!("Response (cont. {}):", i + 1),
+                    _ => {
+                        let index = i + 1;
+                        format!("Response (cont. {index}):")
+                    }
                 };
                 let chunk_str: String = chunk.iter().collect();
                 (field_name, chunk_str, false)
@@ -177,7 +181,7 @@ pub async fn ai_text(
             .fields(fields);
         ctx.send(CreateReply::default().embed(embed)).await?;
     } else {
-        ctx.send(CreateReply::default().content(format!("\"{}\" is too dangerous to ask", prompt)))
+        ctx.send(CreateReply::default().content(format!("\"{prompt}\" is too dangerous to ask")))
             .await?;
     }
     Ok(())
@@ -225,7 +229,7 @@ pub async fn anilist_anime(
     anime: String,
 ) -> Result<(), Error> {
     let query = GraphQLQuery {
-        query: r#"
+        query: "
             query ($search: String) {
                 Media(search: $search, type: ANIME) {
                     id
@@ -236,7 +240,7 @@ pub async fn anilist_anime(
                     }
                 }
             }
-        "#
+        "
         .to_string(),
         variables: AnimeVariables { search: anime },
     };
@@ -289,10 +293,9 @@ pub async fn eightball(
     #[rest]
     question: String,
 ) -> Result<(), Error> {
-    let request_url = format!(
-        "https://eightballapi.com/api/biased?question={}&lucky=false",
-        encode(&question)
-    );
+    let encoded_input = encode(&question);
+    let request_url =
+        format!("https://eightballapi.com/api/biased?question={encoded_input}&lucky=false");
     let request = HTTP_CLIENT.get(request_url).send().await?;
     let judging: EightBallResponse = request.json().await?;
     if !judging.reading.is_empty() {
@@ -325,8 +328,9 @@ pub async fn gif(
         if ctx.guild_id().is_some() {
             let len = urls.len();
             let index = 0;
-            let next_id = format!("{}_next_{}", ctx.id(), index);
-            let prev_id = format!("{}_prev_{}", ctx.id(), index);
+            let ctx_id = ctx.id();
+            let next_id = format!("{ctx_id}_next_{index}");
+            let prev_id = format!("{ctx_id}_prev_{index}");
             let mut state = State {
                 next_id,
                 prev_id,
@@ -366,8 +370,9 @@ pub async fn gif(
                         state.index -= 1;
                     }
 
-                    state.next_id = format!("{}_next_{}", ctx.id(), state.index);
-                    state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
+                    let state_index = state.index;
+                    state.next_id = format!("{ctx_id}_next_{state_index}");
+                    state.prev_id = format!("{ctx_id}_prev_{state_index}");
 
                     let buttons = [
                         CreateButton::new(&state.prev_id)
@@ -434,7 +439,7 @@ pub async fn github_search(
     input: String,
 ) -> Result<(), Error> {
     let request = HTTP_CLIENT
-        .get(format!("https://api.github.com/search/code?q={}", input))
+        .get(format!("https://api.github.com/search/code?q={input}"))
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "fabseman")
@@ -445,7 +450,7 @@ pub async fn github_search(
     if !data.items.is_empty() {
         ctx.say(data.items[0].url.as_str()).await?;
     } else {
-        ctx.send(CreateReply::default().content(format!("**Like you, {} don't exist**", input)))
+        ctx.send(CreateReply::default().content(format!("**Like you, {input} don't exist**")))
             .await?;
     }
     Ok(())
@@ -488,11 +493,11 @@ pub async fn memegen(
     #[description = "Top-right text"] top_right: String,
     #[description = "Bottom text"] bottom: String,
 ) -> Result<(), Error> {
+    let encoded_left = encode(&top_left);
+    let encoded_right = encode(&top_right);
+    let encoded_bottom = encode(&bottom);
     let request_url = format!(
-        "https://api.memegen.link/images/exit/{}/{}/{}.png",
-        encode(&top_left),
-        encode(&top_right),
-        encode(&bottom)
+        "https://api.memegen.link/images/exit/{encoded_left}/{encoded_right}/{encoded_bottom}.png"
     );
     ctx.send(CreateReply::default().content(request_url))
         .await?;
@@ -553,7 +558,9 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
                 match message_result {
                     Ok(message) => {
                         if message.author.id == user.id {
-                            let formatted_message = format!("{}:{}", count + 1, message.content);
+                            let index = count + 1;
+                            let msg_content = message.content;
+                            let formatted_message = format!("{index}:{msg_content}");
                             collected_messages.push(formatted_message);
                             count += 1;
                         }
@@ -568,7 +575,8 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             collected_messages.join(",")
         };
 
-        let description = format!("name:{},avatar:{},banner:{},roles:{},acc_create:{},joined_svr:{},msg_count:{},last_msgs:{}", name, avatar_url, banner_url, roles.join(", "), account_date, join_date, message_count, messages_string);
+        let roles_joined = roles.join(", ");
+        let description = format!("name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles_joined},acc_create:{account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:{messages_string}");
         let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target";
         let resp = ai_response_simple(role, &description).await?;
 
@@ -581,19 +589,22 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
                 .map(|(i, chunk)| {
                     let field_name = match i {
                         0 => "Response:".to_owned(),
-                        _ => format!("Response (cont. {}):", i + 1),
+                        _ => {
+                            let index = i + 1;
+                            format!("Response (cont. {index}):")
+                        }
                     };
                     let chunk_str: String = chunk.iter().collect();
                     (field_name, chunk_str, false)
                 })
                 .collect();
             let embed = CreateEmbed::default()
-                .title(format!("Roasting {}", name))
+                .title(format!("Roasting {name}"))
                 .color(0xFF7800)
                 .fields(fields);
             ctx.send(CreateReply::default().embed(embed)).await?;
         } else {
-            ctx.send(CreateReply::default().content(format!("{}'s life is already roasted", name)))
+            ctx.send(CreateReply::default().content(format!("{name}'s life is already roasted")))
                 .await?;
         }
     }
@@ -685,8 +696,9 @@ pub async fn translate(
             if ctx.guild_id().is_some() {
                 let len = data.alternatives.len();
                 let index = 0;
-                let next_id = format!("{}_next_{}", ctx.id(), index);
-                let prev_id = format!("{}_prev_{}", ctx.id(), index);
+                let ctx_id = ctx.id();
+                let next_id = format!("{ctx_id}_next_{index}");
+                let prev_id = format!("{ctx_id}_prev_{index}");
                 let mut state = State {
                     next_id,
                     prev_id,
@@ -695,10 +707,8 @@ pub async fn translate(
                 };
                 let embed = CreateEmbed::default()
                     .title(format!(
-                        "Translation from {} to {} with {}% confidence",
-                        data.detected_language.language,
-                        target_lang,
-                        data.detected_language.confidence
+                        "Translation from {} to {target_lang} with {}% confidence",
+                        data.detected_language.language, data.detected_language.confidence
                     ))
                     .color(0x33d17a)
                     .field("Original:", &content, false)
@@ -734,8 +744,9 @@ pub async fn translate(
                             state.index -= 1;
                         }
 
-                        state.next_id = format!("{}_next_{}", ctx.id(), state.index);
-                        state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
+                        let state_index = state.index;
+                        state.next_id = format!("{ctx_id}_next_{state_index}");
+                        state.prev_id = format!("{ctx_id}_prev_{state_index}");
 
                         let buttons = [
                             CreateButton::new(&state.prev_id)
@@ -748,10 +759,8 @@ pub async fn translate(
 
                         let new_embed = CreateEmbed::default()
                             .title(format!(
-                                "Translation from {} to {} with {}% confidence",
-                                data.detected_language.language,
-                                target_lang,
-                                data.detected_language.confidence
+                                "Translation from {} to {target_lang} with {}% confidence",
+                                data.detected_language.language, data.detected_language.confidence
                             ))
                             .color(0x33d17a)
                             .field("Original:", &content, false)
@@ -793,10 +802,8 @@ pub async fn translate(
                     CreateReply::default().embed(
                         CreateEmbed::default()
                             .title(format!(
-                                "Translation from {} to {} with {}% confidence",
-                                data.detected_language.language,
-                                target_lang,
-                                data.detected_language.confidence
+                                "Translation from {} to {target_lang} with {}% confidence",
+                                data.detected_language.language, data.detected_language.confidence
                             ))
                             .color(0x33d17a)
                             .field("Original:", &content, false)
@@ -840,10 +847,8 @@ pub async fn urban(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    let request_url = format!(
-        "https://api.urbandictionary.com/v0/define?term={}",
-        encode(&input)
-    );
+    let encoded_input = encode(&input);
+    let request_url = format!("https://api.urbandictionary.com/v0/define?term={encoded_input}");
     let request = HTTP_CLIENT.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await?;
     if !data.list.is_empty() {
@@ -855,7 +860,10 @@ pub async fn urban(
             .map(|(i, chunk)| {
                 let field_name = match i {
                     0 => "Definition:".to_owned(),
-                    _ => format!("Response (cont. {}):", i + 1),
+                    _ => {
+                        let index = i + 1;
+                        format!("Response (cont. {index}):")
+                    }
                 };
                 let chunk_str: String = chunk.iter().collect();
                 (field_name, chunk_str.replace(['[', ']'], ""), false)
@@ -874,8 +882,9 @@ pub async fn urban(
         if ctx.guild_id().is_some() {
             let len = data.list.len();
             let index = 0;
-            let next_id = format!("{}_next_{}", ctx.id(), index);
-            let prev_id = format!("{}_prev_{}", ctx.id(), index);
+            let ctx_id = ctx.id();
+            let next_id = format!("{ctx_id}_next_{index}");
+            let prev_id = format!("{ctx_id}_prev_{index}");
             let mut state = State {
                 next_id,
                 prev_id,
@@ -914,8 +923,9 @@ pub async fn urban(
                         state.index -= 1;
                     }
 
-                    state.next_id = format!("{}_next_{}", ctx.id(), state.index);
-                    state.prev_id = format!("{}_prev_{}", ctx.id(), state.index);
+                    let state_index = state.index;
+                    state.next_id = format!("{ctx_id}_next_{state_index}");
+                    state.prev_id = format!("{ctx_id}_prev_{state_index}");
 
                     let buttons = [
                         CreateButton::new(&state.prev_id)
@@ -935,7 +945,10 @@ pub async fn urban(
                         .map(|(i, new_chunks)| {
                             let field_name = match i {
                                 0 => "Definition:".to_owned(),
-                                _ => format!("Response (cont. {}):", i + 1),
+                                _ => {
+                                    let index = i + 1;
+                                    format!("Response (cont. {index}):")
+                                }
                             };
                             let chunk_str: String = new_chunks.iter().collect();
                             (field_name, chunk_str.replace(['[', ']'], ""), false)
@@ -979,7 +992,7 @@ pub async fn urban(
             ctx.send(CreateReply::default().embed(embed)).await?;
         }
     } else {
-        ctx.send(CreateReply::default().content(format!("**Like you, {} don't exist**", input)))
+        ctx.send(CreateReply::default().content(format!("**Like you, {input} don't exist**")))
             .await?;
     }
     Ok(())

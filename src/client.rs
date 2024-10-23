@@ -81,7 +81,7 @@ async fn event_handler(
         FullEvent::Message { new_message } => handle_message(ctx, data, new_message).await?,
         FullEvent::ReactionAdd { add_reaction } => handle_reaction_add(ctx, add_reaction).await?,
         FullEvent::GuildCreate { guild, is_new } => {
-            handle_guild_create(data, guild, is_new).await?
+            handle_guild_create(data, guild, is_new.as_ref()).await?;
         }
         FullEvent::MessageDelete {
             channel_id,
@@ -111,10 +111,10 @@ pub async fn start() -> anyhow::Result<()> {
         .run(&database)
         .await
         .context("Failed to run database migrations")?;
-    let manager = Songbird::serenity();
+    let music_manager = Songbird::serenity();
     let user_data = Data {
         db: database,
-        music_manager: Arc::clone(&manager),
+        music_manager: music_manager.clone(),
         conversations: Arc::new(DashMap::default()),
     };
     let framework = Framework::builder()
@@ -173,9 +173,7 @@ pub async fn start() -> anyhow::Result<()> {
             ],
             prefix_options: PrefixFrameworkOptions {
                 dynamic_prefix: Some(|ctx| Box::pin(dynamic_prefix(ctx))),
-                edit_tracker: Some(Arc::new(EditTracker::for_timespan(Duration::from_secs(
-                    3600,
-                )))),
+                edit_tracker: Some(Arc::new(EditTracker::for_timespan(Duration::from_secs(60)))),
                 additional_prefixes: vec![
                     Prefix::Literal("fabsebot"),
                     Prefix::Literal("hey fabsebot"),
@@ -199,7 +197,7 @@ pub async fn start() -> anyhow::Result<()> {
     cache_settings.max_messages = 10;
     let client = Client::builder(&token, intents)
         .framework(framework)
-        .voice_manager::<Songbird>(manager)
+        .voice_manager::<Songbird>(music_manager)
         .cache_settings(cache_settings)
         .data(Arc::new(user_data))
         .await;

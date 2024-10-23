@@ -14,33 +14,31 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
-    let size = match guild.large() {
-        true => "Large",
-        _ => "Not large",
-    }
-    .to_owned();
+    let size = if guild.large() { "Large" } else { "Not large" }.to_owned();
+    let guild_id = guild.id;
     let thumbnail = match &guild.banner {
         Some(banner) => banner.as_str(),
         None => match &guild.icon {
-            Some(icon_hash) => &format!(
-                "https://cdn.discordapp.com/icons/{}/{}.png",
-                guild.id, icon_hash
-            ),
+            Some(icon_hash) => {
+                &format!("https://cdn.discordapp.com/icons/{guild_id}/{icon_hash}.png")
+            }
             None => "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif",
         },
     };
     let owner_user = guild.owner_id.to_user(&ctx.http()).await?;
     let guild_description = guild.description.unwrap_or_default().into_string();
-    let guild_id = guild.id.to_string();
+    let guild_id = guild_id.to_string();
     let guild_boosters = guild.premium_subscription_count.unwrap().to_string();
     let owner_name = owner_user.display_name().to_owned();
     let guild_creation = guild.id.created_at().to_string();
     let guild_emojis_len = guild.emojis.len().to_string();
     let guild_roles_len = guild.roles.len().to_string();
     let guild_stickers_len = guild.stickers.len().to_string();
-    let guild_member_count = format!("{}/{}", guild.member_count, guild.max_members.unwrap());
+    let member_count = guild.member_count;
+    let max_member_count = guild.max_members.unwrap_or_default();
+    let guild_member_count = format!("{member_count}/{max_member_count}");
     let guild_channels = guild.channels.len().to_string();
-    let empty = "".to_owned();
+    let empty = String::new();
     let embed = CreateEmbed::default()
         .title(guild.name.into_string())
         .description(guild_description)
@@ -76,12 +74,13 @@ pub async fn user_info(
     let user = ctx.http().get_user(member.user.id).await?;
     let user_created = user.created_at().to_string();
     let member_joined = member.joined_at.unwrap().to_string();
-    let user_mfa = match user.mfa_enabled() {
-        true => "MFA enabled",
-        false => "MFA disabled",
+    let user_mfa = if user.mfa_enabled() {
+        "MFA enabled"
+    } else {
+        "MFA disabled"
     }
     .to_owned();
-    let empty = "".to_owned();
+    let empty = String::new();
     let embed = CreateEmbed::default()
         .title(member.display_name())
         .thumbnail(member.avatar_url().unwrap_or(user.avatar_url().unwrap()))

@@ -45,7 +45,7 @@ pub async fn anony_poll(
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            CreateButton::new(format!("option_{}", index))
+            CreateButton::new(format!("option_{index}"))
                 .style(ButtonStyle::Primary)
                 .label((index + 1).to_string())
         })
@@ -70,7 +70,7 @@ pub async fn anony_poll(
             .filter(move |interaction| {
                 let id = interaction.data.custom_id.as_str();
                 (0..options_count).any(|index| {
-                    let expected_id = format!("{}_{}", index, id_borrow);
+                    let expected_id = format!("{index}_{id_borrow}");
                     id == expected_id
                 })
             })
@@ -123,7 +123,7 @@ pub async fn birthday(
     ctx.send(
         CreateReply::default().embed(
             CreateEmbed::default()
-                .title(format!("HAPPY BIRTHDAY {}!", name))
+                .title(format!("HAPPY BIRTHDAY {name}!"))
                 .thumbnail(avatar_url)
                 .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
                 .color(0xFF5733),
@@ -203,8 +203,9 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             .await
         {
             let rank = index + 1;
+            let user_name = target.display_name();
             fields.push((
-                format!("#{} {}", rank, target.display_name()),
+                format!("#{rank} {user_name}"),
                 user.message_count.to_string(),
                 false,
             ));
@@ -212,7 +213,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
     }
 
     let embed = CreateEmbed::default()
-        .title(format!("Top {} users by message count", user_count))
+        .title(format!("Top {user_count} users by message count"))
         .thumbnail(thumbnail)
         .color(0xFF5733)
         .fields(fields);
@@ -376,10 +377,7 @@ pub async fn slow_mode(
     channel.id().edit(ctx.http(), settings).await?;
     ctx.send(
         CreateReply::default()
-            .content(format!(
-                "{} is ratelimited for {} seconds",
-                channel, duration
-            ))
+            .content(format!("{channel} is ratelimited for {duration} seconds"))
             .ephemeral(true),
     )
     .await?;
@@ -392,7 +390,7 @@ pub async fn troll(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.send(
         CreateReply::default()
             .content(
-                r#"
+                "
 ```
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣤⣤⡴⠶⠶⠶⠶⠶⠶⠶⠶⢶⣦⣤⣤⣀⣀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⡴⠶⠛⠋⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠙⠛⠷⠶⢦⣤⣀⡀
@@ -412,7 +410,7 @@ pub async fn troll(ctx: SContext<'_>) -> Result<(), Error> {
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠶⣤⣉⠀⠂⠥⠀⠀⠤⠀⠀⠀⠀⠀⠤⠄⠀⠠⠌⠂⢈⣡⡴⠖⠋⠉
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠶⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡴⠞⠋⠁
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠳⠶⠶⠶⠶⠶⠖⠛⠋⠁
-```"#,
+```",
             )
             .ephemeral(true),
     )
@@ -431,9 +429,10 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
         .fetch_one(&mut *ctx.data().db.acquire().await?)
         .await
         {
+            let word = record.word;
+            let word_count = record.count;
             ctx.reply(format!(
-                "{} was counted {} times, I'm not sure if that's a good thing or not tho",
-                record.word, record.count
+                "{word} was counted {word_count} times, I'm not sure if that's a good thing or not tho"
             ))
             .await?;
         } else {

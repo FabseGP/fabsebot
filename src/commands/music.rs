@@ -70,7 +70,7 @@ pub async fn add_playlist(
         match manager.get(guild_id) {
             Some(handler_lock) => {
                 let request = HTTP_CLIENT
-                    .get(format!("https://api.deezer.com/playlist/{}", playlist_id))
+                    .get(format!("https://api.deezer.com/playlist/{playlist_id}"))
                     .send()
                     .await?;
                 let data: Option<DeezerResponse> = request.json().await?;
@@ -78,7 +78,9 @@ pub async fn add_playlist(
                     if !payload.tracks.data.is_empty() {
                         let mut handler = handler_lock.lock().await;
                         for track in payload.tracks.data {
-                            let search = format! {"{} {}", track.title, track.artist.name};
+                            let title = track.title;
+                            let artist = track.artist.name;
+                            let search = format!("{title} {artist}");
                             let src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
                             handler.enqueue_input(Input::from(src)).await;
                         }
@@ -104,9 +106,10 @@ struct TrackEndNotifier {
 impl VoiceEventHandler for TrackEndNotifier {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<SongbirdEvent> {
         if let EventContext::Track(track_list) = ctx {
+            let track_len = track_list.len();
             let _ = self
                 .channel_id
-                .say(&self.http, &format!("Tracks ended: {}.", track_list.len()))
+                .say(&self.http, &format!("Tracks ended: {track_len}."))
                 .await;
         }
 
@@ -238,6 +241,7 @@ pub async fn play_song(
                         let title = &m.title;
                         let source_url = &m.source_url;
                         let duration = &m.duration;
+                        let queue_len = handler.queue().len();
                         ctx.send(CreateReply::default().embed({
                             let mut e = CreateEmbed::default()
                                 .colour(0xED333B)
@@ -247,9 +251,9 @@ pub async fn play_song(
                                 e = e.field("Artist:", artist, true);
                             }
                             if let Some(duration) = duration {
-                                e = e.field("Duration:", format!("{:?}", duration), true);
+                                e = e.field("Duration:", format!("{duration:?}"), true);
                             }
-                            e = e.field("Position:", format!("{:?}", handler.queue().len()), true);
+                            e = e.field("Position:", format!("{queue_len}"), true);
                             if let Some(url) = source_url {
                                 e = e.url(url);
                             }
@@ -313,7 +317,7 @@ pub async fn seek_song_backward(
                         let seek = current_position - Duration::from_secs(seconds);
                         if !seek.is_zero() {
                             current_playback.seek_async(seek).await?;
-                            ctx.reply(format!("Seeked {} seconds backward", seconds))
+                            ctx.reply(format!("Seeked {seconds} seconds backward"))
                                 .await?;
                         } else {
                             ctx.reply("Can't seek back for more seconds than what already have been played")
@@ -349,7 +353,7 @@ pub async fn seek_song_forward(
                         let current_position = current_playback_info.position;
                         let seek = current_position + Duration::from_secs(seconds);
                         current_playback.seek_async(seek).await?;
-                        ctx.reply(format!("Seeked {} seconds forward", seconds))
+                        ctx.reply(format!("Seeked {seconds} seconds forward"))
                             .await?;
                     }
                 }
@@ -375,7 +379,8 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
                 let queue = handler.queue();
                 if queue.len() - 1 != 0 {
                     queue.skip()?;
-                    ctx.reply(format!("Song skipped. {} left in queue", queue.len() - 2))
+                    let queue_len = queue.len() - 2;
+                    ctx.reply(format!("Song skipped. {queue_len} left in queue"))
                         .await?;
                 } else {
                     ctx.reply("No songs to skip!").await?;
