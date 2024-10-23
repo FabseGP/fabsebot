@@ -56,9 +56,8 @@ pub async fn handle_message_delete(
                                     .await?;
                                 if let Some((content, embeds)) = deleted_content {
                                     let mut message = CreateMessage::default().content(content);
-                                    if !embeds.is_empty() {
-                                        message =
-                                            message.embed(CreateEmbed::from(embeds[0].clone()));
+                                    if let Some(deleted_embed) = embeds.into_iter().next() {
+                                        message = message.embed(CreateEmbed::from(deleted_embed));
                                     }
                                     channel_id.send_message(&ctx.http, message).await?;
                                 }

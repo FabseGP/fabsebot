@@ -8,14 +8,13 @@ use crate::{
 
 use poise::{
     serenity_prelude::{
-        futures::StreamExt, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
-        CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage,
-        MessageId, User,
+        futures::StreamExt, small_fixed_array::FixedString, ButtonStyle,
+        ComponentInteractionCollector, CreateActionRow, CreateAttachment, CreateButton,
+        CreateEmbed, CreateInteractionResponse, EditMessage, MessageId, User,
     },
     CreateReply,
 };
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
 use sqlx::query;
 use std::{borrow::Cow, time::Duration};
 use urlencoding::encode;
@@ -27,6 +26,11 @@ struct State {
     len: usize,
 }
 
+#[derive(Serialize)]
+struct ImageRequest {
+    prompt: String,
+}
+
 /// Did someone say AI image?
 #[poise::command(prefix_command, slash_command)]
 pub async fn ai_image(
@@ -36,13 +40,16 @@ pub async fn ai_image(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
+    let request = ImageRequest {
+        prompt: prompt.to_owned(),
+    };
     let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/lykon/dreamshaper-8-lcm",
             *CLOUDFLARE_GATEWAY
         ))
         .bearer_auth(&*CLOUDFLARE_TOKEN)
-        .json(&json!({ "prompt": prompt }))
+        .json(&request)
         .send()
         .await?;
     let image_data = resp.bytes().await?.to_vec();
@@ -67,6 +74,12 @@ struct AIResponseSummary {
     summary: String,
 }
 
+#[derive(Serialize)]
+struct SummarizeRequest {
+    input_text: FixedString<u16>,
+    length: u64,
+}
+
 /// Did someone say AI summarize?
 #[poise::command(prefix_command, slash_command)]
 pub async fn ai_summarize(
@@ -85,15 +98,17 @@ pub async fn ai_summarize(
             return Ok(());
         }
     };
+    let request = SummarizeRequest {
+        input_text: reply.content,
+        length,
+    };
     let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/facebook/bart-large-cnn",
             *CLOUDFLARE_GATEWAY
         ))
         .bearer_auth(&*CLOUDFLARE_TOKEN)
-        .json(&json!({"input_text": reply.content,
-            "max_length": length
-        }))
+        .json(&request)
         .send()
         .await?;
     let output: FabseAISummary = resp.json().await?;
@@ -147,6 +162,39 @@ pub async fn ai_text(
     Ok(())
 }
 
+#[derive(Serialize)]
+struct GraphQLQuery {
+    query: String,
+    variables: AnimeVariables,
+}
+
+#[derive(Serialize)]
+struct AnimeVariables {
+    search: String,
+}
+
+#[derive(Deserialize)]
+struct AnimeResponse {
+    data: AnimeData,
+}
+
+#[derive(Deserialize)]
+struct AnimeData {
+    #[serde(rename = "Media")]
+    media: Option<Media>,
+}
+
+#[derive(Deserialize)]
+struct Media {
+    id: i32,
+    title: AnimeTitle,
+}
+
+#[derive(Deserialize)]
+struct AnimeTitle {
+    romaji: Option<String>,
+}
+
 /// When the other bot sucks
 #[poise::command(prefix_command, slash_command)]
 pub async fn anilist_anime(
@@ -155,45 +203,46 @@ pub async fn anilist_anime(
     #[rest]
     anime: String,
 ) -> Result<(), Error> {
-    let query = format!(
-        r#"{{
-        "query": "query ($search: String) {{
-            Media (id: $id, type: ANIME) {{
-                id
-                title {{
-                    romaji
-                    english
-                    native
-                }}
-            }}
-        }}",
-        "variables": {{
-            "search": "{}"
-        }}
-    }}"#,
-        anime
-    );
+    let query = GraphQLQuery {
+        query: r#"
+            query ($search: String) {
+                Media(search: $search, type: ANIME) {
+                    id
+                    title {
+                        romaji
+                        english
+                        native
+                    }
+                }
+            }
+        "#
+        .to_string(),
+        variables: AnimeVariables { search: anime },
+    };
+
     let resp = HTTP_CLIENT
         .post("https://graphql.anilist.co/")
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
-        .body(query)
+        .json(&query)
         .send()
         .await?;
-    let data: Value = resp.json().await?;
-    let anime_data = &data["data"]["Media"];
 
-    if anime_data.is_null() {
-        ctx.reply("No anime found with that name").await?;
-        return Ok(());
-    }
+    let data: AnimeResponse = resp.json().await?;
 
-    let id = anime_data["id"].to_string();
-    let title = anime_data["title"]["romaji"].to_string();
+    let media = match data.data.media {
+        Some(media) => media,
+        None => {
+            ctx.reply("No anime found with that name").await?;
+            return Ok(());
+        }
+    };
+
+    let title = media.title.romaji.unwrap_or_default();
 
     let embed = CreateEmbed::default()
         .title("Anime")
-        .field("ID", id, false)
+        .field("ID", media.id.to_string(), false)
         .field("Title", title, false)
         .color(0x33d17a);
 
@@ -220,8 +269,8 @@ pub async fn eightball(
     question: String,
 ) -> Result<(), Error> {
     let request_url = format!(
-        "https://eightballapi.com/api/biased?question={query}&lucky=false",
-        query = encode(&question)
+        "https://eightballapi.com/api/biased?question={}&lucky=false",
+        encode(&question)
     );
     let request = HTTP_CLIENT.get(request_url).send().await?;
     let judging: EightBallResponse = request.json().await?;
@@ -546,6 +595,14 @@ struct FabseLanguage {
     language: String,
 }
 
+#[derive(Serialize)]
+struct TranslateRequest<'a> {
+    q: String,
+    source: &'a str,
+    target: String,
+    alternatives: u8,
+}
+
 /// When you stumble on some ancient sayings
 #[poise::command(
     prefix_command,
@@ -590,15 +647,15 @@ pub async fn translate(
         Some(lang) => lang.to_lowercase(),
         None => "en".to_owned(),
     };
-    let form_data = json!({
-        "q": content,
-        "source": "auto",
-        "target": target_lang,
-        "alternatives": 3,
-    });
+    let request = TranslateRequest {
+        q: content.to_owned(),
+        source: "auto",
+        target: target_lang.to_owned(),
+        alternatives: 3,
+    };
     let response = HTTP_CLIENT
         .post(&*TRANSLATE_SERVER)
-        .json(&form_data)
+        .json(&request)
         .send()
         .await?;
 

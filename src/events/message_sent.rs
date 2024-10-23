@@ -11,7 +11,6 @@ use poise::serenity_prelude::{
 };
 use sqlx::{query, Acquire};
 use std::sync::Arc;
-use tokio::try_join;
 
 pub async fn handle_message(
     ctx: &serenity::Context,
@@ -30,33 +29,20 @@ pub async fn handle_message(
             .acquire()
             .await
             .context("Failed to acquire database connection")?;
-        query!(
-            "INSERT INTO guilds (guild_id)
-            VALUES ($1)
-            ON CONFLICT (guild_id)
-            DO NOTHING",
-            guild_id,
-        )
-        .execute(&mut *conn)
-        .await?;
-        let (user_settings, guild_settings, words) = {
-            let mut conn1 = data.db.acquire().await?;
-            let mut conn2 = data.db.acquire().await?;
-            let mut conn3 = data.db.acquire().await?;
-            try_join!(
-                query!("SELECT * FROM user_settings WHERE guild_id = $1", guild_id)
-                    .fetch_all(&mut *conn1),
-                query!(
-                    "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel
-                    FROM guild_settings WHERE guild_id = $1",
-                    guild_id
-                )
-                .fetch_optional(&mut *conn2),
-                query!("SELECT word FROM words_count WHERE guild_id = $1", guild_id)
-                    .fetch_all(&mut *conn3)
-            )?
-        };
         let mut tx = conn.begin().await.context("Failed to acquire savepoint")?;
+        let user_settings = query!("SELECT * FROM user_settings WHERE guild_id = $1", guild_id)
+            .fetch_all(&mut *tx)
+            .await?;
+        let guild_settings = query!(
+            "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel
+            FROM guild_settings WHERE guild_id = $1",
+            guild_id
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        let words = query!("SELECT word FROM words_count WHERE guild_id = $1", guild_id)
+            .fetch_all(&mut *tx)
+            .await?;
         for target in &user_settings {
             let afk = match target.afk {
                 Some(afk) => afk,
@@ -290,8 +276,9 @@ pub async fn handle_message(
                             let roles: Vec<&str> = author_member
                                 .roles
                                 .iter()
-                                .filter_map(|role_id| guild_roles.get(role_id))
-                                .map(|role| role.name.as_str())
+                                .filter_map(|role_id| {
+                                    guild_roles.get(role_id).map(|role| role.name.as_str())
+                                })
                                 .collect();
                             if !roles.is_empty() {
                                 message_parts.push(format!(
@@ -309,8 +296,11 @@ pub async fn handle_message(
                                             let roles: Vec<&str> = target_member
                                                 .roles
                                                 .iter()
-                                                .filter_map(|role_id| guild_roles.get(role_id))
-                                                .map(|role| role.name.as_str())
+                                                .filter_map(|role_id| {
+                                                    guild_roles
+                                                        .get(role_id)
+                                                        .map(|role| role.name.as_str())
+                                                })
                                                 .collect();
                                             roles.join(",")
                                         };
@@ -407,10 +397,10 @@ pub async fn handle_message(
                     }
                     message_parts.join("\n")
                 };
-                let history_clone = {
+                let response = {
                     let conversations = &data.conversations;
-                    let conversations_entry = conversations.entry(id).or_default();
-                    let mut history = conversations_entry
+                    let guild_conversations = conversations.entry(id).or_default();
+                    let mut history = guild_conversations
                         .entry(new_message.channel_id)
                         .or_default();
 
@@ -457,9 +447,10 @@ pub async fn handle_message(
                             new_message.content_safe(&ctx.cache)
                         ),
                     });
-                    history.clone()
+
+                    ai_response(&history).await
                 };
-                match ai_response(&history_clone).await {
+                match response {
                     Ok(response) => {
                         let conversations = &data.conversations;
                         if let Some(guild_conversations) = conversations.get_mut(&id) {
@@ -554,8 +545,7 @@ pub async fn handle_message(
                             ref_msg
                                 .attachments
                                 .first()
-                                .map(|attachment| attachment.url.clone())
-                                .unwrap_or_default(),
+                                .map_or("", |attachment| &attachment.url),
                         );
                     let mut preview_message = CreateMessage::default()
                         .embed(embed)
@@ -563,9 +553,8 @@ pub async fn handle_message(
                     if ref_msg.channel_id == new_message.channel_id {
                         preview_message = preview_message.reference_message(&ref_msg);
                     }
-                    if let Some(ref_embed) = ref_msg.embeds.first() {
-                        preview_message =
-                            preview_message.add_embed(CreateEmbed::from(ref_embed.clone()));
+                    if let Some(ref_embed) = ref_msg.embeds.into_iter().next() {
+                        preview_message = preview_message.add_embed(CreateEmbed::from(ref_embed));
                     }
                     new_message
                         .channel_id

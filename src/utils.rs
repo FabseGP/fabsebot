@@ -14,8 +14,7 @@ use poise::serenity_prelude::{
     self as serenity, builder::CreateAttachment, ChannelId, ExecuteWebhook, GuildId, Message,
     Webhook,
 };
-use serde::Deserialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, path::Path};
 use textwrap::wrap;
 use tokio::{
@@ -33,17 +32,24 @@ struct AIResponseImageDesc {
     description: String,
 }
 
+#[derive(Serialize)]
+struct ImageRequest<'a> {
+    image: &'a [u8],
+    prompt: &'static str,
+}
+
 pub async fn ai_image_desc(content: &[u8]) -> Result<String, Error> {
+    let request = ImageRequest {
+        image: content,
+        prompt: "Generate a detailed caption for this image",
+    };
     let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/llava-hf/llava-1.5-7b-hf",
             *CLOUDFLARE_GATEWAY
         ))
         .bearer_auth(&*CLOUDFLARE_TOKEN)
-        .json(&json!({
-            "image": content,
-            "prompt": "Generate a detailed caption for this image"
-        }))
+        .json(&request)
         .send()
         .await?;
     let output: FabseAIImageDesc = resp.json().await?;
@@ -60,16 +66,20 @@ struct AIResponseText {
     response: String,
 }
 
+#[derive(Serialize)]
+struct ChatRequest<'a> {
+    messages: &'a [ChatMessage],
+}
+
 pub async fn ai_response(content: &[ChatMessage]) -> Result<String, Error> {
+    let request = ChatRequest { messages: content };
     let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-70b-instruct",
             *CLOUDFLARE_GATEWAY
         ))
         .bearer_auth(&*CLOUDFLARE_TOKEN)
-        .json(&json!({
-            "messages": content,
-        }))
+        .json(&request)
         .send()
         .await?;
     let output: FabseAIText = resp.json().await?;
@@ -87,16 +97,20 @@ struct LocalAIText {
     content: String,
 }
 
+#[derive(Serialize)]
+struct LocalAIRequest<'a> {
+    model: &'static str,
+    stream: bool,
+    messages: &'a [ChatMessage],
+}
+
 pub async fn ai_response_local(messages: &[ChatMessage]) -> Result<String, Error> {
-    let resp = HTTP_CLIENT
-        .post(&*AI_SERVER)
-        .json(&json!({
-            "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-            "stream": false,
-            "messages": messages,
-        }))
-        .send()
-        .await?;
+    let request = LocalAIRequest {
+        model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        stream: false,
+        messages,
+    };
+    let resp = HTTP_CLIENT.post(&*AI_SERVER).json(&request).send().await?;
 
     if resp.status().is_success() {
         let output: LocalAIResponse = resp.json().await?;
@@ -106,19 +120,37 @@ pub async fn ai_response_local(messages: &[ChatMessage]) -> Result<String, Error
     }
 }
 
+#[derive(Serialize)]
+struct SimpleAIRequest<'a> {
+    messages: Vec<SimpleMessage<'a>>,
+}
+
+#[derive(Serialize)]
+struct SimpleMessage<'a> {
+    role: &'a str,
+    content: &'a str,
+}
+
 pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Error> {
+    let request = SimpleAIRequest {
+        messages: vec![
+            SimpleMessage {
+                role: "system",
+                content: role,
+            },
+            SimpleMessage {
+                role: "user",
+                content: prompt,
+            },
+        ],
+    };
     let resp = HTTP_CLIENT
         .post(format!(
             "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-70b-instruct",
             *CLOUDFLARE_GATEWAY
         ))
         .bearer_auth(&*CLOUDFLARE_TOKEN)
-        .json(&json!({
-            "messages": [
-                { "role": "system", "content": role },
-                { "role": "user", "content": prompt }
-            ]
-        }))
+        .json(&request)
         .send()
         .await?;
     let output: FabseAIText = resp.json().await?;
@@ -464,6 +496,12 @@ pub async fn spoiler_message(
     Ok(())
 }
 
+#[derive(Serialize)]
+struct WebhookInfo {
+    name: &'static str,
+    avatar: &'static str,
+}
+
 pub async fn webhook_find(
     ctx: &serenity::Context,
     channel_id: ChannelId,
@@ -485,10 +523,10 @@ pub async fn webhook_find(
             {
                 Some(existing_webhook) => Some(existing_webhook),
                 None => {
-                    let webhook_info = json!({
-                        "name": "fabsebot",
-                        "avatar": "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png"
-                    });
+                    let webhook_info = WebhookInfo {
+                        name: "fabsebot",
+                        avatar: "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png",
+                    };
                     Some(
                         ctx.http
                             .create_webhook(channel_id, &webhook_info, None)

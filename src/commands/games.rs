@@ -85,8 +85,7 @@ pub async fn rps(
 
             let outcomes: DashMap<&str, &str> =
                 [("rock", "scissor"), ("paper", "rock"), ("scissor", "paper")]
-                    .iter()
-                    .cloned()
+                    .into_iter()
                     .collect();
 
             let response = {
