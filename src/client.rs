@@ -214,25 +214,21 @@ pub async fn start() -> anyhow::Result<()> {
             if CLIENT_DATA.set(client_data).is_err() {
                 error!("Failed to set CLIENT_DATA");
             }
-            let avatar = CreateAttachment::url(
-                &client.http,
-                "https://media1.tenor.com/m/029KypcoTxQAAAAC/sleep-pokemon.gif",
-                "psyduck_avatar.gif",
-            )
-            .await?;
-            let banner = CreateAttachment::url(
-                &client.http,
-                "https://i.postimg.cc/RFWkBJfs/2024-08-2012-50-17online-video-cutter-com-ezgif-com-optimize.gif",
-                "fabsebot_banner.gif"
-            )
-            .await?;
+            let bot_username =
+                env::var("BOT_USERNAME").context("BOT_USERNAME not set in environment")?;
+            let bot_avatar = env::var("BOT_AVATAR").context("BOT_AVATAR not set in environment")?;
+            let bot_banner = env::var("BOT_BANNER").context("BOT_BANNER not set in environment")?;
+            let avatar =
+                CreateAttachment::url(&client.http, bot_avatar, "fabsebot_avatar.gif").await?;
+            let banner =
+                CreateAttachment::url(&client.http, bot_banner, "fabsebot_banner.gif").await?;
             client
                 .http
                 .edit_profile(
-                    &EditProfile::new()
+                    &EditProfile::default()
                         .avatar(&avatar)
                         .banner(&banner)
-                        .username("fabsebot"),
+                        .username(bot_username),
                 )
                 .await
                 .context("Failed to edit bot profile")?;

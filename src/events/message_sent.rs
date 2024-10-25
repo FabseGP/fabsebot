@@ -564,14 +564,6 @@ pub async fn handle_message(
                 ),
             )
             .await?;
-    } else if content == "fabse" || content == "fabseman" {
-        let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
-        if let Some(webhook) = webhook_try {
-            webhook.execute(&ctx.http, false, ExecuteWebhook::default().username("yotsuba").avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png").content("# such magnificence")).await?;
-        }
-        if let Ok(reaction) = ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>") {
-            new_message.react(&ctx.http, reaction).await?;
-        }
     } else if content == "floppaganda" {
         new_message
             .channel_id
@@ -644,6 +636,12 @@ pub async fn handle_message(
     } else if content.contains("fabse") {
         if let Ok(reaction) = ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>") {
             new_message.react(&ctx.http, reaction).await?;
+        }
+        if content == "fabse" || content == "fabseman" {
+            let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
+            if let Some(webhook) = webhook_try {
+                webhook.execute(&ctx.http, false, ExecuteWebhook::default().username("yotsuba").avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png").content("# such magnificence")).await?;
+            }
         }
     } else if content.contains("kurukuru_seseren") {
         let count = content.matches("kurukuru_seseren").count();
