@@ -271,18 +271,15 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
                 .is_ascii_digit()
         {
             let mut jindex = index + 1;
-            let mut numbers = Vec::new();
             while jindex < len {
-                if quoted_content.chars().nth(jindex).unwrap() != '<'
-                    && quoted_content.chars().nth(jindex).unwrap().is_ascii_digit()
-                {
-                    numbers.push(quoted_content.chars().nth(jindex).unwrap().to_string());
+                let current_char = quoted_content.chars().nth(jindex).unwrap();
+                if current_char != '<' && current_char.is_ascii_digit() {
+                    emoji_id.push(current_char);
                 } else {
                     break;
                 }
                 jindex += 1;
             }
-            emoji_id = numbers.join("");
             break;
         }
         index += 1;

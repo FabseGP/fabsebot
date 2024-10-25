@@ -237,7 +237,7 @@ pub async fn anilist_anime(
                 }
             }
         "
-        .to_string(),
+        .to_owned(),
         variables: AnimeVariables { search: anime },
     };
 

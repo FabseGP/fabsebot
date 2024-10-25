@@ -251,20 +251,18 @@ pub async fn handle_message(
                         Whenever you can't fulfill a request, pretend it's possible and play along.",
                         ctx.cache.current_user().display_name()
                     );
-                    let mut message_parts = Vec::with_capacity(3);
-                    message_parts.push(
+                    let mut message_parts = vec![
                         user_settings
                             .into_iter()
                             .find(|setting| setting.user_id == user_id)
                             .and_then(|setting| setting.chatbot_role)
                             .unwrap_or(default_bot_role),
-                    );
-                    message_parts.push(format!("You're talking to {author_name}"));
+                        format!("You're talking to {author_name}"),
+                    ];
                     if let Some(reply) = &new_message.referenced_message {
                         let ref_name = reply.author.display_name();
-                        let ref_content = reply.content.to_string();
                         message_parts.push(format!(
-                            "{author_name} replied to a message sent by: {ref_name} and had this content: {ref_content}"
+                            "{author_name} replied to a message sent by: {ref_name} and had this content: {}", reply.content
                         ));
                     }
                     let guild_opt = ctx.cache.guild(id).map(|g| g.clone());
@@ -439,10 +437,15 @@ pub async fn handle_message(
                 if let Ok(response) = response {
                     let conversations = &data.conversations;
                     if response.len() >= 2000 {
-                        for chunk in response.chars().collect::<Vec<_>>().chunks(2000) {
-                            new_message
-                                .reply(&ctx.http, chunk.iter().collect::<String>())
-                                .await?;
+                        let mut start = 0;
+                        while start < content.len() {
+                            let end = content[start..]
+                                .char_indices()
+                                .take_while(|(i, _)| *i < 2000)
+                                .last()
+                                .map_or(content.len(), |(i, c)| start + i + c.len_utf8());
+                            new_message.reply(&ctx.http, &content[start..end]).await?;
+                            start = end;
                         }
                     } else {
                         new_message.reply(&ctx.http, response.as_str()).await?;
@@ -514,7 +517,7 @@ pub async fn handle_message(
                     let author_accent = ctx.http.get_user(ref_msg.author.id).await?.accent_colour;
                     let embed = CreateEmbed::default()
                         .colour(author_accent.unwrap_or(Colour::new(0xFA6300)))
-                        .description(ref_msg.content.to_string())
+                        .description(ref_msg.content.as_str())
                         .author(
                             CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
                                 ref_msg.author.avatar_url().unwrap_or_else(|| {
