@@ -107,14 +107,14 @@ pub async fn rps(
                             .author()
                             .nick_in(ctx.http(), ctx.guild_id().unwrap())
                             .await
-                            .unwrap_or(ctx.author().display_name().to_owned());
+                            .unwrap_or_else(|| ctx.author().display_name().to_owned());
                         format!("{user_name} won!")
                     }
                     Some(_) => {
                         let user_name = user
                             .nick_in(ctx.http(), ctx.guild_id().unwrap())
                             .await
-                            .unwrap_or(user.name.into_string());
+                            .unwrap_or_else(|| user.name.into_string());
                         format!("{user_name} won!")
                     }
                     None => "You both suck!".to_owned(),

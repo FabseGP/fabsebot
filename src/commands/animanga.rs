@@ -1,8 +1,8 @@
 use crate::types::{Error, SContext, HTTP_CLIENT};
 
+use core::fmt::{Display, Formatter, Result as FmtResult};
 use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use serde::Deserialize;
-use std::fmt::{Display, Formatter};
 use urlencoding::encode;
 
 #[derive(Deserialize)]
@@ -27,7 +27,7 @@ struct AnimeTitle {
 }
 
 impl Display for AnimeTitle {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match &self.english {
             Some(english_title) => write!(f, "{english_title}"),
             None => write!(f, "Bruh"),
@@ -49,7 +49,7 @@ pub async fn anime_scene(
     let request = HTTP_CLIENT.get(request_url).send().await?;
     let scene: Option<MoeResponse> = request.json().await?;
     if let Some(payload) = scene {
-        if payload.result[0].video.is_empty() {
+        if payload.result.first().unwrap().video.is_empty() {
             ctx.send(
                 CreateReply::default()
                     .content("Why are you hallucinating, that scene never happened"),
@@ -59,14 +59,22 @@ pub async fn anime_scene(
             ctx.send(
                 CreateReply::default().embed(
                     CreateEmbed::default()
-                        .title(payload.result[0].anilist.title.to_string())
+                        .title(payload.result.first().unwrap().anilist.title.to_string())
                         .field(
                             "Episode",
-                            payload.result[0].episode.unwrap().to_string(),
+                            payload.result.first().unwrap().episode.unwrap().to_string(),
                             true,
                         )
-                        .field("From", payload.result[0].from.unwrap().to_string(), true)
-                        .field("To", payload.result[0].to.unwrap().to_string(), true)
+                        .field(
+                            "From",
+                            payload.result.first().unwrap().from.unwrap().to_string(),
+                            true,
+                        )
+                        .field(
+                            "To",
+                            payload.result.first().unwrap().to.unwrap().to_string(),
+                            true,
+                        )
                         .color(0x57e389),
                 ),
             )

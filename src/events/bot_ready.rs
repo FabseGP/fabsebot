@@ -1,6 +1,6 @@
 use crate::types::{Data, Error};
 
-use anyhow::Context;
+use anyhow::Context as _;
 use poise::{
     builtins,
     serenity_prelude::{

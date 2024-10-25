@@ -113,12 +113,9 @@ pub async fn ai_summarize(
         .channel_id()
         .message(&ctx.http(), MessageId::from(ctx.id()))
         .await?;
-    let reply = match msg.referenced_message {
-        Some(ref_msg) => ref_msg,
-        None => {
-            ctx.reply("Bruh, reply to a message").await?;
-            return Ok(());
-        }
+    let Some(reply) = msg.referenced_message else {
+        ctx.reply("Bruh, reply to a message").await?;
+        return Ok(());
     };
     let request = SummarizeRequest {
         input_text: reply.content,
@@ -164,12 +161,11 @@ pub async fn ai_text(
         let fields: Vec<(String, String, bool)> = chunks
             .enumerate()
             .map(|(i, chunk)| {
-                let field_name = match i {
-                    0 => "Response:".to_owned(),
-                    _ => {
-                        let index = i + 1;
-                        format!("Response (cont. {index}):")
-                    }
+                let field_name = if i == 0 {
+                    "Response:".to_owned()
+                } else {
+                    let index = i + 1;
+                    format!("Response (cont. {index}):")
                 };
                 let chunk_str: String = chunk.iter().collect();
                 (field_name, chunk_str, false)
@@ -255,12 +251,9 @@ pub async fn anilist_anime(
 
     let data: AnimeResponse = resp.json().await?;
 
-    let media = match data.data.media {
-        Some(media) => media,
-        None => {
-            ctx.reply("No anime found with that name").await?;
-            return Ok(());
-        }
+    let Some(media) = data.data.media else {
+        ctx.reply("No anime found with that name").await?;
+        return Ok(());
     };
 
     let title = media.title.romaji.unwrap_or_default();
@@ -516,14 +509,16 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             }
         };
         let member = guild.member(ctx.http(), user.id).await?;
-        let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
+        let avatar_url = member
+            .avatar_url()
+            .unwrap_or_else(|| user.avatar_url().unwrap());
         let banner_url = ctx
             .http()
             .get_user(user.id)
             .await
             .unwrap()
             .banner_url()
-            .unwrap_or("user has no banner".to_owned());
+            .unwrap_or_else(|| "user has no banner".to_owned());
         let roles: Vec<&str> = member
             .roles
             .iter()
@@ -542,11 +537,7 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             )
             .fetch_one(&mut *conn)
             .await;
-            if let Ok(count) = result {
-                count.message_count
-            } else {
-                0
-            }
+            result.map_or(0, |count| count.message_count)
         };
         let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
@@ -587,12 +578,11 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             let fields: Vec<(String, String, bool)> = chunks
                 .enumerate()
                 .map(|(i, chunk)| {
-                    let field_name = match i {
-                        0 => "Response:".to_owned(),
-                        _ => {
-                            let index = i + 1;
-                            format!("Response (cont. {index}):")
-                        }
+                    let field_name = if i == 0 {
+                        "Response:".to_owned()
+                    } else {
+                        let index = i + 1;
+                        format!("Response (cont. {index}):")
                     };
                     let chunk_str: String = chunk.iter().collect();
                     (field_name, chunk_str, false)
@@ -628,9 +618,9 @@ struct FabseLanguage {
 
 #[derive(Serialize)]
 struct TranslateRequest<'a> {
-    q: String,
+    q: &'a str,
     source: &'a str,
-    target: String,
+    target: &'a str,
     alternatives: u8,
 }
 
@@ -657,31 +647,30 @@ pub async fn translate(
                 .await?;
             match msg.referenced_message {
                 Some(ref_msg) => ref_msg.content.into_string(),
-                None => match sentence {
-                    Some(query) => query,
-                    None => {
+                None => {
+                    if let Some(query) = sentence {
+                        query
+                    } else {
                         ctx.reply("Bruh, give me smth to translate").await?;
                         return Ok(());
                     }
-                },
+                }
             }
         }
-        None => match sentence {
-            Some(query) => query,
-            None => {
+        None => {
+            if let Some(query) = sentence {
+                query
+            } else {
                 ctx.reply("Bruh, give me smth to translate").await?;
                 return Ok(());
             }
-        },
+        }
     };
-    let target_lang = match target {
-        Some(lang) => lang.to_lowercase(),
-        None => "en".to_owned(),
-    };
+    let target_lang = target.map_or_else(|| "en".to_owned(), |lang| lang.to_lowercase());
     let request = TranslateRequest {
-        q: content.to_owned(),
+        q: content.as_str(),
         source: "auto",
-        target: target_lang.to_owned(),
+        target: target_lang.as_str(),
         alternatives: 3,
     };
     let response = HTTP_CLIENT
@@ -858,12 +847,11 @@ pub async fn urban(
         let mut fields: Vec<(String, String, bool)> = chunks
             .enumerate()
             .map(|(i, chunk)| {
-                let field_name = match i {
-                    0 => "Definition:".to_owned(),
-                    _ => {
-                        let index = i + 1;
-                        format!("Response (cont. {index}):")
-                    }
+                let field_name = if i == 0 {
+                    "Definition:".to_owned()
+                } else {
+                    let index = i + 1;
+                    format!("Response (cont. {index}):")
                 };
                 let chunk_str: String = chunk.iter().collect();
                 (field_name, chunk_str.replace(['[', ']'], ""), false)
@@ -943,12 +931,11 @@ pub async fn urban(
                     let mut new_fields: Vec<(String, String, bool)> = new_chunks
                         .enumerate()
                         .map(|(i, new_chunks)| {
-                            let field_name = match i {
-                                0 => "Definition:".to_owned(),
-                                _ => {
-                                    let index = i + 1;
-                                    format!("Response (cont. {index}):")
-                                }
+                            let field_name = if i == 0 {
+                                "Definition:".to_owned()
+                            } else {
+                                let index = i + 1;
+                                format!("Response (cont. {index}):")
                             };
                             let chunk_str: String = new_chunks.iter().collect();
                             (field_name, chunk_str.replace(['[', ']'], ""), false)

@@ -48,4 +48,4 @@ pub static TRANSLATE_SERVER: Lazy<String> = load_env!("TRANSLATE_SERVER");
 
 pub static CHANNEL_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"https://discord\.com/channels/(\d+)/(\d+)/(\d+)").unwrap());
-pub static QUOTE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<:[A-Za-z0-9_]+:[0-9]+>").unwrap());
+pub static QUOTE_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new("<:[A-Za-z0-9_]+:[0-9]+>").unwrap());

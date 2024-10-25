@@ -15,7 +15,7 @@ use poise::{
     CreateReply,
 };
 use sqlx::{query, query_as};
-use std::{borrow::Cow, path::Path, process, time::Duration};
+use std::{borrow::Cow, path::Path, time::Duration};
 use tokio::fs::remove_file;
 
 /// When you want to find the imposter
@@ -118,7 +118,9 @@ pub async fn birthday(
         }
     };
     let member = guild.member(ctx.http(), user.id).await?;
-    let avatar_url = member.avatar_url().unwrap_or(user.avatar_url().unwrap());
+    let avatar_url = member
+        .avatar_url()
+        .unwrap_or_else(|| user.avatar_url().unwrap());
     let name = member.display_name();
     ctx.send(
         CreateReply::default().embed(
@@ -136,9 +138,9 @@ pub async fn birthday(
 /// Ignore this command
 #[poise::command(prefix_command, owners_only)]
 pub async fn end_pgo(_: SContext<'_>) -> Result<(), Error> {
-    process::exit(0);
+    panic!("pgo-profiling ended");
 
-    #[allow(unreachable_code)]
+    #[expect(unreachable_code)]
     Ok(())
 }
 
@@ -176,13 +178,15 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
-    let thumbnail = match guild.banner_url() {
-        Some(banner) => banner,
-        None => match guild.icon_url() {
-            Some(icon) => icon,
-            None => "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned(),
+    let thumbnail = guild.banner_url().map_or_else(
+        || {
+            guild.icon_url().map_or_else(
+                || "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned(),
+                |icon| icon,
+            )
         },
-    };
+        |banner| banner,
+    );
     let users = query_as!(
         UserCount,
         "SELECT message_count, user_id FROM user_settings WHERE guild_id = $1
@@ -252,81 +256,75 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
         .channel_id()
         .message(&ctx.http(), MessageId::new(ctx.id()))
         .await?;
-    let reply = match msg.referenced_message {
-        Some(ref_msg) => ref_msg,
-        None => {
-            ctx.reply("Bruh, reply to a message").await?;
-            return Ok(());
-        }
+    let Some(reply) = msg.referenced_message else {
+        ctx.reply("Bruh, reply to a message").await?;
+        return Ok(());
     };
     let message_url = reply.link();
     let content = reply.content;
-    match reply.webhook_id {
-        Some(_) => {
-            let avatar_image = match reply.author.avatar_url() {
-                Some(avatar_url) => match HTTP_CLIENT.get(&avatar_url).send().await {
-                    Ok(resp) => match resp.bytes().await {
-                        Ok(avatar_bytes) => match load_from_memory(&avatar_bytes) {
-                            Ok(mem_bytes) => mem_bytes.to_rgba8(),
-                            Err(_) => {
-                                return Ok(());
-                            }
-                        },
+    if reply.webhook_id.is_some() {
+        let avatar_image = match reply.author.avatar_url() {
+            Some(avatar_url) => match HTTP_CLIENT.get(&avatar_url).send().await {
+                Ok(resp) => match resp.bytes().await {
+                    Ok(avatar_bytes) => match load_from_memory(&avatar_bytes) {
+                        Ok(mem_bytes) => mem_bytes.to_rgba8(),
                         Err(_) => {
                             return Ok(());
                         }
                     },
-                    Err(_) => return Ok(()),
+                    Err(_) => {
+                        return Ok(());
+                    }
                 },
-                None => {
-                    return Ok(());
-                }
-            };
-            let name = reply.author.display_name();
-            quote_image(&avatar_image, name, &content)
-                .await
-                .save("quote.webp")
-                .unwrap();
-        }
-        None => {
-            let guild = match ctx.guild() {
-                Some(guild) => guild.clone(),
-                None => {
-                    return Ok(());
-                }
-            };
-            let member = guild.member(ctx.http(), reply.author.id).await?;
-            let avatar_image = {
-                let avatar_url = match member.avatar_url() {
+                Err(_) => return Ok(()),
+            },
+            None => {
+                return Ok(());
+            }
+        };
+        let name = reply.author.display_name();
+        quote_image(&avatar_image, name, &content)
+            .await
+            .save("quote.webp")
+            .unwrap();
+    } else {
+        let guild = match ctx.guild() {
+            Some(guild) => guild.clone(),
+            None => {
+                return Ok(());
+            }
+        };
+        let member = guild.member(ctx.http(), reply.author.id).await?;
+        let avatar_image = {
+            let avatar_url = match member.avatar_url() {
+                Some(url) => url,
+                None => match reply.author.avatar_url() {
                     Some(url) => url,
-                    None => match reply.author.avatar_url() {
-                        Some(url) => url,
-                        None => {
-                            return Ok(());
-                        }
-                    },
-                };
-                match HTTP_CLIENT.get(&avatar_url).send().await {
-                    Ok(resp) => match resp.bytes().await {
-                        Ok(avatar_bytes) => match load_from_memory(&avatar_bytes) {
-                            Ok(mem_bytes) => mem_bytes.to_rgba8(),
-                            Err(_) => {
-                                return Ok(());
-                            }
-                        },
+                    None => {
+                        return Ok(());
+                    }
+                },
+            };
+            match HTTP_CLIENT.get(&avatar_url).send().await {
+                Ok(resp) => match resp.bytes().await {
+                    Ok(avatar_bytes) => match load_from_memory(&avatar_bytes) {
+                        Ok(mem_bytes) => mem_bytes.to_rgba8(),
                         Err(_) => {
                             return Ok(());
                         }
                     },
-                    Err(_) => return Ok(()),
-                }
-            };
-            let name = member.display_name();
-            quote_image(&avatar_image, name, &content)
-                .await
-                .save("quote.webp")
-                .unwrap();
-        }
+                    Err(_) => {
+                        return Ok(());
+                    }
+                },
+                Err(_) => return Ok(()),
+            }
+        };
+        let name = member.display_name();
+        quote_image(&avatar_image, name, &content)
+            .await
+            .save("quote.webp")
+            .unwrap();
     };
     let paths = [CreateAttachment::path("quote.webp").await?];
     ctx.channel_id()

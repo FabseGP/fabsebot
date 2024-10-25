@@ -3,13 +3,13 @@ use crate::{
     utils::{ai_image_desc, ai_response, get_gifs, get_waifu, spoiler_message, webhook_find},
 };
 
-use anyhow::Context;
+use anyhow::Context as _;
 use poise::serenity_prelude::{
     self as serenity, ChannelId, Colour, CreateAllowedMentions, CreateEmbed, CreateEmbedAuthor,
-    CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GetMessages, GuildId, Message,
-    MessageId, ReactionType, Timestamp, UserId,
+    CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GetMessages, GuildId, Http,
+    Message, MessageId, ReactionType, Timestamp, UserId,
 };
-use sqlx::{query, Acquire};
+use sqlx::{query, Acquire as _};
 use std::sync::Arc;
 
 pub async fn handle_message(
@@ -44,10 +44,7 @@ pub async fn handle_message(
             .fetch_all(&mut *tx)
             .await?;
         for target in &user_settings {
-            let afk = match target.afk {
-                Some(afk) => afk,
-                None => continue,
-            };
+            let Some(afk) = target.afk else { continue };
             if afk {
                 let user_id = UserId::new(
                     u64::try_from(target.user_id).expect("user id out of bounds for u64"),
@@ -106,10 +103,10 @@ pub async fn handle_message(
                     )
                     .execute(&mut *tx)
                     .await?;
-                    let reason = match &target.afk_reason {
-                        Some(input) => input,
-                        None => "Didn't renew life subscription",
-                    };
+                    let reason = target
+                        .afk_reason
+                        .as_ref()
+                        .map_or("Didn't renew life subscription", |input| input);
                     let user_name = user.display_name();
                     new_message
                         .reply(
@@ -178,12 +175,9 @@ pub async fn handle_message(
                     let messages = dead_chat_channel
                         .messages(&ctx.http, GetMessages::default().limit(1))
                         .await;
-                    match messages {
-                        Ok(message_result) => {
-                            message_result.first().map(|msg| msg.timestamp.timestamp())
-                        }
-                        Err(_) => None,
-                    }
+                    messages.map_or(None, |message_result| {
+                        message_result.first().map(|msg| msg.timestamp.timestamp())
+                    })
                 };
                 if let Some(last_time) = last_message_time {
                     let current_time = Timestamp::now().timestamp();
@@ -214,16 +208,18 @@ pub async fn handle_message(
         tx.commit()
             .await
             .context("Failed to commit sql-transaction")?;
-        let ai_channel_topic = match new_message.guild_channel(&ctx.http).await?.topic {
-            Some(topic) => {
-                if topic.contains("ai-chat") {
-                    Some(())
-                } else {
-                    None
-                }
-            }
-            None => None,
-        };
+        let ai_channel_topic =
+            new_message
+                .guild_channel(&ctx.http)
+                .await?
+                .topic
+                .and_then(|topic| {
+                    if topic.contains("ai-chat") {
+                        Some(())
+                    } else {
+                        None
+                    }
+                });
         if ai_channel_topic.is_some() {
             if content == "clear" {
                 let conversations = &data.conversations;
@@ -235,7 +231,9 @@ pub async fn handle_message(
                     .reply(&ctx.http, "Conversation cleared!")
                     .await?;
             } else if !content.starts_with('#') {
-                let typing = new_message.channel_id.start_typing(ctx.http.clone());
+                let typing = new_message
+                    .channel_id
+                    .start_typing(Arc::<Http>::clone(&ctx.http));
                 let author_name = new_message.author.display_name();
                 let mut system_content = {
                     let default_bot_role = format!(
@@ -430,45 +428,42 @@ pub async fn handle_message(
 
                     ai_response(&history).await
                 };
-                match response {
-                    Ok(response) => {
-                        let conversations = &data.conversations;
-                        if response.len() >= 2000 {
-                            for chunk in response.chars().collect::<Vec<_>>().chunks(2000) {
-                                new_message
-                                    .reply(&ctx.http, chunk.iter().collect::<String>())
-                                    .await?;
-                            }
-                        } else {
-                            new_message.reply(&ctx.http, response.as_str()).await?;
+                if let Ok(response) = response {
+                    let conversations = &data.conversations;
+                    if response.len() >= 2000 {
+                        for chunk in response.chars().collect::<Vec<_>>().chunks(2000) {
+                            new_message
+                                .reply(&ctx.http, chunk.iter().collect::<String>())
+                                .await?;
                         }
-                        if let Some(guild_conversations) = conversations.get_mut(&id) {
-                            if let Some(mut history) =
-                                guild_conversations.get_mut(&new_message.channel_id)
-                            {
-                                history.push(ChatMessage {
-                                    role: "assistant".to_owned(),
-                                    content: response,
-                                });
-                            }
+                    } else {
+                        new_message.reply(&ctx.http, response.as_str()).await?;
+                    }
+                    if let Some(guild_conversations) = conversations.get_mut(&id) {
+                        if let Some(mut history) =
+                            guild_conversations.get_mut(&new_message.channel_id)
+                        {
+                            history.push(ChatMessage {
+                                role: "assistant".to_owned(),
+                                content: response,
+                            });
                         }
                     }
-                    Err(_) => {
-                        let error_msg = "Sorry, I had to forget our convo, too boring!";
-                        let conversations = &data.conversations;
-                        if let Some(guild_conversations) = conversations.get_mut(&id) {
-                            if let Some(mut history) =
-                                guild_conversations.get_mut(&new_message.channel_id)
-                            {
-                                history.clear();
-                                history.push(ChatMessage {
-                                    role: "assistant".to_owned(),
-                                    content: error_msg.to_owned(),
-                                });
-                            }
+                } else {
+                    let error_msg = "Sorry, I had to forget our convo, too boring!";
+                    let conversations = &data.conversations;
+                    if let Some(guild_conversations) = conversations.get_mut(&id) {
+                        if let Some(mut history) =
+                            guild_conversations.get_mut(&new_message.channel_id)
+                        {
+                            history.clear();
+                            history.push(ChatMessage {
+                                role: "assistant".to_owned(),
+                                content: error_msg.to_owned(),
+                            });
                         }
-                        new_message.reply(&ctx.http, error_msg).await?;
                     }
+                    new_message.reply(&ctx.http, error_msg).await?;
                 }
                 typing.stop();
             }
@@ -514,9 +509,9 @@ pub async fn handle_message(
                         .description(ref_msg.content.to_string())
                         .author(
                             CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
-                                ref_msg.author.avatar_url().unwrap_or(
-                                    "https://cdn.discordapp.com/embed/avatars/0.png".to_owned(),
-                                ),
+                                ref_msg.author.avatar_url().unwrap_or_else(|| {
+                                    "https://cdn.discordapp.com/embed/avatars/0.png".to_owned()
+                                }),
                             ),
                         )
                         .footer(CreateEmbedFooter::new(&channel_name))

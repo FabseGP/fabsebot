@@ -4,14 +4,14 @@ mod events;
 mod types;
 mod utils;
 
-use opentelemetry::trace::TracerProvider;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{global, KeyValue};
-use opentelemetry_otlp::{new_exporter, new_pipeline, WithExportConfig};
+use opentelemetry_otlp::{new_exporter, new_pipeline, WithExportConfig as _};
 use opentelemetry_sdk::{runtime, trace, Resource};
 use tracing::Level;
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{filter::LevelFilter, fmt, layer::SubscriberExt, registry};
+use tracing_subscriber::util::SubscriberInitExt as _;
+use tracing_subscriber::{filter::LevelFilter, fmt, layer::SubscriberExt as _, registry};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

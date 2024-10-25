@@ -5,6 +5,7 @@ use crate::types::{
 
 use ab_glyph::{FontArc, PxScale};
 use anyhow::anyhow;
+use core::cmp::Ordering;
 use image::{
     imageops::{overlay, resize, FilterType::Gaussian},
     load_from_memory, Rgba, RgbaImage,
@@ -15,11 +16,11 @@ use poise::serenity_prelude::{
     Webhook,
 };
 use serde::{Deserialize, Serialize};
-use std::{cmp::Ordering, path::Path};
+use std::path::Path;
 use textwrap::wrap;
 use tokio::{
     fs::{remove_file, File},
-    io::AsyncWriteExt,
+    io::AsyncWriteExt as _,
 };
 use urlencoding::encode;
 
@@ -53,10 +54,7 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Result
             },
             SimpleMessage {
                 role: "user",
-                content: match user_context {
-                    Some(context) => context,
-                    None => "What is in this image?",
-                },
+                content: user_context.map_or("What is in this image?", |context| context),
             },
         ],
         image: content,
@@ -208,14 +206,8 @@ pub async fn get_gifs(input: &str) -> Result<Vec<String>, Error> {
     let urls: GifResponse = request.json().await?;
     let payload: Vec<String> = urls
         .results
-        .iter()
-        .filter_map(|result| {
-            result
-                .media_formats
-                .gif
-                .as_ref()
-                .map(|media| media.url.to_owned())
-        })
+        .into_iter()
+        .filter_map(|result| result.media_formats.gif.map(|media| media.url))
         .collect();
 
     Ok(payload)
@@ -337,7 +329,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
             } else {
                 if wrapped_lines.len() == 1 {
                     total_text_height = line_height + 40;
-                    if wrapped_lines[0].len() < 10 {
+                    if wrapped_lines.first().unwrap().len() < 10 {
                         text_offset += 64;
                     }
                 } else {
@@ -347,7 +339,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
             }
         } else {
             content_scale_adjusted = PxScale::from(content_scale_adjusted.x - 1.0);
-            if (content_scale_adjusted.x + 2.0) == author_scale.x {
+            if (content_scale_adjusted.x + 2.0 - author_scale.x).abs() < 0.1 {
                 if author_scale.x.partial_cmp(&18.0) != Some(Ordering::Less) {
                     author_scale = PxScale::from(author_scale.x - 1.0);
                 } else if line_width > max_content_width {
@@ -356,8 +348,11 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
                 } else {
                     wrapped_length += 2;
                     wrapped_lines = wrap(quoted_content, wrapped_length);
-                    dimensions =
-                        text_size(content_scale_adjusted, &font_content, &wrapped_lines[0]);
+                    dimensions = text_size(
+                        content_scale_adjusted,
+                        &font_content,
+                        wrapped_lines.first().unwrap(),
+                    );
                     if dimensions.0 > max_content_width {
                         wrapped_length -= 2;
                         wrapped_lines = wrap(quoted_content, wrapped_length);
@@ -452,11 +447,8 @@ pub async fn spoiler_message(
             let attachment_name = &attachment.filename;
             let filename = format!("SPOILER_{attachment_name}");
             let mut file = File::create(&filename).await?;
-            let download_bytes = match download {
-                Ok(bytes) => bytes,
-                Err(_) => {
-                    continue;
-                }
+            let Ok(download_bytes) = download else {
+                continue;
             };
             file.write_all(&download_bytes).await?;
             let webhook_try = webhook_find(ctx, message.channel_id).await?;
@@ -505,10 +497,7 @@ pub async fn webhook_find(
     ctx: &serenity::Context,
     channel_id: ChannelId,
 ) -> Result<Option<Webhook>, Error> {
-    let existing_webhooks_get = match channel_id.webhooks(&ctx.http).await {
-        Ok(webhooks) => Some(webhooks),
-        Err(_) => None,
-    };
+    let existing_webhooks_get = (channel_id.webhooks(&ctx.http).await).ok();
     let webhook = match existing_webhooks_get {
         Some(existing_webhooks) => {
             if existing_webhooks.len() >= 15 {
@@ -516,22 +505,21 @@ pub async fn webhook_find(
                     ctx.http.delete_webhook(webhook.id, None).await?;
                 }
             }
-            match existing_webhooks
+            if let Some(existing_webhook) = existing_webhooks
                 .into_iter()
                 .find(|webhook| webhook.name.as_deref() == Some("fabsebots"))
             {
-                Some(existing_webhook) => Some(existing_webhook),
-                None => {
-                    let webhook_info = WebhookInfo {
-                        name: "fabsebot",
-                        avatar: "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png",
-                    };
-                    Some(
-                        ctx.http
-                            .create_webhook(channel_id, &webhook_info, None)
-                            .await?,
-                    )
-                }
+                Some(existing_webhook)
+            } else {
+                let webhook_info = WebhookInfo {
+                     name: "fabsebot",
+                     avatar: "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png",
+                 };
+                Some(
+                    ctx.http
+                        .create_webhook(channel_id, &webhook_info, None)
+                        .await?,
+                )
             }
         }
         None => None,

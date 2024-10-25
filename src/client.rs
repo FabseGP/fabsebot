@@ -7,17 +7,18 @@ use crate::{
     },
     types::{ClientData, Data, Error, CLIENT_DATA},
 };
-use anyhow::Context;
+use anyhow::Context as _;
+use core::time::Duration;
 use dashmap::DashMap;
 use poise::{
     builtins,
-    serenity_prelude::{cache::Settings, Client, FullEvent, GatewayIntents},
+    serenity_prelude::{cache::Settings, Client, FullEvent, GatewayIntents, ShardManager},
     EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
     Prefix, PrefixFrameworkOptions,
 };
 use songbird::Songbird;
 use sqlx::{migrate, postgres::PgPoolOptions, query};
-use std::{borrow::Cow, env, sync::Arc, time::Duration};
+use std::{borrow::Cow, env, sync::Arc};
 use tracing::{error, warn};
 
 async fn on_error(error: FrameworkError<'_, Data, Error>) {
@@ -54,11 +55,9 @@ async fn dynamic_prefix(
             .await
             .context("Failed to fetch prefix from database")?
             {
-                if let Some(prefix) = record.prefix {
-                    prefix
-                } else {
-                    "!".to_owned()
-                }
+                record
+                    .prefix
+                    .map_or_else(|| "!".to_owned(), |prefix| prefix)
             } else {
                 "!".to_owned()
             }
@@ -114,7 +113,7 @@ pub async fn start() -> anyhow::Result<()> {
     let music_manager = Songbird::serenity();
     let user_data = Data {
         db: database,
-        music_manager: music_manager.clone(),
+        music_manager: Arc::<Songbird>::clone(&music_manager),
         conversations: Arc::new(DashMap::default()),
     };
     let framework = Framework::builder()
@@ -207,7 +206,7 @@ pub async fn start() -> anyhow::Result<()> {
                 warn!("Client error: {:?}", e);
             }
             let client_data = ClientData {
-                shard_manager: client.shard_manager.clone(),
+                shard_manager: Arc::<ShardManager>::clone(&client.shard_manager),
             };
             if CLIENT_DATA.set(client_data).is_err() {
                 error!("Failed to set CLIENT_DATA");
