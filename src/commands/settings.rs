@@ -46,7 +46,7 @@ pub async fn set_afk(
         query!(
             "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason)
             VALUES ($1, $2, TRUE, $3)
-            ON CONFLICT(guild_id)
+            ON CONFLICT(guild_id, user_id)
             DO UPDATE SET
                 afk = TRUE,
                 afk_reason = $3",
@@ -102,7 +102,7 @@ pub async fn set_chatbot_role(
         query!(
             "INSERT INTO user_settings (guild_id, user_id, chatbot_role)
             VALUES ($1, $2, $3)
-            ON CONFLICT(guild_id)
+            ON CONFLICT(guild_id, user_id)
             DO UPDATE SET
                 chatbot_role = $3",
             i64::from(guild_id),
@@ -266,15 +266,14 @@ pub async fn set_spoiler_channel(
 pub async fn set_user_ping(
     ctx: SContext<'_>,
     #[description = "Message to send"] content: String,
-    #[description = "Image/gif to send. Write waifu to get a random waifu pic"] media: Option<
-        String,
-    >,
+    #[description = "Image/gif to send. Write 'waifu' to get a random waifu pic or '!gif query' to get a random gif of a certain query"]
+    media: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
             "INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
             VALUES ($1, $2, $3, $4)
-            ON CONFLICT(guild_id)
+            ON CONFLICT(guild_id, user_id)
             DO UPDATE SET 
                 ping_content = $3, 
                 ping_media = $4",

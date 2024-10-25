@@ -123,6 +123,14 @@ pub async fn handle_message(
                         Some(ping_media) => {
                             if ping_media.to_lowercase() == "waifu" {
                                 &get_waifu().await?
+                            } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
+                                let search_term = gif_query.trim_start();
+                                if !search_term.is_empty() {
+                                    let urls = get_gifs(search_term).await?;
+                                    &urls[RNG.lock().await.usize(..urls.len())].clone()
+                                } else {
+                                    ping_media
+                                }
                             } else {
                                 ping_media
                             }
@@ -550,20 +558,6 @@ pub async fn handle_message(
                         .title("why ping me bitch, go get a life!")
                         .image("https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif")
                         .colour(0x00b0f4),
-                ),
-            )
-            .await?;
-    } else if content.contains("<@1014524859532980255>") && !content.contains("!user_misuse") {
-        let urls = get_gifs("psyduck").await?;
-        new_message
-            .channel_id
-            .send_message(
-                &ctx.http,
-                CreateMessage::default().embed(
-                    CreateEmbed::default()
-                        .title("fabseman is out to open source life")
-                        .image(urls[RNG.lock().await.usize(..urls.len())].as_str())
-                        .colour(0xf8e45c),
                 ),
             )
             .await?;
