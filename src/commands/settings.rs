@@ -266,7 +266,7 @@ pub async fn set_spoiler_channel(
 pub async fn set_user_ping(
     ctx: SContext<'_>,
     #[description = "Message to send"] content: String,
-    #[description = "Image/gif to send. Write 'waifu' to get a random waifu pic or '!gif query' to get a random gif of a certain query"]
+    #[description = "Image/gif to send; write waifu for a random waifu or !gif query for a gif of query"]
     media: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {

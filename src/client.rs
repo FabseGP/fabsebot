@@ -12,7 +12,10 @@ use core::time::Duration;
 use dashmap::DashMap;
 use poise::{
     builtins,
-    serenity_prelude::{cache::Settings, Client, FullEvent, GatewayIntents, ShardManager},
+    serenity_prelude::{
+        cache::Settings, Client, CreateAttachment, EditProfile, FullEvent, GatewayIntents,
+        ShardManager,
+    },
     EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
     Prefix, PrefixFrameworkOptions,
 };
@@ -211,6 +214,28 @@ pub async fn start() -> anyhow::Result<()> {
             if CLIENT_DATA.set(client_data).is_err() {
                 error!("Failed to set CLIENT_DATA");
             }
+            let avatar = CreateAttachment::url(
+                &client.http,
+                "https://media1.tenor.com/m/029KypcoTxQAAAAC/sleep-pokemon.gif",
+                "psyduck_avatar.gif",
+            )
+            .await?;
+            let banner = CreateAttachment::url(
+                &client.http,
+                "https://i.postimg.cc/RFWkBJfs/2024-08-2012-50-17online-video-cutter-com-ezgif-com-optimize.gif",
+                "fabsebot_banner.gif"
+            )
+            .await?;
+            client
+                .http
+                .edit_profile(
+                    &EditProfile::new()
+                        .avatar(&avatar)
+                        .banner(&banner)
+                        .username("fabsebot"),
+                )
+                .await
+                .context("Failed to edit bot profile")?;
         }
         Err(e) => {
             warn!("Error creating client: {:?}", e);
