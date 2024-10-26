@@ -17,7 +17,7 @@ use poise::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::query;
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, iter, time::Duration};
 use urlencoding::encode;
 
 struct State {
@@ -156,25 +156,30 @@ pub async fn ai_text(
     ctx.defer().await?;
     let resp = ai_response_simple(&role, &prompt).await?;
     if !resp.is_empty() {
-        let response_chars: Vec<char> = resp.chars().collect();
-        let chunks = response_chars.chunks(1024);
-        let fields: Vec<(String, String, bool)> = chunks
-            .enumerate()
-            .map(|(i, chunk)| {
-                let field_name = if i == 0 {
+        let mut embed = CreateEmbed::default().title(prompt).color(0xFF7800);
+        let mut current_chunk = String::with_capacity(1024);
+        let mut chunk_index = 0;
+        for ch in resp.chars() {
+            if current_chunk.len() >= 1024 {
+                let field_name = if chunk_index == 0 {
                     "Response:".to_owned()
                 } else {
-                    let index = i + 1;
-                    format!("Response (cont. {index}):")
+                    format!("Response (cont. {}):", chunk_index + 1)
                 };
-                let chunk_str: String = chunk.iter().collect();
-                (field_name, chunk_str, false)
-            })
-            .collect();
-        let embed = CreateEmbed::default()
-            .title(prompt)
-            .color(0xFF7800)
-            .fields(fields);
+                embed = embed.field(field_name, current_chunk, false);
+                current_chunk = String::with_capacity(1024);
+                chunk_index += 1;
+            }
+            current_chunk.push(ch);
+        }
+        if !current_chunk.is_empty() {
+            let field_name = if chunk_index == 0 {
+                "Response:".to_owned()
+            } else {
+                format!("Response (cont. {}):", chunk_index + 1)
+            };
+            embed = embed.field(field_name, current_chunk, false);
+        }
         ctx.send(CreateReply::default().embed(embed)).await?;
     } else {
         ctx.send(CreateReply::default().content(format!("\"{prompt}\" is too dangerous to ask")))
@@ -519,12 +524,22 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             .unwrap()
             .banner_url()
             .unwrap_or_else(|| "user has no banner".to_owned());
-        let roles: Vec<&str> = member
-            .roles
-            .iter()
-            .filter_map(|role_id| guild.roles.get(role_id))
-            .map(|role| role.name.as_str())
-            .collect();
+        let roles = {
+            let mut roles_iter = member
+                .roles
+                .iter()
+                .filter_map(|role_id| guild.roles.get(role_id))
+                .map(|role| role.name.as_str());
+            roles_iter.next().map_or_else(
+                || "no roles".to_string(),
+                |first_role| {
+                    iter::once(first_role)
+                        .chain(roles_iter)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                },
+            )
+        };
         let name = member.display_name();
         let account_date = user.created_at();
         let join_date = member.joined_at.unwrap();
@@ -542,7 +557,7 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
         let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
         let messages_string = {
-            let mut collected_messages = Vec::with_capacity(25);
+            let mut result = String::new();
             let mut count = 0;
 
             while let Some(message_result) = messages.next().await {
@@ -550,9 +565,13 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
                     Ok(message) => {
                         if message.author.id == user.id {
                             let index = count + 1;
-                            let msg_content = message.content;
-                            let formatted_message = format!("{index}:{msg_content}");
-                            collected_messages.push(formatted_message);
+                            if count > 0 {
+                                result.push(',');
+                            }
+                            result.push_str(&index.to_string());
+                            result.push(':');
+                            result.push_str(&message.content);
+
                             count += 1;
                         }
                     }
@@ -563,35 +582,40 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
                 }
             }
 
-            collected_messages.join(",")
+            result
         };
 
-        let roles_joined = roles.join(", ");
-        let description = format!("name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles_joined},acc_create:{account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:{messages_string}");
+        let description = format!("name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles},acc_create:{account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:{messages_string}");
         let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target";
         let resp = ai_response_simple(role, &description).await?;
 
         if !resp.is_empty() {
-            let response_chars: Vec<char> = resp.chars().collect();
-            let chunks = response_chars.chunks(1024);
-
-            let fields: Vec<(String, String, bool)> = chunks
-                .enumerate()
-                .map(|(i, chunk)| {
-                    let field_name = if i == 0 {
+            let mut embed = CreateEmbed::default()
+                .title(format!("Roasting {name}"))
+                .color(0xFF7800);
+            let mut current_chunk = String::with_capacity(1024);
+            let mut chunk_index = 0;
+            for ch in resp.chars() {
+                if current_chunk.len() >= 1024 {
+                    let field_name = if chunk_index == 0 {
                         "Response:".to_owned()
                     } else {
-                        let index = i + 1;
-                        format!("Response (cont. {index}):")
+                        format!("Response (cont. {}):", chunk_index + 1)
                     };
-                    let chunk_str: String = chunk.iter().collect();
-                    (field_name, chunk_str, false)
-                })
-                .collect();
-            let embed = CreateEmbed::default()
-                .title(format!("Roasting {name}"))
-                .color(0xFF7800)
-                .fields(fields);
+                    embed = embed.field(field_name, current_chunk, false);
+                    current_chunk = String::with_capacity(1024);
+                    chunk_index += 1;
+                }
+                current_chunk.push(ch);
+            }
+            if !current_chunk.is_empty() {
+                let field_name = if chunk_index == 0 {
+                    "Response:".to_owned()
+                } else {
+                    format!("Response (cont. {}):", chunk_index + 1)
+                };
+                embed = embed.field(field_name, current_chunk, false);
+            }
             ctx.send(CreateReply::default().embed(embed)).await?;
         } else {
             ctx.send(CreateReply::default().content(format!("{name}'s life is already roasted")))
@@ -841,31 +865,38 @@ pub async fn urban(
     let request = HTTP_CLIENT.get(request_url).send().await?;
     let data: UrbanResponse = request.json().await?;
     if !data.list.is_empty() {
-        let response_chars: Vec<char> = data.list[0].definition.chars().collect();
-        let chunks = response_chars.chunks(1024);
-
-        let mut fields: Vec<(String, String, bool)> = chunks
-            .enumerate()
-            .map(|(i, chunk)| {
-                let field_name = if i == 0 {
+        let mut embed = CreateEmbed::default()
+            .title(&data.list[0].word)
+            .color(0xEFFF00);
+        let mut current_chunk = String::with_capacity(1024);
+        let mut chunk_index = 0;
+        for ch in data.list[0].definition.replace(['[', ']'], "").chars() {
+            if current_chunk.len() >= 1024 {
+                let field_name = if chunk_index == 0 {
                     "Definition:".to_owned()
                 } else {
-                    let index = i + 1;
-                    format!("Response (cont. {index}):")
+                    format!("Response (cont. {}):", chunk_index + 1)
                 };
-                let chunk_str: String = chunk.iter().collect();
-                (field_name, chunk_str.replace(['[', ']'], ""), false)
-            })
-            .collect();
-        fields.push((
+                embed = embed.field(field_name, current_chunk, false);
+                current_chunk = String::with_capacity(1024);
+                chunk_index += 1;
+            }
+            current_chunk.push(ch);
+        }
+        if !current_chunk.is_empty() {
+            let field_name = if chunk_index == 0 {
+                "Definition:".to_owned()
+            } else {
+                format!("Response (cont. {}):", chunk_index + 1)
+            };
+            embed = embed.field(field_name, current_chunk, false);
+        }
+
+        embed = embed.field(
             "Example:".to_owned(),
             data.list[0].example.replace(['[', ']'], ""),
             false,
-        ));
-        let embed = CreateEmbed::default()
-            .title(&data.list[0].word)
-            .color(0xEFFF00)
-            .fields(fields);
+        );
 
         if ctx.guild_id().is_some() {
             let len = data.list.len();
@@ -924,33 +955,42 @@ pub async fn urban(
                             .label("➡️"),
                     ];
 
-                    let new_response_chars: Vec<char> =
-                        data.list[state.index].definition.chars().collect();
-                    let new_chunks = new_response_chars.chunks(1024);
-
-                    let mut new_fields: Vec<(String, String, bool)> = new_chunks
-                        .enumerate()
-                        .map(|(i, new_chunks)| {
-                            let field_name = if i == 0 {
+                    let mut new_embed = CreateEmbed::default()
+                        .title(&data.list[state.index].word)
+                        .color(0xEFFF00);
+                    let mut current_chunk = String::with_capacity(1024);
+                    let mut chunk_index = 0;
+                    for ch in data.list[state.index]
+                        .definition
+                        .replace(['[', ']'], "")
+                        .chars()
+                    {
+                        if current_chunk.len() >= 1024 {
+                            let field_name = if chunk_index == 0 {
                                 "Definition:".to_owned()
                             } else {
-                                let index = i + 1;
-                                format!("Response (cont. {index}):")
+                                format!("Response (cont. {}):", chunk_index + 1)
                             };
-                            let chunk_str: String = new_chunks.iter().collect();
-                            (field_name, chunk_str.replace(['[', ']'], ""), false)
-                        })
-                        .collect();
-                    new_fields.push((
-                        "Example:".to_owned(),
-                        data.list[0].example.replace(['[', ']'], ""),
-                        false,
-                    ));
+                            new_embed = new_embed.field(field_name, current_chunk, false);
+                            current_chunk = String::with_capacity(1024);
+                            chunk_index += 1;
+                        }
+                        current_chunk.push(ch);
+                    }
+                    if !current_chunk.is_empty() {
+                        let field_name = if chunk_index == 0 {
+                            "Definition:".to_owned()
+                        } else {
+                            format!("Response (cont. {}):", chunk_index + 1)
+                        };
+                        new_embed = new_embed.field(field_name, current_chunk, false);
+                    }
 
-                    let new_embed = CreateEmbed::default()
-                        .title(&data.list[state.index].word)
-                        .color(0xEFFF00)
-                        .fields(new_fields);
+                    new_embed = new_embed.field(
+                        "Example:".to_owned(),
+                        data.list[state_index].example.replace(['[', ']'], ""),
+                        false,
+                    );
 
                     let new_components = {
                         if state.index == 0 {

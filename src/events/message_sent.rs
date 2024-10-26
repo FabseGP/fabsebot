@@ -4,13 +4,14 @@ use crate::{
 };
 
 use anyhow::Context as _;
+use dashmap::DashSet;
 use poise::serenity_prelude::{
     self as serenity, ChannelId, Colour, CreateAllowedMentions, CreateEmbed, CreateEmbedAuthor,
     CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GetMessages, GuildId, Http,
     Message, MessageId, ReactionType, Timestamp, UserId,
 };
 use sqlx::{query, Acquire as _};
-use std::sync::Arc;
+use std::{iter, sync::Arc};
 
 pub async fn handle_message(
     ctx: &serenity::Context,
@@ -51,12 +52,6 @@ pub async fn handle_message(
                 );
                 let user = ctx.http.get_user(user_id).await?;
                 if new_message.author.id == user_id {
-                    let entries: Vec<&str> = target
-                        .pinged_links
-                        .as_deref()
-                        .unwrap_or("")
-                        .split(',')
-                        .collect();
                     let user_name = user.display_name();
                     let mut response = new_message
                         .reply(
@@ -66,21 +61,20 @@ pub async fn handle_message(
                             ),
                         )
                         .await?;
-                    if !entries[0].is_empty() {
-                        let mut e = CreateEmbed::default()
-                            .colour(0xED333B)
-                            .title("Pings you retrieved:");
-                        for entry in entries {
-                            let parts: Vec<&str> = entry.split(';').collect();
-                            if parts.len() == 2 {
-                                let name = parts[0];
-                                let role = parts[1];
-                                e = e.field(name, role, false);
+                    if let Some(links) = target.pinged_links.as_deref() {
+                        if !links.is_empty() {
+                            let mut e = CreateEmbed::default()
+                                .colour(0xED333B)
+                                .title("Pings you retrieved:");
+                            for entry in links.split(',') {
+                                if let Some((name, role)) = entry.split_once(';') {
+                                    e = e.field(name, role, false);
+                                }
                             }
+                            response
+                                .edit(&ctx.http, EditMessage::default().embed(e))
+                                .await?;
                         }
-                        response
-                            .edit(&ctx.http, EditMessage::default().embed(e))
-                            .await?;
                     }
                     query!(
                         "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
@@ -119,9 +113,9 @@ pub async fn handle_message(
             let target_id = target.user_id;
             if content.contains(&format!("<@{target_id}>")) && !content.contains("!user_misuse") {
                 if let Some(ping_content) = &target.ping_content {
-                    let media = match &target.ping_media {
+                    match &target.ping_media {
                         Some(ping_media) => {
-                            if ping_media.to_lowercase() == "waifu" {
+                            let media = if ping_media.to_lowercase() == "waifu" {
                                 &get_waifu().await?
                             } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
                                 let search_term = gif_query.trim_start();
@@ -133,22 +127,30 @@ pub async fn handle_message(
                                 }
                             } else {
                                 ping_media
-                            }
+                            };
+                            new_message
+                                .channel_id
+                                .send_message(
+                                    &ctx.http,
+                                    CreateMessage::default().embed(
+                                        CreateEmbed::default()
+                                            .title(ping_content)
+                                            .image(media)
+                                            .colour(0x00b0f4),
+                                    ),
+                                )
+                                .await?;
                         }
-                        None => "",
-                    };
-                    new_message
-                        .channel_id
-                        .send_message(
-                            &ctx.http,
-                            CreateMessage::default().embed(
-                                CreateEmbed::default()
-                                    .title(ping_content)
-                                    .image(media)
-                                    .colour(0x00b0f4),
-                            ),
-                        )
-                        .await?;
+                        None => {
+                            new_message
+                                .channel_id
+                                .send_message(
+                                    &ctx.http,
+                                    CreateMessage::default().content(ping_content),
+                                )
+                                .await?;
+                        }
+                    }
                 }
             }
         }
@@ -201,13 +203,12 @@ pub async fn handle_message(
                 }
             }
         }
-        let words: Vec<&str> = words.iter().map(|row| row.word.as_str()).collect();
-        for word in &words {
-            if content.contains(word) {
+        for row in &words {
+            if content.contains(&row.word) {
                 query!(
                     "UPDATE words_count SET count = count + 1 WHERE guild_id = $1 AND word = $2",
                     guild_id,
-                    word
+                    row.word
                 )
                 .execute(&mut *tx)
                 .await?;
@@ -271,36 +272,34 @@ pub async fn handle_message(
                             guild.member(&ctx.http, new_message.author.id).await
                         {
                             let guild_roles = &guild.roles;
-                            let roles: Vec<&str> = author_member
+                            let mut roles_iter = author_member
                                 .roles
                                 .iter()
-                                .filter_map(|role_id| {
-                                    guild_roles.get(role_id).map(|role| role.name.as_str())
-                                })
-                                .collect();
-                            if !roles.is_empty() {
-                                let roles_joined = roles.join(", ");
+                                .filter_map(|role_id| guild_roles.get(role_id))
+                                .map(|role| role.name.as_str());
+                            if let Some(first_role) = roles_iter.next() {
+                                let roles_joined = iter::once(first_role)
+                                    .chain(roles_iter)
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
                                 message_parts.push(format!(
                                     "{author_name} has the following roles: {roles_joined}"
                                 ));
                             }
-                            let mentioned_users_len = new_message.mentions.len() as usize;
-                            if mentioned_users_len != 0 {
-                                let mut mentioned_users = Vec::with_capacity(mentioned_users_len);
+                            if !new_message.mentions.is_empty() {
+                                message_parts.push(format!(
+                                    "{} user(s) were mentioned:",
+                                    new_message.mentions.len()
+                                ));
                                 for target in &new_message.mentions {
                                     if let Some(target_member) = target.member.as_ref() {
-                                        let target_roles = {
-                                            let roles: Vec<&str> = target_member
-                                                .roles
-                                                .iter()
-                                                .filter_map(|role_id| {
-                                                    guild_roles
-                                                        .get(role_id)
-                                                        .map(|role| role.name.as_str())
-                                                })
-                                                .collect();
-                                            roles.join(",")
-                                        };
+                                        let target_roles: String = target_member
+                                            .roles
+                                            .iter()
+                                            .filter_map(|role_id| guild_roles.get(role_id))
+                                            .map(|role| role.name.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
                                         let pfp_desc = {
                                             let pfp = HTTP_CLIENT
                                                 .get(target.static_face())
@@ -314,31 +313,25 @@ pub async fn handle_message(
                                             }
                                         };
                                         let target_name = target.display_name();
-                                        let user_info = format!(
+                                        message_parts.push(format!(
                                             "{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
-                                        );
-                                        mentioned_users.push(user_info);
+                                        ));
                                     }
                                 }
-                                let mentioned_len = mentioned_users.len();
-                                message_parts
-                                    .push(format!("{mentioned_len} user(s) were mentioned:"));
-                                message_parts.extend(mentioned_users);
                             }
-                            let attachments_len = new_message.attachments.len() as usize;
-                            if attachments_len != 0 {
-                                let mut attachments_desc = Vec::with_capacity(attachments_len);
+                            if !new_message.attachments.is_empty() {
+                                message_parts.push(format!(
+                                    "{} image(s) were sent:",
+                                    new_message.attachments.len()
+                                ));
                                 for attachment in &new_message.attachments {
                                     if attachment.dimensions().is_some() {
                                         let file = attachment.download().await?;
                                         let description =
                                             ai_image_desc(&file, Some(content.as_str())).await?;
-                                        attachments_desc.push(description);
+                                        message_parts.push(description);
                                     }
                                 }
-                                let images_len = attachments_desc.len();
-                                message_parts.push(format!("{images_len} image(s) were sent:"));
-                                message_parts.extend(attachments_desc);
                             }
                         }
                     }
@@ -397,20 +390,24 @@ pub async fn handle_message(
                         .entry(new_message.channel_id)
                         .or_default();
 
-                    let unique_users: Vec<&str> = history
-                        .iter()
-                        .filter_map(|message| {
-                            if message.role == "user" {
-                                message.content.split(':').next().map(str::trim)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
-                    if !unique_users.is_empty() {
+                    if history.iter().any(|message| message.role == "user") {
                         system_content.push_str("Current users in the conversation: ");
-                        system_content.push_str(&unique_users.join("\n"));
+                        let mut is_first = true;
+                        let seen_users = DashSet::new();
+                        for message in history.iter() {
+                            if message.role == "user" {
+                                if let Some(user) = message.content.split(':').next().map(str::trim)
+                                {
+                                    if seen_users.insert(user) {
+                                        if !is_first {
+                                            system_content.push('\n');
+                                        }
+                                        system_content.push_str(user);
+                                        is_first = false;
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     let system_message = history.iter_mut().find(|msg| msg.role == "system");
@@ -515,7 +512,7 @@ pub async fn handle_message(
                 };
                 if let Some(ref_msg) = message {
                     let author_accent = ctx.http.get_user(ref_msg.author.id).await?.accent_colour;
-                    let embed = CreateEmbed::default()
+                    let mut embed = CreateEmbed::default()
                         .colour(author_accent.unwrap_or(Colour::new(0xFA6300)))
                         .description(ref_msg.content.as_str())
                         .author(
@@ -526,13 +523,10 @@ pub async fn handle_message(
                             ),
                         )
                         .footer(CreateEmbedFooter::new(&channel_name))
-                        .timestamp(ref_msg.timestamp)
-                        .image(
-                            ref_msg
-                                .attachments
-                                .first()
-                                .map_or("", |attachment| &attachment.url),
-                        );
+                        .timestamp(ref_msg.timestamp);
+                    if let Some(attachment) = ref_msg.attachments.first() {
+                        embed = embed.image(attachment.url.clone());
+                    }
                     let mut preview_message = CreateMessage::default()
                         .embed(embed)
                         .allowed_mentions(CreateAllowedMentions::default().replied_user(false));

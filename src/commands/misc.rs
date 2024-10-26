@@ -26,43 +26,44 @@ pub async fn anony_poll(
     #[description = "Comma-separated options"] options: String,
     #[description = "Duration in minutes"] duration: u64,
 ) -> Result<(), Error> {
-    let options_list: Vec<&str> = options
+    let options_list: Vec<_> = options
         .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .collect();
-    if options_list.len() < 2 {
+    let options_count = options_list.len();
+    if options_count < 2 {
         ctx.say("Bruh, 1 option ain't gonna cut it for a poll")
             .await?;
         return Ok(());
     }
+
     let embed = CreateEmbed::default()
         .title(title.as_str())
         .color(0xFF5733)
         .fields(options_list.iter().map(|&option| (option, "0", false)));
 
-    let buttons: Vec<CreateButton> = options_list
-        .iter()
-        .enumerate()
-        .map(|(index, _)| {
-            CreateButton::new(format!("option_{index}"))
-                .style(ButtonStyle::Primary)
-                .label((index + 1).to_string())
-        })
-        .collect();
+    let action_row = CreateActionRow::Buttons(Cow::Owned(
+        (0..=options_count)
+            .map(|index| {
+                CreateButton::new(format!("option_{index}"))
+                    .style(ButtonStyle::Primary)
+                    .label((index + 1).to_string())
+            })
+            .collect(),
+    ));
 
     ctx.send(
         CreateReply::default()
             .embed(embed)
-            .components(&[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]),
+            .components(&[action_row]),
     )
     .await?;
 
-    let mut vote_counts = vec![0; options_list.len()];
+    let mut vote_counts = vec![0; options_count];
     let voted_users = DashSet::new();
 
     let id_borrow = ctx.id();
-    let options_count = options_list.len();
 
     while let Some(interaction) =
         ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
@@ -178,15 +179,11 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
-    let thumbnail = guild.banner_url().map_or_else(
-        || {
-            guild.icon_url().map_or_else(
-                || "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned(),
-                |icon| icon,
-            )
-        },
-        |banner| banner,
-    );
+    let thumbnail = guild.banner_url().unwrap_or_else(|| {
+        guild
+            .icon_url()
+            .unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
+    });
     let users = query_as!(
         UserCount,
         "SELECT message_count, user_id FROM user_settings WHERE guild_id = $1
@@ -196,8 +193,11 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
     .fetch_all(&mut *ctx.data().db.acquire().await?)
     .await?;
 
-    let user_count = users.len();
-    let mut fields = Vec::with_capacity(user_count);
+    let mut embed = CreateEmbed::default()
+        .title(format!("Top {} users by message count", users.len()))
+        .thumbnail(thumbnail)
+        .color(0xFF5733);
+
     for (index, user) in users.iter().enumerate() {
         if let Ok(target) = ctx
             .http()
@@ -208,19 +208,13 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
         {
             let rank = index + 1;
             let user_name = target.display_name();
-            fields.push((
+            embed = embed.field(
                 format!("#{rank} {user_name}"),
                 user.message_count.to_string(),
                 false,
-            ));
+            );
         }
     }
-
-    let embed = CreateEmbed::default()
-        .title(format!("Top {user_count} users by message count"))
-        .thumbnail(thumbnail)
-        .color(0xFF5733)
-        .fields(fields);
 
     ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
