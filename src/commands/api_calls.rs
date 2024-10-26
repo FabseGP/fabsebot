@@ -63,26 +63,24 @@ pub async fn ai_image(
         .json(&request)
         .send()
         .await?;
-    let output: FabseAIImage = resp.json().await?;
-    if !output.result.image.is_empty() {
-        match general_purpose::STANDARD.decode(output.result.image) {
-            Ok(image_bytes) => {
-                let file = CreateAttachment::bytes(image_bytes, "output.png");
-                ctx.send(CreateReply::default().attachment(file)).await?;
-            }
-            Err(_) => {
-                ctx.send(
-                    CreateReply::default()
-                        .content(format!("\"{prompt}\" is too dangerous to generate")),
-                )
-                .await?;
-            }
+    match resp
+        .json::<FabseAIImage>()
+        .await
+        .ok()
+        .filter(|output| !output.result.image.is_empty())
+        .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
+    {
+        Some(image_bytes) => {
+            let file = CreateAttachment::bytes(image_bytes, "output.png");
+            ctx.send(CreateReply::default().attachment(file)).await?;
         }
-    } else {
-        ctx.send(
-            CreateReply::default().content(format!("\"{prompt}\" is too dangerous to generate")),
-        )
-        .await?;
+        None => {
+            ctx.send(
+                CreateReply::default()
+                    .content(format!("\"{prompt}\" is too dangerous to generate")),
+            )
+            .await?;
+        }
     }
     Ok(())
 }
@@ -130,17 +128,18 @@ pub async fn ai_summarize(
         .json(&request)
         .send()
         .await?;
-    let output: FabseAISummary = resp.json().await?;
-    if !output.result.summary.is_empty() {
-        ctx.say(output.result.summary).await?;
-    } else {
-        ctx.send(CreateReply::default().content("This is too much work"))
-            .await?;
+    match resp.json::<FabseAISummary>().await {
+        Ok(output) if !output.result.summary.is_empty() => {
+            ctx.say(output.result.summary).await?;
+        }
+        Ok(_) | Err(_) => {
+            ctx.send(CreateReply::default().content("This is too much work"))
+                .await?;
+        }
     }
     Ok(())
 }
 
-/// Did someone say AI text?
 #[poise::command(
     slash_command,
     install_context = "Guild|User",
@@ -154,37 +153,42 @@ pub async fn ai_text(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let resp = ai_response_simple(&role, &prompt).await?;
-    if !resp.is_empty() {
-        let mut embed = CreateEmbed::default().title(prompt).color(0xFF7800);
-        let mut current_chunk = String::with_capacity(1024);
-        let mut chunk_index = 0;
-        for ch in resp.chars() {
-            if current_chunk.len() >= 1024 {
+    match ai_response_simple(&role, &prompt).await {
+        Ok(resp) if !resp.is_empty() => {
+            let mut embed = CreateEmbed::default().title(prompt).color(0xFF7800);
+            let mut current_chunk = String::with_capacity(1024);
+            let mut chunk_index = 0;
+            for ch in resp.chars() {
+                if current_chunk.len() >= 1024 {
+                    let field_name = if chunk_index == 0 {
+                        "Response:".to_owned()
+                    } else {
+                        format!("Response (cont. {}):", chunk_index + 1)
+                    };
+                    embed = embed.field(field_name, current_chunk, false);
+                    current_chunk = String::with_capacity(1024);
+                    chunk_index += 1;
+                }
+                current_chunk.push(ch);
+            }
+            if !current_chunk.is_empty() {
                 let field_name = if chunk_index == 0 {
                     "Response:".to_owned()
                 } else {
                     format!("Response (cont. {}):", chunk_index + 1)
                 };
                 embed = embed.field(field_name, current_chunk, false);
-                current_chunk = String::with_capacity(1024);
-                chunk_index += 1;
             }
-            current_chunk.push(ch);
+            ctx.send(CreateReply::default().embed(embed)).await?;
         }
-        if !current_chunk.is_empty() {
-            let field_name = if chunk_index == 0 {
-                "Response:".to_owned()
-            } else {
-                format!("Response (cont. {}):", chunk_index + 1)
-            };
-            embed = embed.field(field_name, current_chunk, false);
-        }
-        ctx.send(CreateReply::default().embed(embed)).await?;
-    } else {
-        ctx.send(CreateReply::default().content(format!("\"{prompt}\" is too dangerous to ask")))
+        Ok(_) | Err(_) => {
+            ctx.send(
+                CreateReply::default().content(format!("\"{prompt}\" is too dangerous to ask")),
+            )
             .await?;
+        }
     }
+
     Ok(())
 }
 

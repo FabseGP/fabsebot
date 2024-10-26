@@ -68,8 +68,7 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Result
         .json(&request)
         .send()
         .await?;
-    let output: FabseAIText = resp.json().await?;
-
+    let output = resp.json::<FabseAIText>().await?;
     Ok(output.result.response)
 }
 
