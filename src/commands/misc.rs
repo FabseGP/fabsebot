@@ -84,23 +84,26 @@ pub async fn anony_poll(
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                 .await?;
 
-            let index = choice
+            if let Some(index) = choice
                 .strip_prefix("option_")
-                .unwrap()
-                .parse::<usize>()
-                .unwrap();
-            vote_counts[index] += 1;
+                .and_then(|s| s.split('_').next())
+                .and_then(|s| s.parse::<usize>().ok())
+            {
+                if index < options_count {
+                    vote_counts[index] += 1;
 
-            let new_embed = CreateEmbed::default().title(&title).color(0xFF5733).fields(
-                options_list
-                    .iter()
-                    .zip(vote_counts.iter())
-                    .map(|(&option, &count)| (option, count.to_string(), false)),
-            );
+                    let new_embed = CreateEmbed::default().title(&title).color(0xFF5733).fields(
+                        options_list
+                            .iter()
+                            .zip(vote_counts.iter())
+                            .map(|(&option, &count)| (option, count.to_string(), false)),
+                    );
 
-            let mut msg = interaction.message;
-            msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
-                .await?;
+                    let mut msg = interaction.message;
+                    msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
+                        .await?;
+                }
+            }
         }
     }
 
