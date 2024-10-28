@@ -43,10 +43,11 @@ pub async fn anony_poll(
         .color(0xFF5733)
         .fields(options_list.iter().map(|&option| (option, "0", false)));
 
+    let ctx_id = ctx.id();
     let action_row = CreateActionRow::Buttons(Cow::Owned(
         (0..options_count)
             .map(|index| {
-                CreateButton::new(format!("option_{index}"))
+                CreateButton::new(format!("option_{index}_{ctx_id}"))
                     .style(ButtonStyle::Primary)
                     .label((index + 1).to_string())
             })
@@ -69,7 +70,7 @@ pub async fn anony_poll(
             .filter(move |interaction| {
                 let id = interaction.data.custom_id.as_str();
                 (0..options_count).any(|index| {
-                    let expected_id = format!("option_{index}");
+                    let expected_id = format!("option_{index}_{ctx_id}");
                     id == expected_id
                 })
             })
