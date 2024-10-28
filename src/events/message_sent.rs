@@ -558,100 +558,82 @@ pub async fn handle_message(
                 ),
             )
             .await?;
-    } else if content == "floppaganda" {
-        new_message
-            .channel_id
-            .send_message(
-                &ctx.http,
-                CreateMessage::default().content("https://i.imgur.com/Pys97pb.png"),
-            )
-            .await?;
-    } else if content.contains("furina") {
-        let furina_gifs = [
-            "https://media1.tenor.com/m/-DdP7PTL6r8AAAAC/furina-focalors.gif",
-            "https://media1.tenor.com/m/gARaejr6ODIAAAAd/furina-focalors.gif",
-            "https://media1.tenor.com/m/_H_syqWiknsAAAAd/focalors-genshin-impact.gif",
-        ];
-        new_message
-            .channel_id
-            .send_message(
-                &ctx.http,
-                CreateMessage::default().embed(
-                    CreateEmbed::default()
-                        .title("your queen has arrived")
-                        .image(furina_gifs[RNG.lock().await.usize(..furina_gifs.len())])
-                        .colour(0xf8e45c),
-                ),
-            )
-            .await?;
-    } else if content.contains("kafka") {
-        let kafka_gifs = [
-            "https://media1.tenor.com/m/Hse9P_W_A3UAAAAC/kafka-hsr-live-reaction-kafka.gif",
-            "https://media1.tenor.com/m/Z-qCHXJsDwoAAAAC/kafka.gif",
-            "https://media1.tenor.com/m/6RXMiM9te7AAAAAC/kafka-honkai-star-rail.gif",
-            "https://media1.tenor.com/m/QDXaFgSJMAcAAAAd/kafka-kafka-honkai.gif",
-            "https://media1.tenor.com/m/zDDaAU3TX38AAAAC/kafka-honkai.gif",
-            "https://media1.tenor.com/m/dy9TUjKaq4MAAAAC/kafka-honkai-star-rail.gif",
-            "https://media1.tenor.com/m/Fsyz6klrIqUAAAAd/kafka-honkai-star-rail.gif",
-            "https://media1.tenor.com/m/aDWOgEh1GycAAAAd/kafka-honkai.gif",
-            "https://media1.tenor.com/m/C1Y9XD8U7XMAAAAC/kafka-hsr.gif",
-            "https://media1.tenor.com/m/_RiBHVVH-wIAAAAC/kafka-kafka-pat.gif",
-        ];
-        new_message
-            .channel_id
-            .send_message(
-                &ctx.http,
-                CreateMessage::default().embed(
-                    CreateEmbed::default()
-                        .title("your queen has arrived")
-                        .image(kafka_gifs[RNG.lock().await.usize(..kafka_gifs.len())])
-                        .colour(0xf8e45c),
-                ),
-            )
-            .await?;
-    } else if content.contains("kinich") {
-        let kinich_gifs = [
-            "https://media1.tenor.com/m/GAA5_YmbClkAAAAC/natlan-dendro-boy.gif",
-            "https://media1.tenor.com/m/qcdZ04vXqEIAAAAC/natlan-guy-kinich.gif",
-            "https://media1.tenor.com/m/mJC2SsAcQB8AAAAd/dendro-natlan.gif",
-        ];
-        new_message
-            .channel_id
-            .send_message(
-                &ctx.http,
-                CreateMessage::default().embed(
-                    CreateEmbed::default()
-                        .title("pls destroy lily's oven")
-                        .image(kinich_gifs[RNG.lock().await.usize(..kinich_gifs.len())])
-                        .colour(0xf8e45c),
-                ),
-            )
-            .await?;
-    } else if content.contains("fabse") {
-        if let Ok(reaction) = ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>") {
-            new_message.react(&ctx.http, reaction).await?;
-        }
-        if content == "fabse" || content == "fabseman" {
-            let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
-            if let Some(webhook) = webhook_try {
-                webhook.execute(&ctx.http, false, ExecuteWebhook::default().username("yotsuba").avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png").content("# such magnificence")).await?;
-            }
-        }
-    } else if content.contains("kurukuru_seseren") {
-        let count = content.matches("kurukuru_seseren").count();
-        let response = "<a:kurukuru_seseren:1284745756883816469>".repeat(count);
-        let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
-        if let Some(webhook) = webhook_try {
-            webhook
-                .execute(
+    }
+
+    match content.as_str() {
+        "floppaganda" => {
+            new_message
+                .channel_id
+                .send_message(
                     &ctx.http,
-                    false,
-                    ExecuteWebhook::default()
-                        .username("vilbot")
-                        .avatar_url("https://i.postimg.cc/44t5vzWB/IMG-0014.png")
-                        .content(response),
+                    CreateMessage::default().content("https://i.imgur.com/Pys97pb.png"),
                 )
                 .await?;
+        }
+        _ => {
+            if content.contains("furina") || content.contains("kafka") || content.contains("kinich")
+            {
+                let (gifs, title, color) = match true {
+                    _ if content.contains("furina") => (
+                        &["https://media1.tenor.com/m/-DdP7PTL6r8AAAAC/furina-focalors.gif",
+                          "https://media1.tenor.com/m/gARaejr6ODIAAAAd/furina-focalors.gif",
+                          "https://media1.tenor.com/m/_H_syqWiknsAAAAd/focalors-genshin-impact.gif"][..],
+                        "your queen has arrived",
+                        0xf8e45c
+                    ),
+                    _ if content.contains("kafka") => (
+                        &["https://media1.tenor.com/m/Hse9P_W_A3UAAAAC/kafka-hsr-live-reaction-kafka.gif",
+                          "https://media1.tenor.com/m/Z-qCHXJsDwoAAAAC/kafka.gif",
+                          "https://media1.tenor.com/m/6RXMiM9te7AAAAAC/kafka-honkai-star-rail.gif"][..],
+                        "your queen has arrived",
+                        0xf8e45c
+                    ),
+                    _ => (
+                        &["https://media1.tenor.com/m/GAA5_YmbClkAAAAC/natlan-dendro-boy.gif",
+                          "https://media1.tenor.com/m/qcdZ04vXqEIAAAAC/natlan-guy-kinich.gif",
+                          "https://media1.tenor.com/m/mJC2SsAcQB8AAAAd/dendro-natlan.gif"][..],
+                        "pls destroy lily's oven",
+                        0xf8e45c
+                    ),
+                };
+                let gif = gifs[RNG.lock().await.usize(..gifs.len())];
+                new_message
+                    .channel_id
+                    .send_message(
+                        &ctx.http,
+                        CreateMessage::default()
+                            .embed(CreateEmbed::default().title(title).image(gif).colour(color)),
+                    )
+                    .await?;
+            } else if content.contains("kurukuru_seseren") {
+                let count = content.matches("kurukuru_seseren").count();
+                let response = "<a:kurukuru_seseren:1284745756883816469>".repeat(count);
+                let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
+                if let Some(webhook) = webhook_try {
+                    webhook
+                        .execute(
+                            &ctx.http,
+                            false,
+                            ExecuteWebhook::default()
+                                .username("vilbot")
+                                .avatar_url("https://i.postimg.cc/44t5vzWB/IMG-0014.png")
+                                .content(response),
+                        )
+                        .await?;
+                }
+            } else if content.contains("fabse") {
+                if let Ok(reaction) =
+                    ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>")
+                {
+                    new_message.react(&ctx.http, reaction).await?;
+                }
+                if content == "fabse" || content == "fabseman" {
+                    let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
+                    if let Some(webhook) = webhook_try {
+                        webhook.execute(&ctx.http, false, ExecuteWebhook::default().username("yotsuba").avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png").content("# such magnificence")).await?;
+                    }
+                }
+            }
         }
     }
 

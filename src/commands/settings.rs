@@ -57,15 +57,15 @@ pub async fn set_afk(
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         let embed_reason = reason
-            .as_ref()
-            .map_or("Didn't renew life subscription", |input| input);
+            .as_deref()
+            .unwrap_or("Didn't renew life subscription");
         let user_name = ctx.author().display_name();
         ctx.send(
             CreateReply::default().embed(
                 CreateEmbed::default()
                     .title(format!("{user_name} killed!"))
                     .description(format!("Reason: {embed_reason}"))
-                    .thumbnail(ctx.author().avatar_url().unwrap())
+                    .thumbnail(ctx.author().avatar_url().unwrap_or_default())
                     .color(0xFF5733),
             ),
         )
@@ -243,7 +243,7 @@ pub async fn set_spoiler_channel(
             VALUES ($1, $2)
             ON CONFLICT(guild_id)
             DO UPDATE SET
-                quotes_channel = $2",
+                spoiler_channel = $2",
             i64::from(guild_id),
             i64::from(channel_id),
         )
@@ -274,22 +274,15 @@ pub async fn set_user_ping(
             const INVALID_MEDIA_MSG: &str = "Invalid media given... really bro?";
             if user_media.contains("https") {
                 ctx.defer().await?;
-                if let Ok(response) = HTTP_CLIENT.head(user_media).send().await {
-                    let is_valid = response
-                        .headers()
-                        .get("content-type")
-                        .and_then(|ct| ct.to_str().ok())
-                        .is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif");
-                    if !is_valid {
-                        ctx.send(
-                            CreateReply::default()
-                                .content(INVALID_MEDIA_MSG)
-                                .ephemeral(true),
-                        )
-                        .await?;
-                        return Ok(());
-                    }
-                } else {
+                let is_valid =
+                    (HTTP_CLIENT.head(user_media).send().await).map_or(false, |response| {
+                        response
+                            .headers()
+                            .get("content-type")
+                            .and_then(|ct| ct.to_str().ok())
+                            .is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif")
+                    });
+                if !is_valid {
                     ctx.send(
                         CreateReply::default()
                             .content(INVALID_MEDIA_MSG)

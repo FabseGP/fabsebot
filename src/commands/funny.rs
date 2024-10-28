@@ -4,7 +4,7 @@ use crate::{
 };
 
 use poise::{
-    serenity_prelude::{ChannelId, ExecuteWebhook, MessageId, User},
+    serenity_prelude::{ChannelId, CreateMessage, ExecuteWebhook, User},
     CreateReply,
 };
 
@@ -27,15 +27,14 @@ pub async fn anonymous(
     Ok(())
 }
 
-/*
 /// Misuse other users dm
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(slash_command, owners_only)]
 pub async fn user_dm(
     ctx: SContext<'_>,
     #[description = "Target"] user: User,
     #[description = "Message to be sent"] message: String,
 ) -> Result<(), Error> {
-    user.direct_message(ctx, CreateMessage::default().content(message))
+    user.direct_message(ctx.http(), CreateMessage::default().content(message))
         .await?;
     ctx.send(
         CreateReply::default()
@@ -45,10 +44,9 @@ pub async fn user_dm(
     .await?;
     Ok(())
 }
-*/
 
 /// Send message as an another user
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(slash_command)]
 pub async fn user_misuse(
     ctx: SContext<'_>,
     #[description = "Target"] user: User,
@@ -81,19 +79,12 @@ pub async fn user_misuse(
             )
             .await?;
     }
-    if ctx.prefix() != "/" {
-        let reason: Option<&str> = Some("anonymous");
-        ctx.channel_id()
-            .delete_message(ctx.http(), MessageId::new(ctx.id()), reason)
-            .await?;
-    } else {
-        ctx.send(
-            CreateReply::default()
-                .content("you're going to hell")
-                .ephemeral(true),
-        )
-        .await?;
-    }
+    ctx.send(
+        CreateReply::default()
+            .content("you're going to hell")
+            .ephemeral(true),
+    )
+    .await?;
 
     Ok(())
 }

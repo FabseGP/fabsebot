@@ -76,8 +76,11 @@ pub async fn ai_image(
         .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
     {
         Some(image_bytes) => {
-            let file = CreateAttachment::bytes(image_bytes, "output.png");
-            ctx.send(CreateReply::default().attachment(file)).await?;
+            ctx.send(
+                CreateReply::default()
+                    .attachment(CreateAttachment::bytes(image_bytes, "output.png")),
+            )
+            .await?;
         }
         None => {
             ctx.send(
@@ -137,7 +140,7 @@ pub async fn ai_summarize(
         Ok(output) if !output.result.summary.is_empty() => {
             ctx.say(output.result.summary).await?;
         }
-        Ok(_) | Err(_) => {
+        _ => {
             ctx.send(CreateReply::default().content("This is too much work"))
                 .await?;
         }
@@ -231,7 +234,12 @@ struct AnimeTitle {
 }
 
 /// When the other bot sucks
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn anilist_anime(
     ctx: SContext<'_>,
     #[description = "Anime to search"]
@@ -324,7 +332,12 @@ pub async fn eightball(
 }
 
 /// Gifing
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn gif(
     ctx: SContext<'_>,
     #[description = "Search gif"]
@@ -333,8 +346,10 @@ pub async fn gif(
 ) -> Result<(), Error> {
     let resp = get_gifs(&input).await;
     if let Ok(urls) = resp {
-        if ctx.guild_id().is_some() {
-            let len = urls.len();
+        ctx.defer().await?;
+        let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
+        let len = urls.len();
+        if ctx.guild_id().is_some() && len > 1 {
             let index = 0;
             let ctx_id = ctx.id();
             let next_id = format!("{ctx_id}_next_{index}");
@@ -345,81 +360,75 @@ pub async fn gif(
                 index,
                 len,
             };
-            let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
 
-            if len > 1 {
-                let next_button = [CreateButton::new(&state.next_id)
-                    .style(ButtonStyle::Primary)
-                    .label("➡️")];
-                ctx.send(
-                    CreateReply::default()
-                        .embed(embed)
-                        .components(&[CreateActionRow::buttons(&next_button)]),
+            let next_button = [CreateButton::new(&state.next_id)
+                .style(ButtonStyle::Primary)
+                .label("➡️")];
+            ctx.send(
+                CreateReply::default()
+                    .embed(embed)
+                    .components(&[CreateActionRow::buttons(&next_button)]),
+            )
+            .await?;
+            while let Some(interaction) =
+                ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                    .timeout(Duration::from_secs(600))
+                    .filter(move |interaction| {
+                        let id = interaction.data.custom_id.as_str();
+                        id == state.next_id.as_str() || id == state.prev_id.as_str()
+                    })
+                    .await
+            {
+                let choice = &interaction.data.custom_id.as_str();
+
+                interaction
+                    .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                    .await?;
+
+                if choice.contains("next") && state.index < state.len - 1 {
+                    state.index += 1;
+                } else if choice.contains("prev") && state.index > 0 {
+                    state.index -= 1;
+                }
+
+                let state_index = state.index;
+                state.next_id = format!("{ctx_id}_next_{state_index}");
+                state.prev_id = format!("{ctx_id}_prev_{state_index}");
+
+                let buttons = [
+                    CreateButton::new(&state.prev_id)
+                        .style(ButtonStyle::Primary)
+                        .label("⬅️"),
+                    CreateButton::new(&state.next_id)
+                        .style(ButtonStyle::Primary)
+                        .label("➡️"),
+                ];
+
+                let new_embed = CreateEmbed::default()
+                    .title(input.as_str())
+                    .image(&urls[state.index]);
+
+                let new_components = {
+                    if state.index == 0 {
+                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+                    } else if state.index == len - 1 {
+                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+                    } else {
+                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+                    }
+                };
+
+                let mut msg = interaction.message;
+
+                msg.edit(
+                    ctx.http(),
+                    EditMessage::default()
+                        .embed(new_embed)
+                        .components(&new_components),
                 )
                 .await?;
-                while let Some(interaction) =
-                    ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                        .timeout(Duration::from_secs(600))
-                        .filter(move |interaction| {
-                            let id = interaction.data.custom_id.as_str();
-                            id == state.next_id.as_str() || id == state.prev_id.as_str()
-                        })
-                        .await
-                {
-                    let choice = &interaction.data.custom_id.as_str();
-
-                    interaction
-                        .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-                        .await?;
-
-                    if choice.contains("next") && state.index < state.len - 1 {
-                        state.index += 1;
-                    } else if choice.contains("prev") && state.index > 0 {
-                        state.index -= 1;
-                    }
-
-                    let state_index = state.index;
-                    state.next_id = format!("{ctx_id}_next_{state_index}");
-                    state.prev_id = format!("{ctx_id}_prev_{state_index}");
-
-                    let buttons = [
-                        CreateButton::new(&state.prev_id)
-                            .style(ButtonStyle::Primary)
-                            .label("⬅️"),
-                        CreateButton::new(&state.next_id)
-                            .style(ButtonStyle::Primary)
-                            .label("➡️"),
-                    ];
-
-                    let new_embed = CreateEmbed::default()
-                        .title(input.as_str())
-                        .image(&urls[state.index]);
-
-                    let new_components = {
-                        if state.index == 0 {
-                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                        } else if state.index == len - 1 {
-                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
-                        } else {
-                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
-                        }
-                    };
-
-                    let mut msg = interaction.message;
-
-                    msg.edit(
-                        ctx.http(),
-                        EditMessage::default()
-                            .embed(new_embed)
-                            .components(&new_components),
-                    )
-                    .await?;
-                }
-            } else {
-                ctx.send(CreateReply::default().embed(embed)).await?;
             }
         } else {
-            let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
             ctx.send(CreateReply::default().embed(embed)).await?;
         }
     } else {
@@ -500,7 +509,6 @@ pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
 
 /// When there aren't enough memes
 #[poise::command(
-    prefix_command,
     slash_command,
     install_context = "Guild|User",
     interaction_context = "Guild|BotDm|PrivateChannel"
@@ -712,9 +720,9 @@ pub async fn translate(
     };
     let target_lang = target.map_or_else(|| "en".to_owned(), |lang| lang.to_lowercase());
     let request = TranslateRequest {
-        q: content.as_str(),
+        q: &content,
         source: "auto",
-        target: target_lang.as_str(),
+        target: &target_lang,
         alternatives: 3,
     };
     let response = HTTP_CLIENT
@@ -726,8 +734,16 @@ pub async fn translate(
     if response.status().is_success() {
         let data: FabseTranslate = response.json().await?;
         if !data.translated_text.is_empty() {
-            if ctx.guild_id().is_some() {
-                let len = data.alternatives.len();
+            let embed = CreateEmbed::default()
+                .title(format!(
+                    "Translation from {} to {target_lang} with {}% confidence",
+                    data.detected_language.language, data.detected_language.confidence
+                ))
+                .color(0x33d17a)
+                .field("Original:", &content, false)
+                .field("Translation:", &data.translated_text, false);
+            let len = data.alternatives.len();
+            if ctx.guild_id().is_some() && len > 1 {
                 let index = 0;
                 let ctx_id = ctx.id();
                 let next_id = format!("{ctx_id}_next_{index}");
@@ -738,112 +754,88 @@ pub async fn translate(
                     index,
                     len,
                 };
-                let embed = CreateEmbed::default()
-                    .title(format!(
-                        "Translation from {} to {target_lang} with {}% confidence",
-                        data.detected_language.language, data.detected_language.confidence
-                    ))
-                    .color(0x33d17a)
-                    .field("Original:", &content, false)
-                    .field("Translation:", &data.translated_text, false);
-                if len > 1 {
-                    let next_button = [CreateButton::new(&state.next_id)
-                        .style(ButtonStyle::Primary)
-                        .label("➡️")];
-                    ctx.send(
-                        CreateReply::default()
-                            .embed(embed)
-                            .components(&[CreateActionRow::buttons(&next_button)]),
-                    )
-                    .await?;
-                    while let Some(interaction) =
-                        ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                            .timeout(Duration::from_secs(600))
-                            .filter(move |interaction| {
-                                let id = interaction.data.custom_id.as_str();
-                                id == state.next_id.as_str() || id == state.prev_id.as_str()
-                            })
-                            .await
-                    {
-                        let choice = &interaction.data.custom_id.as_str();
-
-                        interaction
-                            .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-                            .await?;
-
-                        if choice.contains("next") && state.index < state.len - 1 {
-                            state.index += 1;
-                        } else if choice.contains("prev") && state.index > 0 {
-                            state.index -= 1;
-                        }
-
-                        let state_index = state.index;
-                        state.next_id = format!("{ctx_id}_next_{state_index}");
-                        state.prev_id = format!("{ctx_id}_prev_{state_index}");
-
-                        let buttons = [
-                            CreateButton::new(&state.prev_id)
-                                .style(ButtonStyle::Primary)
-                                .label("⬅️"),
-                            CreateButton::new(&state.next_id)
-                                .style(ButtonStyle::Primary)
-                                .label("➡️"),
-                        ];
-
-                        let new_embed = CreateEmbed::default()
-                            .title(format!(
-                                "Translation from {} to {target_lang} with {}% confidence",
-                                data.detected_language.language, data.detected_language.confidence
-                            ))
-                            .color(0x33d17a)
-                            .field("Original:", &content, false)
-                            .field(
-                                "Translation:",
-                                if state.index == 0 {
-                                    &data.translated_text
-                                } else {
-                                    &data.alternatives[state.index - 1]
-                                },
-                                false,
-                            );
-
-                        let new_components = {
-                            if state.index == 0 {
-                                [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                            } else if state.index == len - 1 {
-                                [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
-                            } else {
-                                [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
-                            }
-                        };
-
-                        let mut msg = interaction.message;
-
-                        msg.edit(
-                            ctx.http(),
-                            EditMessage::default()
-                                .embed(new_embed)
-                                .components(&new_components),
-                        )
-                        .await?;
-                    }
-                } else {
-                    ctx.send(CreateReply::default().embed(embed)).await?;
-                }
-            } else {
+                let next_button = [CreateButton::new(&state.next_id)
+                    .style(ButtonStyle::Primary)
+                    .label("➡️")];
                 ctx.send(
-                    CreateReply::default().embed(
-                        CreateEmbed::default()
-                            .title(format!(
-                                "Translation from {} to {target_lang} with {}% confidence",
-                                data.detected_language.language, data.detected_language.confidence
-                            ))
-                            .color(0x33d17a)
-                            .field("Original:", &content, false)
-                            .field("Translation:", &data.translated_text, false),
-                    ),
+                    CreateReply::default()
+                        .embed(embed)
+                        .components(&[CreateActionRow::buttons(&next_button)]),
                 )
                 .await?;
+                while let Some(interaction) =
+                    ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                        .timeout(Duration::from_secs(600))
+                        .filter(move |interaction| {
+                            let id = interaction.data.custom_id.as_str();
+                            id == state.next_id.as_str() || id == state.prev_id.as_str()
+                        })
+                        .await
+                {
+                    let choice = &interaction.data.custom_id.as_str();
+
+                    interaction
+                        .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                        .await?;
+
+                    if choice.contains("next") && state.index < state.len - 1 {
+                        state.index += 1;
+                    } else if choice.contains("prev") && state.index > 0 {
+                        state.index -= 1;
+                    }
+
+                    let state_index = state.index;
+                    state.next_id = format!("{ctx_id}_next_{state_index}");
+                    state.prev_id = format!("{ctx_id}_prev_{state_index}");
+
+                    let buttons = [
+                        CreateButton::new(&state.prev_id)
+                            .style(ButtonStyle::Primary)
+                            .label("⬅️"),
+                        CreateButton::new(&state.next_id)
+                            .style(ButtonStyle::Primary)
+                            .label("➡️"),
+                    ];
+
+                    let new_embed = CreateEmbed::default()
+                        .title(format!(
+                            "Translation from {} to {target_lang} with {}% confidence",
+                            data.detected_language.language, data.detected_language.confidence
+                        ))
+                        .color(0x33d17a)
+                        .field("Original:", &content, false)
+                        .field(
+                            "Translation:",
+                            if state.index == 0 {
+                                &data.translated_text
+                            } else {
+                                &data.alternatives[state.index - 1]
+                            },
+                            false,
+                        );
+
+                    let new_components = {
+                        if state.index == 0 {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+                        } else if state.index == len - 1 {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+                        } else {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+                        }
+                    };
+
+                    let mut msg = interaction.message;
+
+                    msg.edit(
+                        ctx.http(),
+                        EditMessage::default()
+                            .embed(new_embed)
+                            .components(&new_components),
+                    )
+                    .await?;
+                }
+            } else {
+                ctx.send(CreateReply::default().embed(embed)).await?;
             }
         } else {
             ctx.send(CreateReply::default().content("Too dangerous to translate"))
@@ -919,8 +911,8 @@ pub async fn urban(
             false,
         );
 
-        if ctx.guild_id().is_some() {
-            let len = data.list.len();
+        let len = data.list.len();
+        if ctx.guild_id().is_some() && len > 1 {
             let index = 0;
             let ctx_id = ctx.id();
             let next_id = format!("{ctx_id}_next_{index}");
@@ -932,109 +924,105 @@ pub async fn urban(
                 len,
             };
 
-            if len > 1 {
-                let next_button = [CreateButton::new(&state.next_id)
-                    .style(ButtonStyle::Primary)
-                    .label("➡️")];
-                ctx.send(
-                    CreateReply::default()
-                        .embed(embed)
-                        .components(&[CreateActionRow::buttons(&next_button)]),
-                )
-                .await?;
-                while let Some(interaction) =
-                    ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                        .timeout(Duration::from_secs(600))
-                        .filter(move |interaction| {
-                            let id = interaction.data.custom_id.as_str();
-                            id == state.next_id.as_str() || id == state.prev_id.as_str()
-                        })
-                        .await
+            let next_button = [CreateButton::new(&state.next_id)
+                .style(ButtonStyle::Primary)
+                .label("➡️")];
+            ctx.send(
+                CreateReply::default()
+                    .embed(embed)
+                    .components(&[CreateActionRow::buttons(&next_button)]),
+            )
+            .await?;
+            while let Some(interaction) =
+                ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                    .timeout(Duration::from_secs(600))
+                    .filter(move |interaction| {
+                        let id = interaction.data.custom_id.as_str();
+                        id == state.next_id.as_str() || id == state.prev_id.as_str()
+                    })
+                    .await
+            {
+                let choice = &interaction.data.custom_id.as_str();
+
+                interaction
+                    .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                    .await?;
+
+                if choice.contains("next") && state.index < state.len - 1 {
+                    state.index += 1;
+                } else if choice.contains("prev") && state.index > 0 {
+                    state.index -= 1;
+                }
+
+                let state_index = state.index;
+                state.next_id = format!("{ctx_id}_next_{state_index}");
+                state.prev_id = format!("{ctx_id}_prev_{state_index}");
+
+                let buttons = [
+                    CreateButton::new(&state.prev_id)
+                        .style(ButtonStyle::Primary)
+                        .label("⬅️"),
+                    CreateButton::new(&state.next_id)
+                        .style(ButtonStyle::Primary)
+                        .label("➡️"),
+                ];
+
+                let mut new_embed = CreateEmbed::default()
+                    .title(&data.list[state.index].word)
+                    .color(0xEFFF00);
+                let mut current_chunk = String::with_capacity(1024);
+                let mut chunk_index = 0;
+                for ch in data.list[state.index]
+                    .definition
+                    .replace(['[', ']'], "")
+                    .chars()
                 {
-                    let choice = &interaction.data.custom_id.as_str();
-
-                    interaction
-                        .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-                        .await?;
-
-                    if choice.contains("next") && state.index < state.len - 1 {
-                        state.index += 1;
-                    } else if choice.contains("prev") && state.index > 0 {
-                        state.index -= 1;
-                    }
-
-                    let state_index = state.index;
-                    state.next_id = format!("{ctx_id}_next_{state_index}");
-                    state.prev_id = format!("{ctx_id}_prev_{state_index}");
-
-                    let buttons = [
-                        CreateButton::new(&state.prev_id)
-                            .style(ButtonStyle::Primary)
-                            .label("⬅️"),
-                        CreateButton::new(&state.next_id)
-                            .style(ButtonStyle::Primary)
-                            .label("➡️"),
-                    ];
-
-                    let mut new_embed = CreateEmbed::default()
-                        .title(&data.list[state.index].word)
-                        .color(0xEFFF00);
-                    let mut current_chunk = String::with_capacity(1024);
-                    let mut chunk_index = 0;
-                    for ch in data.list[state.index]
-                        .definition
-                        .replace(['[', ']'], "")
-                        .chars()
-                    {
-                        if current_chunk.len() >= 1024 {
-                            let field_name = if chunk_index == 0 {
-                                "Definition:".to_owned()
-                            } else {
-                                format!("Response (cont. {}):", chunk_index + 1)
-                            };
-                            new_embed = new_embed.field(field_name, current_chunk, false);
-                            current_chunk = String::with_capacity(1024);
-                            chunk_index += 1;
-                        }
-                        current_chunk.push(ch);
-                    }
-                    if !current_chunk.is_empty() {
+                    if current_chunk.len() >= 1024 {
                         let field_name = if chunk_index == 0 {
                             "Definition:".to_owned()
                         } else {
                             format!("Response (cont. {}):", chunk_index + 1)
                         };
                         new_embed = new_embed.field(field_name, current_chunk, false);
+                        current_chunk = String::with_capacity(1024);
+                        chunk_index += 1;
                     }
-
-                    new_embed = new_embed.field(
-                        "Example:".to_owned(),
-                        data.list[state_index].example.replace(['[', ']'], ""),
-                        false,
-                    );
-
-                    let new_components = {
-                        if state.index == 0 {
-                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                        } else if state.index == len - 1 {
-                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
-                        } else {
-                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
-                        }
-                    };
-
-                    let mut msg = interaction.message;
-
-                    msg.edit(
-                        ctx.http(),
-                        EditMessage::default()
-                            .embed(new_embed)
-                            .components(&new_components),
-                    )
-                    .await?;
+                    current_chunk.push(ch);
                 }
-            } else {
-                ctx.send(CreateReply::default().embed(embed)).await?;
+                if !current_chunk.is_empty() {
+                    let field_name = if chunk_index == 0 {
+                        "Definition:".to_owned()
+                    } else {
+                        format!("Response (cont. {}):", chunk_index + 1)
+                    };
+                    new_embed = new_embed.field(field_name, current_chunk, false);
+                }
+
+                new_embed = new_embed.field(
+                    "Example:".to_owned(),
+                    data.list[state_index].example.replace(['[', ']'], ""),
+                    false,
+                );
+
+                let new_components = {
+                    if state.index == 0 {
+                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+                    } else if state.index == len - 1 {
+                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+                    } else {
+                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+                    }
+                };
+
+                let mut msg = interaction.message;
+
+                msg.edit(
+                    ctx.http(),
+                    EditMessage::default()
+                        .embed(new_embed)
+                        .components(&new_components),
+                )
+                .await?;
             }
         } else {
             ctx.send(CreateReply::default().embed(embed)).await?;
