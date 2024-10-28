@@ -559,7 +559,6 @@ pub async fn handle_message(
             )
             .await?;
     }
-
     match content.as_str() {
         "floppaganda" => {
             new_message
@@ -571,38 +570,61 @@ pub async fn handle_message(
                 .await?;
         }
         _ => {
-            if content.contains("furina") || content.contains("kafka") || content.contains("kinich")
-            {
-                let (gifs, title, color) = match true {
-                    _ if content.contains("furina") => (
-                        &["https://media1.tenor.com/m/-DdP7PTL6r8AAAAC/furina-focalors.gif",
-                          "https://media1.tenor.com/m/gARaejr6ODIAAAAd/furina-focalors.gif",
-                          "https://media1.tenor.com/m/_H_syqWiknsAAAAd/focalors-genshin-impact.gif"][..],
-                        "your queen has arrived",
-                        0xf8e45c
-                    ),
-                    _ if content.contains("kafka") => (
-                        &["https://media1.tenor.com/m/Hse9P_W_A3UAAAAC/kafka-hsr-live-reaction-kafka.gif",
-                          "https://media1.tenor.com/m/Z-qCHXJsDwoAAAAC/kafka.gif",
-                          "https://media1.tenor.com/m/6RXMiM9te7AAAAAC/kafka-honkai-star-rail.gif"][..],
-                        "your queen has arrived",
-                        0xf8e45c
-                    ),
-                    _ => (
-                        &["https://media1.tenor.com/m/GAA5_YmbClkAAAAC/natlan-dendro-boy.gif",
-                          "https://media1.tenor.com/m/qcdZ04vXqEIAAAAC/natlan-guy-kinich.gif",
-                          "https://media1.tenor.com/m/mJC2SsAcQB8AAAAd/dendro-natlan.gif"][..],
-                        "pls destroy lily's oven",
-                        0xf8e45c
-                    ),
-                };
+            if content.contains("furina") {
+                let gifs = &[
+                    "https://media1.tenor.com/m/-DdP7PTL6r8AAAAC/furina-focalors.gif",
+                    "https://media1.tenor.com/m/gARaejr6ODIAAAAd/furina-focalors.gif",
+                    "https://media1.tenor.com/m/_H_syqWiknsAAAAd/focalors-genshin-impact.gif",
+                ][..];
                 let gif = gifs[RNG.lock().await.usize(..gifs.len())];
                 new_message
                     .channel_id
                     .send_message(
                         &ctx.http,
-                        CreateMessage::default()
-                            .embed(CreateEmbed::default().title(title).image(gif).colour(color)),
+                        CreateMessage::default().embed(
+                            CreateEmbed::default()
+                                .title("your queen has arrived")
+                                .image(gif)
+                                .colour(0xf8e45c),
+                        ),
+                    )
+                    .await?;
+            } else if content.contains("kafka") {
+                let gifs = &[
+                    "https://media1.tenor.com/m/Hse9P_W_A3UAAAAC/kafka-hsr-live-reaction-kafka.gif",
+                    "https://media1.tenor.com/m/Z-qCHXJsDwoAAAAC/kafka.gif",
+                    "https://media1.tenor.com/m/6RXMiM9te7AAAAAC/kafka-honkai-star-rail.gif",
+                ][..];
+                let gif = gifs[RNG.lock().await.usize(..gifs.len())];
+                new_message
+                    .channel_id
+                    .send_message(
+                        &ctx.http,
+                        CreateMessage::default().embed(
+                            CreateEmbed::default()
+                                .title("your queen has arrived")
+                                .image(gif)
+                                .colour(0xf8e45c),
+                        ),
+                    )
+                    .await?;
+            } else if content.contains("kinich") {
+                let gifs = &[
+                    "https://media1.tenor.com/m/GAA5_YmbClkAAAAC/natlan-dendro-boy.gif",
+                    "https://media1.tenor.com/m/qcdZ04vXqEIAAAAC/natlan-guy-kinich.gif",
+                    "https://media1.tenor.com/m/mJC2SsAcQB8AAAAd/dendro-natlan.gif",
+                ][..];
+                let gif = gifs[RNG.lock().await.usize(..gifs.len())];
+                new_message
+                    .channel_id
+                    .send_message(
+                        &ctx.http,
+                        CreateMessage::default().embed(
+                            CreateEmbed::default()
+                                .title("pls destroy lily's oven")
+                                .image(gif)
+                                .colour(0xf8e45c),
+                        ),
                     )
                     .await?;
             } else if content.contains("kurukuru_seseren") {
@@ -630,7 +652,16 @@ pub async fn handle_message(
                 if content == "fabse" || content == "fabseman" {
                     let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
                     if let Some(webhook) = webhook_try {
-                        webhook.execute(&ctx.http, false, ExecuteWebhook::default().username("yotsuba").avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png").content("# such magnificence")).await?;
+                        webhook
+                        .execute(
+                            &ctx.http,
+                            false,
+                            ExecuteWebhook::default()
+                                .username("yotsuba")
+                                .avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png")
+                                .content("# such magnificence"),
+                        )
+                        .await?;
                     }
                 }
             }
