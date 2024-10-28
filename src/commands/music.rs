@@ -2,8 +2,7 @@ use crate::types::{Error, SContext, HTTP_CLIENT};
 
 use core::time::Duration;
 use poise::{
-    async_trait,
-    serenity_prelude::{ChannelId, CreateEmbed, EmbedMessageBuilding as _, Http, MessageBuilder},
+    serenity_prelude::{CreateEmbed, EmbedMessageBuilding as _, MessageBuilder},
     CreateReply,
 };
 use serde::Deserialize;
@@ -11,8 +10,7 @@ use songbird::{
     driver::Bitrate,
     input::{Compose as _, Input, YoutubeDl},
     tracks::PlayMode,
-    Call, Config, Event as SongbirdEvent, EventContext, EventHandler as VoiceEventHandler,
-    TrackEvent,
+    Call, Config,
 };
 use std::{borrow::Cow, sync::Arc};
 use tokio::sync::{Mutex, MutexGuard};
@@ -95,26 +93,6 @@ pub async fn add_playlist(
     Ok(())
 }
 
-struct TrackEndNotifier {
-    channel_id: ChannelId,
-    http: Arc<Http>,
-}
-
-#[async_trait]
-impl VoiceEventHandler for TrackEndNotifier {
-    async fn act(&self, ctx: &EventContext<'_>) -> Option<SongbirdEvent> {
-        if let EventContext::Track(track_list) = ctx {
-            let track_len = track_list.len();
-            let _ = self
-                .channel_id
-                .say(&self.http, &format!("Tracks ended: {track_len}."))
-                .await;
-        }
-
-        None
-    }
-}
-
 /// Join your current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
@@ -124,6 +102,7 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
             return Ok(());
         }
     };
+    ctx.defer().await?;
     match guild
         .voice_states
         .get(&ctx.author().id)
@@ -132,14 +111,7 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
         Some(channel_id) => {
             let manager = &ctx.data().music_manager;
             match manager.join(guild.id, channel_id).await {
-                Ok(handler_lock) => {
-                    handler_lock.lock().await.add_global_event(
-                        SongbirdEvent::Track(TrackEvent::End),
-                        TrackEndNotifier {
-                            channel_id,
-                            http: Arc::<Http>::clone(&ctx.serenity_context().http),
-                        },
-                    );
+                Ok(_) => {
                     ctx.reply("I've joined the party").await?;
                 }
                 Err(_) => {
