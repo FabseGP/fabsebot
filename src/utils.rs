@@ -226,7 +226,7 @@ pub async fn get_waifu() -> Result<String, Error> {
     let request = HTTP_CLIENT.get(request_url).send().await?;
     let resp: WaifuResponse = request.json().await?;
     let url = resp.images.into_iter().next().map_or(
-        "https://media1.tenor.com/m/CzI4QNcXQ3YAAAAC/waifu-anime.gif".to_owned(),
+        "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned(),
         |img| img.url,
     );
 

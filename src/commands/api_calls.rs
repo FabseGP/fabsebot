@@ -42,7 +42,12 @@ struct ImageRequest {
 }
 
 /// Did someone say AI image?
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn ai_image(
     ctx: SContext<'_>,
     #[description = "Prompt"]
@@ -295,6 +300,7 @@ pub async fn eightball(
     #[rest]
     question: String,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
     let encoded_input = encode(&question);
     let request_url =
         format!("https://eightballapi.com/api/biased?question={encoded_input}&lucky=false");
@@ -464,7 +470,12 @@ struct JokeResponse {
 }
 
 /// When your life isn't fun anymore
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
     let request_url =
         "https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
@@ -488,7 +499,12 @@ pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// When there aren't enough memes
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn memegen(
     ctx: SContext<'_>,
     #[description = "Top-left text"] top_left: String,
@@ -864,6 +880,7 @@ pub async fn urban(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
     let encoded_input = encode(&input);
     let request_url = format!("https://api.urbandictionary.com/v0/define?term={encoded_input}");
     let request = HTTP_CLIENT.get(request_url).send().await?;
@@ -1030,8 +1047,14 @@ pub async fn urban(
 }
 
 /// Do I need to explain it?
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
 pub async fn waifu(ctx: SContext<'_>) -> Result<(), Error> {
+    ctx.defer().await?;
     let resp = get_waifu().await;
     match resp {
         Ok(url) => {

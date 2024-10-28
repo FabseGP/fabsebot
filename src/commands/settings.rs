@@ -271,26 +271,28 @@ pub async fn set_user_ping(
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         if let Some(ref user_media) = media {
+            const INVALID_MEDIA_MSG: &str = "Invalid media given... really bro?";
             if user_media.contains("https") {
-                let response = HTTP_CLIENT.head(user_media).send().await;
-                if let Ok(result) = response {
-                    if let Some(content_type) = result.headers().get("content-type") {
-                        let content_type = content_type.to_str().unwrap_or("");
-                        if !content_type.starts_with("image/") || content_type != "application/gif"
-                        {
-                            ctx.send(
-                                CreateReply::default()
-                                    .content("Invalid media given... really bro?")
-                                    .ephemeral(true),
-                            )
-                            .await?;
-                            return Ok(());
-                        }
+                ctx.defer().await?;
+                if let Ok(response) = HTTP_CLIENT.head(user_media).send().await {
+                    let is_valid = response
+                        .headers()
+                        .get("content-type")
+                        .and_then(|ct| ct.to_str().ok())
+                        .is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif");
+                    if !is_valid {
+                        ctx.send(
+                            CreateReply::default()
+                                .content(INVALID_MEDIA_MSG)
+                                .ephemeral(true),
+                        )
+                        .await?;
+                        return Ok(());
                     }
                 } else {
                     ctx.send(
                         CreateReply::default()
-                            .content("Invalid media given... really bro?")
+                            .content(INVALID_MEDIA_MSG)
                             .ephemeral(true),
                     )
                     .await?;
@@ -299,7 +301,7 @@ pub async fn set_user_ping(
             } else if !user_media.contains("!gif") && user_media != "waifu" {
                 ctx.send(
                     CreateReply::default()
-                        .content("Invalid media given... really bro?")
+                        .content(INVALID_MEDIA_MSG)
                         .ephemeral(true),
                 )
                 .await?;

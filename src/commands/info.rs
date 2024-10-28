@@ -4,6 +4,7 @@ use poise::{
     serenity_prelude::{CreateEmbed, Member},
     CreateReply,
 };
+use std::borrow::Cow;
 
 /// Get server information
 #[poise::command(prefix_command, slash_command)]
@@ -17,13 +18,15 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
     let size = if guild.large() { "Large" } else { "Not large" }.to_owned();
     let guild_id = guild.id;
     let thumbnail = match &guild.banner {
-        Some(banner) => banner.as_str(),
-        None => match &guild.icon {
-            Some(icon_hash) => {
-                &format!("https://cdn.discordapp.com/icons/{guild_id}/{icon_hash}.png")
-            }
-            None => "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif",
-        },
+        Some(banner) => Cow::Borrowed(banner.as_str()),
+        None => guild.icon.as_ref().map_or(
+            Cow::Borrowed("https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif"),
+            |icon_hash| {
+                Cow::Owned(format!(
+                    "https://cdn.discordapp.com/icons/{guild_id}/{icon_hash}.png"
+                ))
+            },
+        ),
     };
     let owner_user = guild.owner_id.to_user(&ctx.http()).await?;
     let guild_description = guild.description.unwrap_or_default().into_string();
@@ -34,9 +37,11 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
     let guild_emojis_len = guild.emojis.len().to_string();
     let guild_roles_len = guild.roles.len().to_string();
     let guild_stickers_len = guild.stickers.len().to_string();
-    let member_count = guild.member_count;
-    let max_member_count = guild.max_members.unwrap_or_default();
-    let guild_member_count = format!("{member_count}/{max_member_count}");
+    let guild_member_count = format!(
+        "{}/{}",
+        guild.member_count,
+        guild.max_members.unwrap_or_default()
+    );
     let guild_channels = guild.channels.len().to_string();
     let empty = String::new();
     let embed = CreateEmbed::default()

@@ -32,8 +32,8 @@ pub async fn anony_poll(
         .filter(|s| !s.is_empty())
         .collect();
     let options_count = options_list.len();
-    if options_count < 2 {
-        ctx.say("Bruh, 1 option ain't gonna cut it for a poll")
+    if options_count < 1 {
+        ctx.say("Bruh, no options ain't gonna cut it for a poll")
             .await?;
         return Ok(());
     }
@@ -44,7 +44,7 @@ pub async fn anony_poll(
         .fields(options_list.iter().map(|&option| (option, "0", false)));
 
     let action_row = CreateActionRow::Buttons(Cow::Owned(
-        (0..=options_count)
+        (0..options_count)
             .map(|index| {
                 CreateButton::new(format!("option_{index}"))
                     .style(ButtonStyle::Primary)
@@ -63,15 +63,13 @@ pub async fn anony_poll(
     let mut vote_counts = vec![0; options_count];
     let voted_users = DashSet::new();
 
-    let id_borrow = ctx.id();
-
     while let Some(interaction) =
         ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
             .timeout(Duration::from_secs(duration * 60))
             .filter(move |interaction| {
                 let id = interaction.data.custom_id.as_str();
                 (0..options_count).any(|index| {
-                    let expected_id = format!("{index}_{id_borrow}");
+                    let expected_id = format!("option_{index}");
                     id == expected_id
                 })
             })
@@ -85,7 +83,11 @@ pub async fn anony_poll(
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                 .await?;
 
-            let index = choice.split('_').next().unwrap().parse::<usize>().unwrap();
+            let index = choice
+                .strip_prefix("option_")
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
             vote_counts[index] += 1;
 
             let new_embed = CreateEmbed::default().title(&title).color(0xFF5733).fields(
@@ -246,41 +248,38 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
+
     let msg = ctx
         .channel_id()
         .message(&ctx.http(), MessageId::new(ctx.id()))
         .await?;
+
     let Some(reply) = msg.referenced_message else {
         ctx.reply("Bruh, reply to a message").await?;
         return Ok(());
     };
+
     let message_url = reply.link();
     let content = reply.content;
-    if reply.webhook_id.is_some() {
-        let avatar_image = match reply.author.avatar_url() {
-            Some(avatar_url) => match HTTP_CLIENT.get(&avatar_url).send().await {
-                Ok(resp) => match resp.bytes().await {
-                    Ok(avatar_bytes) => match load_from_memory(&avatar_bytes) {
-                        Ok(mem_bytes) => mem_bytes.to_rgba8(),
-                        Err(_) => {
-                            return Ok(());
-                        }
-                    },
-                    Err(_) => {
-                        return Ok(());
-                    }
-                },
-                Err(_) => return Ok(()),
-            },
-            None => {
-                return Ok(());
-            }
+    let quote_path = Path::new("quote.webp");
+
+    let (avatar_image, name) = if reply.webhook_id.is_some() {
+        let Some(avatar_url) = reply.author.avatar_url() else {
+            return Ok(());
         };
-        let name = reply.author.display_name();
-        quote_image(&avatar_image, name, &content)
-            .await
-            .save("quote.webp")
-            .unwrap();
+        let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
+            return Ok(());
+        };
+        let Ok(avatar_bytes) = resp.bytes().await else {
+            return Ok(());
+        };
+        let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
+            return Ok(());
+        };
+        (
+            mem_bytes.to_rgba8(),
+            reply.author.display_name().to_string(),
+        )
     } else {
         let guild = match ctx.guild() {
             Some(guild) => guild.clone(),
@@ -289,42 +288,32 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             }
         };
         let member = guild.member(ctx.http(), reply.author.id).await?;
-        let avatar_image = {
-            let avatar_url = match member.avatar_url() {
-                Some(url) => url,
-                None => match reply.author.avatar_url() {
-                    Some(url) => url,
-                    None => {
-                        return Ok(());
-                    }
-                },
-            };
-            match HTTP_CLIENT.get(&avatar_url).send().await {
-                Ok(resp) => match resp.bytes().await {
-                    Ok(avatar_bytes) => match load_from_memory(&avatar_bytes) {
-                        Ok(mem_bytes) => mem_bytes.to_rgba8(),
-                        Err(_) => {
-                            return Ok(());
-                        }
-                    },
-                    Err(_) => {
-                        return Ok(());
-                    }
-                },
-                Err(_) => return Ok(()),
-            }
+        let Some(avatar_url) = member.avatar_url().or_else(|| reply.author.avatar_url()) else {
+            return Ok(());
         };
-        let name = member.display_name();
-        quote_image(&avatar_image, name, &content)
-            .await
-            .save("quote.webp")
-            .unwrap();
+        let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
+            return Ok(());
+        };
+        let Ok(avatar_bytes) = resp.bytes().await else {
+            return Ok(());
+        };
+        let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
+            return Ok(());
+        };
+        (mem_bytes.to_rgba8(), member.display_name().to_string())
     };
-    let paths = [CreateAttachment::path("quote.webp").await?];
+
+    quote_image(&avatar_image, &name, &content)
+        .await
+        .save(quote_path)
+        .unwrap();
+
+    let attachment = CreateAttachment::path(quote_path).await?;
+
     ctx.channel_id()
         .send_files(
             ctx.http(),
-            paths.clone(),
+            [attachment.clone()],
             CreateMessage::default().content(&message_url),
         )
         .await?;
@@ -344,14 +333,15 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 quote_channel
                     .send_files(
                         ctx.http(),
-                        paths,
+                        [attachment],
                         CreateMessage::default().content(message_url),
                     )
                     .await?;
             }
         }
     }
-    remove_file(Path::new("quote.webp")).await?;
+
+    remove_file(quote_path).await?;
     Ok(())
 }
 
