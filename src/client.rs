@@ -137,6 +137,7 @@ pub async fn start() -> anyhow::Result<()> {
                 api_calls::translate(),
                 api_calls::urban(),
                 api_calls::waifu(),
+                api_calls::wiki(),
                 funny::anonymous(),
                 funny::user_dm(),
                 funny::user_misuse(),

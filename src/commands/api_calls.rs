@@ -1055,3 +1055,67 @@ pub async fn waifu(ctx: SContext<'_>) -> Result<(), Error> {
     }
     Ok(())
 }
+
+#[derive(Deserialize)]
+struct WikiResponse {
+    title: String,
+    extract: String,
+    originalimage: Option<WikiImage>,
+    content_urls: WikiType,
+}
+
+#[derive(Deserialize)]
+struct WikiImage {
+    source: String,
+}
+
+#[derive(Deserialize)]
+struct WikiType {
+    desktop: WikiUrl,
+}
+
+#[derive(Deserialize)]
+struct WikiUrl {
+    page: String,
+}
+
+/// The holy moly... wikipedia?
+#[poise::command(
+    prefix_command,
+    slash_command,
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
+)]
+pub async fn wiki(
+    ctx: SContext<'_>,
+    #[description = "Topic to lookup"]
+    #[rest]
+    input: String,
+) -> Result<(), Error> {
+    let encoded_input = encode(&input);
+    let request_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{encoded_input}");
+    let request = HTTP_CLIENT.get(request_url).send().await?;
+    match request
+        .json::<WikiResponse>()
+        .await
+        .ok()
+        .filter(|output| !output.title.is_empty())
+    {
+        Some(data) => {
+            let mut embed = CreateEmbed::default()
+                .title(data.title)
+                .description(data.extract)
+                .url(data.content_urls.desktop.page)
+                .color(0xFFBE6F);
+            if let Some(image) = data.originalimage {
+                embed = embed.image(image.source);
+            }
+            ctx.send(CreateReply::default().embed(embed)).await?;
+        }
+        None => {
+            ctx.send(CreateReply::default().content(format!("**Like you, {input} don't exist**")))
+                .await?;
+        }
+    }
+    Ok(())
+}
