@@ -1092,6 +1092,7 @@ pub async fn wiki(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
     let encoded_input = encode(&input);
     let request_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{encoded_input}");
     let request = HTTP_CLIENT.get(request_url).send().await?;
