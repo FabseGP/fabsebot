@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use fastrand::Rng;
 use once_cell::sync::{Lazy, OnceCell};
-use poise::serenity_prelude::{ChannelId, GuildId, ShardManager};
+use poise::serenity_prelude::{GuildId, MessageId, ShardManager};
 use regex::Regex;
 use reqwest::Client;
 use serde::Serialize;
@@ -10,17 +10,20 @@ use sqlx::PgPool;
 use std::{env, sync::Arc};
 use tokio::sync::Mutex;
 
-#[derive(Clone, Serialize)]
-pub struct ChatMessage {
+#[derive(Serialize)]
+pub struct AIChatMessage {
     pub role: String,
     pub content: String,
 }
-type ChatHashMap = DashMap<GuildId, DashMap<ChannelId, Vec<ChatMessage>>>;
+type AIChatHashMap = DashMap<GuildId, Vec<AIChatMessage>>;
+
+type GlobalCallHashMap = DashMap<GuildId, DashMap<i64, MessageId>>;
 
 pub struct Data {
     pub db: PgPool,
     pub music_manager: Arc<Songbird>,
-    pub conversations: Arc<ChatHashMap>,
+    pub ai_conversations: Arc<AIChatHashMap>,
+    pub global_call_last: Arc<GlobalCallHashMap>,
 }
 pub type Error = anyhow::Error;
 pub type SContext<'a> = poise::Context<'a, Data, Error>;

@@ -54,9 +54,9 @@ pub async fn anime_scene(
     let encoded_input = encode(&input);
     let request_url =
         format!("https://api.trace.moe/search?cutBorders&anilistInfo&url={encoded_input}");
-    
+
     let response = HTTP_CLIENT.get(request_url).send().await?;
-    
+
     match response.json::<MoeResponse>().await {
         Ok(scene) => {
             if let Some(first_result) = scene.result.first() {
@@ -73,7 +73,7 @@ pub async fn anime_scene(
                     .english
                     .as_deref()
                     .unwrap_or("Unknown title");
-                
+
                 ctx.send(
                     CreateReply::default().embed(
                         CreateEmbed::default()
@@ -85,7 +85,7 @@ pub async fn anime_scene(
                     ),
                 )
                 .await?;
-                
+
                 ctx.send(CreateReply::default().content(&first_result.video))
                     .await?;
             } else {
@@ -98,6 +98,6 @@ pub async fn anime_scene(
                 .await?;
         }
     }
-    
+
     Ok(())
 }

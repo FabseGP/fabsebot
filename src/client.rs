@@ -117,7 +117,8 @@ pub async fn start() -> anyhow::Result<()> {
     let user_data = Data {
         db: database,
         music_manager: Arc::<Songbird>::clone(&music_manager),
-        conversations: Arc::new(DashMap::default()),
+        ai_conversations: Arc::new(DashMap::default()),
+        global_call_last: Arc::new(DashMap::default()),
     };
     let framework = Framework::builder()
         .options(FrameworkOptions {
@@ -147,6 +148,8 @@ pub async fn start() -> anyhow::Result<()> {
                 misc::anony_poll(),
                 misc::birthday(),
                 misc::end_pgo(),
+                misc::global_call_end(),
+                misc::global_call_start(),
                 misc::help(),
                 misc::leaderboard(),
                 misc::ohitsyou(),

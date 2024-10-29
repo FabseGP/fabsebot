@@ -6,10 +6,10 @@ use crate::{
     utils::{ai_response_simple, get_gifs, get_waifu},
 };
 
-use base64::{engine::general_purpose, Engine};
+use base64::{engine::general_purpose, Engine as _};
 use poise::{
     serenity_prelude::{
-        futures::StreamExt, small_fixed_array::FixedString, ButtonStyle,
+        futures::StreamExt as _, small_fixed_array::FixedString, ButtonStyle,
         ComponentInteractionCollector, CreateActionRow, CreateAttachment, CreateButton,
         CreateEmbed, CreateInteractionResponse, EditMessage, MessageId, User,
     },

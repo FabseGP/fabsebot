@@ -151,6 +151,78 @@ pub async fn end_pgo(_: SContext<'_>) -> Result<(), Error> {
     Ok(())
 }
 
+/// When you're not lonely anymore
+#[poise::command(prefix_command, slash_command)]
+pub async fn global_call_end(ctx: SContext<'_>) -> Result<(), Error> {
+    if let Some(guild_id) = ctx.guild_id() {
+        query!(
+            "INSERT INTO guild_settings (guild_id, global_call)
+            VALUES ($1, FALSE)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                global_call = FALSE",
+            i64::from(guild_id),
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.data()
+            .global_call_last
+            .remove(&guild_id)
+            .unwrap_or_default();
+        ctx.send(CreateReply::default().content("Ending call..."))
+            .await?;
+    }
+    Ok(())
+}
+
+/// When you're lonely
+#[poise::command(prefix_command, slash_command)]
+pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
+    if let Some(guild_id) = ctx.guild_id() {
+        let guild_id_i64 = i64::from(guild_id);
+        let mut conn = ctx.data().db.acquire().await?;
+        query!(
+            "INSERT INTO guild_settings (guild_id, global_call, global_chat_channel)
+            VALUES ($1, TRUE, $2)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                global_call = TRUE,
+                global_chat_channel = $2",
+            guild_id_i64,
+            i64::from(ctx.channel_id()),
+        )
+        .execute(&mut *conn)
+        .await?;
+        let message = ctx
+            .send(CreateReply::default().content("Calling..."))
+            .await?;
+        let global_chats = query!(
+            "SELECT global_call FROM guild_settings
+            WHERE guild_id != $1",
+            guild_id_i64
+        )
+        .fetch_all(&mut *conn)
+        .await?;
+        let has_active_call = global_chats.iter().any(|row| row.global_call == Some(true));
+        if has_active_call {
+            message
+                .edit(
+                    ctx,
+                    CreateReply::default().content("Connected to global call!"),
+                )
+                .await?;
+        } else {
+            message
+                .edit(
+                    ctx,
+                    CreateReply::default().content("No one wants to talk to you"),
+                )
+                .await?;
+        }
+    }
+    Ok(())
+}
+
 /// When you need some help
 #[poise::command(prefix_command, slash_command)]
 pub async fn help(

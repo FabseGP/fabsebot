@@ -20,7 +20,9 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 dead_chat_channel = NULL,
                 quotes_channel = NULL,
                 spoiler_channel = NULL,
-                prefix = NULL
+                prefix = NULL,
+                ai_chat_channel = NULL,
+                global_chat_channel = NULL
             WHERE guild_id = $1",
             i64::from(guild_id)
         )
@@ -80,13 +82,30 @@ pub async fn set_afk(
     slash_command,
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
-pub async fn set_chatbot_channel(ctx: SContext<'_>) -> Result<(), Error> {
-    ctx.send(
-        CreateReply::default()
-            .content("To enable ai-sama, create a channel with the topic set to 'ai-chat'")
-            .ephemeral(true),
-    )
-    .await?;
+pub async fn set_chatbot_channel(
+    ctx: SContext<'_>,
+    #[description = "Channel to act as chatbot in"] channel: Channel,
+) -> Result<(), Error> {
+    if let Some(guild_id) = ctx.guild_id() {
+        let channel_id = channel.id();
+        query!(
+            "INSERT INTO guild_settings (guild_id, ai_chat_channel)
+            VALUES ($1, $2)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                ai_chat_channel = $2",
+            i64::from(guild_id),
+            i64::from(channel_id),
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.send(
+            CreateReply::default()
+                .content(format!("AI-sama is alive in {channel}... probably"))
+                .ephemeral(true),
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -149,7 +168,7 @@ pub async fn set_dead_chat(
         ctx.send(
             CreateReply::default()
                 .content(format!(
-                    "Dead chat gifs will only be sent every {occurrence} minute(s) in {channel_id}... probably",
+                    "Dead chat gifs will only be sent every {occurrence} minute(s) in {channel}... probably",
                 ))
                 .ephemeral(true),
         )
@@ -218,7 +237,7 @@ pub async fn set_quote_channel(
         ctx.send(
             CreateReply::default()
                 .content(format!(
-                    "Quoted messages will be sent to {channel_id}... probably"
+                    "Quoted messages will be sent to {channel}... probably"
                 ))
                 .ephemeral(true),
         )
@@ -252,7 +271,7 @@ pub async fn set_spoiler_channel(
         ctx.send(
             CreateReply::default()
                 .content(format!(
-                    "Spoilered messages will be sent to {channel_id}... probably"
+                    "Spoilered messages will be sent to {channel}... probably"
                 ))
                 .ephemeral(true),
         )
@@ -270,7 +289,7 @@ pub async fn set_user_ping(
     media: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        if let Some(ref user_media) = media {
+        if let Some(user_media) = &media {
             const INVALID_MEDIA_MSG: &str = "Invalid media given... really bro?";
             if user_media.contains("https") {
                 ctx.defer().await?;

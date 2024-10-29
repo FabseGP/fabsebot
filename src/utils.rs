@@ -1,28 +1,245 @@
 use crate::types::{
-    ChatMessage, Error, AI_SERVER, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, HTTP_CLIENT, QUOTE_REGEX,
-    TENOR_TOKEN,
+    AIChatMessage, Error, AI_SERVER, CHANNEL_REGEX, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN,
+    HTTP_CLIENT, QUOTE_REGEX, TENOR_TOKEN,
 };
 
 use ab_glyph::{FontArc, PxScale};
 use anyhow::anyhow;
 use core::cmp::Ordering;
+use dashmap::{DashMap, DashSet};
 use image::{
     imageops::{overlay, resize, FilterType::Gaussian},
     load_from_memory, Rgba, RgbaImage,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
 use poise::serenity_prelude::{
-    self as serenity, builder::CreateAttachment, ChannelId, ExecuteWebhook, GuildId, Message,
-    Webhook,
+    self as serenity, builder::CreateAttachment, ChannelId, ExecuteWebhook, GuildId, Http, Message,
+    MessageId, Webhook,
 };
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{fmt::Write, iter, path::Path, sync::Arc};
 use textwrap::wrap;
 use tokio::{
     fs::{remove_file, File},
     io::AsyncWriteExt as _,
 };
 use urlencoding::encode;
+
+pub async fn ai_chatbot(
+    ctx: &serenity::Context,
+    message: &Message,
+    bot_role: String,
+    guild_id: GuildId,
+    conversations: &Arc<DashMap<GuildId, Vec<AIChatMessage>>>,
+) -> Result<(), Error> {
+    let content = message.content.to_lowercase();
+    if content == "clear" {
+        if conversations.remove(&guild_id).is_some() {
+            message.reply(&ctx.http, "Conversation cleared!").await?;
+        } else {
+            message.reply(&ctx.http, "Bruh, nothing to clear!").await?;
+        }
+        return Ok(());
+    }
+    if !content.starts_with('#') {
+        let typing = message
+            .channel_id
+            .start_typing(Arc::<Http>::clone(&ctx.http));
+        let author_name = message.author.display_name();
+        let mut system_content = bot_role;
+        if let Some(reply) = &message.referenced_message {
+            let ref_name = reply.author.display_name();
+            write!(
+                system_content,
+                "\n{author_name} replied to a message sent by: {ref_name} and had this content: {}",
+                reply.content
+            )?;
+        }
+        let guild_opt = ctx.cache.guild(guild_id).map(|g| g.clone());
+        if let Some(guild) = guild_opt {
+            if let Ok(author_member) = guild.member(&ctx.http, message.author.id).await {
+                let guild_roles = &guild.roles;
+                let mut roles_iter = author_member
+                    .roles
+                    .iter()
+                    .filter_map(|role_id| guild_roles.get(role_id))
+                    .map(|role| role.name.as_str());
+                if let Some(first_role) = roles_iter.next() {
+                    let roles_joined = iter::once(first_role)
+                        .chain(roles_iter)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    write!(
+                        system_content,
+                        "\n{author_name} has the following roles: {roles_joined}"
+                    )?;
+                }
+                if !message.mentions.is_empty() {
+                    write!(
+                        system_content,
+                        "\n{} user(s) were mentioned:",
+                        message.mentions.len()
+                    )?;
+                    for target in &message.mentions {
+                        if let Some(target_member) = target.member.as_ref() {
+                            let target_roles: String = target_member
+                                .roles
+                                .iter()
+                                .filter_map(|role_id| guild_roles.get(role_id))
+                                .map(|role| role.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let pfp_desc = {
+                                let pfp = HTTP_CLIENT.get(target.static_face()).send().await?;
+                                if pfp.status().is_success() {
+                                    let binary_pfp = pfp.bytes().await?;
+                                    &ai_image_desc(&binary_pfp, None).await?
+                                } else {
+                                    "Unable to describe"
+                                }
+                            };
+                            let target_name = target.display_name();
+                            write!(
+                                system_content,
+                                "\n{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
+                            )?;
+                        }
+                    }
+                }
+                if !message.attachments.is_empty() {
+                    write!(
+                        system_content,
+                        "\n{} image(s) were sent:",
+                        message.attachments.len()
+                    )?;
+                    for attachment in &message.attachments {
+                        if attachment.dimensions().is_some() {
+                            let file = attachment.download().await?;
+                            let description = ai_image_desc(&file, Some(content.as_str())).await?;
+                            write!(system_content, "\n{description}")?;
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(url) = CHANNEL_REGEX.captures(&content) {
+            let guild_id = GuildId::new(url[1].parse().unwrap());
+            let channel_id = ChannelId::new(url[2].parse().unwrap());
+            let message_id = MessageId::new(url[3].parse().unwrap());
+            let cache_guild = ctx.cache.guild(guild_id).map(|guild| guild.clone());
+            let (guild_name, message) = match cache_guild {
+                Some(ref_guild) => {
+                    let message = match ref_guild.channels.get(&channel_id) {
+                        Some(channel) => Some(channel.message(&ctx.http, message_id).await?),
+                        None => None,
+                    };
+                    (ref_guild.name.into_string(), message)
+                }
+                None => match ctx.http.get_guild(guild_id).await {
+                    Ok(guild) => {
+                        let channels = guild.channels(&ctx.http).await?;
+                        let channel_opt = channels.get(&channel_id);
+                        match channel_opt {
+                            Some(channel) => {
+                                let message = Some(channel.message(&ctx.http, message_id).await?);
+                                (guild.name.into_string(), message)
+                            }
+                            None => ("Unknown".to_owned(), None),
+                        }
+                    }
+                    Err(_) => ("Unknown".to_owned(), None),
+                },
+            };
+            match message {
+                Some(linked_message) => {
+                    let link_author = linked_message.author.display_name();
+                    let link_content = linked_message.content;
+                    write!(
+                        system_content,
+                        "\n{author_name} linked to a message sent in: {guild_name}, sent by: {link_author} and had this content: {link_content}"
+                    )?;
+                }
+                None => {
+                    write!(
+                        system_content,
+                        "\n{author_name} linked to a message in non-accessible guild"
+                    )?;
+                }
+            }
+        }
+        let mut history = conversations.entry(guild_id).or_default();
+
+        if history.iter().any(|message| message.role == "user") {
+            system_content.push_str("\nCurrent users in the conversation");
+            let mut is_first = true;
+            let seen_users = DashSet::new();
+            for message in history.iter() {
+                if message.role == "user" {
+                    if let Some(user) = message.content.split(':').next().map(str::trim) {
+                        if seen_users.insert(user) {
+                            if !is_first {
+                                system_content.push('\n');
+                            }
+                            system_content.push_str(user);
+                            is_first = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        let system_message = history.iter_mut().find(|msg| msg.role == "system");
+
+        match system_message {
+            Some(system_message) => {
+                system_message.content = system_content;
+            }
+            None => {
+                history.push(AIChatMessage {
+                    role: "system".to_owned(),
+                    content: system_content,
+                });
+            }
+        }
+        let content_safe = message.content_safe(&ctx.cache);
+        history.push(AIChatMessage {
+            role: "user".to_owned(),
+            content: format!("User: {author_name}: {content_safe}"),
+        });
+
+        let resp = ai_response(&history).await;
+        if let Ok(response) = resp {
+            if response.len() >= 2000 {
+                let mut start = 0;
+                while start < content.len() {
+                    let end = content[start..]
+                        .char_indices()
+                        .take_while(|(i, _)| *i < 2000)
+                        .last()
+                        .map_or(content.len(), |(i, c)| start + i + c.len_utf8());
+                    message.reply(&ctx.http, &content[start..end]).await?;
+                    start = end;
+                }
+            } else {
+                message.reply(&ctx.http, response.as_str()).await?;
+            }
+            history.push(AIChatMessage {
+                role: "assistant".to_owned(),
+                content: response,
+            });
+        } else {
+            let error_msg = "Sorry, I had to forget our convo, too boring!";
+            history.clear();
+            history.push(AIChatMessage {
+                role: "assistant".to_owned(),
+                content: error_msg.to_owned(),
+            });
+            message.reply(&ctx.http, error_msg).await?;
+        }
+        typing.stop();
+    }
+    Ok(())
+}
 
 #[derive(Deserialize)]
 struct FabseAIText {
@@ -74,10 +291,10 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Result
 
 #[derive(Serialize)]
 struct ChatRequest<'a> {
-    messages: &'a [ChatMessage],
+    messages: &'a [AIChatMessage],
 }
 
-pub async fn ai_response(content: &[ChatMessage]) -> Result<String, Error> {
+pub async fn ai_response(content: &[AIChatMessage]) -> Result<String, Error> {
     let request = ChatRequest { messages: content };
     let resp = HTTP_CLIENT
         .post(format!(
@@ -107,10 +324,10 @@ struct LocalAIText {
 struct LocalAIRequest<'a> {
     model: &'static str,
     stream: bool,
-    messages: &'a [ChatMessage],
+    messages: &'a [AIChatMessage],
 }
 
-pub async fn ai_response_local(messages: &[ChatMessage]) -> Result<String, Error> {
+pub async fn ai_response_local(messages: &[AIChatMessage]) -> Result<String, Error> {
     let request = LocalAIRequest {
         model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
         stream: false,
