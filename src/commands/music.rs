@@ -248,9 +248,9 @@ pub async fn play_song(
 
 /// Seek current playing song backward
 #[poise::command(prefix_command, slash_command)]
-pub async fn seek_song_backward(
+pub async fn seek_song(
     ctx: SContext<'_>,
-    #[description = "Seconds to seek"] seconds: u64,
+    #[description = "Seconds to seek, i.e. '-20' or '+20'"] seconds: String,
 ) -> Result<(), Error> {
     if let Some(handler_lock) = voice_check(ctx).await {
         ctx.defer().await?;
@@ -259,39 +259,38 @@ pub async fn seek_song_backward(
         if let Some(current_playback) = queue.current() {
             if let Ok(current_playback_info) = current_playback.get_info().await {
                 let current_position = current_playback_info.position;
-                let seek = current_position - Duration::from_secs(seconds);
-                if !seek.is_zero() {
-                    current_playback.seek_async(seek).await?;
-                    ctx.reply(format!("Seeked {seconds} seconds backward"))
+                let Ok(seconds_value) = seconds.parse::<i64>() else {
+                    ctx.reply("Bruh, provide a valid number with a sign (e.g. '+20' or '-20')!")
                         .await?;
-                } else {
-                    ctx.reply(
-                        "Can't seek back for more seconds than what already have been played",
-                    )
-                    .await?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
+                    return Ok(());
+                };
+                let current_secs = i64::try_from(current_position.as_secs()).unwrap_or(0); // Safe fallback if conversion fails
 
-/// Seek current playing song forward
-#[poise::command(prefix_command, slash_command)]
-pub async fn seek_song_forward(
-    ctx: SContext<'_>,
-    #[description = "Seconds to seek"] seconds: u64,
-) -> Result<(), Error> {
-    if let Some(handler_lock) = voice_check(ctx).await {
-        let handler = get_configured_handler(&handler_lock).await;
-        let queue = handler.queue();
-        if let Some(current_playback) = queue.current() {
-            if let Ok(current_playback_info) = current_playback.get_info().await {
-                let current_position = current_playback_info.position;
-                let seek = current_position + Duration::from_secs(seconds);
-                current_playback.seek_async(seek).await?;
-                ctx.reply(format!("Seeked {seconds} seconds forward"))
-                    .await?;
+                if seconds_value.is_negative() {
+                    if current_secs + seconds_value < 0 {
+                        ctx.reply(
+                            "Can't seek back for more seconds than what already have been played",
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                    let new_position = u64::try_from(current_secs + seconds_value).unwrap_or(0);
+                    let seek = Duration::from_secs(new_position);
+
+                    if !seek.is_zero() {
+                        current_playback.seek_async(seek).await?;
+                        ctx.reply(format!("Seeked {} seconds backward", seconds_value.abs()))
+                            .await?;
+                    }
+                } else {
+                    let seconds_to_add = u64::try_from(seconds_value).unwrap_or(0);
+                    let seek = current_position + Duration::from_secs(seconds_to_add);
+                    if !seek.is_zero() {
+                        current_playback.seek_async(seek).await?;
+                        ctx.reply(format!("Seeked {seconds_value} seconds forward"))
+                            .await?;
+                    }
+                }
             }
         }
     }
