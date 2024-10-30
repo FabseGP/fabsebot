@@ -1,5 +1,5 @@
 use crate::types::{
-    AIChatMessage, Error, AI_SERVER, CHANNEL_REGEX, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN,
+    AIChatMessage, Data, Error, AI_SERVER, CHANNEL_REGEX, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN,
     HTTP_CLIENT, QUOTE_REGEX, TENOR_TOKEN,
 };
 
@@ -638,6 +638,7 @@ pub async fn spoiler_message(
     ctx: &serenity::Context,
     message: &Message,
     text: &str,
+    data: &Arc<Data>,
 ) -> Result<(), Error> {
     if let Some(avatar_url) = message.author.avatar_url() {
         let username = message.author.display_name();
@@ -653,8 +654,8 @@ pub async fn spoiler_message(
                 continue;
             };
             file.write_all(&download_bytes).await?;
-            let webhook_try = webhook_find(ctx, message.channel_id).await?;
-            if let Some(webhook) = webhook_try {
+            let webhook_try = webhook_find(ctx, message.channel_id, data).await;
+            if let Ok(webhook) = webhook_try {
                 let attachment = CreateAttachment::path(Path::new(&filename)).await?;
                 if is_first {
                     webhook
@@ -698,33 +699,31 @@ struct WebhookInfo {
 pub async fn webhook_find(
     ctx: &serenity::Context,
     channel_id: ChannelId,
-) -> Result<Option<Webhook>, Error> {
-    let existing_webhooks_get = (channel_id.webhooks(&ctx.http).await).ok();
+    data: &Arc<Data>,
+) -> Result<Webhook, Error> {
+    if let Some(webhook) = data.webhook_cache.get(&channel_id) {
+        return Ok(webhook.clone());
+    }
+    let existing_webhooks_get = channel_id.webhooks(&ctx.http).await;
     let webhook = match existing_webhooks_get {
-        Some(existing_webhooks) => {
+        Ok(existing_webhooks) => {
             if existing_webhooks.len() >= 15 {
                 ctx.http
                     .delete_webhook(existing_webhooks.first().unwrap().id, None)
                     .await?;
             }
-            if let Some(existing_webhook) = existing_webhooks
-                .into_iter()
-                .find(|webhook| webhook.name.as_deref() == Some("fabsebots"))
-            {
-                Some(existing_webhook)
-            } else {
-                let webhook_info = WebhookInfo {
-                     name: "fabsebot",
-                     avatar: "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png",
-                 };
-                Some(
-                    ctx.http
-                        .create_webhook(channel_id, &webhook_info, None)
-                        .await?,
-                )
-            }
+            let webhook_info = WebhookInfo {
+                name: "fabsebot",
+                avatar: "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png",
+            };
+            let webhook = ctx
+                .http
+                .create_webhook(channel_id, &webhook_info, None)
+                .await?;
+            data.webhook_cache.insert(channel_id, webhook.clone());
+            webhook
         }
-        None => None,
+        Err(e) => return Err(anyhow!(e)),
     };
     Ok(webhook)
 }

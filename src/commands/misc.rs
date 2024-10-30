@@ -118,9 +118,14 @@ pub async fn birthday(
     #[rest]
     member: Member,
 ) -> Result<(), Error> {
-    let avatar_url = member
-        .avatar_url()
-        .unwrap_or_else(|| member.user.avatar_url().unwrap());
+    let avatar_url = member.avatar_url().unwrap_or_else(|| {
+        member.user.avatar_url().unwrap_or_else(|| {
+            member
+                .user
+                .avatar_url()
+                .unwrap_or_else(|| member.user.default_avatar_url())
+        })
+    });
     let name = member.display_name();
     ctx.send(
         CreateReply::default().embed(
@@ -338,9 +343,12 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
         let quote_path = Path::new("quote.webp");
 
         let (avatar_image, name) = if reply.webhook_id.is_some() {
-            let Some(avatar_url) = reply.author.avatar_url() else {
-                return Ok(());
-            };
+            let avatar_url = reply.author.avatar_url().unwrap_or_else(|| {
+                reply
+                    .author
+                    .static_avatar_url()
+                    .unwrap_or_else(|| reply.author.default_avatar_url())
+            });
             let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
                 return Ok(());
             };
@@ -353,9 +361,12 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             (mem_bytes.to_rgba8(), reply.author.display_name().to_owned())
         } else {
             let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-            let Some(avatar_url) = member.avatar_url().or_else(|| reply.author.avatar_url()) else {
-                return Ok(());
-            };
+            let avatar_url = member.avatar_url().unwrap_or_else(|| {
+                member
+                    .user
+                    .static_avatar_url()
+                    .unwrap_or_else(|| member.user.default_avatar_url())
+            });
             let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
                 return Ok(());
             };
@@ -468,19 +479,40 @@ pub async fn troll(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        if let Ok(record) = query!(
-            "SELECT word, count FROM words_count WHERE guild_id = $1",
+        if let Ok(records) = query!(
+            "SELECT word, count FROM words_count WHERE guild_id = $1
+            ORDER BY count DESC LIMIT 25",
             i64::from(guild_id),
         )
-        .fetch_one(&mut *ctx.data().db.acquire().await?)
+        .fetch_all(&mut *ctx.data().db.acquire().await?)
         .await
         {
-            let word = record.word;
-            let word_count = record.count;
-            ctx.reply(format!(
-                "{word} was counted {word_count} times, I'm not sure if that's a good thing or not tho"
-            ))
-            .await?;
+            let thumbnail = match ctx.guild() {
+                Some(guild) => guild.banner_url().unwrap_or_else(|| {
+                    guild.icon_url().unwrap_or_else(|| {
+                        "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned()
+                    })
+                }),
+                None => {
+                    return Ok(());
+                }
+            };
+            let mut embed = CreateEmbed::default()
+                .title(format!(
+                    "Top {} tracked words by message count",
+                    records.len()
+                ))
+                .thumbnail(thumbnail)
+                .color(0xFF5733);
+            for (index, record) in records.iter().enumerate() {
+                let rank = index + 1;
+                embed = embed.field(
+                    format!("#{rank} {}", record.word),
+                    record.count.to_string(),
+                    false,
+                );
+            }
+            ctx.send(CreateReply::default().embed(embed)).await?;
         } else {
             ctx.reply("hmm, no words were counted... peace?").await?;
         }

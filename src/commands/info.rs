@@ -87,11 +87,12 @@ pub async fn user_info(
     let empty = String::new();
     let embed = CreateEmbed::default()
         .title(member.display_name())
-        .thumbnail(
+        .thumbnail(member.avatar_url().unwrap_or_else(|| {
             member
+                .user
                 .avatar_url()
-                .unwrap_or_else(|| member.user.avatar_url().unwrap()),
-        )
+                .unwrap_or_else(|| member.user.default_avatar_url())
+        }))
         .fields(vec![
             ("Creation date:", &user_created, true),
             ("Joined date:", &member_joined, true),

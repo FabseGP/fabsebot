@@ -113,12 +113,13 @@ pub async fn start() -> anyhow::Result<()> {
         .await
         .context("Failed to run database migrations")?;
     let music_manager = Songbird::serenity();
-    let user_data = Data {
+    let user_data = Arc::new(Data {
         db: database,
         music_manager: Arc::<Songbird>::clone(&music_manager),
         ai_conversations: Arc::new(DashMap::default()),
         global_call_last: Arc::new(DashMap::default()),
-    };
+        webhook_cache: Arc::new(DashMap::default()),
+    });
     let framework = Framework::builder()
         .options(FrameworkOptions {
             event_handler: |framework, event| Box::pin(event_handler(framework, event)),
@@ -188,8 +189,7 @@ pub async fn start() -> anyhow::Result<()> {
             ..Default::default()
         })
         .build();
-    let intents = GatewayIntents::non_privileged()
-        | GatewayIntents::DIRECT_MESSAGES
+    let intents = GatewayIntents::DIRECT_MESSAGES
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MEMBERS
         | GatewayIntents::GUILD_MESSAGES
@@ -202,7 +202,7 @@ pub async fn start() -> anyhow::Result<()> {
         .framework(framework)
         .voice_manager::<Songbird>(music_manager)
         .cache_settings(cache_settings)
-        .data(Arc::new(user_data))
+        .data(user_data)
         .await;
     match client {
         Ok(mut client) => {

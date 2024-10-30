@@ -352,8 +352,8 @@ pub async fn gif(
         if ctx.guild_id().is_some() && len > 1 {
             let index = 0;
             let ctx_id = ctx.id();
-            let next_id = format!("{ctx_id}_next_{index}");
-            let prev_id = format!("{ctx_id}_prev_{index}");
+            let next_id = format!("next_{ctx_id}_{index}");
+            let prev_id = format!("prev_{ctx_id}_{index}");
             let mut state = State {
                 next_id,
                 prev_id,
@@ -385,15 +385,15 @@ pub async fn gif(
                     .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                     .await?;
 
-                if choice.contains("next") && state.index < state.len - 1 {
+                if choice.starts_with("next") && state.index < state.len - 1 {
                     state.index += 1;
-                } else if choice.contains("prev") && state.index > 0 {
+                } else if choice.starts_with("prev") && state.index > 0 {
                     state.index -= 1;
                 }
 
                 let state_index = state.index;
-                state.next_id = format!("{ctx_id}_next_{state_index}");
-                state.prev_id = format!("{ctx_id}_prev_{state_index}");
+                state.next_id = format!("next_{ctx_id}_{state_index}");
+                state.prev_id = format!("prev_{ctx_id}_{state_index}");
 
                 let buttons = [
                     CreateButton::new(&state.prev_id)
@@ -538,9 +538,12 @@ pub async fn roast(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     if let Some(guild_id) = ctx.guild_id() {
-        let avatar_url = member
-            .avatar_url()
-            .unwrap_or_else(|| member.user.avatar_url().unwrap());
+        let avatar_url = member.avatar_url().unwrap_or_else(|| {
+            member
+                .user
+                .avatar_url()
+                .unwrap_or_else(|| member.user.default_avatar_url())
+        });
         let banner_url = (ctx.http().get_user(member.user.id).await).map_or_else(
             |_| "user has no banner".to_owned(),
             |user| {
@@ -570,7 +573,7 @@ pub async fn roast(
         };
         let name = member.display_name();
         let account_date = member.user.created_at();
-        let join_date = member.joined_at.unwrap();
+        let join_date = member.joined_at.unwrap_or_default();
         let message_count = {
             let mut conn = ctx.data().db.acquire().await?;
             let result = query!(
@@ -746,8 +749,8 @@ pub async fn translate(
             if ctx.guild_id().is_some() && len > 1 {
                 let index = 0;
                 let ctx_id = ctx.id();
-                let next_id = format!("{ctx_id}_next_{index}");
-                let prev_id = format!("{ctx_id}_prev_{index}");
+                let next_id = format!("next_{ctx_id}_{index}");
+                let prev_id = format!("prev_{ctx_id}_{index}");
                 let mut state = State {
                     next_id,
                     prev_id,
@@ -778,15 +781,15 @@ pub async fn translate(
                         .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                         .await?;
 
-                    if choice.contains("next") && state.index < state.len - 1 {
+                    if choice.starts_with("next") && state.index < state.len - 1 {
                         state.index += 1;
-                    } else if choice.contains("prev") && state.index > 0 {
+                    } else if choice.starts_with("prev") && state.index > 0 {
                         state.index -= 1;
                     }
 
                     let state_index = state.index;
-                    state.next_id = format!("{ctx_id}_next_{state_index}");
-                    state.prev_id = format!("{ctx_id}_prev_{state_index}");
+                    state.next_id = format!("next_{ctx_id}_{state_index}");
+                    state.prev_id = format!("prev_{ctx_id}_{state_index}");
 
                     let buttons = [
                         CreateButton::new(&state.prev_id)
@@ -915,8 +918,8 @@ pub async fn urban(
         if ctx.guild_id().is_some() && len > 1 {
             let index = 0;
             let ctx_id = ctx.id();
-            let next_id = format!("{ctx_id}_next_{index}");
-            let prev_id = format!("{ctx_id}_prev_{index}");
+            let next_id = format!("next_{ctx_id}_{index}");
+            let prev_id = format!("prev_{ctx_id}_{index}");
             let mut state = State {
                 next_id,
                 prev_id,
@@ -948,15 +951,15 @@ pub async fn urban(
                     .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                     .await?;
 
-                if choice.contains("next") && state.index < state.len - 1 {
+                if choice.starts_with("next") && state.index < state.len - 1 {
                     state.index += 1;
-                } else if choice.contains("prev") && state.index > 0 {
+                } else if choice.starts_with("prev") && state.index > 0 {
                     state.index -= 1;
                 }
 
                 let state_index = state.index;
-                state.next_id = format!("{ctx_id}_next_{state_index}");
-                state.prev_id = format!("{ctx_id}_prev_{state_index}");
+                state.next_id = format!("next_{ctx_id}_{state_index}");
+                state.prev_id = format!("prev_{ctx_id}_{state_index}");
 
                 let buttons = [
                     CreateButton::new(&state.prev_id)

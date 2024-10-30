@@ -67,7 +67,11 @@ pub async fn set_afk(
                 CreateEmbed::default()
                     .title(format!("{user_name} killed!"))
                     .description(format!("Reason: {embed_reason}"))
-                    .thumbnail(ctx.author().avatar_url().unwrap_or_default())
+                    .thumbnail(ctx.author().avatar_url().unwrap_or_else(|| {
+                        ctx.author()
+                            .static_avatar_url()
+                            .unwrap_or_else(|| ctx.author().default_avatar_url())
+                    }))
                     .color(0xFF5733),
             ),
         )
@@ -289,57 +293,57 @@ pub async fn set_user_ping(
     media: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        if let Some(user_media) = &media {
-            const INVALID_MEDIA_MSG: &str = "Invalid media given... really bro?";
-            if user_media.contains("https") {
+        let valid = if let Some(user_media) = &media {
+            if user_media.starts_with("https") {
                 ctx.defer().await?;
-                let is_valid =
-                    (HTTP_CLIENT.head(user_media).send().await).map_or(false, |response| {
+                HTTP_CLIENT
+                    .head(user_media)
+                    .send()
+                    .await
+                    .map_or(false, |response| {
                         response
                             .headers()
                             .get("content-type")
                             .and_then(|ct| ct.to_str().ok())
                             .is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif")
-                    });
-                if !is_valid {
-                    ctx.send(
-                        CreateReply::default()
-                            .content(INVALID_MEDIA_MSG)
-                            .ephemeral(true),
-                    )
-                    .await?;
-                    return Ok(());
-                }
-            } else if !user_media.contains("!gif") && user_media != "waifu" {
-                ctx.send(
-                    CreateReply::default()
-                        .content(INVALID_MEDIA_MSG)
-                        .ephemeral(true),
-                )
-                .await?;
-                return Ok(());
+                    })
+            } else if let Some(media_stripped) = user_media.strip_prefix("!gif") {
+                !media_stripped.is_empty()
+            } else {
+                user_media == "waifu"
             }
+        } else {
+            true
+        };
+        if valid {
+            query!(
+                "INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT(guild_id, user_id)
+                DO UPDATE SET 
+                    ping_content = $3, 
+                    ping_media = $4",
+                i64::from(guild_id),
+                i64::from(ctx.author().id),
+                content,
+                media,
+            )
+            .execute(&mut *ctx.data().db.acquire().await?)
+            .await?;
+            ctx.send(
+                CreateReply::default()
+                    .content("Custom user ping created... probably")
+                    .ephemeral(true),
+            )
+            .await?;
+        } else {
+            ctx.send(
+                CreateReply::default()
+                    .content("Invalid media given... really bro?")
+                    .ephemeral(true),
+            )
+            .await?;
         }
-        query!(
-            "INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT(guild_id, user_id)
-            DO UPDATE SET 
-                ping_content = $3, 
-                ping_media = $4",
-            i64::from(guild_id),
-            i64::from(ctx.author().id),
-            content,
-            media,
-        )
-        .execute(&mut *ctx.data().db.acquire().await?)
-        .await?;
-        ctx.send(
-            CreateReply::default()
-                .content("Custom user ping created... probably")
-                .ephemeral(true),
-        )
-        .await?;
     }
     Ok(())
 }

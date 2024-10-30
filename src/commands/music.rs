@@ -264,7 +264,7 @@ pub async fn seek_song(
                         .await?;
                     return Ok(());
                 };
-                let current_secs = i64::try_from(current_position.as_secs()).unwrap_or(0); // Safe fallback if conversion fails
+                let current_secs = i64::try_from(current_position.as_secs()).unwrap_or(0);
 
                 if seconds_value.is_negative() {
                     if current_secs + seconds_value < 0 {

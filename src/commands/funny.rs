@@ -54,19 +54,22 @@ pub async fn user_misuse(
     #[rest]
     message: String,
 ) -> Result<(), Error> {
-    let avatar_url = member
-        .avatar_url()
-        .unwrap_or_else(|| member.user.avatar_url().unwrap());
-    let name = member.display_name();
+    let avatar_url = member.avatar_url().unwrap_or_else(|| {
+        member.user.avatar_url().unwrap_or_else(|| {
+            member
+                .user
+                .avatar_url()
+                .unwrap_or_else(|| member.user.default_avatar_url())
+        })
+    });
     let channel_id = ctx.channel_id();
-    let webhook_try = webhook_find(ctx.serenity_context(), channel_id).await?;
-    if let Some(webhook) = webhook_try {
+    if let Ok(webhook) = webhook_find(ctx.serenity_context(), channel_id, &ctx.data()).await {
         webhook
             .execute(
                 ctx.http(),
                 false,
                 ExecuteWebhook::default()
-                    .username(name)
+                    .username(member.display_name())
                     .avatar_url(avatar_url)
                     .content(message),
             )

@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use fastrand::Rng;
 use once_cell::sync::{Lazy, OnceCell};
-use poise::serenity_prelude::{GuildId, MessageId, ShardManager};
+use poise::serenity_prelude::{ChannelId, GuildId, MessageId, ShardManager, Webhook};
 use regex::Regex;
 use reqwest::Client;
 use serde::Serialize;
@@ -19,11 +19,14 @@ type AIChatHashMap = DashMap<GuildId, Vec<AIChatMessage>>;
 
 type GlobalCallHashMap = DashMap<GuildId, DashMap<i64, MessageId>>;
 
+type WebhookHashMap = DashMap<ChannelId, Webhook>;
+
 pub struct Data {
     pub db: PgPool,
     pub music_manager: Arc<Songbird>,
     pub ai_conversations: Arc<AIChatHashMap>,
     pub global_call_last: Arc<GlobalCallHashMap>,
+    pub webhook_cache: Arc<WebhookHashMap>,
 }
 pub type Error = anyhow::Error;
 pub type SContext<'a> = poise::Context<'a, Data, Error>;

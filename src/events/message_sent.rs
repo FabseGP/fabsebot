@@ -46,11 +46,12 @@ pub async fn handle_message(
             .await?;
         for target in &user_settings {
             let Some(afk) = target.afk else { continue };
-            let user_id =
-                UserId::new(u64::try_from(target.user_id).expect("user id out of bounds for u64"));
             if afk {
+                let user_id = UserId::new(
+                    u64::try_from(target.user_id).expect("user id out of bounds for u64"),
+                );
                 if new_message.author.id == user_id {
-                    let user = ctx.http.get_user(user_id).await?;
+                    let user = user_id.to_user(&ctx.http).await?;
                     let user_name = user.display_name();
                     let mut response = new_message
                         .reply(
@@ -76,12 +77,12 @@ pub async fn handle_message(
                         }
                     }
                     query!(
-                    "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
-                    guild_id,
-                    target.user_id,
-                )
-                .execute(&mut *tx)
-                .await?;
+                        "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
+                        guild_id,
+                        target.user_id,
+                    )
+                    .execute(&mut *tx)
+                    .await?;
                 } else if new_message.mentions_user_id(user_id) {
                     let author_name = new_message.author.display_name();
                     let message_link = new_message.link();
@@ -100,7 +101,7 @@ pub async fn handle_message(
                         .afk_reason
                         .as_ref()
                         .map_or("Didn't renew life subscription", |input| input);
-                    let user = ctx.http.get_user(user_id).await?;
+                    let user = user_id.to_user(&ctx.http).await?;
                     let user_name = user.display_name();
                     new_message
                         .reply(
@@ -111,20 +112,15 @@ pub async fn handle_message(
                 }
             }
             let target_id = target.user_id;
-            if content.contains(&format!("<@{target_id}>")) && !content.contains("!user_misuse") {
+            if content.contains(&format!("<@{target_id}>")) {
                 if let Some(ping_content) = &target.ping_content {
                     match &target.ping_media {
                         Some(ping_media) => {
                             let media = if ping_media.to_lowercase() == "waifu" {
                                 &get_waifu().await?
                             } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
-                                let search_term = gif_query.trim_start();
-                                if !search_term.is_empty() {
-                                    let urls = get_gifs(search_term).await?;
-                                    &urls[RNG.lock().await.usize(..urls.len())].clone()
-                                } else {
-                                    ping_media
-                                }
+                                let urls = get_gifs(gif_query).await?;
+                                &urls[RNG.lock().await.usize(..urls.len())].clone()
                             } else {
                                 ping_media
                             };
@@ -171,7 +167,7 @@ pub async fn handle_message(
                         u64::try_from(spoiler_channel).expect("channel id out of bounds for u64"),
                     )
                 {
-                    spoiler_message(ctx, new_message, &new_message.content).await?;
+                    spoiler_message(ctx, new_message, &new_message.content, &data).await?;
                 }
             }
             if let (Some(dead_channel), Some(dead_chat_rate)) = (
@@ -250,9 +246,10 @@ pub async fn handle_message(
                                                 u64::try_from(guild_channel_id)
                                                     .expect("channel id out of bounds for u64"),
                                             );
-                                            if let Ok(chat_channel) = channel_id_type
-                                                .to_guild_channel(&ctx.http, Some(id))
-                                                .await
+                                            if let Some(chat_channel) = channel_id_type
+                                                .to_channel(&ctx.http, Some(id))
+                                                .await?
+                                                .guild()
                                             {
                                                 let last_known_message_id = global_chats_history
                                                     .get(&guild.guild_id)
@@ -260,49 +257,39 @@ pub async fn handle_message(
                                                         || MessageId::new(0),
                                                         |id| id.value().to_owned(),
                                                     );
-                                                if let Some(message_id) =
-                                                    chat_channel.last_message_id
-                                                {
-                                                    if message_id != last_known_message_id {
-                                                        global_chats_history
-                                                            .insert(guild.guild_id, message_id);
-                                                        let last_message = chat_channel
-                                                            .message(&ctx.http, message_id)
-                                                            .await?;
-                                                        let webhook_try = webhook_find(
-                                                            ctx,
-                                                            new_message.channel_id,
-                                                        )
-                                                        .await?;
-                                                        if let Some(webhook) = webhook_try {
-                                                            webhook
+                                                if new_message.id != last_known_message_id {
+                                                    global_chats_history
+                                                        .insert(guild.guild_id, new_message.id);
+                                                    if let Ok(webhook) =
+                                                        webhook_find(ctx, chat_channel.id, &data)
+                                                            .await
+                                                    {
+                                                        webhook
                                                             .execute(
                                                                 &ctx.http,
                                                                 false,
                                                                 ExecuteWebhook::default()
                                                                     .username(
-                                                                        last_message
+                                                                        new_message
                                                                             .author
                                                                             .display_name(),
                                                                     )
                                                                     .avatar_url(
-                                                                        last_message
+                                                                        new_message
                                                                             .author
                                                                             .avatar_url()
-                                                                            .unwrap_or_else(|| last_message.author.default_avatar_url()),
+                                                                            .unwrap_or_else(|| new_message.author.static_avatar_url().unwrap_or_else(|| new_message.author.default_avatar_url())),
                                                                     )
-                                                                    .content(last_message.content),
+                                                                    .content(new_message.content.as_str()),
                                                             )
                                                             .await?;
-                                                        } else {
-                                                            new_message
-                                                                .channel_id
-                                                                .say(
-                                                                    &ctx.http,
-                                                                    last_message.content,
-                                                                )
-                                                                .await?;
-                                                        }
+                                                    } else {
+                                                        chat_channel
+                                                            .say(
+                                                                &ctx.http,
+                                                                new_message.content.as_str(),
+                                                            )
+                                                            .await?;
                                                     }
                                                 }
                                             }
@@ -371,8 +358,7 @@ pub async fn handle_message(
             }
         }
     }
-    if content.contains(&ctx.cache.current_user().to_string()) && !content.contains("!user_misuse")
-    {
+    if content.contains(&ctx.cache.current_user().to_string()) {
         new_message
             .channel_id
             .send_message(
@@ -457,8 +443,7 @@ pub async fn handle_message(
             } else if content.contains("kurukuru_seseren") {
                 let count = content.matches("kurukuru_seseren").count();
                 let response = "<a:kurukuru_seseren:1284745756883816469>".repeat(count);
-                let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
-                if let Some(webhook) = webhook_try {
+                if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
                     webhook
                         .execute(
                             &ctx.http,
@@ -477,8 +462,7 @@ pub async fn handle_message(
                     new_message.react(&ctx.http, reaction).await?;
                 }
                 if content == "fabse" || content == "fabseman" {
-                    let webhook_try = webhook_find(ctx, new_message.channel_id).await?;
-                    if let Some(webhook) = webhook_try {
+                    if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
                         webhook
                         .execute(
                             &ctx.http,
