@@ -3,7 +3,7 @@ use crate::{
     events::{
         bot_ready::handle_ready, guild_create::handle_guild_create,
         http_ratelimit::handle_ratelimit, message_delete::handle_message_delete,
-        message_sent::handle_message, reaction_add::handle_reaction_add,
+        message_sent::handle_message,
     },
     types::{ClientData, Data, Error, CLIENT_DATA},
 };
@@ -81,7 +81,6 @@ async fn event_handler(
     match event {
         FullEvent::Ready { data_about_bot } => handle_ready(ctx, data_about_bot, framework).await?,
         FullEvent::Message { new_message } => handle_message(ctx, data, new_message).await?,
-        FullEvent::ReactionAdd { add_reaction } => handle_reaction_add(ctx, add_reaction).await?,
         FullEvent::GuildCreate { guild, is_new } => {
             handle_guild_create(data, guild, is_new.as_ref()).await?;
         }
@@ -194,7 +193,6 @@ pub async fn start() -> anyhow::Result<()> {
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MEMBERS
         | GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::GUILD_MESSAGE_REACTIONS
         | GatewayIntents::GUILD_VOICE_STATES
         | GatewayIntents::MESSAGE_CONTENT;
     let token = env::var("DISCORD_TOKEN").context("DISCORD_TOKEN not set in environment")?;

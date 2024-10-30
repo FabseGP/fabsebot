@@ -39,7 +39,7 @@ pub async fn handle_message_delete(
                         if let Some(permissions) = member.permissions {
                             let necessary_perms =
                                 permissions.administrator() && permissions.moderate_members();
-                            let evil_person = ctx.http.get_user(user_id).await?;
+                            let evil_person = &member.user;
                             if evil_person.id != guild.owner_id && !necessary_perms {
                                 let deleted_content = ctx
                                     .cache

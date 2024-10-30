@@ -6,8 +6,8 @@ use crate::{
 use anyhow::Context as _;
 use poise::serenity_prelude::{
     self as serenity, ChannelId, Colour, CreateAllowedMentions, CreateEmbed, CreateEmbedAuthor,
-    CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GetMessages, GuildId, Message,
-    MessageId, ReactionType, Timestamp, UserId,
+    CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GuildId, Message, MessageId,
+    ReactionType, Timestamp, UserId,
 };
 use sqlx::{query, Acquire as _};
 use std::sync::Arc;
@@ -35,7 +35,8 @@ pub async fn handle_message(
             .await?;
         let guild_settings = query!(
             "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel, ai_chat_channel, global_chat_channel, global_call
-            FROM guild_settings WHERE guild_id = $1",
+            FROM guild_settings 
+            WHERE guild_id = $1",
             guild_id
         )
         .fetch_optional(&mut *tx)
@@ -45,12 +46,11 @@ pub async fn handle_message(
             .await?;
         for target in &user_settings {
             let Some(afk) = target.afk else { continue };
+            let user_id =
+                UserId::new(u64::try_from(target.user_id).expect("user id out of bounds for u64"));
             if afk {
-                let user_id = UserId::new(
-                    u64::try_from(target.user_id).expect("user id out of bounds for u64"),
-                );
-                let user = ctx.http.get_user(user_id).await?;
                 if new_message.author.id == user_id {
+                    let user = ctx.http.get_user(user_id).await?;
                     let user_name = user.display_name();
                     let mut response = new_message
                         .reply(
@@ -76,12 +76,12 @@ pub async fn handle_message(
                         }
                     }
                     query!(
-                        "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
-                        guild_id,
-                        target.user_id,
-                    )
-                    .execute(&mut *tx)
-                    .await?;
+                    "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
+                    guild_id,
+                    target.user_id,
+                )
+                .execute(&mut *tx)
+                .await?;
                 } else if new_message.mentions_user_id(user_id) {
                     let author_name = new_message.author.display_name();
                     let message_link = new_message.link();
@@ -100,6 +100,7 @@ pub async fn handle_message(
                         .afk_reason
                         .as_ref()
                         .map_or("Didn't renew life subscription", |input| input);
+                    let user = ctx.http.get_user(user_id).await?;
                     let user_name = user.display_name();
                     new_message
                         .reply(
@@ -180,24 +181,26 @@ pub async fn handle_message(
                 let dead_chat_channel = ChannelId::new(
                     u64::try_from(dead_channel).expect("channel id out of bounds for u64"),
                 );
-                let last_message_time = {
-                    let messages = dead_chat_channel
-                        .messages(&ctx.http, GetMessages::default().limit(1))
-                        .await;
-                    messages.map_or(None, |message_result| {
-                        message_result.first().map(|msg| msg.timestamp.timestamp())
-                    })
-                };
-                if let Some(last_time) = last_message_time {
-                    let current_time = Timestamp::now().timestamp();
-                    if current_time - last_time > dead_chat_rate * 60 {
-                        let urls = get_gifs("dead chat").await?;
-                        dead_chat_channel
-                            .say(
-                                &ctx.http,
-                                urls[RNG.lock().await.usize(..urls.len())].as_str(),
-                            )
-                            .await?;
+                if let Ok(guild_channel) = dead_chat_channel
+                    .to_guild_channel(&ctx.http, Some(id))
+                    .await
+                {
+                    if let Some(message_id) = guild_channel.last_message_id {
+                        let last_message_time = guild_channel
+                            .message(&ctx.http, message_id)
+                            .await?
+                            .timestamp
+                            .timestamp();
+                        let current_time = Timestamp::now().timestamp();
+                        if current_time - last_message_time > dead_chat_rate * 60 {
+                            let urls = get_gifs("dead chat").await?;
+                            dead_chat_channel
+                                .say(
+                                    &ctx.http,
+                                    urls[RNG.lock().await.usize(..urls.len())].as_str(),
+                                )
+                                .await?;
+                        }
                     }
                 }
             }
@@ -247,8 +250,9 @@ pub async fn handle_message(
                                                 u64::try_from(guild_channel_id)
                                                     .expect("channel id out of bounds for u64"),
                                             );
-                                            if let Some(chat_channel) =
-                                                ctx.http.get_channel(channel_id_type).await?.guild()
+                                            if let Ok(chat_channel) = channel_id_type
+                                                .to_guild_channel(&ctx.http, Some(id))
+                                                .await
                                             {
                                                 let last_known_message_id = global_chats_history
                                                     .get(&guild.guild_id)
@@ -329,34 +333,11 @@ pub async fn handle_message(
             let guild_id = GuildId::new(url[1].parse().unwrap());
             let channel_id = ChannelId::new(url[2].parse().unwrap());
             let message_id = MessageId::new(url[3].parse().unwrap());
-            let cache_guild = ctx.cache.guild(guild_id).map(|guild| guild.clone());
-            let (channel_name, message) = match cache_guild {
-                Some(ref_guild) => {
-                    let channel = ref_guild.channels.get(&channel_id);
-                    match channel {
-                        Some(channel) => (
-                            channel.name.to_string(),
-                            Some(channel.message(&ctx.http, message_id).await?),
-                        ),
-                        None => ("Unknown".to_owned(), None),
-                    }
-                }
-                None => match ctx.http.get_guild(guild_id).await {
-                    Ok(guild) => {
-                        let channels = guild.channels(&ctx.http).await?;
-                        let channel_opt = channels.get(&channel_id);
-                        match channel_opt {
-                            Some(channel) => {
-                                let message = Some(channel.message(&ctx.http, message_id).await?);
-                                (channel.name.to_string(), message)
-                            }
-                            None => ("Unknown".to_owned(), None),
-                        }
-                    }
-                    Err(_) => ("Unknown".to_owned(), None),
-                },
-            };
-            if let Some(ref_msg) = message {
+            if let Ok(ref_channel) = channel_id.to_guild_channel(&ctx.http, Some(guild_id)).await {
+                let (channel_name, ref_msg) = (
+                    ref_channel.name.to_string(),
+                    ref_channel.message(&ctx.http, message_id).await?,
+                );
                 let author_accent = ctx.http.get_user(ref_msg.author.id).await?.accent_colour;
                 let mut embed = CreateEmbed::default()
                     .colour(author_accent.unwrap_or(Colour::new(0xFA6300)))
@@ -379,8 +360,9 @@ pub async fn handle_message(
                 if ref_msg.channel_id == new_message.channel_id {
                     preview_message = preview_message.reference_message(&ref_msg);
                 }
-                if let Some(ref_embed) = ref_msg.embeds.into_iter().next() {
-                    preview_message = preview_message.add_embed(CreateEmbed::from(ref_embed));
+                if let Some(ref_embed) = ref_msg.embeds.first() {
+                    preview_message =
+                        preview_message.add_embed(CreateEmbed::from(ref_embed.clone()));
                 }
                 new_message
                     .channel_id

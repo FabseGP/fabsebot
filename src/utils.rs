@@ -90,7 +90,12 @@ pub async fn ai_chatbot(
                                 .collect::<Vec<_>>()
                                 .join(", ");
                             let pfp_desc = {
-                                let pfp = HTTP_CLIENT.get(target.static_face()).send().await?;
+                                let pfp = HTTP_CLIENT
+                                    .get(
+                                        target.avatar_url().unwrap_or_else(|| target.static_face()),
+                                    )
+                                    .send()
+                                    .await?;
                                 if pfp.status().is_success() {
                                     let binary_pfp = pfp.bytes().await?;
                                     &ai_image_desc(&binary_pfp, None).await?
@@ -126,44 +131,28 @@ pub async fn ai_chatbot(
             let guild_id = GuildId::new(url[1].parse().unwrap());
             let channel_id = ChannelId::new(url[2].parse().unwrap());
             let message_id = MessageId::new(url[3].parse().unwrap());
-            let cache_guild = ctx.cache.guild(guild_id).map(|guild| guild.clone());
-            let (guild_name, message) = match cache_guild {
-                Some(ref_guild) => {
-                    let message = match ref_guild.channels.get(&channel_id) {
-                        Some(channel) => Some(channel.message(&ctx.http, message_id).await?),
-                        None => None,
-                    };
-                    (ref_guild.name.into_string(), message)
-                }
-                None => match ctx.http.get_guild(guild_id).await {
-                    Ok(guild) => {
-                        let channels = guild.channels(&ctx.http).await?;
-                        let channel_opt = channels.get(&channel_id);
-                        match channel_opt {
-                            Some(channel) => {
-                                let message = Some(channel.message(&ctx.http, message_id).await?);
-                                (guild.name.into_string(), message)
-                            }
-                            None => ("Unknown".to_owned(), None),
-                        }
+            if let Ok(ref_channel) = channel_id.to_guild_channel(&ctx.http, Some(guild_id)).await {
+                let (guild_name, ref_msg) = (
+                    guild_id
+                        .name(&ctx.cache)
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    ref_channel.message(&ctx.http, message_id).await,
+                );
+                match ref_msg {
+                    Ok(linked_message) => {
+                        let link_author = linked_message.author.display_name();
+                        let link_content = linked_message.content;
+                        write!(
+                            system_content,
+                            "\n{author_name} linked to a message sent in: {guild_name}, sent by: {link_author} and had this content: {link_content}"
+                        )?;
                     }
-                    Err(_) => ("Unknown".to_owned(), None),
-                },
-            };
-            match message {
-                Some(linked_message) => {
-                    let link_author = linked_message.author.display_name();
-                    let link_content = linked_message.content;
-                    write!(
-                        system_content,
-                        "\n{author_name} linked to a message sent in: {guild_name}, sent by: {link_author} and had this content: {link_content}"
-                    )?;
-                }
-                None => {
-                    write!(
-                        system_content,
-                        "\n{author_name} linked to a message in non-accessible guild"
-                    )?;
+                    Err(_) => {
+                        write!(
+                            system_content,
+                            "\n{author_name} linked to a message in non-accessible guild"
+                        )?;
+                    }
                 }
             }
         }
@@ -258,13 +247,13 @@ struct SimpleMessage<'a> {
 
 #[derive(Serialize)]
 struct ImageDesc<'a> {
-    messages: Vec<SimpleMessage<'a>>,
+    messages: [SimpleMessage<'a>; 2],
     image: &'a [u8],
 }
 
 pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Result<String, Error> {
     let request = ImageDesc {
-        messages: vec![
+        messages: [
             SimpleMessage {
                 role: "system",
                 content: "Generate a detailed caption for this image",
@@ -345,12 +334,12 @@ pub async fn ai_response_local(messages: &[AIChatMessage]) -> Result<String, Err
 
 #[derive(Serialize)]
 struct SimpleAIRequest<'a> {
-    messages: Vec<SimpleMessage<'a>>,
+    messages: [SimpleMessage<'a>; 2],
 }
 
 pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Error> {
     let request = SimpleAIRequest {
-        messages: vec![
+        messages: [
             SimpleMessage {
                 role: "system",
                 content: role,
@@ -714,9 +703,9 @@ pub async fn webhook_find(
     let webhook = match existing_webhooks_get {
         Some(existing_webhooks) => {
             if existing_webhooks.len() >= 15 {
-                for webhook in existing_webhooks.iter().take(existing_webhooks.len() - 14) {
-                    ctx.http.delete_webhook(webhook.id, None).await?;
-                }
+                ctx.http
+                    .delete_webhook(existing_webhooks.first().unwrap().id, None)
+                    .await?;
             }
             if let Some(existing_webhook) = existing_webhooks
                 .into_iter()

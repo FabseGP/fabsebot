@@ -4,7 +4,7 @@ use crate::{
 };
 
 use poise::{
-    serenity_prelude::{ChannelId, CreateMessage, ExecuteWebhook, User},
+    serenity_prelude::{ChannelId, CreateMessage, ExecuteWebhook, Member, User},
     CreateReply,
 };
 
@@ -49,21 +49,14 @@ pub async fn user_dm(
 #[poise::command(slash_command)]
 pub async fn user_misuse(
     ctx: SContext<'_>,
-    #[description = "Target"] user: User,
+    #[description = "Target"] member: Member,
     #[description = "Message to send"]
     #[rest]
     message: String,
 ) -> Result<(), Error> {
-    let guild = match ctx.guild() {
-        Some(guild) => guild.clone(),
-        None => {
-            return Ok(());
-        }
-    };
-    let member = guild.member(ctx.http(), user.id).await?;
     let avatar_url = member
         .avatar_url()
-        .unwrap_or_else(|| user.avatar_url().unwrap());
+        .unwrap_or_else(|| member.user.avatar_url().unwrap());
     let name = member.display_name();
     let channel_id = ctx.channel_id();
     let webhook_try = webhook_find(ctx.serenity_context(), channel_id).await?;

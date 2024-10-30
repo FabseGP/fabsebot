@@ -1,15 +1,14 @@
 use crate::types::{Error, SContext};
 
-use dashmap::DashMap;
 use poise::{
     futures_util::{Stream, StreamExt},
     serenity_prelude::{
         futures, ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton,
-        CreateEmbed, CreateInteractionResponse, EditMessage, User,
+        CreateEmbed, CreateInteractionResponse, EditMessage, Member,
     },
     CreateReply,
 };
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, string::ToString, time::Duration};
 
 async fn autocomplete_choice<'a>(
     _ctx: SContext<'_>,
@@ -24,13 +23,13 @@ async fn autocomplete_choice<'a>(
 #[poise::command(prefix_command, slash_command)]
 pub async fn rps(
     ctx: SContext<'_>,
-    #[description = "Target"] user: User,
+    #[description = "Target"] user: Member,
     #[description = "Your choice: rock, paper, or scissor"]
     #[autocomplete = "autocomplete_choice"]
     #[rest]
     choice: String,
 ) -> Result<(), Error> {
-    if !user.bot() {
+    if !user.user.bot() {
         let valid_choices = ["rock", "paper", "scissor"];
         let author_choice = choice.to_lowercase();
         if !valid_choices.contains(&author_choice.as_str()) {
@@ -70,7 +69,7 @@ pub async fn rps(
 
         if let Some(interaction) =
             ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                .author_id(user.id)
+                .author_id(user.user.id)
                 .timeout(Duration::from_secs(60))
                 .filter(move |interaction| {
                     let id = interaction.data.custom_id.as_str();
@@ -84,22 +83,13 @@ pub async fn rps(
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                 .await?;
 
-            let outcomes: DashMap<&str, &str> =
-                [("rock", "scissor"), ("paper", "rock"), ("scissor", "paper")]
-                    .into_iter()
-                    .collect();
-
             let response = {
-                let result = if target_choice == &author_choice {
-                    None
-                } else if let Some(v) = outcomes.get(&author_choice.as_str()) {
-                    if target_choice == v.key() {
+                let result = match (author_choice.as_str(), target_choice.as_str()) {
+                    ("rock", "scissor") | ("paper", "rock") | ("scissor", "paper") => {
                         Some(&author_choice)
-                    } else {
-                        Some(target_choice)
                     }
-                } else {
-                    Some(target_choice)
+                    (a, b) if a == b => None,
+                    _ => Some(target_choice),
                 };
                 match result {
                     Some(winner) if winner == &author_choice => {
@@ -112,9 +102,9 @@ pub async fn rps(
                     }
                     Some(_) => {
                         let user_name = user
-                            .nick_in(ctx.http(), ctx.guild_id().unwrap())
-                            .await
-                            .unwrap_or_else(|| user.name.into_string());
+                            .nick
+                            .as_ref()
+                            .map_or_else(|| user.display_name().to_string(), ToString::to_string);
                         format!("{user_name} won!")
                     }
                     None => "You both suck!".to_owned(),

@@ -4,67 +4,66 @@ use poise::{
     serenity_prelude::{CreateEmbed, Member},
     CreateReply,
 };
-use std::borrow::Cow;
+use std::string::ToString;
 
 /// Get server information
 #[poise::command(prefix_command, slash_command)]
 pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
-    let guild = match ctx.guild() {
-        Some(g) => g.clone(),
-        None => {
-            return Ok(());
+    let opt_embed = match ctx.guild() {
+        Some(guild) => {
+            let size = if guild.large() { "Large" } else { "Not large" }.to_owned();
+            let guild_id = guild.id;
+            let thumbnail = match &guild.banner {
+                Some(banner) => banner.to_string(),
+                None => guild.icon.as_ref().map_or(
+                    "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned(),
+                    |icon_hash| {
+                        format!("https://cdn.discordapp.com/icons/{guild_id}/{icon_hash}.png")
+                    },
+                ),
+            };
+            let guild_description = guild
+                .description
+                .as_ref()
+                .map_or_else(|| "Unknown description".to_owned(), ToString::to_string);
+            let guild_member_count = format!(
+                "{}/{}",
+                guild.member_count,
+                guild.max_members.unwrap_or_default()
+            );
+            Some(
+                CreateEmbed::default()
+                    .title(guild.name.to_string())
+                    .description(guild_description)
+                    .thumbnail(thumbnail)
+                    .fields(vec![
+                        ("Guild ID:", guild_id.to_string(), true),
+                        (
+                            "Guild boosters:",
+                            guild
+                                .premium_subscription_count
+                                .unwrap_or_default()
+                                .to_string(),
+                            false,
+                        ),
+                        ("Owner id:", guild.owner_id.to_string(), true),
+                        ("Creation date:", guild.id.created_at().to_string(), false),
+                        ("Emoji count:", guild.emojis.len().to_string(), true),
+                        ("Sticker count:", guild.stickers.len().to_string(), false),
+                        ("Members count:", guild_member_count, true),
+                        ("Role count:", guild.roles.len().to_string(), false),
+                        ("Channels:", guild.channels.len().to_string(), true),
+                        ("Server size:", size, true),
+                    ]),
+            )
         }
+        None => None,
     };
-    let size = if guild.large() { "Large" } else { "Not large" }.to_owned();
-    let guild_id = guild.id;
-    let thumbnail = match &guild.banner {
-        Some(banner) => Cow::Borrowed(banner.as_str()),
-        None => guild.icon.as_ref().map_or(
-            Cow::Borrowed("https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif"),
-            |icon_hash| {
-                Cow::Owned(format!(
-                    "https://cdn.discordapp.com/icons/{guild_id}/{icon_hash}.png"
-                ))
-            },
-        ),
-    };
-    let owner_user = guild.owner_id.to_user(&ctx.http()).await?;
-    let guild_description = guild.description.unwrap_or_default().into_string();
-    let guild_id = guild_id.to_string();
-    let guild_boosters = guild.premium_subscription_count.unwrap().to_string();
-    let owner_name = owner_user.display_name().to_owned();
-    let guild_creation = guild.id.created_at().to_string();
-    let guild_emojis_len = guild.emojis.len().to_string();
-    let guild_roles_len = guild.roles.len().to_string();
-    let guild_stickers_len = guild.stickers.len().to_string();
-    let guild_member_count = format!(
-        "{}/{}",
-        guild.member_count,
-        guild.max_members.unwrap_or_default()
-    );
-    let guild_channels = guild.channels.len().to_string();
-    let empty = String::new();
-    let embed = CreateEmbed::default()
-        .title(guild.name.into_string())
-        .description(guild_description)
-        .thumbnail(thumbnail)
-        .fields(vec![
-            ("Guild ID:", &guild_id, true),
-            ("Guild boosters:", &guild_boosters, true),
-            ("", &empty, false),
-            ("Owner:", &owner_name, true),
-            ("Creation date:", &guild_creation, true),
-            ("", &empty, false),
-            ("Emoji count:", &guild_emojis_len, true),
-            ("Sticker count:", &guild_stickers_len, true),
-            ("", &empty, false),
-            ("Members count:", &guild_member_count, true),
-            ("Role count:", &guild_roles_len, true),
-            ("", &empty, false),
-            ("Channels:", &guild_channels, true),
-            ("Server size:", &size, true),
-        ]);
-    ctx.send(CreateReply::default().embed(embed)).await?;
+    if let Some(embed) = opt_embed {
+        ctx.send(CreateReply::default().embed(embed)).await?;
+    } else {
+        ctx.reply("Discord refuse to share the info").await?;
+    }
     Ok(())
 }
 
@@ -76,10 +75,10 @@ pub async fn user_info(
     #[rest]
     member: Member,
 ) -> Result<(), Error> {
-    let user = ctx.http().get_user(member.user.id).await?;
-    let user_created = user.created_at().to_string();
-    let member_joined = member.joined_at.unwrap().to_string();
-    let user_mfa = if user.mfa_enabled() {
+    //  ctx.defer().await?;
+    let user_created = member.user.created_at().to_string();
+    let member_joined = member.joined_at.unwrap_or_default().to_string();
+    let user_mfa = if member.user.mfa_enabled() {
         "MFA enabled"
     } else {
         "MFA disabled"
@@ -91,7 +90,7 @@ pub async fn user_info(
         .thumbnail(
             member
                 .avatar_url()
-                .unwrap_or_else(|| user.avatar_url().unwrap()),
+                .unwrap_or_else(|| member.user.avatar_url().unwrap()),
         )
         .fields(vec![
             ("Creation date:", &user_created, true),
@@ -99,7 +98,7 @@ pub async fn user_info(
             ("", &empty, false),
             ("Security:", &user_mfa, false),
         ])
-        .colour(user.accent_colour.unwrap());
+        .colour(member.user.accent_colour.unwrap_or_default());
     ctx.send(CreateReply::default().embed(embed)).await?;
 
     Ok(())

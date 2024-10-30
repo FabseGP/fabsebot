@@ -11,7 +11,7 @@ use poise::{
     serenity_prelude::{
         futures::StreamExt as _, small_fixed_array::FixedString, ButtonStyle,
         ComponentInteractionCollector, CreateActionRow, CreateAttachment, CreateButton,
-        CreateEmbed, CreateInteractionResponse, EditMessage, MessageId, User,
+        CreateEmbed, CreateInteractionResponse, EditMessage, Member, MessageId,
     },
     CreateReply,
 };
@@ -532,51 +532,51 @@ pub async fn memegen(
 
 /// When someone offended you
 #[poise::command(prefix_command, slash_command)]
-pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> Result<(), Error> {
+pub async fn roast(
+    ctx: SContext<'_>,
+    #[description = "Target"] member: Member,
+) -> Result<(), Error> {
     ctx.defer().await?;
     if let Some(guild_id) = ctx.guild_id() {
-        let guild = match ctx.guild() {
-            Some(guild) => guild.clone(),
-            None => {
-                return Ok(());
-            }
-        };
-        let member = guild.member(ctx.http(), user.id).await?;
         let avatar_url = member
             .avatar_url()
-            .unwrap_or_else(|| user.avatar_url().unwrap());
-        let banner_url = ctx
-            .http()
-            .get_user(user.id)
-            .await
-            .unwrap()
-            .banner_url()
-            .unwrap_or_else(|| "user has no banner".to_owned());
+            .unwrap_or_else(|| member.user.avatar_url().unwrap());
+        let banner_url = (ctx.http().get_user(member.user.id).await).map_or_else(
+            |_| "user has no banner".to_owned(),
+            |user| {
+                user.banner_url()
+                    .map_or_else(|| "user has no banner".to_owned(), |banner| banner)
+            },
+        );
         let roles = {
-            let mut roles_iter = member
-                .roles
-                .iter()
-                .filter_map(|role_id| guild.roles.get(role_id))
-                .map(|role| role.name.as_str());
-            roles_iter.next().map_or_else(
-                || "no roles".to_string(),
-                |first_role| {
-                    iter::once(first_role)
-                        .chain(roles_iter)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                },
-            )
+            if let Some(guild) = ctx.guild() {
+                let mut roles_iter = member
+                    .roles
+                    .iter()
+                    .filter_map(|role_id| guild.roles.get(role_id))
+                    .map(|role| role.name.as_str());
+                roles_iter.next().map_or_else(
+                    || "no roles".to_string(),
+                    |first_role| {
+                        iter::once(first_role)
+                            .chain(roles_iter)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    },
+                )
+            } else {
+                "no roles".to_string()
+            }
         };
         let name = member.display_name();
-        let account_date = user.created_at();
+        let account_date = member.user.created_at();
         let join_date = member.joined_at.unwrap();
         let message_count = {
             let mut conn = ctx.data().db.acquire().await?;
             let result = query!(
                 "SELECT message_count FROM user_settings WHERE guild_id = $1 AND user_id = $2",
                 i64::from(guild_id),
-                i64::from(user.id),
+                i64::from(member.user.id),
             )
             .fetch_one(&mut *conn)
             .await;
@@ -591,7 +591,7 @@ pub async fn roast(ctx: SContext<'_>, #[description = "Target"] user: User) -> R
             while let Some(message_result) = messages.next().await {
                 match message_result {
                     Ok(message) => {
-                        if message.author.id == user.id {
+                        if message.author.id == member.user.id {
                             let index = count + 1;
                             if count > 0 {
                                 result.push(',');

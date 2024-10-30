@@ -8,7 +8,7 @@ use poise::{
 use serde::Deserialize;
 use songbird::{
     driver::Bitrate,
-    input::{Compose as _, Input, YoutubeDl},
+    input::{Input, YoutubeDl},
     tracks::PlayMode,
     Call, Config,
 };
@@ -73,20 +73,27 @@ pub async fn add_playlist(
             .get(format!("https://api.deezer.com/playlist/{playlist_id}"))
             .send()
             .await?;
-        let data: Option<DeezerResponse> = request.json().await?;
-        if let Some(payload) = data {
-            if !payload.tracks.data.is_empty() {
+        match request
+            .json::<DeezerResponse>()
+            .await
+            .ok()
+            .filter(|output| !output.tracks.data.is_empty())
+        {
+            Some(payload) => {
                 for track in payload.tracks.data {
                     let title = track.title;
                     let artist = track.artist.name;
                     let search = format!("{title} {artist}");
-                    let src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
+                    let src = Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), search));
                     get_configured_handler(&handler_lock)
                         .await
-                        .enqueue_input(Input::from(src))
+                        .enqueue_input(src)
                         .await;
                 }
                 ctx.reply("Added playlist to queue").await?;
+            }
+            None => {
+                ctx.reply("Deezer refused to serve your request").await?;
             }
         }
     }
@@ -96,31 +103,24 @@ pub async fn add_playlist(
 /// Join your current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
-    let guild = match ctx.guild() {
-        Some(g) => g.clone(),
-        None => {
-            return Ok(());
-        }
-    };
-    ctx.defer().await?;
-    match guild
-        .voice_states
-        .get(&ctx.author().id)
-        .and_then(|voice_state| voice_state.channel_id)
-    {
-        Some(channel_id) => {
+    if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
+        let channel_id = match ctx.guild() {
+            Some(guild) => guild
+                .voice_states
+                .get(&ctx.author().id)
+                .and_then(|voice_state| voice_state.channel_id),
+            None => None,
+        };
+        if let Some(channel_id) = channel_id {
             let manager = &ctx.data().music_manager;
-            match manager.join(guild.id, channel_id).await {
-                Ok(_) => {
-                    ctx.reply("I've joined the party").await?;
-                }
-                Err(_) => {
-                    ctx.reply("I don't wanna join").await?;
-                }
-            }
-        }
-        None => {
-            return Ok(());
+            ctx.reply(match manager.join(guild_id, channel_id).await {
+                Ok(_) => "I've joined the party",
+                Err(_) => "I don't wanna join",
+            })
+            .await?;
+        } else {
+            ctx.reply("I don't wanna join").await?;
         }
     }
     Ok(())
@@ -182,14 +182,14 @@ pub async fn play_song(
         ctx.defer().await?;
         let url_cow: Cow<'static, str> = Cow::Owned(url);
         let mut src = if url_cow.starts_with("http") {
-            YoutubeDl::new(HTTP_CLIENT.clone(), url_cow.clone())
+            Input::from(YoutubeDl::new(HTTP_CLIENT.clone(), url_cow.clone()))
         } else {
-            YoutubeDl::new_search(HTTP_CLIENT.clone(), url_cow.clone())
+            Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), url_cow.clone()))
         };
         let metadata = src.aux_metadata().await;
         let queue_len = {
             let mut handler = get_configured_handler(&handler_lock).await;
-            handler.enqueue_input(Input::from(src)).await;
+            handler.enqueue_input(src).await;
             handler.queue().len()
         };
         match metadata {

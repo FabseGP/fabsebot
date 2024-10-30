@@ -10,7 +10,7 @@ use poise::{
     serenity_prelude::{
         nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
         CreateActionRow, CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse,
-        CreateMessage, EditChannel, EditMessage, MessageId, User, UserId,
+        CreateMessage, EditChannel, EditMessage, Member, MessageId, UserId,
     },
     CreateReply,
 };
@@ -33,7 +33,7 @@ pub async fn anony_poll(
         .collect();
     let options_count = options_list.len();
     if options_count < 1 {
-        ctx.say("Bruh, no options ain't gonna cut it for a poll")
+        ctx.say("Bruh, no options ain't gonna cut it for a poll!")
             .await?;
         return Ok(());
     }
@@ -110,24 +110,17 @@ pub async fn anony_poll(
     Ok(())
 }
 
-/// Send a birthday wish to a user
+/// Send a birthday wish to a member
 #[poise::command(prefix_command, slash_command)]
 pub async fn birthday(
     ctx: SContext<'_>,
-    #[description = "User to congratulate"]
+    #[description = "Member to congratulate"]
     #[rest]
-    user: User,
+    member: Member,
 ) -> Result<(), Error> {
-    let guild = match ctx.guild() {
-        Some(guild) => guild.clone(),
-        None => {
-            return Ok(());
-        }
-    };
-    let member = guild.member(ctx.http(), user.id).await?;
     let avatar_url = member
         .avatar_url()
-        .unwrap_or_else(|| user.avatar_url().unwrap());
+        .unwrap_or_else(|| member.user.avatar_url().unwrap());
     let name = member.display_name();
     ctx.send(
         CreateReply::default().embed(
@@ -169,7 +162,7 @@ pub async fn global_call_end(ctx: SContext<'_>) -> Result<(), Error> {
             .global_call_last
             .remove(&guild_id)
             .unwrap_or_default();
-        ctx.send(CreateReply::default().content("Ending call..."))
+        ctx.send(CreateReply::default().content("Call ended..."))
             .await?;
     }
     Ok(())
@@ -251,50 +244,54 @@ struct UserCount {
 /// Leaderboard of lifeless ppl
 #[poise::command(prefix_command, slash_command)]
 pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
-    let guild = match ctx.guild() {
-        Some(guild) => guild.clone(),
-        None => {
-            return Ok(());
-        }
-    };
-    let thumbnail = guild.banner_url().unwrap_or_else(|| {
-        guild
-            .icon_url()
-            .unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
-    });
-    let users = query_as!(
-        UserCount,
-        "SELECT message_count, user_id FROM user_settings WHERE guild_id = $1
-        ORDER BY message_count DESC LIMIT 25",
-        i64::from(guild.id)
-    )
-    .fetch_all(&mut *ctx.data().db.acquire().await?)
-    .await?;
+    if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
+        let thumbnail = match ctx.guild() {
+            Some(guild) => guild.banner_url().unwrap_or_else(|| {
+                guild
+                    .icon_url()
+                    .unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
+            }),
+            None => {
+                return Ok(());
+            }
+        };
+        let users = query_as!(
+            UserCount,
+            "SELECT message_count, user_id FROM user_settings WHERE guild_id = $1
+            ORDER BY message_count DESC LIMIT 25",
+            i64::from(guild_id)
+        )
+        .fetch_all(&mut *ctx.data().db.acquire().await?)
+        .await?;
 
-    let mut embed = CreateEmbed::default()
-        .title(format!("Top {} users by message count", users.len()))
-        .thumbnail(thumbnail)
-        .color(0xFF5733);
+        let mut embed = CreateEmbed::default()
+            .title(format!("Top {} users by message count", users.len()))
+            .thumbnail(thumbnail)
+            .color(0xFF5733);
 
-    for (index, user) in users.iter().enumerate() {
-        if let Ok(target) = ctx
-            .http()
-            .get_user(UserId::new(
-                u64::try_from(user.user_id).expect("user id out of bounds for u64"),
-            ))
-            .await
-        {
-            let rank = index + 1;
-            let user_name = target.display_name();
-            embed = embed.field(
-                format!("#{rank} {user_name}"),
-                user.message_count.to_string(),
-                false,
-            );
+        for (index, user) in users.iter().enumerate() {
+            if let Ok(target) = guild_id
+                .member(
+                    &ctx.http(),
+                    UserId::new(
+                        u64::try_from(user.user_id).expect("user id out of bounds for u64"),
+                    ),
+                )
+                .await
+            {
+                let rank = index + 1;
+                let user_name = target.display_name();
+                embed = embed.field(
+                    format!("#{rank} {user_name}"),
+                    user.message_count.to_string(),
+                    false,
+                );
+            }
         }
+
+        ctx.send(CreateReply::default().embed(embed)).await?;
     }
-
-    ctx.send(CreateReply::default().embed(embed)).await?;
     Ok(())
 }
 
@@ -321,80 +318,71 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// When your memory is not enough
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(prefix_command)]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
-    ctx.defer().await?;
-
-    let msg = ctx
-        .channel_id()
-        .message(&ctx.http(), MessageId::new(ctx.id()))
-        .await?;
-
-    let Some(reply) = msg.referenced_message else {
-        ctx.reply("Bruh, reply to a message").await?;
-        return Ok(());
-    };
-
-    let message_url = reply.link();
-    let content = reply.content;
-    let quote_path = Path::new("quote.webp");
-
-    let (avatar_image, name) = if reply.webhook_id.is_some() {
-        let Some(avatar_url) = reply.author.avatar_url() else {
-            return Ok(());
-        };
-        let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
-            return Ok(());
-        };
-        let Ok(avatar_bytes) = resp.bytes().await else {
-            return Ok(());
-        };
-        let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
-            return Ok(());
-        };
-        (
-            mem_bytes.to_rgba8(),
-            reply.author.display_name().to_string(),
-        )
-    } else {
-        let guild = match ctx.guild() {
-            Some(guild) => guild.clone(),
-            None => {
-                return Ok(());
-            }
-        };
-        let member = guild.member(ctx.http(), reply.author.id).await?;
-        let Some(avatar_url) = member.avatar_url().or_else(|| reply.author.avatar_url()) else {
-            return Ok(());
-        };
-        let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
-            return Ok(());
-        };
-        let Ok(avatar_bytes) = resp.bytes().await else {
-            return Ok(());
-        };
-        let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
-            return Ok(());
-        };
-        (mem_bytes.to_rgba8(), member.display_name().to_string())
-    };
-
-    quote_image(&avatar_image, &name, &content)
-        .await
-        .save(quote_path)
-        .unwrap();
-
-    let attachment = CreateAttachment::path(quote_path).await?;
-
-    ctx.channel_id()
-        .send_files(
-            ctx.http(),
-            [attachment.clone()],
-            CreateMessage::default().content(&message_url),
-        )
-        .await?;
-
     if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
+
+        let msg = ctx
+            .channel_id()
+            .message(&ctx.http(), MessageId::new(ctx.id()))
+            .await?;
+
+        let Some(reply) = msg.referenced_message else {
+            ctx.reply("Bruh, reply to a message").await?;
+            return Ok(());
+        };
+
+        let message_url = reply.link();
+        let content = reply.content;
+        let quote_path = Path::new("quote.webp");
+
+        let (avatar_image, name) = if reply.webhook_id.is_some() {
+            let Some(avatar_url) = reply.author.avatar_url() else {
+                return Ok(());
+            };
+            let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
+                return Ok(());
+            };
+            let Ok(avatar_bytes) = resp.bytes().await else {
+                return Ok(());
+            };
+            let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
+                return Ok(());
+            };
+            (mem_bytes.to_rgba8(), reply.author.display_name().to_owned())
+        } else {
+            let member = guild_id.member(&ctx.http(), reply.author.id).await?;
+            let Some(avatar_url) = member.avatar_url().or_else(|| reply.author.avatar_url()) else {
+                return Ok(());
+            };
+            let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
+                return Ok(());
+            };
+            let Ok(avatar_bytes) = resp.bytes().await else {
+                return Ok(());
+            };
+            let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
+                return Ok(());
+            };
+            (mem_bytes.to_rgba8(), member.display_name().to_owned())
+        };
+
+        quote_image(&avatar_image, &name, &content)
+            .await
+            .save(quote_path)
+            .unwrap();
+
+        let attachment = CreateAttachment::path(quote_path).await?;
+
+        ctx.channel_id()
+            .send_files(
+                ctx.http(),
+                [attachment.clone()],
+                CreateMessage::default().content(&message_url),
+            )
+            .await?;
+
         if let Ok(record) = query!(
             "SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
             i64::from(guild_id),
@@ -415,9 +403,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                     .await?;
             }
         }
-    }
 
-    remove_file(quote_path).await?;
+        remove_file(quote_path).await?;
+    }
     Ok(())
 }
 
