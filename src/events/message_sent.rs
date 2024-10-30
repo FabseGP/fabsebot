@@ -120,7 +120,7 @@ pub async fn handle_message(
                                 &get_waifu().await?
                             } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
                                 let urls = get_gifs(gif_query).await?;
-                                &urls[RNG.lock().await.usize(..urls.len())].clone()
+                                &urls[RNG.lock().await.usize(..urls.len())].to_owned()
                             } else {
                                 ping_media
                             };
@@ -255,7 +255,7 @@ pub async fn handle_message(
                                                     .get(&guild.guild_id)
                                                     .map_or_else(
                                                         || MessageId::new(0),
-                                                        |id| id.value().to_owned(),
+                                                        |id| *id.value(),
                                                     );
                                                 if new_message.id != last_known_message_id {
                                                     global_chats_history
@@ -290,14 +290,13 @@ pub async fn handle_message(
                                                                 if attachment.dimensions().is_some()
                                                                 {
                                                                     message = message.add_file(
-                                                                        CreateAttachment::bytes(
-                                                                            attachment
-                                                                                .download()
-                                                                                .await?,
+                                                                        CreateAttachment::url(
+                                                                            &ctx.http,
+                                                                            attachment.url.as_str(),
                                                                             attachment
                                                                                 .filename
                                                                                 .to_string(),
-                                                                        ),
+                                                                        ).await?,
                                                                     );
                                                                 }
                                                             }
@@ -305,19 +304,24 @@ pub async fn handle_message(
                                                         if let Some(replied_message) =
                                                             &new_message.referenced_message
                                                         {
-                                                            message = message.embed(
-                                                                CreateEmbed::default().description(
-                                                                    replied_message
-                                                                        .content
-                                                                        .as_str(),
-                                                                ).author(              
-                                                CreateEmbedAuthor::new(replied_message.author.display_name()).icon_url(
-                            replied_message.author.avatar_url().unwrap_or_else(|| {
-                                "https://cdn.discordapp.com/embed/avatars/0.png".to_owned()
-                            }),
-                        ),
-                    ),
-                                                            );
+                                                            let mut embed = 
+                                                                CreateEmbed::default()
+                                                                    .description(
+                                                                        replied_message
+                                                                            .content
+                                                                            .as_str(),
+                                                                    )
+                                                                    .author(              
+                                                                        CreateEmbedAuthor::new(replied_message.author.display_name()).icon_url(
+                                                                            replied_message.author.avatar_url().unwrap_or_else(||
+                                                                            replied_message.author.default_avatar_url())
+                                                                        ),
+                                                                    )
+                                                                    .timestamp(new_message.timestamp);
+                                                            if let Some(attachment) = replied_message.attachments.first() {
+                                                            embed = embed.image(attachment.url.as_str());
+                                                            }
+                                                            message = message.embed(embed);
                                                         }
                                                         webhook
                                                             .execute(&ctx.http, false, message)
@@ -370,15 +374,13 @@ pub async fn handle_message(
                     .description(ref_msg.content.as_str())
                     .author(
                         CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
-                            ref_msg.author.avatar_url().unwrap_or_else(|| {
-                                "https://cdn.discordapp.com/embed/avatars/0.png".to_owned()
-                            }),
+                            ref_msg.author.avatar_url().unwrap_or_else(|| ref_msg.author.default_avatar_url()),
                         ),
                     )
                     .footer(CreateEmbedFooter::new(&channel_name))
                     .timestamp(ref_msg.timestamp);
                 if let Some(attachment) = ref_msg.attachments.first() {
-                    embed = embed.image(attachment.url.clone());
+                    embed = embed.image(attachment.url.as_str());
                 }
                 let mut preview_message = CreateMessage::default()
                     .embed(embed)
