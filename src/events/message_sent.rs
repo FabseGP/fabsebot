@@ -5,9 +5,9 @@ use crate::{
 
 use anyhow::Context as _;
 use poise::serenity_prelude::{
-    self as serenity, ChannelId, Colour, CreateAllowedMentions, CreateEmbed, CreateEmbedAuthor,
-    CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GuildId, Message, MessageId,
-    ReactionType, Timestamp, UserId,
+    self as serenity, ChannelId, Colour, CreateAllowedMentions, CreateAttachment, CreateEmbed,
+    CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GuildId,
+    Message, MessageId, ReactionType, Timestamp, UserId,
 };
 use sqlx::{query, Acquire as _};
 use std::sync::Arc;
@@ -264,24 +264,63 @@ pub async fn handle_message(
                                                         webhook_find(ctx, chat_channel.id, &data)
                                                             .await
                                                     {
-                                                        webhook
-                                                            .execute(
-                                                                &ctx.http,
-                                                                false,
-                                                                ExecuteWebhook::default()
-                                                                    .username(
-                                                                        new_message
-                                                                            .author
-                                                                            .display_name(),
-                                                                    )
-                                                                    .avatar_url(
-                                                                        new_message
-                                                                            .author
-                                                                            .avatar_url()
-                                                                            .unwrap_or_else(|| new_message.author.static_avatar_url().unwrap_or_else(|| new_message.author.default_avatar_url())),
-                                                                    )
-                                                                    .content(new_message.content.as_str()),
+                                                        let content =
+                                                            if new_message.content.is_empty() {
+                                                                ""
+                                                            } else {
+                                                                new_message.content.as_str()
+                                                            };
+                                                        let mut message = ExecuteWebhook::default()
+                                                            .username(
+                                                                new_message
+                                                                    .author
+                                                                    .display_name(),
                                                             )
+                                                            .avatar_url(
+                                                                new_message
+                                                                    .author
+                                                                    .avatar_url()
+                                                                    .unwrap_or_else(|| new_message.author.static_avatar_url().unwrap_or_else(|| new_message.author.default_avatar_url())),
+                                                            )
+                                                            .content(content);
+                                                        if !new_message.attachments.is_empty() {
+                                                            for attachment in
+                                                                &new_message.attachments
+                                                            {
+                                                                if attachment.dimensions().is_some()
+                                                                {
+                                                                    message = message.add_file(
+                                                                        CreateAttachment::bytes(
+                                                                            attachment
+                                                                                .download()
+                                                                                .await?,
+                                                                            attachment
+                                                                                .filename
+                                                                                .to_string(),
+                                                                        ),
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                        if let Some(replied_message) =
+                                                            &new_message.referenced_message
+                                                        {
+                                                            message = message.embed(
+                                                                CreateEmbed::default().description(
+                                                                    replied_message
+                                                                        .content
+                                                                        .as_str(),
+                                                                ).author(              
+                                                CreateEmbedAuthor::new(replied_message.author.display_name()).icon_url(
+                            replied_message.author.avatar_url().unwrap_or_else(|| {
+                                "https://cdn.discordapp.com/embed/avatars/0.png".to_owned()
+                            }),
+                        ),
+                    ),
+                                                            );
+                                                        }
+                                                        webhook
+                                                            .execute(&ctx.http, false, message)
                                                             .await?;
                                                     } else {
                                                         chat_channel
