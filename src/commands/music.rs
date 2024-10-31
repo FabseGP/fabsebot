@@ -12,7 +12,7 @@ use songbird::{
     tracks::PlayMode,
     Call, Config,
 };
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 use tokio::sync::{Mutex, MutexGuard};
 
 #[derive(Deserialize)]
@@ -180,11 +180,15 @@ pub async fn play_song(
 ) -> Result<(), Error> {
     if let Some(handler_lock) = voice_check(ctx).await {
         ctx.defer().await?;
-        let url_cow: Cow<'static, str> = Cow::Owned(url);
-        let mut src = if url_cow.starts_with("http") {
-            Input::from(YoutubeDl::new(HTTP_CLIENT.clone(), url_cow.clone()))
+        let mut src = if url.starts_with("https") {
+            if url.contains("youtu") {
+                Input::from(YoutubeDl::new(HTTP_CLIENT.clone(), url))
+            } else {
+                ctx.reply("Only YouTube-links are supported").await?;
+                return Ok(());
+            }
         } else {
-            Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), url_cow.clone()))
+            Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), url))
         };
         let metadata = src.aux_metadata().await;
         let queue_len = {
@@ -200,20 +204,21 @@ pub async fn play_song(
                 let source_url = &m.source_url;
                 let duration = &m.duration;
                 ctx.send(CreateReply::default().embed({
-                    let mut e = CreateEmbed::default()
-                        .colour(0xED333B)
-                        .field("Added by:", ctx.author().display_name(), false)
-                        .url(url_cow);
+                    let mut e = CreateEmbed::default().colour(0xED333B).field(
+                        "Added by:",
+                        ctx.author().display_name(),
+                        false,
+                    );
                     if let Some(artist) = artist {
                         e = e.field("Artist:", artist, true);
+                    }
+                    if let Some(url) = source_url {
+                        e = e.url(url);
                     }
                     if let Some(duration) = duration {
                         e = e.field("Duration:", format!("{duration:?}"), true);
                     }
                     e = e.field("Position:", format!("{queue_len}"), true);
-                    if let Some(url) = source_url {
-                        e = e.url(url);
-                    }
                     if let Some(title) = title {
                         match source_url {
                             Some(u) => {
