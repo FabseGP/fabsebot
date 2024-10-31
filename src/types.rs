@@ -25,7 +25,7 @@ pub struct Data {
     pub db: PgPool,
     pub music_manager: Arc<Songbird>,
     pub ai_conversations: Arc<AIChatHashMap>,
-    pub global_call_last: Arc<GlobalCallHashMap>,
+    pub global_chat_last: Arc<GlobalCallHashMap>,
     pub webhook_cache: Arc<WebhookHashMap>,
 }
 pub type Error = anyhow::Error;

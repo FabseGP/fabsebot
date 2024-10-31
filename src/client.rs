@@ -111,7 +111,7 @@ pub async fn start() -> anyhow::Result<()> {
         db: database,
         music_manager: Arc::<Songbird>::clone(&music_manager),
         ai_conversations: Arc::new(DashMap::default()),
-        global_call_last: Arc::new(DashMap::default()),
+        global_chat_last: Arc::new(DashMap::default()),
         webhook_cache: Arc::new(DashMap::default()),
     });
     let framework = Framework::builder()
@@ -142,8 +142,8 @@ pub async fn start() -> anyhow::Result<()> {
                 misc::anony_poll(),
                 misc::birthday(),
                 misc::end_pgo(),
-                misc::global_call_end(),
-                misc::global_call_start(),
+                misc::global_chat_end(),
+                misc::global_chat_start(),
                 misc::help(),
                 misc::leaderboard(),
                 misc::ohitsyou(),
@@ -152,6 +152,8 @@ pub async fn start() -> anyhow::Result<()> {
                 misc::troll(),
                 misc::word_count(),
                 music::add_playlist(),
+                music::global_music_end(),
+                music::global_music_start(),
                 music::join_voice(),
                 music::leave_voice(),
                 music::pause_continue_song(),

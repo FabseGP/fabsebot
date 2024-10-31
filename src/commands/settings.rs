@@ -24,7 +24,9 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 ai_chat_channel = NULL,
                 global_chat_channel = NULL,
                 word_tracked = NULL,
-                word_count = 0
+                word_count = 0,
+                global_chat = FALSE,
+                global_music = FALSE
             WHERE guild_id = $1",
             i64::from(guild_id)
         )

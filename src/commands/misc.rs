@@ -155,20 +155,20 @@ pub async fn end_pgo(_: SContext<'_>) -> Result<(), Error> {
 
 /// When you're not lonely anymore
 #[poise::command(prefix_command, slash_command)]
-pub async fn global_call_end(ctx: SContext<'_>) -> Result<(), Error> {
+pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
-            "INSERT INTO guild_settings (guild_id, global_call)
+            "INSERT INTO guild_settings (guild_id, global_chat)
             VALUES ($1, FALSE)
             ON CONFLICT(guild_id)
             DO UPDATE SET
-                global_call = FALSE",
+                global_chat = FALSE",
             i64::from(guild_id),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         ctx.data()
-            .global_call_last
+            .global_chat_last
             .remove(&guild_id)
             .unwrap_or_default();
         ctx.reply("Call ended...").await?;
@@ -176,17 +176,18 @@ pub async fn global_call_end(ctx: SContext<'_>) -> Result<(), Error> {
     Ok(())
 }
 
+/// When you're lonely and need someone to chat with
 #[poise::command(prefix_command, slash_command)]
-pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
+pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let guild_id_i64 = i64::from(guild_id);
         let mut tx = ctx.data().db.begin().await?;
         query!(
-            "INSERT INTO guild_settings (guild_id, global_call, global_chat_channel)
+            "INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
             VALUES ($1, TRUE, $2)
             ON CONFLICT(guild_id)
             DO UPDATE SET
-                global_call = TRUE,
+                global_chat = TRUE,
                 global_chat_channel = $2",
             guild_id_i64,
             i64::from(ctx.channel_id()),
@@ -197,11 +198,10 @@ pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
         let result = timeout(Duration::from_secs(60), async {
             loop {
                 let other_calls = query!(
-                    r#"
-                    SELECT EXISTS(
+                    "SELECT EXISTS(
                         SELECT 1 FROM guild_settings 
-                        WHERE guild_id != $1 AND global_call = TRUE
-                    ) as has_call"#,
+                        WHERE guild_id != $1 AND global_chat = TRUE
+                    ) AS HAS_CALL",
                     guild_id_i64
                 )
                 .fetch_optional(&mut *tx)
@@ -223,7 +223,7 @@ pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
                 .await?;
         } else {
             query!(
-                "UPDATE guild_settings SET global_call = FALSE WHERE guild_id = $1",
+                "UPDATE guild_settings SET global_chat = FALSE WHERE guild_id = $1",
                 guild_id_i64
             )
             .execute(&mut *tx)

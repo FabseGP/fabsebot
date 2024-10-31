@@ -147,7 +147,7 @@ pub async fn handle_message(
         .await?;
         let guild_settings = query!(
             "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel, ai_chat_channel,
-                global_chat_channel, global_call, word_tracked, word_count
+                global_chat_channel, global_chat, word_tracked, word_count
             FROM guild_settings 
             WHERE guild_id = $1",
             guild_id
@@ -220,18 +220,18 @@ pub async fn handle_message(
                         u64::try_from(global_chat_channel)
                             .expect("channel id out of bounds for u64"),
                     )
-                && guild_settings.global_call == Some(true)
+                && guild_settings.global_chat == Some(true)
             {
                 let guild_global_chats = query!(
-                    "SELECT guild_id, global_chat_channel, global_call FROM guild_settings
+                    "SELECT guild_id, global_chat_channel FROM guild_settings
                         WHERE guild_id != $1
                         AND global_chat_channel IS NOT NULL
-                        AND global_call = TRUE",
+                        AND global_chat = TRUE",
                     guild_id
                 )
                 .fetch_all(&mut *tx)
                 .await?;
-                let global_chats_history = data.global_call_last.entry(id).or_default();
+                let global_chats_history = data.global_chat_last.entry(id).or_default();
                 for guild in &guild_global_chats {
                     if let Some(guild_channel_id) = guild.global_chat_channel {
                         let channel_id_type = ChannelId::new(
