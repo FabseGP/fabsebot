@@ -174,7 +174,7 @@ pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn play_song(
     ctx: SContext<'_>,
-    #[description = "Link to the song or query to search"]
+    #[description = "YouTube link or query to search"]
     #[rest]
     url: String,
 ) -> Result<(), Error> {
