@@ -1,3 +1,5 @@
+#![feature(iter_intersperse)]
+
 mod client;
 mod commands;
 mod events;

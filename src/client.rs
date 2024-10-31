@@ -2,8 +2,7 @@ use crate::{
     commands::{animanga, api_calls, funny, games, info, misc, music, settings},
     events::{
         bot_ready::handle_ready, guild_create::handle_guild_create,
-        http_ratelimit::handle_ratelimit, message_delete::handle_message_delete,
-        message_sent::handle_message,
+        http_ratelimit::handle_ratelimit, message_sent::handle_message,
     },
     types::{ClientData, Data, Error, CLIENT_DATA},
 };
@@ -84,11 +83,6 @@ async fn event_handler(
         FullEvent::GuildCreate { guild, is_new } => {
             handle_guild_create(data, guild, is_new.as_ref()).await?;
         }
-        FullEvent::MessageDelete {
-            channel_id,
-            guild_id,
-            deleted_message_id,
-        } => handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id).await?,
         FullEvent::Ratelimit { data } => handle_ratelimit(data).await?,
         _ => {}
     }

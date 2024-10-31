@@ -3,6 +3,7 @@ use crate::{
     utils::{ai_response_simple, quote_image},
 };
 
+use anyhow::Context;
 use dashmap::DashSet;
 use image::load_from_memory;
 use poise::{
@@ -16,7 +17,10 @@ use poise::{
 };
 use sqlx::{query, query_as};
 use std::{borrow::Cow, path::Path, time::Duration};
-use tokio::fs::remove_file;
+use tokio::{
+    fs::remove_file,
+    time::{sleep, timeout},
+};
 
 /// When you want to find the imposter
 #[poise::command(slash_command)]
@@ -173,12 +177,11 @@ pub async fn global_call_end(ctx: SContext<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// When you're lonely
 #[poise::command(prefix_command, slash_command)]
 pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let guild_id_i64 = i64::from(guild_id);
-        let mut conn = ctx.data().db.acquire().await?;
+        let mut tx = ctx.data().db.begin().await?;
         query!(
             "INSERT INTO guild_settings (guild_id, global_call, global_chat_channel)
             VALUES ($1, TRUE, $2)
@@ -189,20 +192,32 @@ pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
             guild_id_i64,
             i64::from(ctx.channel_id()),
         )
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await?;
         let message = ctx
             .send(CreateReply::default().content("Calling..."))
             .await?;
-        let global_chats = query!(
-            "SELECT global_call FROM guild_settings
-            WHERE guild_id != $1",
-            guild_id_i64
-        )
-        .fetch_all(&mut *conn)
-        .await?;
-        let has_active_call = global_chats.iter().any(|row| row.global_call == Some(true));
-        if has_active_call {
+        let result = timeout(Duration::from_secs(60), async {
+            loop {
+                let other_calls = query!(
+                    r#"
+                    SELECT EXISTS(
+                        SELECT 1 FROM guild_settings 
+                        WHERE guild_id != $1 AND global_call = TRUE
+                    ) as has_call"#,
+                    guild_id_i64
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+                if other_calls.has_call.unwrap_or(false) {
+                    return Ok::<_, Error>(true);
+                }
+                sleep(Duration::from_secs(5)).await;
+            }
+        })
+        .await;
+        let found_call = result.unwrap_or(Ok(false))?;
+        if found_call {
             message
                 .edit(
                     ctx,
@@ -210,13 +225,22 @@ pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
                 )
                 .await?;
         } else {
+            query!(
+                "UPDATE guild_settings SET global_call = FALSE WHERE guild_id = $1",
+                guild_id_i64
+            )
+            .execute(&mut *tx)
+            .await?;
             message
                 .edit(
                     ctx,
-                    CreateReply::default().content("No one wants to talk to you"),
+                    CreateReply::default().content("No one joined the call within 1 minute 😢"),
                 )
                 .await?;
         }
+        tx.commit()
+            .await
+            .context("Failed to commit sql-transaction")?;
     }
     Ok(())
 }

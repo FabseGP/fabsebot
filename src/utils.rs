@@ -17,7 +17,7 @@ use poise::serenity_prelude::{
     MessageId, Webhook,
 };
 use serde::{Deserialize, Serialize};
-use std::{fmt::Write, iter, path::Path, sync::Arc};
+use std::{fmt::Write, path::Path, sync::Arc};
 use textwrap::wrap;
 use tokio::{
     fs::{remove_file, File},
@@ -32,8 +32,7 @@ pub async fn ai_chatbot(
     guild_id: GuildId,
     conversations: &Arc<DashMap<GuildId, Vec<AIChatMessage>>>,
 ) -> Result<(), Error> {
-    let content = message.content.to_lowercase();
-    if content == "clear" {
+    if message.content.eq_ignore_ascii_case("clear") {
         if conversations.remove(&guild_id).is_some() {
             message.reply(&ctx.http, "Conversation cleared!").await?;
         } else {
@@ -41,7 +40,7 @@ pub async fn ai_chatbot(
         }
         return Ok(());
     }
-    if !content.starts_with('#') {
+    if !message.content.starts_with('#') {
         let typing = message
             .channel_id
             .start_typing(Arc::<Http>::clone(&ctx.http));
@@ -55,79 +54,72 @@ pub async fn ai_chatbot(
                 reply.content
             )?;
         }
-        let guild_opt = ctx.cache.guild(guild_id).map(|g| g.clone());
-        if let Some(guild) = guild_opt {
-            if let Ok(author_member) = guild.member(&ctx.http, message.author.id).await {
-                let guild_roles = &guild.roles;
-                let mut roles_iter = author_member
-                    .roles
+        if let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await {
+            if let Some(author_roles) = author_member.roles(&ctx.cache) {
+                let roles_joined = author_roles
                     .iter()
-                    .filter_map(|role_id| guild_roles.get(role_id))
-                    .map(|role| role.name.as_str());
-                if let Some(first_role) = roles_iter.next() {
-                    let roles_joined = iter::once(first_role)
-                        .chain(roles_iter)
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    write!(
-                        system_content,
-                        "\n{author_name} has the following roles: {roles_joined}"
-                    )?;
-                }
-                if !message.mentions.is_empty() {
-                    write!(
-                        system_content,
-                        "\n{} user(s) were mentioned:",
-                        message.mentions.len()
-                    )?;
-                    for target in &message.mentions {
-                        if let Some(target_member) = target.member.as_ref() {
-                            let target_roles: String = target_member
-                                .roles
-                                .iter()
-                                .filter_map(|role_id| guild_roles.get(role_id))
-                                .map(|role| role.name.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            let pfp_desc = {
-                                let pfp = HTTP_CLIENT
-                                    .get(
-                                        target.avatar_url().unwrap_or_else(|| target.static_face()),
-                                    )
-                                    .send()
-                                    .await?;
-                                if pfp.status().is_success() {
-                                    let binary_pfp = pfp.bytes().await?;
-                                    &ai_image_desc(&binary_pfp, None).await?
-                                } else {
-                                    "Unable to describe"
-                                }
-                            };
-                            let target_name = target.display_name();
-                            write!(
+                    .map(|role| role.name.as_str())
+                    .intersperse(", ")
+                    .collect::<String>();
+                write!(
+                    system_content,
+                    "\n{author_name} has the following roles: {roles_joined}"
+                )?;
+            }
+            if !message.mentions.is_empty() {
+                write!(
+                    system_content,
+                    "\n{} user(s) were mentioned:",
+                    message.mentions.len()
+                )?;
+                for target in &message.mentions {
+                    if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await {
+                        let target_roles = target_member.roles(&ctx.cache).map_or_else(
+                            || "No roles found".to_owned(),
+                            |roles| {
+                                roles
+                                    .iter()
+                                    .map(|role| role.name.as_str())
+                                    .intersperse(", ")
+                                    .collect::<String>()
+                            },
+                        );
+                        let pfp_desc = {
+                            let pfp = HTTP_CLIENT
+                                .get(target.avatar_url().unwrap_or_else(|| target.static_face()))
+                                .send()
+                                .await?;
+                            if pfp.status().is_success() {
+                                let binary_pfp = pfp.bytes().await?;
+                                &ai_image_desc(&binary_pfp, None).await?
+                            } else {
+                                "Unable to describe"
+                            }
+                        };
+                        let target_name = target.display_name();
+                        write!(
                                 system_content,
                                 "\n{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
                             )?;
-                        }
-                    }
-                }
-                if !message.attachments.is_empty() {
-                    write!(
-                        system_content,
-                        "\n{} image(s) were sent:",
-                        message.attachments.len()
-                    )?;
-                    for attachment in &message.attachments {
-                        if attachment.dimensions().is_some() {
-                            let file = attachment.download().await?;
-                            let description = ai_image_desc(&file, Some(content.as_str())).await?;
-                            write!(system_content, "\n{description}")?;
-                        }
                     }
                 }
             }
         }
-        if let Some(url) = CHANNEL_REGEX.captures(&content) {
+        if !message.attachments.is_empty() {
+            write!(
+                system_content,
+                "\n{} image(s) were sent:",
+                message.attachments.len()
+            )?;
+            for attachment in &message.attachments {
+                if attachment.dimensions().is_some() {
+                    let file = attachment.download().await?;
+                    let description = ai_image_desc(&file, Some(&message.content)).await?;
+                    write!(system_content, "\n{description}")?;
+                }
+            }
+        }
+        if let Some(url) = CHANNEL_REGEX.captures(&message.content) {
             let guild_id = GuildId::new(url[1].parse().unwrap());
             let channel_id = ChannelId::new(url[2].parse().unwrap());
             let message_id = MessageId::new(url[3].parse().unwrap());
@@ -200,13 +192,13 @@ pub async fn ai_chatbot(
         if let Ok(response) = resp {
             if response.len() >= 2000 {
                 let mut start = 0;
-                while start < content.len() {
-                    let end = content[start..]
+                while start < response.len() {
+                    let end = response[start..]
                         .char_indices()
                         .take_while(|(i, _)| *i < 2000)
                         .last()
-                        .map_or(content.len(), |(i, c)| start + i + c.len_utf8());
-                    message.reply(&ctx.http, &content[start..end]).await?;
+                        .map_or(response.len(), |(i, c)| start + i + c.len_utf8());
+                    message.reply(&ctx.http, &response[start..end]).await?;
                     start = end;
                 }
             } else {

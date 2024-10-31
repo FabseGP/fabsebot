@@ -17,7 +17,7 @@ use poise::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::query;
-use std::{borrow::Cow, iter, time::Duration};
+use std::{borrow::Cow, time::Duration};
 use urlencoding::encode;
 
 struct State {
@@ -551,26 +551,16 @@ pub async fn roast(
                     .map_or_else(|| "user has no banner".to_owned(), |banner| banner)
             },
         );
-        let roles = {
-            if let Some(guild) = ctx.guild() {
-                let mut roles_iter = member
-                    .roles
+        let roles = member.roles(ctx.cache()).map_or_else(
+            || "no roles".to_owned(),
+            |member_roles| {
+                member_roles
                     .iter()
-                    .filter_map(|role_id| guild.roles.get(role_id))
-                    .map(|role| role.name.as_str());
-                roles_iter.next().map_or_else(
-                    || "no roles".to_string(),
-                    |first_role| {
-                        iter::once(first_role)
-                            .chain(roles_iter)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    },
-                )
-            } else {
-                "no roles".to_string()
-            }
-        };
+                    .map(|role| role.name.as_str())
+                    .intersperse(", ")
+                    .collect()
+            },
+        );
         let name = member.display_name();
         let account_date = member.user.created_at();
         let join_date = member.joined_at.unwrap_or_default();

@@ -9,7 +9,7 @@ use poise::serenity_prelude::{
     CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GuildId,
     Message, MessageId, ReactionType, Timestamp, UserId,
 };
-use sqlx::{query, Acquire as _};
+use sqlx::query;
 use std::sync::Arc;
 
 pub async fn handle_message(
@@ -24,24 +24,12 @@ pub async fn handle_message(
     if let Some(id) = new_message.guild_id {
         let guild_id = i64::from(id);
         let user_id = i64::from(new_message.author.id);
-        let mut conn = data
+        let mut tx = data
             .db
-            .acquire()
+            .begin()
             .await
-            .context("Failed to acquire database connection")?;
-        let mut tx = conn.begin().await.context("Failed to acquire savepoint")?;
+            .context("Failed to acquire savepoint")?;
         let user_settings = query!("SELECT * FROM user_settings WHERE guild_id = $1", guild_id)
-            .fetch_all(&mut *tx)
-            .await?;
-        let guild_settings = query!(
-            "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel, ai_chat_channel, global_chat_channel, global_call
-            FROM guild_settings 
-            WHERE guild_id = $1",
-            guild_id
-        )
-        .fetch_optional(&mut *tx)
-        .await?;
-        let words = query!("SELECT word FROM words_count WHERE guild_id = $1", guild_id)
             .fetch_all(&mut *tx)
             .await?;
         for target in &user_settings {
@@ -99,8 +87,8 @@ pub async fn handle_message(
                     .await?;
                     let reason = target
                         .afk_reason
-                        .as_ref()
-                        .map_or("Didn't renew life subscription", |input| input);
+                        .as_deref()
+                        .unwrap_or("Didn't renew life subscription");
                     let user = user_id.to_user(&ctx.http).await?;
                     let user_name = user.display_name();
                     new_message
@@ -116,11 +104,11 @@ pub async fn handle_message(
                 if let Some(ping_content) = &target.ping_content {
                     match &target.ping_media {
                         Some(ping_media) => {
-                            let media = if ping_media.to_lowercase() == "waifu" {
+                            let media = if ping_media.eq_ignore_ascii_case("waifu") {
                                 &get_waifu().await?
                             } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
                                 let urls = get_gifs(gif_query).await?;
-                                &urls[RNG.lock().await.usize(..urls.len())].to_owned()
+                                &urls[RNG.lock().await.usize(..urls.len())].clone()
                             } else {
                                 ping_media
                             };
@@ -159,6 +147,14 @@ pub async fn handle_message(
             user_id,
         )
         .execute(&mut *tx)
+        .await?;
+        let guild_settings = query!(
+            "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel, ai_chat_channel, global_chat_channel, global_call
+            FROM guild_settings 
+            WHERE guild_id = $1",
+            guild_id
+        )
+        .fetch_optional(&mut *tx)
         .await?;
         if let Some(guild_settings) = guild_settings {
             if let Some(spoiler_channel) = guild_settings.spoiler_channel {
@@ -232,109 +228,109 @@ pub async fn handle_message(
                         if global_call_state {
                             let guild_global_chats = query!(
                                 "SELECT guild_id, global_chat_channel, global_call FROM guild_settings
-                                WHERE guild_id != $1",
+                                WHERE guild_id != $1
+                                AND global_chat_channel IS NOT NULL
+                                AND global_call = TRUE",
                                 guild_id
                             )
                             .fetch_all(&mut *tx)
                             .await?;
                             let global_chats_history = data.global_call_last.entry(id).or_default();
                             for guild in &guild_global_chats {
-                                if let Some(guild_call_state) = guild.global_call {
-                                    if guild_call_state {
-                                        if let Some(guild_channel_id) = guild.global_chat_channel {
-                                            let channel_id_type = ChannelId::new(
-                                                u64::try_from(guild_channel_id)
-                                                    .expect("channel id out of bounds for u64"),
-                                            );
-                                            if let Some(chat_channel) = channel_id_type
-                                                .to_channel(&ctx.http, Some(id))
-                                                .await?
-                                                .guild()
+                                if let Some(guild_channel_id) = guild.global_chat_channel {
+                                    let channel_id_type = ChannelId::new(
+                                        u64::try_from(guild_channel_id)
+                                            .expect("channel id out of bounds for u64"),
+                                    );
+                                    if let Some(chat_channel) = channel_id_type
+                                        .to_channel(&ctx.http, Some(id))
+                                        .await?
+                                        .guild()
+                                    {
+                                        let last_known_message_id = global_chats_history
+                                            .get(&guild.guild_id)
+                                            .map_or_else(|| MessageId::new(0), |id| *id.value());
+                                        if new_message.id != last_known_message_id {
+                                            global_chats_history
+                                                .insert(guild.guild_id, new_message.id);
+                                            if let Ok(webhook) =
+                                                webhook_find(ctx, chat_channel.id, &data).await
                                             {
-                                                let last_known_message_id = global_chats_history
-                                                    .get(&guild.guild_id)
-                                                    .map_or_else(
-                                                        || MessageId::new(0),
-                                                        |id| *id.value(),
-                                                    );
-                                                if new_message.id != last_known_message_id {
-                                                    global_chats_history
-                                                        .insert(guild.guild_id, new_message.id);
-                                                    if let Ok(webhook) =
-                                                        webhook_find(ctx, chat_channel.id, &data)
-                                                            .await
-                                                    {
-                                                        let content =
-                                                            if new_message.content.is_empty() {
-                                                                ""
-                                                            } else {
-                                                                new_message.content.as_str()
-                                                            };
-                                                        let mut message = ExecuteWebhook::default()
-                                                            .username(
+                                                let content = if new_message.content.is_empty() {
+                                                    ""
+                                                } else {
+                                                    new_message.content.as_str()
+                                                };
+                                                let mut message = ExecuteWebhook::default()
+                                                    .username(new_message.author.display_name())
+                                                    .avatar_url(
+                                                        new_message
+                                                            .author
+                                                            .avatar_url()
+                                                            .unwrap_or_else(|| {
                                                                 new_message
+                                                                    .author
+                                                                    .static_avatar_url()
+                                                                    .unwrap_or_else(|| {
+                                                                        new_message
+                                                                            .author
+                                                                            .default_avatar_url()
+                                                                    })
+                                                            }),
+                                                    )
+                                                    .content(content);
+                                                if !new_message.attachments.is_empty() {
+                                                    for attachment in &new_message.attachments {
+                                                        if attachment.dimensions().is_some() {
+                                                            message = message.add_file(
+                                                                CreateAttachment::url(
+                                                                    &ctx.http,
+                                                                    attachment.url.as_str(),
+                                                                    attachment.filename.to_string(),
+                                                                )
+                                                                .await?,
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                if let Some(replied_message) =
+                                                    &new_message.referenced_message
+                                                {
+                                                    let mut embed = CreateEmbed::default()
+                                                        .description(
+                                                            replied_message.content.as_str(),
+                                                        )
+                                                        .author(
+                                                            CreateEmbedAuthor::new(
+                                                                replied_message
                                                                     .author
                                                                     .display_name(),
                                                             )
-                                                            .avatar_url(
-                                                                new_message
+                                                            .icon_url(
+                                                                replied_message
                                                                     .author
                                                                     .avatar_url()
-                                                                    .unwrap_or_else(|| new_message.author.static_avatar_url().unwrap_or_else(|| new_message.author.default_avatar_url())),
-                                                            )
-                                                            .content(content);
-                                                        if !new_message.attachments.is_empty() {
-                                                            for attachment in
-                                                                &new_message.attachments
-                                                            {
-                                                                if attachment.dimensions().is_some()
-                                                                {
-                                                                    message = message.add_file(
-                                                                        CreateAttachment::url(
-                                                                            &ctx.http,
-                                                                            attachment.url.as_str(),
-                                                                            attachment
-                                                                                .filename
-                                                                                .to_string(),
-                                                                        ).await?,
-                                                                    );
-                                                                }
-                                                            }
-                                                        }
-                                                        if let Some(replied_message) =
-                                                            &new_message.referenced_message
-                                                        {
-                                                            let mut embed = 
-                                                                CreateEmbed::default()
-                                                                    .description(
+                                                                    .unwrap_or_else(|| {
                                                                         replied_message
-                                                                            .content
-                                                                            .as_str(),
-                                                                    )
-                                                                    .author(              
-                                                                        CreateEmbedAuthor::new(replied_message.author.display_name()).icon_url(
-                                                                            replied_message.author.avatar_url().unwrap_or_else(||
-                                                                            replied_message.author.default_avatar_url())
-                                                                        ),
-                                                                    )
-                                                                    .timestamp(new_message.timestamp);
-                                                            if let Some(attachment) = replied_message.attachments.first() {
-                                                            embed = embed.image(attachment.url.as_str());
-                                                            }
-                                                            message = message.embed(embed);
-                                                        }
-                                                        webhook
-                                                            .execute(&ctx.http, false, message)
-                                                            .await?;
-                                                    } else {
-                                                        chat_channel
-                                                            .say(
-                                                                &ctx.http,
-                                                                new_message.content.as_str(),
-                                                            )
-                                                            .await?;
+                                                                            .author
+                                                                            .default_avatar_url()
+                                                                    }),
+                                                            ),
+                                                        )
+                                                        .timestamp(new_message.timestamp);
+                                                    if let Some(attachment) =
+                                                        replied_message.attachments.first()
+                                                    {
+                                                        embed =
+                                                            embed.image(attachment.url.as_str());
                                                     }
+                                                    message = message.embed(embed);
                                                 }
+                                                webhook.execute(&ctx.http, false, message).await?;
+                                            } else {
+                                                chat_channel
+                                                    .say(&ctx.http, new_message.content.as_str())
+                                                    .await?;
                                             }
                                         }
                                     }
@@ -345,16 +341,28 @@ pub async fn handle_message(
                 }
             }
         }
-        for row in &words {
-            if content.contains(&row.word) {
-                query!(
-                    "UPDATE words_count SET count = count + 1 WHERE guild_id = $1 AND word = $2",
-                    guild_id,
-                    row.word
-                )
-                .execute(&mut *tx)
-                .await?;
-            }
+        let matching_words = query!(
+            "SELECT EXISTS (
+                SELECT 1 FROM words_count 
+                WHERE guild_id = $1 
+                AND $2 LIKE '%' || word || '%'
+            )",
+            guild_id,
+            content
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if matching_words.exists.unwrap_or(false) {
+            query!(
+                "UPDATE words_count 
+                 SET count = count + 1 
+                 WHERE guild_id = $1 
+                 AND $2 LIKE '%' || word || '%'",
+                guild_id,
+                content
+            )
+            .execute(&mut *tx)
+            .await?;
         }
         tx.commit()
             .await
@@ -374,7 +382,10 @@ pub async fn handle_message(
                     .description(ref_msg.content.as_str())
                     .author(
                         CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
-                            ref_msg.author.avatar_url().unwrap_or_else(|| ref_msg.author.default_avatar_url()),
+                            ref_msg
+                                .author
+                                .avatar_url()
+                                .unwrap_or_else(|| ref_msg.author.default_avatar_url()),
                         ),
                     )
                     .footer(CreateEmbedFooter::new(&channel_name))
