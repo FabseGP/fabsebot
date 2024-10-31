@@ -91,6 +91,7 @@ pub async fn set_chatbot_channel(
     #[description = "Channel to act as chatbot in"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
         let channel_id = channel.id();
         query!(
             "INSERT INTO guild_settings (guild_id, ai_chat_channel)
