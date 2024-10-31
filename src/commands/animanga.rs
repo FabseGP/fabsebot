@@ -54,48 +54,46 @@ pub async fn anime_scene(
     let encoded_input = encode(&input);
     let request_url =
         format!("https://api.trace.moe/search?cutBorders&anilistInfo&url={encoded_input}");
+    match HTTP_CLIENT.get(request_url).send().await {
+        Ok(response) => match response.json::<MoeResponse>().await {
+            Ok(scene) => {
+                if let Some(first_result) = scene.result.first() {
+                    if first_result.video.is_empty() {
+                        ctx.reply("No matching scene found").await?;
+                        return Ok(());
+                    }
 
-    let response = HTTP_CLIENT.get(request_url).send().await?;
+                    let episode_text = first_result.episode.unwrap_or(0).to_string();
+                    let title = first_result
+                        .anilist
+                        .title
+                        .english
+                        .as_deref()
+                        .unwrap_or("Unknown title");
 
-    match response.json::<MoeResponse>().await {
-        Ok(scene) => {
-            if let Some(first_result) = scene.result.first() {
-                if first_result.video.is_empty() {
-                    ctx.send(CreateReply::default().content("No matching scene found"))
-                        .await?;
-                    return Ok(());
+                    ctx.send(
+                        CreateReply::default().embed(
+                            CreateEmbed::default()
+                                .title(title)
+                                .field("Episode", episode_text, true)
+                                .field("From", first_result.from.unwrap_or(0.0).to_string(), true)
+                                .field("To", first_result.to.unwrap_or(0.0).to_string(), true)
+                                .color(0x57e389),
+                        ),
+                    )
+                    .await?;
+
+                    ctx.reply(&first_result.video).await?;
+                } else {
+                    ctx.reply("No results found").await?;
                 }
-
-                let episode_text = first_result.episode.unwrap_or(0).to_string();
-                let title = first_result
-                    .anilist
-                    .title
-                    .english
-                    .as_deref()
-                    .unwrap_or("Unknown title");
-
-                ctx.send(
-                    CreateReply::default().embed(
-                        CreateEmbed::default()
-                            .title(title)
-                            .field("Episode", episode_text, true)
-                            .field("From", first_result.from.unwrap_or(0.0).to_string(), true)
-                            .field("To", first_result.to.unwrap_or(0.0).to_string(), true)
-                            .color(0x57e389),
-                    ),
-                )
-                .await?;
-
-                ctx.send(CreateReply::default().content(&first_result.video))
-                    .await?;
-            } else {
-                ctx.send(CreateReply::default().content("No results found"))
-                    .await?;
             }
-        }
+            Err(_) => {
+                ctx.reply("Failed to parse the response").await?;
+            }
+        },
         Err(_) => {
-            ctx.send(CreateReply::default().content("Failed to parse the response"))
-                .await?;
+            ctx.reply("Oof, anime-server down!").await?;
         }
     }
 

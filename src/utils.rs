@@ -84,23 +84,23 @@ pub async fn ai_chatbot(
                                     .collect::<String>()
                             },
                         );
-                        let pfp_desc = {
-                            let pfp = HTTP_CLIENT
-                                .get(target.avatar_url().unwrap_or_else(|| target.static_face()))
-                                .send()
-                                .await?;
-                            if pfp.status().is_success() {
+                        let pfp_desc = match HTTP_CLIENT
+                            .get(target.avatar_url().unwrap_or_else(|| target.static_face()))
+                            .send()
+                            .await
+                        {
+                            Ok(pfp) => {
                                 let binary_pfp = pfp.bytes().await?;
-                                &ai_image_desc(&binary_pfp, None).await?
-                            } else {
-                                "Unable to describe"
+                                (ai_image_desc(&binary_pfp, None).await)
+                                    .map_or_else(|| "Unable to describe".to_string(), |desc| desc)
                             }
+                            Err(_) => "Unable to describe".to_string(),
                         };
                         let target_name = target.display_name();
                         write!(
-                                system_content,
-                                "\n{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
-                            )?;
+                            system_content,
+                            "\n{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
+                        )?;
                     }
                 }
             }
@@ -114,8 +114,9 @@ pub async fn ai_chatbot(
             for attachment in &message.attachments {
                 if attachment.dimensions().is_some() {
                     let file = attachment.download().await?;
-                    let description = ai_image_desc(&file, Some(&message.content)).await?;
-                    write!(system_content, "\n{description}")?;
+                    if let Some(desc) = ai_image_desc(&file, Some(&message.content)).await {
+                        write!(system_content, "\n{desc}")?;
+                    }
                 }
             }
         }
@@ -188,8 +189,7 @@ pub async fn ai_chatbot(
             content: format!("User: {author_name}: {content_safe}"),
         });
 
-        let resp = ai_response(&history).await;
-        if let Ok(response) = resp {
+        if let Some(response) = ai_response(&history).await {
             if response.len() >= 2000 {
                 let mut start = 0;
                 while start < response.len() {
@@ -243,7 +243,7 @@ struct ImageDesc<'a> {
     image: &'a [u8],
 }
 
-pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Result<String, Error> {
+pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option<String> {
     let request = ImageDesc {
         messages: [
             SimpleMessage {
@@ -265,9 +265,12 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Result
         .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&request)
         .send()
-        .await?;
-    let output = resp.json::<FabseAIText>().await?;
-    Ok(output.result.response)
+        .await
+        .ok()?;
+    resp.json::<FabseAIText>()
+        .await
+        .ok()
+        .map(|output| output.result.response)
 }
 
 #[derive(Serialize)]
@@ -275,7 +278,7 @@ struct ChatRequest<'a> {
     messages: &'a [AIChatMessage],
 }
 
-pub async fn ai_response(content: &[AIChatMessage]) -> Result<String, Error> {
+pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
     let request = ChatRequest { messages: content };
     let resp = HTTP_CLIENT
         .post(format!(
@@ -285,10 +288,12 @@ pub async fn ai_response(content: &[AIChatMessage]) -> Result<String, Error> {
         .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&request)
         .send()
-        .await?;
-    let output: FabseAIText = resp.json().await?;
-
-    Ok(output.result.response)
+        .await
+        .ok()?;
+    resp.json::<FabseAIText>()
+        .await
+        .ok()
+        .map(|output| output.result.response)
 }
 
 #[derive(Deserialize)]
@@ -308,20 +313,22 @@ struct LocalAIRequest<'a> {
     messages: &'a [AIChatMessage],
 }
 
-pub async fn ai_response_local(messages: &[AIChatMessage]) -> Result<String, Error> {
+pub async fn ai_response_local(messages: &[AIChatMessage]) -> Option<String> {
     let request = LocalAIRequest {
         model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
         stream: false,
         messages,
     };
-    let resp = HTTP_CLIENT.post(&*AI_SERVER).json(&request).send().await?;
-
-    if resp.status().is_success() {
-        let output: LocalAIResponse = resp.json().await?;
-        Ok(output.message.content)
-    } else {
-        ai_response(messages).await
-    }
+    let resp = HTTP_CLIENT
+        .post(&*AI_SERVER)
+        .json(&request)
+        .send()
+        .await
+        .ok()?;
+    resp.json::<LocalAIResponse>()
+        .await
+        .ok()
+        .map(|output| output.message.content)
 }
 
 #[derive(Serialize)]
@@ -329,7 +336,7 @@ struct SimpleAIRequest<'a> {
     messages: [SimpleMessage<'a>; 2],
 }
 
-pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Error> {
+pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
     let request = SimpleAIRequest {
         messages: [
             SimpleMessage {
@@ -350,9 +357,12 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Result<String, Erro
         .bearer_auth(&*CLOUDFLARE_TOKEN)
         .json(&request)
         .send()
-        .await?;
-    let output: FabseAIText = resp.json().await?;
-    Ok(output.result.response)
+        .await
+        .ok()?;
+    resp.json::<FabseAIText>()
+        .await
+        .ok()
+        .map(|output| output.result.response)
 }
 
 pub async fn emoji_id(
@@ -393,21 +403,19 @@ struct GifObject {
     url: String,
 }
 
-pub async fn get_gifs(input: &str) -> Result<Vec<String>, Error> {
+pub async fn get_gifs(input: &str) -> Option<Vec<String>> {
     let encoded_input = encode(input);
     let request_url = format!(
         "https://tenor.googleapis.com/v2/search?q={encoded_input}&key={}&contentfilter=medium&limit=40",
         *TENOR_TOKEN,
     );
-    let request = HTTP_CLIENT.get(request_url).send().await?;
-    let urls: GifResponse = request.json().await?;
-    let payload: Vec<String> = urls
-        .results
-        .into_iter()
-        .filter_map(|result| result.media_formats.gif.map(|media| media.url))
-        .collect();
-
-    Ok(payload)
+    let request = HTTP_CLIENT.get(request_url).send().await.ok()?;
+    request.json::<GifResponse>().await.ok().map(|urls| {
+        urls.results
+            .into_iter()
+            .filter_map(|result| result.media_formats.gif.map(|media| media.url))
+            .collect()
+    })
 }
 
 #[derive(Deserialize)]
@@ -419,16 +427,15 @@ struct WaifuData {
     url: String,
 }
 
-pub async fn get_waifu() -> Result<String, Error> {
+pub async fn get_waifu() -> Option<String> {
     let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
-    let request = HTTP_CLIENT.get(request_url).send().await?;
-    let resp: WaifuResponse = request.json().await?;
-    let url = resp.images.into_iter().next().map_or(
-        "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned(),
-        |img| img.url,
-    );
-
-    Ok(url)
+    let request = HTTP_CLIENT.get(request_url).send().await.ok()?;
+    request.json::<WaifuResponse>().await.ok().map(|urls| {
+        urls.images.into_iter().next().map_or(
+            "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned(),
+            |img| img.url,
+        )
+    })
 }
 
 pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) -> RgbaImage {
@@ -637,8 +644,7 @@ pub async fn spoiler_message(
         let mut is_first = true;
         for attachment in &message.attachments {
             let target = attachment.url.as_str();
-            let response = HTTP_CLIENT.get(target).send().await;
-            let download = response.unwrap().bytes().await;
+            let download = HTTP_CLIENT.get(target).send().await?.bytes().await;
             let attachment_name = &attachment.filename;
             let filename = format!("SPOILER_{attachment_name}");
             let mut file = File::create(&filename).await?;
@@ -697,7 +703,7 @@ pub async fn webhook_find(
         return Ok(webhook.clone());
     }
     let existing_webhooks_get = channel_id.webhooks(&ctx.http).await;
-    let webhook = match existing_webhooks_get {
+    match existing_webhooks_get {
         Ok(existing_webhooks) => {
             if existing_webhooks.len() >= 15 {
                 ctx.http
@@ -708,14 +714,17 @@ pub async fn webhook_find(
                 name: "fabsebot",
                 avatar: "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png",
             };
-            let webhook = ctx
-                .http
+            (ctx.http
                 .create_webhook(channel_id, &webhook_info, None)
-                .await?;
-            data.webhook_cache.insert(channel_id, webhook.clone());
-            webhook
+                .await)
+                .map_or_else(
+                    |_| Err(anyhow!("")),
+                    |webhook| {
+                        data.webhook_cache.insert(channel_id, webhook.clone());
+                        Ok(webhook)
+                    },
+                )
         }
-        Err(e) => return Err(anyhow!(e)),
-    };
-    Ok(webhook)
+        Err(_) => Err(anyhow!("")),
+    }
 }

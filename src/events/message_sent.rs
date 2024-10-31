@@ -33,8 +33,7 @@ pub async fn handle_message(
             .fetch_all(&mut *tx)
             .await?;
         for target in &user_settings {
-            let Some(afk) = target.afk else { continue };
-            if afk {
+            if target.afk == Some(true) {
                 let user_id = UserId::new(
                     u64::try_from(target.user_id).expect("user id out of bounds for u64"),
                 );
@@ -49,20 +48,20 @@ pub async fn handle_message(
                             ),
                         )
                         .await?;
-                    if let Some(links) = target.pinged_links.as_deref() {
-                        if !links.is_empty() {
-                            let mut e = CreateEmbed::default()
-                                .colour(0xED333B)
-                                .title("Pings you retrieved:");
-                            for entry in links.split(',') {
-                                if let Some((name, role)) = entry.split_once(';') {
-                                    e = e.field(name, role, false);
-                                }
+                    if let Some(links) = target.pinged_links.as_deref()
+                        && !links.is_empty()
+                    {
+                        let mut e = CreateEmbed::default()
+                            .colour(0xED333B)
+                            .title("Pings you retrieved:");
+                        for entry in links.split(',') {
+                            if let Some((name, role)) = entry.split_once(';') {
+                                e = e.field(name, role, false);
                             }
-                            response
-                                .edit(&ctx.http, EditMessage::default().embed(e))
-                                .await?;
                         }
+                        response
+                            .edit(&ctx.http, EditMessage::default().embed(e))
+                            .await?;
                     }
                     query!(
                         "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
@@ -100,42 +99,40 @@ pub async fn handle_message(
                 }
             }
             let target_id = target.user_id;
-            if content.contains(&format!("<@{target_id}>")) {
-                if let Some(ping_content) = &target.ping_content {
-                    match &target.ping_media {
-                        Some(ping_media) => {
-                            let media = if ping_media.eq_ignore_ascii_case("waifu") {
-                                &get_waifu().await?
-                            } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
-                                let urls = get_gifs(gif_query).await?;
-                                &urls[RNG.lock().await.usize(..urls.len())].clone()
+            if content.contains(&format!("<@{target_id}>"))
+                && let Some(ping_content) = &target.ping_content
+            {
+                let message = match &target.ping_media {
+                    Some(ping_media) => {
+                        let media = if ping_media.eq_ignore_ascii_case("waifu") {
+                            (get_waifu().await).map_or_else(
+                                || "https://i.postimg.cc/rwkjJZWT/tenor.gif".to_string(),
+                                |waifu| waifu,
+                            )
+                        } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
+                            if let Some(urls) = get_gifs(gif_query).await {
+                                urls[RNG.lock().await.usize(..urls.len())].clone()
                             } else {
-                                ping_media
-                            };
-                            new_message
-                                .channel_id
-                                .send_message(
-                                    &ctx.http,
-                                    CreateMessage::default().embed(
-                                        CreateEmbed::default()
-                                            .title(ping_content)
-                                            .image(media)
-                                            .colour(0x00b0f4),
-                                    ),
-                                )
-                                .await?;
-                        }
-                        None => {
-                            new_message
-                                .channel_id
-                                .send_message(
-                                    &ctx.http,
-                                    CreateMessage::default().content(ping_content),
-                                )
-                                .await?;
-                        }
+                                "https://i.postimg.cc/zffntsGs/tenor.gif".to_string()
+                            }
+                        } else {
+                            ping_media.to_string()
+                        };
+
+                        CreateMessage::default().embed(
+                            CreateEmbed::default()
+                                .title(ping_content)
+                                .image(media)
+                                .colour(0x00b0f4),
+                        )
                     }
-                }
+                    None => CreateMessage::default().content(ping_content),
+                };
+
+                new_message
+                    .channel_id
+                    .send_message(&ctx.http, message)
+                    .await?;
             }
         }
         query!(
@@ -149,7 +146,8 @@ pub async fn handle_message(
         .execute(&mut *tx)
         .await?;
         let guild_settings = query!(
-            "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel, ai_chat_channel, global_chat_channel, global_call
+            "SELECT dead_chat_channel, dead_chat_rate, spoiler_channel, ai_chat_channel,
+                global_chat_channel, global_call, word_tracked, word_count
             FROM guild_settings 
             WHERE guild_id = $1",
             guild_id
@@ -157,14 +155,13 @@ pub async fn handle_message(
         .fetch_optional(&mut *tx)
         .await?;
         if let Some(guild_settings) = guild_settings {
-            if let Some(spoiler_channel) = guild_settings.spoiler_channel {
-                if new_message.channel_id
+            if let Some(spoiler_channel) = guild_settings.spoiler_channel
+                && new_message.channel_id
                     == ChannelId::new(
                         u64::try_from(spoiler_channel).expect("channel id out of bounds for u64"),
                     )
-                {
-                    spoiler_message(ctx, new_message, &new_message.content, &data).await?;
-                }
+            {
+                spoiler_message(ctx, new_message, &new_message.content, &data).await?;
             }
             if let (Some(dead_channel), Some(dead_chat_rate)) = (
                 guild_settings.dead_chat_channel,
@@ -185,24 +182,25 @@ pub async fn handle_message(
                             .timestamp();
                         let current_time = Timestamp::now().timestamp();
                         if current_time - last_message_time > dead_chat_rate * 60 {
-                            let urls = get_gifs("dead chat").await?;
-                            dead_chat_channel
-                                .say(
-                                    &ctx.http,
-                                    urls[RNG.lock().await.usize(..urls.len())].as_str(),
-                                )
-                                .await?;
+                            if let Some(urls) = get_gifs("dead chat").await {
+                                dead_chat_channel
+                                    .say(
+                                        &ctx.http,
+                                        urls[RNG.lock().await.usize(..urls.len())].as_str(),
+                                    )
+                                    .await?;
+                            }
                         }
                     }
                 }
             }
-            if let Some(ai_chat_channel) = guild_settings.ai_chat_channel {
-                if new_message.channel_id
+            if let Some(ai_chat_channel) = guild_settings.ai_chat_channel
+                && new_message.channel_id
                     == ChannelId::new(
                         u64::try_from(ai_chat_channel).expect("channel id out of bounds for u64"),
                     )
-                {
-                    let bot_role = user_settings
+            {
+                let bot_role = user_settings
                         .into_iter()
                         .find(|setting| setting.user_id == user_id)
                         .and_then(|setting| setting.chatbot_role)
@@ -214,155 +212,145 @@ pub async fn handle_message(
                             ctx.cache.current_user().display_name()
                         )
                     );
-                    ai_chatbot(ctx, new_message, bot_role, id, &data.ai_conversations).await?;
-                }
+                ai_chatbot(ctx, new_message, bot_role, id, &data.ai_conversations).await?;
             }
-            if let Some(global_chat_channel) = guild_settings.global_chat_channel {
-                if new_message.channel_id
+            if let Some(global_chat_channel) = guild_settings.global_chat_channel
+                && new_message.channel_id
                     == ChannelId::new(
                         u64::try_from(global_chat_channel)
                             .expect("channel id out of bounds for u64"),
                     )
-                {
-                    if let Some(global_call_state) = guild_settings.global_call {
-                        if global_call_state {
-                            let guild_global_chats = query!(
-                                "SELECT guild_id, global_chat_channel, global_call FROM guild_settings
-                                WHERE guild_id != $1
-                                AND global_chat_channel IS NOT NULL
-                                AND global_call = TRUE",
-                                guild_id
-                            )
-                            .fetch_all(&mut *tx)
-                            .await?;
-                            let global_chats_history = data.global_call_last.entry(id).or_default();
-                            for guild in &guild_global_chats {
-                                if let Some(guild_channel_id) = guild.global_chat_channel {
-                                    let channel_id_type = ChannelId::new(
-                                        u64::try_from(guild_channel_id)
-                                            .expect("channel id out of bounds for u64"),
-                                    );
-                                    if let Some(chat_channel) = channel_id_type
-                                        .to_channel(&ctx.http, Some(id))
-                                        .await?
-                                        .guild()
-                                    {
-                                        let last_known_message_id = global_chats_history
-                                            .get(&guild.guild_id)
-                                            .map_or_else(|| MessageId::new(0), |id| *id.value());
-                                        if new_message.id != last_known_message_id {
-                                            global_chats_history
-                                                .insert(guild.guild_id, new_message.id);
-                                            if let Ok(webhook) =
-                                                webhook_find(ctx, chat_channel.id, &data).await
-                                            {
-                                                let content = if new_message.content.is_empty() {
-                                                    ""
-                                                } else {
-                                                    new_message.content.as_str()
-                                                };
-                                                let mut message = ExecuteWebhook::default()
-                                                    .username(new_message.author.display_name())
-                                                    .avatar_url(
-                                                        new_message
-                                                            .author
-                                                            .avatar_url()
-                                                            .unwrap_or_else(|| {
-                                                                new_message
-                                                                    .author
-                                                                    .static_avatar_url()
-                                                                    .unwrap_or_else(|| {
-                                                                        new_message
-                                                                            .author
-                                                                            .default_avatar_url()
-                                                                    })
-                                                            }),
+                && guild_settings.global_call == Some(true)
+            {
+                let guild_global_chats = query!(
+                    "SELECT guild_id, global_chat_channel, global_call FROM guild_settings
+                        WHERE guild_id != $1
+                        AND global_chat_channel IS NOT NULL
+                        AND global_call = TRUE",
+                    guild_id
+                )
+                .fetch_all(&mut *tx)
+                .await?;
+                let global_chats_history = data.global_call_last.entry(id).or_default();
+                for guild in &guild_global_chats {
+                    if let Some(guild_channel_id) = guild.global_chat_channel {
+                        let channel_id_type = ChannelId::new(
+                            u64::try_from(guild_channel_id)
+                                .expect("channel id out of bounds for u64"),
+                        );
+                        if let Some(chat_channel) = channel_id_type
+                            .to_channel(&ctx.http, Some(id))
+                            .await?
+                            .guild()
+                        {
+                            let last_known_message_id = global_chats_history
+                                .get(&guild.guild_id)
+                                .map_or_else(|| MessageId::new(0), |id| *id.value());
+                            if new_message.id != last_known_message_id {
+                                global_chats_history.insert(guild.guild_id, new_message.id);
+                                if let Ok(webhook) = webhook_find(ctx, chat_channel.id, &data).await
+                                {
+                                    let content = if new_message.content.is_empty() {
+                                        ""
+                                    } else {
+                                        new_message.content.as_str()
+                                    };
+                                    let mut message = ExecuteWebhook::default()
+                                        .username(new_message.author.display_name())
+                                        .avatar_url(new_message.author.avatar_url().unwrap_or_else(
+                                            || {
+                                                new_message
+                                                    .author
+                                                    .static_avatar_url()
+                                                    .unwrap_or_else(|| {
+                                                        new_message.author.default_avatar_url()
+                                                    })
+                                            },
+                                        ))
+                                        .content(content);
+                                    if !new_message.attachments.is_empty() {
+                                        for attachment in &new_message.attachments {
+                                            if attachment.dimensions().is_some() {
+                                                message = message.add_file(
+                                                    CreateAttachment::url(
+                                                        &ctx.http,
+                                                        attachment.url.as_str(),
+                                                        attachment.filename.to_string(),
                                                     )
-                                                    .content(content);
-                                                if !new_message.attachments.is_empty() {
-                                                    for attachment in &new_message.attachments {
-                                                        if attachment.dimensions().is_some() {
-                                                            message = message.add_file(
-                                                                CreateAttachment::url(
-                                                                    &ctx.http,
-                                                                    attachment.url.as_str(),
-                                                                    attachment.filename.to_string(),
-                                                                )
-                                                                .await?,
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                                if let Some(replied_message) =
-                                                    &new_message.referenced_message
-                                                {
-                                                    let mut embed = CreateEmbed::default()
-                                                        .description(
-                                                            replied_message.content.as_str(),
-                                                        )
-                                                        .author(
-                                                            CreateEmbedAuthor::new(
-                                                                replied_message
-                                                                    .author
-                                                                    .display_name(),
-                                                            )
-                                                            .icon_url(
-                                                                replied_message
-                                                                    .author
-                                                                    .avatar_url()
-                                                                    .unwrap_or_else(|| {
-                                                                        replied_message
-                                                                            .author
-                                                                            .default_avatar_url()
-                                                                    }),
-                                                            ),
-                                                        )
-                                                        .timestamp(new_message.timestamp);
-                                                    if let Some(attachment) =
-                                                        replied_message.attachments.first()
-                                                    {
-                                                        embed =
-                                                            embed.image(attachment.url.as_str());
-                                                    }
-                                                    message = message.embed(embed);
-                                                }
-                                                webhook.execute(&ctx.http, false, message).await?;
-                                            } else {
-                                                chat_channel
-                                                    .say(&ctx.http, new_message.content.as_str())
-                                                    .await?;
+                                                    .await?,
+                                                );
                                             }
                                         }
                                     }
+                                    if let Some(replied_message) = &new_message.referenced_message {
+                                        let mut embed = CreateEmbed::default()
+                                            .description(replied_message.content.as_str())
+                                            .author(
+                                                CreateEmbedAuthor::new(
+                                                    replied_message.author.display_name(),
+                                                )
+                                                .icon_url(
+                                                    replied_message
+                                                        .author
+                                                        .avatar_url()
+                                                        .unwrap_or_else(|| {
+                                                            replied_message
+                                                                .author
+                                                                .default_avatar_url()
+                                                        }),
+                                                ),
+                                            )
+                                            .timestamp(new_message.timestamp);
+                                        if let Some(attachment) =
+                                            replied_message.attachments.first()
+                                        {
+                                            embed = embed.image(attachment.url.as_str());
+                                        }
+                                        message = message.embed(embed);
+                                    }
+                                    if webhook.execute(&ctx.http, false, message).await.is_err() {
+                                        chat_channel
+                                            .say(
+                                                &ctx.http,
+                                                format!(
+                                                    "{} sent this: {}",
+                                                    new_message.author.display_name(),
+                                                    new_message.content.as_str()
+                                                ),
+                                            )
+                                            .await?;
+                                    }
+                                } else {
+                                    chat_channel
+                                        .say(
+                                            &ctx.http,
+                                            format!(
+                                                "{} sent this: {}",
+                                                new_message.author.display_name(),
+                                                new_message.content.as_str()
+                                            ),
+                                        )
+                                        .await?;
                                 }
                             }
                         }
                     }
                 }
             }
-        }
-        let matching_words = query!(
-            "SELECT EXISTS (
-                SELECT 1 FROM words_count 
-                WHERE guild_id = $1 
-                AND $2 LIKE '%' || word || '%'
-            )",
-            guild_id,
-            content
-        )
-        .fetch_one(&mut *tx)
-        .await?;
-        if matching_words.exists.unwrap_or(false) {
-            query!(
-                "UPDATE words_count 
-                 SET count = count + 1 
+            if let Some(word) = guild_settings.word_tracked
+                && content.contains(&word)
+            {
+                query!(
+                    "UPDATE guild_settings 
+                 SET word_count = word_count + 1 
                  WHERE guild_id = $1 
-                 AND $2 LIKE '%' || word || '%'",
-                guild_id,
-                content
-            )
-            .execute(&mut *tx)
-            .await?;
+                 AND $2 LIKE '%' || word_tracked || '%'",
+                    guild_id,
+                    content
+                )
+                .execute(&mut *tx)
+                .await?;
+            }
         }
         tx.commit()
             .await

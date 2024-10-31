@@ -1,4 +1,5 @@
 #![feature(iter_intersperse)]
+#![feature(let_chains)]
 
 mod client;
 mod commands;

@@ -171,8 +171,7 @@ pub async fn global_call_end(ctx: SContext<'_>) -> Result<(), Error> {
             .global_call_last
             .remove(&guild_id)
             .unwrap_or_default();
-        ctx.send(CreateReply::default().content("Call ended..."))
-            .await?;
+        ctx.reply("Call ended...").await?;
     }
     Ok(())
 }
@@ -194,9 +193,7 @@ pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
         )
         .execute(&mut *tx)
         .await?;
-        let message = ctx
-            .send(CreateReply::default().content("Calling..."))
-            .await?;
+        let message = ctx.reply("Calling...").await?;
         let result = timeout(Duration::from_secs(60), async {
             loop {
                 let other_calls = query!(
@@ -207,9 +204,9 @@ pub async fn global_call_start(ctx: SContext<'_>) -> Result<(), Error> {
                     ) as has_call"#,
                     guild_id_i64
                 )
-                .fetch_one(&mut *tx)
+                .fetch_optional(&mut *tx)
                 .await?;
-                if other_calls.has_call.unwrap_or(false) {
+                if other_calls.is_some() {
                     return Ok::<_, Error>(true);
                 }
                 sleep(Duration::from_secs(5)).await;
@@ -251,6 +248,7 @@ pub async fn help(
     ctx: SContext<'_>,
     #[description = "Command to show help about"]
     #[autocomplete = "builtins::autocomplete_command"]
+    #[rest]
     command: Option<String>,
 ) -> Result<(), Error> {
     builtins::pretty_help(
@@ -288,7 +286,8 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
         let users = query_as!(
             UserCount,
             "SELECT message_count, user_id FROM user_settings WHERE guild_id = $1
-            ORDER BY message_count DESC LIMIT 25",
+            ORDER BY message_count 
+            DESC LIMIT 25",
             i64::from(guild_id)
         )
         .fetch_all(&mut *ctx.data().db.acquire().await?)
@@ -333,15 +332,18 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
-    let resp = ai_response_simple(
+    match ai_response_simple(
         "you're a tsundere",
         "generate a one-line love-hate greeting",
     )
-    .await?;
-    if !resp.is_empty() {
-        ctx.reply(resp).await?;
-    } else {
-        ctx.reply("Ugh, fine. It's nice to see you again, I suppose... for now, don't get any ideas thinking this means I actually like you or anything").await?;
+    .await
+    {
+        Some(resp) => {
+            ctx.reply(resp).await?;
+        }
+        None => {
+            ctx.reply("Ugh, fine. It's nice to see you again, I suppose... for now, don't get any ideas thinking this means I actually like you or anything").await?;
+        }
     }
     Ok(())
 }
@@ -499,47 +501,26 @@ pub async fn troll(ctx: SContext<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Hmm, I wonder how pure we are
+/// Count of tracked words
 #[poise::command(prefix_command, slash_command)]
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        if let Ok(records) = query!(
-            "SELECT word, count FROM words_count WHERE guild_id = $1
-            ORDER BY count DESC LIMIT 25",
+        let word = query!(
+            "SELECT word_tracked, word_count FROM guild_settings WHERE guild_id = $1",
             i64::from(guild_id),
         )
-        .fetch_all(&mut *ctx.data().db.acquire().await?)
-        .await
-        {
-            let thumbnail = match ctx.guild() {
-                Some(guild) => guild.banner_url().unwrap_or_else(|| {
-                    guild.icon_url().unwrap_or_else(|| {
-                        "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned()
-                    })
-                }),
-                None => {
-                    return Ok(());
+        .fetch_optional(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        ctx.reply(
+            match word.and_then(|record| record.word_tracked.map(|word| (word, record.word_count)))
+            {
+                Some((tracked_word, count)) => {
+                    format!("{tracked_word} was counted {count} times")
                 }
-            };
-            let mut embed = CreateEmbed::default()
-                .title(format!(
-                    "Top {} tracked words by message count",
-                    records.len()
-                ))
-                .thumbnail(thumbnail)
-                .color(0xFF5733);
-            for (index, record) in records.iter().enumerate() {
-                let rank = index + 1;
-                embed = embed.field(
-                    format!("#{rank} {}", record.word),
-                    record.count.to_string(),
-                    false,
-                );
-            }
-            ctx.send(CreateReply::default().embed(embed)).await?;
-        } else {
-            ctx.reply("hmm, no words were counted... peace?").await?;
-        }
+                None => "hmm, no words set to be tracked... /set_word_track?".to_string(),
+            },
+        )
+        .await?;
     }
     Ok(())
 }

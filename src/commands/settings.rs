@@ -22,7 +22,9 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 spoiler_channel = NULL,
                 prefix = NULL,
                 ai_chat_channel = NULL,
-                global_chat_channel = NULL
+                global_chat_channel = NULL,
+                word_tracked = NULL,
+                word_count = 0
             WHERE guild_id = $1",
             i64::from(guild_id)
         )
@@ -82,7 +84,6 @@ pub async fn set_afk(
 
 /// When you need ai in your life
 #[poise::command(
-    prefix_command,
     slash_command,
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
@@ -118,11 +119,12 @@ pub async fn set_chatbot_channel(
 #[poise::command(prefix_command, slash_command)]
 pub async fn set_chatbot_role(
     ctx: SContext<'_>,
-    #[description = "The role the bot should take; if not set, then default role"] role: Option<
-        String,
-    >,
+    #[description = "The role the bot should take; if not set, then default role"]
+    #[rest]
+    role: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
         query!(
             "INSERT INTO user_settings (guild_id, user_id, chatbot_role)
             VALUES ($1, $2, $3)
@@ -190,7 +192,9 @@ pub async fn set_dead_chat(
 )]
 pub async fn set_prefix(
     ctx: SContext<'_>,
-    #[description = "Character(s) to use as prefix for commands"] characters: String,
+    #[description = "Character(s) to use as prefix for commands"]
+    #[rest]
+    characters: String,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
@@ -360,12 +364,12 @@ pub async fn set_word_track(
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
-            "INSERT INTO words_count (guild_id, word)
+            "INSERT INTO guild_settings (guild_id, word_tracked)
             VALUES ($1, $2)
             ON CONFLICT(guild_id)
             DO UPDATE SET
-                word = $2, 
-                count = 0",
+                word_tracked = $2, 
+                word_count = 0",
             i64::from(guild_id),
             word,
         )

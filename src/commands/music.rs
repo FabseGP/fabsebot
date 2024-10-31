@@ -69,32 +69,36 @@ pub async fn add_playlist(
 ) -> Result<(), Error> {
     if let Some(handler_lock) = voice_check(ctx).await {
         ctx.defer().await?;
-        let request = HTTP_CLIENT
+        if let Ok(request) = HTTP_CLIENT
             .get(format!("https://api.deezer.com/playlist/{playlist_id}"))
             .send()
-            .await?;
-        match request
-            .json::<DeezerResponse>()
             .await
-            .ok()
-            .filter(|output| !output.tracks.data.is_empty())
         {
-            Some(payload) => {
-                for track in payload.tracks.data {
-                    let title = track.title;
-                    let artist = track.artist.name;
-                    let search = format!("{title} {artist}");
-                    let src = Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), search));
-                    get_configured_handler(&handler_lock)
-                        .await
-                        .enqueue_input(src)
-                        .await;
+            match request
+                .json::<DeezerResponse>()
+                .await
+                .ok()
+                .filter(|output| !output.tracks.data.is_empty())
+            {
+                Some(payload) => {
+                    for track in payload.tracks.data {
+                        let title = track.title;
+                        let artist = track.artist.name;
+                        let search = format!("{title} {artist}");
+                        let src = Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), search));
+                        get_configured_handler(&handler_lock)
+                            .await
+                            .enqueue_input(src)
+                            .await;
+                    }
+                    ctx.reply("Added playlist to queue").await?;
                 }
-                ctx.reply("Added playlist to queue").await?;
+                None => {
+                    ctx.reply("Deezer refused to serve your request").await?;
+                }
             }
-            None => {
-                ctx.reply("Deezer refused to serve your request").await?;
-            }
+        } else {
+            ctx.reply("Invalid playlist-id for Deezer playlist").await?;
         }
     }
     Ok(())
@@ -105,23 +109,29 @@ pub async fn add_playlist(
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         ctx.defer().await?;
-        let channel_id = match ctx.guild() {
-            Some(guild) => guild
+        let channel_id = ctx.guild().and_then(|guild| {
+            guild
                 .voice_states
                 .get(&ctx.author().id)
-                .and_then(|voice_state| voice_state.channel_id),
-            None => None,
+                .and_then(|voice_state| voice_state.channel_id)
+        });
+        let reply = match channel_id {
+            Some(channel_id) => {
+                if ctx
+                    .data()
+                    .music_manager
+                    .join(guild_id, channel_id)
+                    .await
+                    .is_ok()
+                {
+                    "I've joined the party"
+                } else {
+                    "I don't wanna join"
+                }
+            }
+            None => "I don't wanna join",
         };
-        if let Some(channel_id) = channel_id {
-            let manager = &ctx.data().music_manager;
-            ctx.reply(match manager.join(guild_id, channel_id).await {
-                Ok(_) => "I've joined the party",
-                Err(_) => "I don't wanna join",
-            })
-            .await?;
-        } else {
-            ctx.reply("I don't wanna join").await?;
-        }
+        ctx.reply(reply).await?;
     }
     Ok(())
 }
@@ -130,14 +140,11 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let manager = &ctx.data().music_manager;
-        let handler = manager.get(guild_id);
-        match handler {
-            Some(_) => {
-                manager.remove(guild_id).await?;
+        match &ctx.data().music_manager.remove(guild_id).await {
+            Ok(()) => {
                 ctx.reply("Left voice channel, don't forget me").await?;
             }
-            None => {
+            Err(_) => {
                 ctx.reply("Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first")
                     .await?;
             }
@@ -151,19 +158,28 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(handler_lock) = voice_check(ctx).await {
         let handler = get_configured_handler(&handler_lock).await;
-        let queue = handler.queue();
-        if let Some(current_playback) = queue.current() {
-            if let Ok(current_playback_info) = current_playback.get_info().await {
-                let status = current_playback_info.playing;
-                match status {
-                    PlayMode::Pause => current_playback.play().unwrap(),
-                    PlayMode::Play => current_playback.pause().unwrap(),
-                    _ => {
-                        ctx.reply("Bruh, no song is playing").await?;
-                        return Ok(());
-                    }
+        if let Some(current_track) = handler.queue().current() {
+            match current_track.get_info().await {
+                Ok(track_info) => {
+                    let response = match track_info.playing {
+                        PlayMode::Pause => match current_track.play() {
+                            Ok(()) => "Resumed playback",
+                            Err(_) => "Failed to continue playback",
+                        },
+                        PlayMode::Play => match current_track.pause() {
+                            Ok(()) => "Paused playback",
+                            Err(_) => "Failed to pause playback",
+                        },
+                        _ => {
+                            ctx.reply("No playable track found").await?;
+                            return Ok(());
+                        }
+                    };
+                    ctx.reply(response).await?;
                 }
-                ctx.reply("Song is either continued or paused").await?;
+                Err(_) => {
+                    ctx.reply("Failed to get current track information").await?;
+                }
             }
         }
     }
@@ -190,14 +206,13 @@ pub async fn play_song(
         } else {
             Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), url))
         };
-        let metadata = src.aux_metadata().await;
-        let queue_len = {
-            let mut handler = get_configured_handler(&handler_lock).await;
-            handler.enqueue_input(src).await;
-            handler.queue().len()
-        };
-        match metadata {
+        match src.aux_metadata().await {
             Ok(m) => {
+                let queue_len = {
+                    let mut handler = get_configured_handler(&handler_lock).await;
+                    handler.enqueue_input(src).await;
+                    handler.queue().len()
+                };
                 let artist = &m.artist;
                 let thumbnail = &m.thumbnail;
                 let title = &m.title;
@@ -260,8 +275,7 @@ pub async fn seek_song(
     if let Some(handler_lock) = voice_check(ctx).await {
         ctx.defer().await?;
         let handler = get_configured_handler(&handler_lock).await;
-        let queue = handler.queue();
-        if let Some(current_playback) = queue.current() {
+        if let Some(current_playback) = handler.queue().current() {
             if let Ok(current_playback_info) = current_playback.get_info().await {
                 let current_position = current_playback_info.position;
                 let Ok(seconds_value) = seconds.parse::<i64>() else {
@@ -270,30 +284,40 @@ pub async fn seek_song(
                     return Ok(());
                 };
                 let current_secs = i64::try_from(current_position.as_secs()).unwrap_or(0);
-
                 if seconds_value.is_negative() {
-                    if current_secs + seconds_value < 0 {
-                        ctx.reply(
-                            "Can't seek back for more seconds than what already have been played",
-                        )
-                        .await?;
-                        return Ok(());
-                    }
                     let new_position = u64::try_from(current_secs + seconds_value).unwrap_or(0);
                     let seek = Duration::from_secs(new_position);
-
                     if !seek.is_zero() {
-                        current_playback.seek_async(seek).await?;
-                        ctx.reply(format!("Seeked {} seconds backward", seconds_value.abs()))
-                            .await?;
+                        match current_playback.seek_async(seek).await {
+                            Ok(_) => {
+                                ctx.reply(format!(
+                                    "Seeked {} seconds backward",
+                                    seconds_value.abs()
+                                ))
+                                .await?;
+                            }
+                            Err(_) => {
+                                ctx.reply("Failed to seek song backwards").await?;
+                            }
+                        }
+                    } else {
+                        ctx.reply(
+                            "Bruh, wanting to seek more seconds back than what have been played",
+                        )
+                        .await?;
                     }
                 } else {
                     let seconds_to_add = u64::try_from(seconds_value).unwrap_or(0);
                     let seek = current_position + Duration::from_secs(seconds_to_add);
-                    if !seek.is_zero() {
-                        current_playback.seek_async(seek).await?;
-                        ctx.reply(format!("Seeked {seconds_value} seconds forward"))
-                            .await?;
+                    match current_playback.seek_async(seek).await {
+                        Ok(_) => {
+                            ctx.reply(format!("Seeked {seconds_value} seconds forward"))
+                                .await?;
+                        }
+                        Err(_) => {
+                            ctx.reply("Bruh, you seeked more forward than the length of the song! I'm bailing out")
+                                .await?;
+                        }
                     }
                 }
             }
@@ -309,10 +333,13 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
         let handler = get_configured_handler(&handler_lock).await;
         let queue = handler.queue();
         if queue.len() - 1 != 0 {
-            queue.skip()?;
-            let queue_len = queue.len() - 2;
-            ctx.reply(format!("Song skipped. {queue_len} left in queue"))
-                .await?;
+            if queue.skip().is_ok() {
+                let queue_len = queue.len() - 2;
+                ctx.reply(format!("Song skipped. {queue_len} left in queue"))
+                    .await?;
+            } else {
+                ctx.reply("Song couldn't be skipped, try again!").await?;
+            }
         } else {
             ctx.reply("No songs to skip!").await?;
         }
@@ -324,8 +351,12 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn stop_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(handler_lock) = voice_check(ctx).await {
-        handler_lock.lock().await.queue().stop();
-        ctx.reply("Queue cleared").await?;
+        if !handler_lock.lock().await.queue().is_empty() {
+            handler_lock.lock().await.queue().stop();
+            ctx.reply("Queue cleared").await?;
+        } else {
+            ctx.reply("Bruh, empty queue!").await?;
+        }
     }
     Ok(())
 }
