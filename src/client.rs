@@ -18,7 +18,7 @@ use poise::{
     EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
     Prefix, PrefixFrameworkOptions,
 };
-use songbird::Songbird;
+use songbird::{driver::DecodeMode::Decode, Config, Songbird};
 use sqlx::{migrate, postgres::PgPoolOptions, query};
 use std::{borrow::Cow, env, sync::Arc};
 use tracing::{error, warn};
@@ -107,6 +107,7 @@ pub async fn start() -> anyhow::Result<()> {
         .await
         .context("Failed to run database migrations")?;
     let music_manager = Songbird::serenity();
+    music_manager.set_config(Config::default().use_softclip(false).decode_mode(Decode));
     let user_data = Arc::new(Data {
         db: database,
         music_manager: Arc::<Songbird>::clone(&music_manager),

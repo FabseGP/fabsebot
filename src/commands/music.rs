@@ -15,10 +15,12 @@ use poise::{
 };
 use serde::Deserialize;
 use songbird::{
-    driver::Bitrate,
+    driver::{
+        opus::{coder::Encoder, SampleRate},
+        Bitrate,
+    },
     input::{Input, YoutubeDl},
-    packet::Packet,
-    tracks::{PlayMode, Track},
+    tracks::PlayMode,
     Call, Config, CoreEvent, Event as SongBirdEvent, EventContext,
     EventHandler as VoiceEventHandler, Songbird,
 };
@@ -67,8 +69,6 @@ async fn voice_check(ctx: &SContext<'_>) -> (Option<Arc<Mutex<Call>>>, Option<Gu
 
 async fn get_configured_handler(handler_lock: &Arc<Mutex<Call>>) -> MutexGuard<'_, Call> {
     let mut handler = handler_lock.lock().await;
-    let new_config = Config::default().use_softclip(false);
-    handler.set_config(new_config);
     handler.set_bitrate(Bitrate::Max);
     handler
 }
@@ -92,30 +92,40 @@ impl VoiceReceiveHandler {
 #[async_trait]
 impl VoiceEventHandler for VoiceReceiveHandler {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
-        if let EventContext::VoiceTick(tick) = ctx {
+        if let EventContext::VoiceTick(tick) = ctx
+            && let Ok(mut encoder) = Encoder::new(
+                SampleRate::Hz48000,
+                songbird::driver::opus::Channels::Stereo,
+                songbird::driver::opus::Application::Voip,
+            )
+        {
+            let _ = encoder.set_bitrate(Bitrate::Max);
             for data in tick.speaking.values() {
-                if let Some(packet) = data.packet.as_ref() {
-                    let payload = packet.rtp().payload().to_owned();
-                    if let Ok(mut conn) = self.db.acquire().await {
-                        if let Ok(guild_global_call) = query!(
-                            "SELECT guild_id FROM guild_settings
-                            WHERE guild_id != $1 AND global_call = TRUE",
-                            i64::from(self.guild_id)
-                        )
-                        .fetch_all(&mut *conn)
-                        .await
-                        {
-                            for guild in &guild_global_call {
-                                let current_guild_id = GuildId::new(
-                                    u64::try_from(guild.guild_id)
-                                        .expect("guild id out of bounds for u64"),
-                                );
-                                if let Some(global_handler_lock) =
-                                    self.music_manager.get(current_guild_id)
-                                {
-                                    get_configured_handler(&global_handler_lock)
-                                        .await
-                                        .play(Track::from(payload.clone()));
+                if let Some(voice) = &data.decoded_voice {
+                    let mut encode_output = vec![0u8; 1280];
+                    if let Ok(encoded_len) = encoder.encode(voice, &mut encode_output) {
+                        encode_output.truncate(encoded_len);
+                        if let Ok(mut conn) = self.db.acquire().await {
+                            if let Ok(guild_global_call) = query!(
+                                "SELECT guild_id FROM guild_settings
+                                WHERE guild_id != $1 AND global_call = TRUE",
+                                i64::from(self.guild_id)
+                            )
+                            .fetch_all(&mut *conn)
+                            .await
+                            {
+                                for guild in &guild_global_call {
+                                    let current_guild_id = GuildId::new(
+                                        u64::try_from(guild.guild_id)
+                                            .expect("guild id out of bounds for u64"),
+                                    );
+                                    if let Some(global_handler_lock) =
+                                        self.music_manager.get(current_guild_id)
+                                    {
+                                        get_configured_handler(&global_handler_lock)
+                                            .await
+                                            .play_input(Input::from(encode_output.clone()));
+                                    }
                                 }
                             }
                         }
