@@ -4,12 +4,7 @@ pub const COLOUR_ORANGE: u32 = 0xFA6300;
 pub const COLOUR_RED: u32 = 0xED333B;
 pub const COLOUR_YELLOW: u32 = 0xF8E45C;
 
-pub const FABSEBOT_PING_CONTENT: &str = "why ping me bitch, go get a life!";
-pub const FABSEBOT_PING_MEDIA: &str =
-    "https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif";
-
 pub const EMOJI_KURUKURU: &str = "<a:kurukuru_seseren:1284745756883816469>";
-pub const EMOJI_FABSEMAN: &str = "<:fabseman_willbeatu:1284742390099480631>";
 
 pub const DEFAULT_BOT_ROLE: &str =
     "You're fabsebot, a crude, uncensored and confident AI chatbot created by fabseman.

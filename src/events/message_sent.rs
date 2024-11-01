@@ -1,8 +1,6 @@
 use crate::{
     consts::{
-        COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE, EMOJI_FABSEMAN,
-        EMOJI_KURUKURU, FABSEBOT_PING_CONTENT, FABSEBOT_PING_MEDIA, FURINA_GIFS, KAFKA_GIFS,
-        KINICH_GIFS,
+        COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE, EMOJI_KURUKURU,
     },
     types::{Data, Error, CHANNEL_REGEX, RNG},
     utils::{ai_chatbot, get_gifs, get_waifu, spoiler_message, webhook_find},
@@ -446,8 +444,8 @@ pub async fn handle_message(
                 &ctx.http,
                 CreateMessage::default().embed(
                     CreateEmbed::default()
-                        .title(FABSEBOT_PING_CONTENT)
-                        .image(FABSEBOT_PING_MEDIA)
+                        .title("why ping me bitch, go get a life!")
+                        .image("https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif")
                         .colour(COLOUR_BLUE),
                 ),
             )
@@ -480,21 +478,21 @@ pub async fn handle_message(
                 .await?;
         }
     } else if content.contains("fabse") {
-        if let Ok(reaction) = ReactionType::try_from(EMOJI_FABSEMAN) {
+        if let Ok(reaction) = ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>") {
             new_message.react(&ctx.http, reaction).await?;
         }
         if content == "fabse" || content == "fabseman" {
             if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
                 webhook
-                        .execute(
-                            &ctx.http,
-                            false,
-                            ExecuteWebhook::default()
-                                .username("yotsuba")
-                                .avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png")
-                                .content("# such magnificence"),
-                        )
-                        .await?;
+                    .execute(
+                        &ctx.http,
+                        false,
+                        ExecuteWebhook::default()
+                            .username("yotsuba")
+                            .avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png")
+                            .content("# such magnificence"),
+                    )
+                    .await?;
             }
         }
     }
