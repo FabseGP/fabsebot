@@ -154,6 +154,7 @@ pub async fn start() -> anyhow::Result<()> {
                 music::global_music_end(),
                 music::global_music_start(),
                 music::join_voice(),
+                music::join_voice_global(),
                 music::leave_voice(),
                 music::pause_continue_song(),
                 music::play_song(),

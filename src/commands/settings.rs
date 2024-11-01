@@ -35,7 +35,8 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 ai_chat_channel = NULL,
                 global_chat_channel = NULL,
                 global_chat = FALSE,
-                global_music = FALSE
+                global_music = FALSE,
+                global_call = FALSE
             WHERE guild_id = $1",
             guild_id_i64
         )

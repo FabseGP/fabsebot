@@ -6,6 +6,7 @@ use crate::{
 use anyhow::Context;
 use core::time::Duration;
 use poise::{
+    async_trait,
     serenity_prelude::{
         Channel, ChannelId, CreateEmbed, CreateMessage, EmbedMessageBuilding as _, GuildId,
         MessageBuilder,
@@ -16,10 +17,12 @@ use serde::Deserialize;
 use songbird::{
     driver::Bitrate,
     input::{Input, YoutubeDl},
-    tracks::PlayMode,
-    Call, Config,
+    packet::Packet,
+    tracks::{PlayMode, Track},
+    Call, Config, CoreEvent, Event as SongBirdEvent, EventContext,
+    EventHandler as VoiceEventHandler, Songbird,
 };
-use sqlx::query;
+use sqlx::{query, Pool, Postgres};
 use std::sync::Arc;
 use tokio::{
     sync::{Mutex, MutexGuard},
@@ -68,6 +71,68 @@ async fn get_configured_handler(handler_lock: &Arc<Mutex<Call>>) -> MutexGuard<'
     handler.set_config(new_config);
     handler.set_bitrate(Bitrate::Max);
     handler
+}
+
+pub struct VoiceReceiveHandler {
+    guild_id: GuildId,
+    music_manager: Arc<Songbird>,
+    db: Pool<Postgres>,
+}
+
+impl VoiceReceiveHandler {
+    pub const fn new(guild_id: GuildId, music_manager: Arc<Songbird>, db: Pool<Postgres>) -> Self {
+        Self {
+            guild_id,
+            music_manager,
+            db,
+        }
+    }
+}
+
+#[async_trait]
+impl VoiceEventHandler for VoiceReceiveHandler {
+    async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
+        if let EventContext::VoiceTick(tick) = ctx {
+            for data in tick.speaking.values() {
+                if let Some(packet) = data.packet.as_ref()
+                    && let Some(handler_lock) = self.music_manager.get(self.guild_id)
+                {
+                    let payload = packet.rtp().payload().to_owned();
+                    get_configured_handler(&handler_lock)
+                        .await
+                        .play(Track::from(payload.clone()));
+                    if let Ok(mut conn) = self.db.acquire().await {
+                        if let Ok(guild_global_call) = query!(
+                            "SELECT guild_id, global_music FROM guild_settings
+                            WHERE guild_id != $1",
+                            i64::from(self.guild_id)
+                        )
+                        .fetch_all(&mut *conn)
+                        .await
+                        {
+                            for guild in &guild_global_call {
+                                if guild.global_music == Some(true) {
+                                    let current_guild_id = GuildId::new(
+                                        u64::try_from(guild.guild_id)
+                                            .expect("guild id out of bounds for u64"),
+                                    );
+                                    match self.music_manager.get(current_guild_id) {
+                                        Some(global_handler_lock) => {
+                                            get_configured_handler(&global_handler_lock)
+                                                .await
+                                                .play(Track::from(payload.clone()));
+                                        }
+                                        None => continue,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 /// Play all songs in a playlist from Deezer
@@ -121,10 +186,10 @@ pub async fn global_music_end(ctx: SContext<'_>) -> Result<(), Error> {
     if let (Some(_), Some(guild_id)) = voice_check(&ctx).await {
         query!(
             "INSERT INTO guild_settings (guild_id, global_music)
-                VALUES ($1, FALSE)
-                ON CONFLICT(guild_id)
-                DO UPDATE SET
-                    global_music = FALSE",
+            VALUES ($1, FALSE)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                global_music = FALSE",
             i64::from(guild_id),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
@@ -146,10 +211,10 @@ pub async fn global_music_start(ctx: SContext<'_>) -> Result<(), Error> {
         let mut tx = ctx.data().db.begin().await?;
         query!(
             "INSERT INTO guild_settings (guild_id, global_music)
-                VALUES ($1, TRUE)
-                ON CONFLICT(guild_id)
-                DO UPDATE SET
-                    global_music = TRUE",
+            VALUES ($1, TRUE)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                global_music = TRUE",
             guild_id_i64,
         )
         .execute(&mut *tx)
@@ -203,7 +268,54 @@ pub async fn global_music_start(ctx: SContext<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Join your current voice channel
+/// Join the current voice channel with global voice call
+#[poise::command(prefix_command, slash_command)]
+pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
+    if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
+        let channel_id = ctx.guild().and_then(|guild| {
+            guild
+                .voice_states
+                .get(&ctx.author().id)
+                .and_then(|voice_state| voice_state.channel_id)
+        });
+        let reply = match channel_id {
+            Some(channel_id) => {
+                if let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
+                {
+                    query!(
+                        "INSERT INTO guild_settings (guild_id, global_call)
+                        VALUES ($1, TRUE)
+                        ON CONFLICT(guild_id)
+                        DO UPDATE SET
+                            global_call = TRUE",
+                        i64::from(guild_id),
+                    )
+                    .execute(&mut *ctx.data().db.acquire().await?)
+                    .await?;
+                    let mut handler = handler_lock.lock().await;
+                    handler.add_global_event(
+                        CoreEvent::VoiceTick.into(),
+                        VoiceReceiveHandler::new(
+                            guild_id,
+                            ctx.data().music_manager.clone(),
+                            ctx.data().db.clone(),
+                        ),
+                    );
+
+                    "I've joined the party"
+                } else {
+                    "I don't wanna join"
+                }
+            }
+            None => "I don't wanna join",
+        };
+        ctx.reply(reply).await?;
+    }
+    Ok(())
+}
+
+/// Join the current voice channel
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
