@@ -1,6 +1,9 @@
-use crate::types::{
-    AIChatMessage, Data, Error, AI_SERVER, CHANNEL_REGEX, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN,
-    HTTP_CLIENT, QUOTE_REGEX, TENOR_TOKEN,
+use crate::{
+    consts::{GIF_FALLBACK, WAIFU_FALLBACK, WAIFU_URL},
+    types::{
+        AIChatMessage, Data, Error, AI_SERVER, CHANNEL_REGEX, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN,
+        HTTP_CLIENT, QUOTE_REGEX, TENOR_TOKEN,
+    },
 };
 
 use ab_glyph::{FontArc, PxScale};
@@ -403,19 +406,26 @@ struct GifObject {
     url: String,
 }
 
-pub async fn get_gifs(input: &str) -> Option<Vec<String>> {
-    let encoded_input = encode(input);
-    let request_url = format!(
-        "https://tenor.googleapis.com/v2/search?q={encoded_input}&key={}&contentfilter=medium&limit=40",
-        *TENOR_TOKEN,
-    );
-    let request = HTTP_CLIENT.get(request_url).send().await.ok()?;
-    request.json::<GifResponse>().await.ok().map(|urls| {
-        urls.results
-            .into_iter()
-            .filter_map(|result| result.media_formats.gif.map(|media| media.url))
-            .collect()
-    })
+pub async fn get_gifs(input: &str) -> Vec<String> {
+    let request_url = {
+        let encoded_input = encode(input);
+        format!(
+            "https://tenor.googleapis.com/v2/search?q={encoded_input}&key={}&contentfilter=medium&limit=40",
+            *TENOR_TOKEN,
+        )
+    };
+    let Ok(response) = HTTP_CLIENT.get(request_url).send().await else {
+        return vec![GIF_FALLBACK.to_string()];
+    };
+    response.json::<GifResponse>().await.ok().map_or_else(
+        || vec![GIF_FALLBACK.to_string()],
+        |urls| {
+            urls.results
+                .into_iter()
+                .filter_map(|result| result.media_formats.gif.map(|media| media.url))
+                .collect()
+        },
+    )
 }
 
 #[derive(Deserialize)]
@@ -427,15 +437,16 @@ struct WaifuData {
     url: String,
 }
 
-pub async fn get_waifu() -> Option<String> {
-    let request_url = "https://api.waifu.im/search?height=>=2000&is_nsfw=false";
-    let request = HTTP_CLIENT.get(request_url).send().await.ok()?;
-    request.json::<WaifuResponse>().await.ok().map(|urls| {
-        urls.images.into_iter().next().map_or(
-            "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned(),
-            |img| img.url,
-        )
-    })
+pub async fn get_waifu() -> String {
+    let Ok(response) = HTTP_CLIENT.get(WAIFU_URL).send().await else {
+        return WAIFU_FALLBACK.to_string();
+    };
+    response
+        .json::<WaifuResponse>()
+        .await
+        .ok()
+        .and_then(|urls| urls.images.into_iter().next().map(|img| img.url))
+        .unwrap_or_else(|| WAIFU_FALLBACK.to_string())
 }
 
 pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) -> RgbaImage {

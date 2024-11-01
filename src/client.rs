@@ -149,7 +149,6 @@ pub async fn start() -> anyhow::Result<()> {
                 misc::ohitsyou(),
                 misc::quote(),
                 misc::slow_mode(),
-                misc::troll(),
                 misc::word_count(),
                 music::add_playlist(),
                 music::global_music_end(),
@@ -170,6 +169,7 @@ pub async fn start() -> anyhow::Result<()> {
                 settings::set_quote_channel(),
                 settings::set_spoiler_channel(),
                 settings::set_user_ping(),
+                settings::set_word_react(),
                 settings::set_word_track(),
             ],
             prefix_options: PrefixFrameworkOptions {

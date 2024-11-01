@@ -3,6 +3,7 @@
 
 mod client;
 mod commands;
+mod consts;
 mod events;
 mod types;
 mod utils;

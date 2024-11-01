@@ -1,4 +1,5 @@
 use crate::{
+    consts::{COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
     types::{
         Error, SContext, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, GITHUB_TOKEN, HTTP_CLIENT, RNG,
         TRANSLATE_SERVER,
@@ -172,7 +173,7 @@ pub async fn ai_text(
     ctx.defer().await?;
     match ai_response_simple(&role, &prompt).await {
         Some(resp) if !resp.is_empty() => {
-            let mut embed = CreateEmbed::default().title(prompt).color(0xFF7800);
+            let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
             let mut current_chunk = String::with_capacity(1024);
             let mut chunk_index = 0;
             for ch in resp.chars() {
@@ -289,7 +290,7 @@ pub async fn anilist_anime(
                     .title("Anime")
                     .field("ID", media.id.to_string(), false)
                     .field("Title", title, false)
-                    .color(0x33d17a);
+                    .colour(COLOUR_ORANGE);
                 ctx.send(CreateReply::default().embed(embed)).await?;
             }
             Err(_) => {
@@ -322,9 +323,10 @@ pub async fn eightball(
     question: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_input = encode(&question);
-    let request_url =
-        format!("https://eightballapi.com/api/biased?question={encoded_input}&lucky=false");
+    let request_url = {
+        let encoded_input = encode(&question);
+        format!("https://eightballapi.com/api/biased?question={encoded_input}&lucky=false")
+    };
     match HTTP_CLIENT.get(request_url).send().await {
         Ok(request) => match request.json::<EightBallResponse>().await {
             Ok(judging) if !judging.reading.is_empty() => {
@@ -332,7 +334,7 @@ pub async fn eightball(
                     CreateReply::default().embed(
                         CreateEmbed::default()
                             .title(question)
-                            .color(0x33d17a)
+                            .colour(COLOUR_ORANGE)
                             .field("", &judging.reading, true),
                     ),
                 )
@@ -364,94 +366,95 @@ pub async fn gif(
     #[rest]
     input: String,
 ) -> Result<(), Error> {
-    if let Some(urls) = get_gifs(&input).await {
-        ctx.defer().await?;
-        let embed = CreateEmbed::default().title(input.as_str()).image(&urls[0]);
-        let len = urls.len();
-        if ctx.guild_id().is_some() && len > 1 {
-            let index = 0;
-            let ctx_id = ctx.id();
-            let next_id = format!("next_{ctx_id}_{index}");
-            let prev_id = format!("prev_{ctx_id}_{index}");
-            let mut state = State {
-                next_id,
-                prev_id,
-                index,
-                len,
+    ctx.defer().await?;
+    let urls = get_gifs(&input).await;
+    let embed = CreateEmbed::default()
+        .title(input.as_str())
+        .image(&urls[0])
+        .colour(COLOUR_ORANGE);
+    let len = urls.len();
+    if ctx.guild_id().is_some() && len > 1 {
+        let index = 0;
+        let ctx_id = ctx.id();
+        let next_id = format!("next_{ctx_id}_{index}");
+        let prev_id = format!("prev_{ctx_id}_{index}");
+        let mut state = State {
+            next_id,
+            prev_id,
+            index,
+            len,
+        };
+
+        let next_button = [CreateButton::new(&state.next_id)
+            .style(ButtonStyle::Primary)
+            .label("➡️")];
+        ctx.send(
+            CreateReply::default()
+                .embed(embed)
+                .components(&[CreateActionRow::buttons(&next_button)]),
+        )
+        .await?;
+        while let Some(interaction) =
+            ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                .timeout(Duration::from_secs(600))
+                .filter(move |interaction| {
+                    let id = interaction.data.custom_id.as_str();
+                    id == state.next_id.as_str() || id == state.prev_id.as_str()
+                })
+                .await
+        {
+            let choice = &interaction.data.custom_id.as_str();
+
+            interaction
+                .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                .await?;
+
+            if choice.starts_with("next") && state.index < state.len - 1 {
+                state.index += 1;
+            } else if choice.starts_with("prev") && state.index > 0 {
+                state.index -= 1;
+            }
+
+            let state_index = state.index;
+            state.next_id = format!("next_{ctx_id}_{state_index}");
+            state.prev_id = format!("prev_{ctx_id}_{state_index}");
+
+            let buttons = [
+                CreateButton::new(&state.prev_id)
+                    .style(ButtonStyle::Primary)
+                    .label("⬅️"),
+                CreateButton::new(&state.next_id)
+                    .style(ButtonStyle::Primary)
+                    .label("➡️"),
+            ];
+
+            let new_embed = CreateEmbed::default()
+                .title(input.as_str())
+                .image(&urls[state.index])
+                .colour(COLOUR_ORANGE);
+
+            let new_components = {
+                if state.index == 0 {
+                    [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+                } else if state.index == len - 1 {
+                    [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+                } else {
+                    [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+                }
             };
 
-            let next_button = [CreateButton::new(&state.next_id)
-                .style(ButtonStyle::Primary)
-                .label("➡️")];
-            ctx.send(
-                CreateReply::default()
-                    .embed(embed)
-                    .components(&[CreateActionRow::buttons(&next_button)]),
+            let mut msg = interaction.message;
+
+            msg.edit(
+                ctx.http(),
+                EditMessage::default()
+                    .embed(new_embed)
+                    .components(&new_components),
             )
             .await?;
-            while let Some(interaction) =
-                ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                    .timeout(Duration::from_secs(600))
-                    .filter(move |interaction| {
-                        let id = interaction.data.custom_id.as_str();
-                        id == state.next_id.as_str() || id == state.prev_id.as_str()
-                    })
-                    .await
-            {
-                let choice = &interaction.data.custom_id.as_str();
-
-                interaction
-                    .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-                    .await?;
-
-                if choice.starts_with("next") && state.index < state.len - 1 {
-                    state.index += 1;
-                } else if choice.starts_with("prev") && state.index > 0 {
-                    state.index -= 1;
-                }
-
-                let state_index = state.index;
-                state.next_id = format!("next_{ctx_id}_{state_index}");
-                state.prev_id = format!("prev_{ctx_id}_{state_index}");
-
-                let buttons = [
-                    CreateButton::new(&state.prev_id)
-                        .style(ButtonStyle::Primary)
-                        .label("⬅️"),
-                    CreateButton::new(&state.next_id)
-                        .style(ButtonStyle::Primary)
-                        .label("➡️"),
-                ];
-
-                let new_embed = CreateEmbed::default()
-                    .title(input.as_str())
-                    .image(&urls[state.index]);
-
-                let new_components = {
-                    if state.index == 0 {
-                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                    } else if state.index == len - 1 {
-                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
-                    } else {
-                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
-                    }
-                };
-
-                let mut msg = interaction.message;
-
-                msg.edit(
-                    ctx.http(),
-                    EditMessage::default()
-                        .embed(new_embed)
-                        .components(&new_components),
-                )
-                .await?;
-            }
-        } else {
-            ctx.send(CreateReply::default().embed(embed)).await?;
         }
     } else {
-        ctx.reply("Life is not gifing").await?;
+        ctx.send(CreateReply::default().embed(embed)).await?;
     }
     Ok(())
 }
@@ -551,12 +554,14 @@ pub async fn memegen(
     #[description = "Top-right text"] top_right: String,
     #[description = "Bottom text"] bottom: String,
 ) -> Result<(), Error> {
-    let encoded_left = encode(&top_left);
-    let encoded_right = encode(&top_right);
-    let encoded_bottom = encode(&bottom);
-    let request_url = format!(
-        "https://api.memegen.link/images/exit/{encoded_left}/{encoded_right}/{encoded_bottom}.png"
-    );
+    let request_url = {
+        let encoded_left = encode(&top_left);
+        let encoded_right = encode(&top_right);
+        let encoded_bottom = encode(&bottom);
+        format!(
+            "https://api.memegen.link/images/exit/{encoded_left}/{encoded_right}/{encoded_bottom}.png"
+        )
+    };
     ctx.reply(request_url).await?;
     Ok(())
 }
@@ -645,7 +650,7 @@ pub async fn roast(
             Some(resp) if !resp.is_empty() => {
                 let mut embed = CreateEmbed::default()
                     .title(format!("Roasting {name}"))
-                    .color(0xFF7800);
+                    .colour(COLOUR_RED);
                 let mut current_chunk = String::with_capacity(1024);
                 let mut chunk_index = 0;
                 for ch in resp.chars() {
@@ -765,7 +770,7 @@ pub async fn translate(
                         "Translation from {} to {target_lang} with {}% confidence",
                         data.detected_language.language, data.detected_language.confidence
                     ))
-                    .color(0x33d17a)
+                    .colour(COLOUR_GREEN)
                     .field("Original:", &content, false)
                     .field("Translation:", &data.translated_text, false);
                 let len = data.alternatives.len();
@@ -828,7 +833,7 @@ pub async fn translate(
                                 "Translation from {} to {target_lang} with {}% confidence",
                                 data.detected_language.language, data.detected_language.confidence
                             ))
-                            .color(0x33d17a)
+                            .colour(COLOUR_GREEN)
                             .field("Original:", &content, false)
                             .field(
                                 "Translation:",
@@ -900,15 +905,17 @@ pub async fn urban(
     input: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_input = encode(&input);
-    let request_url = format!("https://api.urbandictionary.com/v0/define?term={encoded_input}");
+    let request_url = {
+        let encoded_input = encode(&input);
+        format!("https://api.urbandictionary.com/v0/define?term={encoded_input}")
+    };
     match HTTP_CLIENT.get(request_url).send().await {
         Ok(response) => match response.json::<UrbanResponse>().await {
             Ok(data) if !data.list.is_empty() => {
                 if !data.list.is_empty() {
                     let mut embed = CreateEmbed::default()
                         .title(&data.list[0].word)
-                        .color(0xEFFF00);
+                        .colour(COLOUR_YELLOW);
                     let mut current_chunk = String::with_capacity(1024);
                     let mut chunk_index = 0;
                     for ch in data.list[0].definition.replace(['[', ']'], "").chars() {
@@ -997,7 +1004,7 @@ pub async fn urban(
 
                             let mut new_embed = CreateEmbed::default()
                                 .title(&data.list[state.index].word)
-                                .color(0xEFFF00);
+                                .colour(COLOUR_YELLOW);
                             let mut current_chunk = String::with_capacity(1024);
                             let mut chunk_index = 0;
                             for ch in data.list[state.index]
@@ -1082,14 +1089,7 @@ pub async fn urban(
 )]
 pub async fn waifu(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
-    match get_waifu().await {
-        Some(url) => {
-            ctx.reply(url).await?;
-        }
-        None => {
-            ctx.reply("life is not waifuing").await?;
-        }
-    }
+    ctx.reply(get_waifu().await).await?;
     Ok(())
 }
 
@@ -1130,8 +1130,10 @@ pub async fn wiki(
     input: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_input = encode(&input);
-    let request_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{encoded_input}");
+    let request_url = {
+        let encoded_input = encode(&input);
+        format!("https://en.wikipedia.org/api/rest_v1/page/summary/{encoded_input}")
+    };
     match HTTP_CLIENT.get(request_url).send().await {
         Ok(request) => {
             match request
@@ -1145,7 +1147,7 @@ pub async fn wiki(
                         .title(data.title)
                         .description(data.extract)
                         .url(data.content_urls.desktop.page)
-                        .color(0xFFBE6F);
+                        .colour(COLOUR_GREEN);
                     if let Some(image) = data.originalimage {
                         embed = embed.image(image.source);
                     }

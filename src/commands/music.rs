@@ -1,4 +1,7 @@
-use crate::types::{Error, SContext, HTTP_CLIENT};
+use crate::{
+    consts::COLOUR_RED,
+    types::{Error, SContext, HTTP_CLIENT},
+};
 
 use anyhow::Context;
 use core::time::Duration;
@@ -370,7 +373,7 @@ pub async fn play_song(
                     let title = &m.title;
                     let source_url = &m.source_url;
                     let duration = &m.duration;
-                    let mut e = CreateEmbed::default().colour(0xED333B).field(
+                    let mut e = CreateEmbed::default().colour(COLOUR_RED).field(
                         "Added by:",
                         ctx.author().display_name(),
                         false,
@@ -403,8 +406,10 @@ pub async fn play_song(
                     if let Some(url) = thumbnail {
                         e = e.image(url);
                     };
-                    let mut handler = get_configured_handler(&handler_lock).await;
-                    handler.enqueue_input(Input::from(src.clone())).await;
+                    get_configured_handler(&handler_lock)
+                        .await
+                        .enqueue_input(Input::from(src.clone()))
+                        .await;
                     ctx.send(CreateReply::default().embed(e.clone())).await?;
                     let guild_id_i64 = i64::from(guild_id);
                     let guild_global_music = query!(
@@ -521,14 +526,10 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(handler_lock) = voice_check(&ctx).await {
         let handler = get_configured_handler(&handler_lock).await;
         let queue = handler.queue();
-        if queue.len() - 1 != 0 {
-            if queue.skip().is_ok() {
-                let queue_len = queue.len() - 2;
-                ctx.reply(format!("Song skipped. {queue_len} left in queue"))
-                    .await?;
-            } else {
-                ctx.reply("Song couldn't be skipped, try again!").await?;
-            }
+        if queue.skip().is_ok() {
+            let queue_len = queue.len() - 2;
+            ctx.reply(format!("Song skipped. {queue_len} left in queue"))
+                .await?;
         } else {
             ctx.reply("No songs to skip!").await?;
         }
@@ -540,8 +541,10 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn stop_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(handler_lock) = voice_check(&ctx).await {
-        if !handler_lock.lock().await.queue().is_empty() {
-            handler_lock.lock().await.queue().stop();
+        let handler = handler_lock.lock().await;
+        let queue = handler.queue();
+        if !queue.is_empty() {
+            queue.stop();
             ctx.reply("Queue cleared").await?;
         } else {
             ctx.reply("Bruh, empty queue!").await?;

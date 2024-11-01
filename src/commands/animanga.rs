@@ -1,4 +1,7 @@
-use crate::types::{Error, SContext, HTTP_CLIENT};
+use crate::{
+    consts::COLOUR_BLUE,
+    types::{Error, SContext, HTTP_CLIENT},
+};
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use poise::{serenity_prelude::CreateEmbed, CreateReply};
 use serde::Deserialize;
@@ -51,9 +54,10 @@ pub async fn anime_scene(
     input: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let encoded_input = encode(&input);
-    let request_url =
-        format!("https://api.trace.moe/search?cutBorders&anilistInfo&url={encoded_input}");
+    let request_url = {
+        let encoded_input = encode(&input);
+        format!("https://api.trace.moe/search?cutBorders&anilistInfo&url={encoded_input}")
+    };
     match HTTP_CLIENT.get(request_url).send().await {
         Ok(response) => match response.json::<MoeResponse>().await {
             Ok(scene) => {
@@ -62,7 +66,6 @@ pub async fn anime_scene(
                         ctx.reply("No matching scene found").await?;
                         return Ok(());
                     }
-
                     let episode_text = first_result.episode.unwrap_or(0).to_string();
                     let title = first_result
                         .anilist
@@ -70,7 +73,6 @@ pub async fn anime_scene(
                         .english
                         .as_deref()
                         .unwrap_or("Unknown title");
-
                     ctx.send(
                         CreateReply::default().embed(
                             CreateEmbed::default()
@@ -78,11 +80,10 @@ pub async fn anime_scene(
                                 .field("Episode", episode_text, true)
                                 .field("From", first_result.from.unwrap_or(0.0).to_string(), true)
                                 .field("To", first_result.to.unwrap_or(0.0).to_string(), true)
-                                .color(0x57e389),
+                                .colour(COLOUR_BLUE),
                         ),
                     )
                     .await?;
-
                     ctx.reply(&first_result.video).await?;
                 } else {
                     ctx.reply("No results found").await?;

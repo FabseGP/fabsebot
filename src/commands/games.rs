@@ -1,4 +1,7 @@
-use crate::types::{Error, SContext};
+use crate::{
+    consts::COLOUR_ORANGE,
+    types::{Error, SContext},
+};
 
 use poise::{
     futures_util::{Stream, StreamExt},
@@ -58,7 +61,7 @@ pub async fn rps(
 
             let embed = CreateEmbed::default()
                 .title("Rock paper scissors...")
-                .color(0xf6d32d)
+                .colour(COLOUR_ORANGE)
                 .description("Make a choice within 60s...");
 
             ctx.send(
@@ -118,7 +121,7 @@ pub async fn rps(
 
                 let new_embed = CreateEmbed::default()
                     .title(&response)
-                    .color(0x00ff00)
+                    .colour(COLOUR_ORANGE)
                     .description("Still no luck getting a life");
 
                 msg.edit(

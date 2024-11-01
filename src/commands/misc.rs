@@ -1,4 +1,5 @@
 use crate::{
+    consts::{COLOUR_RED, TSUNDERE_FALLBACK},
     types::{Error, SContext, HTTP_CLIENT},
     utils::{ai_response_simple, quote_image},
 };
@@ -44,7 +45,7 @@ pub async fn anony_poll(
 
     let embed = CreateEmbed::default()
         .title(title.as_str())
-        .color(0xFF5733)
+        .colour(COLOUR_RED)
         .fields(options_list.iter().map(|&option| (option, "0", false)));
 
     let ctx_id = ctx.id();
@@ -96,12 +97,15 @@ pub async fn anony_poll(
                 if index < options_count {
                     vote_counts[index] += 1;
 
-                    let new_embed = CreateEmbed::default().title(&title).color(0xFF5733).fields(
-                        options_list
-                            .iter()
-                            .zip(vote_counts.iter())
-                            .map(|(&option, &count)| (option, count.to_string(), false)),
-                    );
+                    let new_embed = CreateEmbed::default()
+                        .title(&title)
+                        .colour(COLOUR_RED)
+                        .fields(
+                            options_list
+                                .iter()
+                                .zip(vote_counts.iter())
+                                .map(|(&option, &count)| (option, count.to_string(), false)),
+                        );
 
                     let mut msg = interaction.message;
                     msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
@@ -137,7 +141,7 @@ pub async fn birthday(
                 .title(format!("HAPPY BIRTHDAY {name}!"))
                 .thumbnail(avatar_url)
                 .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
-                .color(0xFF5733),
+                .colour(COLOUR_RED),
         ),
     )
     .await?;
@@ -296,7 +300,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
         let mut embed = CreateEmbed::default()
             .title(format!("Top {} users by message count", users.len()))
             .thumbnail(thumbnail)
-            .color(0xFF5733);
+            .colour(COLOUR_RED);
 
         for (index, user) in users.iter().enumerate() {
             if let Ok(target) = guild_id
@@ -342,7 +346,7 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
             ctx.reply(resp).await?;
         }
         None => {
-            ctx.reply("Ugh, fine. It's nice to see you again, I suppose... for now, don't get any ideas thinking this means I actually like you or anything").await?;
+            ctx.reply(TSUNDERE_FALLBACK).await?;
         }
     }
     Ok(())
@@ -467,60 +471,41 @@ pub async fn slow_mode(
     Ok(())
 }
 
-/// Do you dare?
-#[poise::command(slash_command, prefix_command)]
-pub async fn troll(ctx: SContext<'_>) -> Result<(), Error> {
-    ctx.send(
-        CreateReply::default()
-            .content(
-                "
-```
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣤⣤⡴⠶⠶⠶⠶⠶⠶⠶⠶⢶⣦⣤⣤⣀⣀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⡴⠶⠛⠋⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠙⠛⠷⠶⢦⣤⣀⡀
-⠀⠀⠀⠀⠀⠀⠀⣠⠞⠉⠀⠀⠀⢀⠀⠀⠒⠀⠀⠀⠀⠀⠒⠒⠐⠒⢒⡀⠈⠀⠀⠀⠀⡀⠒⠀⢀⠀⠀⠀⠈⠛⣦⡀
-⠀⠀⠀⠀⠀⢀⣾⠋⠀⠀⢀⠀⢊⠥⢐⠈⠁⠀⠀⠀⢀⠀⠀⠉⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠈⢑⠠⢉⠂⢀⠀⠀⠈⢷⡄
-⠀⠀⠀⠀⠀⣼⠃⠀⠀⠀⠀⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⠀⠈⠀⠁⠀⠀⠀⠀⠈⢷⡀
-⠀⠀⠀⣠⣾⠃⠀⠀⠀⠀⠀⠀⣠⠶⠛⣉⣩⣽⣟⠳⢶⣄⠀⠀⠀⠀⠀⠀⣠⡶⠛⣻⣿⣯⣉⣙⠳⣆⠀⠀⠀⠀⠀⠀⠈⣷⣄
-⠀⣠⠞⠋⠀⢁⣤⣤⣤⣌⡁⠀⠛⠛⠉⣉⡍⠙⠛⠶⣤⠿⠀⢸⠀⠀⡇⠀⠻⠶⠞⠛⠉⠩⣍⡉⠉⠋⠀⣈⣤⡤⠤⢤⣄⠀⠈⠳⣄
-⢰⡏⠀⠀⣴⠋⠀⢀⣆⠉⠛⠓⠒⠖⠚⠋⠀⠀⠀⠀⠀⠀⠀⡾⠀⠀⢻⠀⠀⠀⠀⠀⠀⠀⠈⠛⠒⠒⠛⠛⠉⣰⣆⠀⠈⢷⡀⠀⠘⡇
-⢸⡇⠀⠀⣧⢠⡴⣿⠉⠛⢶⣤⣀⡀⠀⠠⠤⠤⠄⣶⠒⠂⠀⠀⠀⠀⢀⣀⣘⠛⣷⠀⠀⠀⠀⠀⢀⣠⣴⠶⠛⠉⣿⠷⠤⣸⠃⠀⢀⡟
-⠈⢷⡀⠄⠘⠀⠀⠸⣷⣄⡀⠈⣿⠛⠻⠶⢤⣄⣀⡻⠆⠋⠉⠉⠀⠀⠉⠉⠉⠐⣛⣀⣤⡴⠶⠛⠋⣿⠀⣀⣠⣾⠇⠀⠀⠋⠠⢁⡾⠃
-⠀⠀⠙⢶⡀⠀⠀⠀⠘⢿⡙⠻⣿⣷⣤⣀⡀⠀⣿⠛⠛⠳⠶⠦⣴⠶⠶⠶⠛⠛⠋⢿⡀⣀⣠⣤⣾⣿⠟⢉⡿⠃⠀⠀⠀⢀⡾⠋
-⠀⠀⠀⠈⢻⡄⠀⠀⠀⠈⠻⣤⣼⠉⠙⠻⠿⣿⣿⣤⣤⣤⣀⣀⣿⡀⣀⣀⣠⣤⣶⣾⣿⠿⠛⠋⠁⢿⣴⠟⠁⠀⠀⠀⢠⡟⠁
-⠀⠀⠀⠀⠀⢷⡄⠀⠀⠀⠀⠙⠿⣦⡀⠀⠀⣼⠃⠉⠉⠛⠛⠛⣿⡟⠛⠛⠛⠉⠉⠉⢿⡀⠀⣀⣴⠟⠋⠀⠀⠀⠀⢠⡾
-⠀⠀⠀⠀⠀⠀⠙⢦⣀⠀⣀⠀⠀⡈⠛⠷⣾⣇⣀⠀⠀⠀⠀⠀⢸⡇⠀⠀⠀⠀⢀⣀⣼⡷⠾⠋⢁⠀⢀⡀⠀⣀⡴⠋
-⠀⠀⠀⠀⠀⠀⠀⠀⠙⠳⣦⣉⠒⠬⣑⠂⢄⡉⠙⠛⠛⠶⠶⠶⠾⠷⠶⠚⠛⠛⠛⠉⣁⠤⢐⡨⠤⢒⣩⡴⠞⠋
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠶⣤⣉⠀⠂⠥⠀⠀⠤⠀⠀⠀⠀⠀⠤⠄⠀⠠⠌⠂⢈⣡⡴⠖⠋⠉
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠶⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡴⠞⠋⠁
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠳⠶⠶⠶⠶⠶⠖⠛⠋⠁
-```",
-            )
-            .ephemeral(true),
-    )
-    .await?;
-    Ok(())
-}
-
 /// Count of tracked words
 #[poise::command(prefix_command, slash_command)]
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let word = query!(
-            "SELECT word_tracked, word_count FROM guild_settings WHERE guild_id = $1",
+        let thumbnail = match ctx.guild() {
+            Some(guild) => guild.banner_url().unwrap_or_else(|| {
+                guild
+                    .icon_url()
+                    .unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
+            }),
+            None => {
+                return Ok(());
+            }
+        };
+        let words = query!(
+            "SELECT word, count FROM guild_word_tracking WHERE guild_id = $1
+            ORDER BY count
+            DESC LIMIT 25",
             i64::from(guild_id),
         )
-        .fetch_optional(&mut *ctx.data().db.acquire().await?)
+        .fetch_all(&mut *ctx.data().db.acquire().await?)
         .await?;
-        ctx.reply(
-            match word.and_then(|record| record.word_tracked.map(|word| (word, record.word_count)))
-            {
-                Some((tracked_word, count)) => {
-                    format!("{tracked_word} was counted {count} times")
-                }
-                None => "hmm, no words set to be tracked... /set_word_track?".to_string(),
-            },
-        )
-        .await?;
+        let mut embed = CreateEmbed::default()
+            .title(format!("Top {} word tracked by count", words.len()))
+            .thumbnail(thumbnail)
+            .colour(COLOUR_RED);
+        for (index, word) in words.iter().enumerate() {
+            let rank = index + 1;
+            embed = embed.field(
+                format!("#{rank} {}", word.word),
+                word.count.to_string(),
+                false,
+            );
+        }
+        ctx.send(CreateReply::default().embed(embed)).await?;
     }
     Ok(())
 }

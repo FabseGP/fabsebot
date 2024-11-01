@@ -1,5 +1,9 @@
-use crate::types::{Error, SContext, HTTP_CLIENT};
+use crate::{
+    consts::COLOUR_RED,
+    types::{Error, SContext, HTTP_CLIENT},
+};
 
+use anyhow::Context;
 use poise::{
     serenity_prelude::{Channel, CreateEmbed},
     CreateReply,
@@ -14,6 +18,13 @@ use sqlx::query;
 )]
 pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let guild_id_i64 = i64::from(guild_id);
+        let mut tx = ctx
+            .data()
+            .db
+            .begin()
+            .await
+            .context("Failed to acquire savepoint")?;
         query!(
             "UPDATE guild_settings
             SET dead_chat_rate = NULL,
@@ -23,14 +34,26 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 prefix = NULL,
                 ai_chat_channel = NULL,
                 global_chat_channel = NULL,
-                word_tracked = NULL,
-                word_count = 0,
                 global_chat = FALSE,
                 global_music = FALSE
             WHERE guild_id = $1",
-            i64::from(guild_id)
+            guild_id_i64
         )
-        .execute(&mut *ctx.data().db.acquire().await?)
+        .execute(&mut *tx)
+        .await?;
+        query!(
+            "DELETE FROM guild_word_tracking
+            WHERE guild_id = $1",
+            guild_id_i64
+        )
+        .execute(&mut *tx)
+        .await?;
+        query!(
+            "DELETE FROM guild_word_reaction
+            WHERE guild_id = $1",
+            guild_id_i64
+        )
+        .execute(&mut *tx)
         .await?;
         ctx.send(
             CreateReply::default()
@@ -38,6 +61,9 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 .ephemeral(true),
         )
         .await?;
+        tx.commit()
+            .await
+            .context("Failed to commit sql-transaction")?;
     }
     Ok(())
 }
@@ -76,7 +102,7 @@ pub async fn set_afk(
                             .static_avatar_url()
                             .unwrap_or_else(|| ctx.author().default_avatar_url())
                     }))
-                    .color(0xFF5733),
+                    .color(COLOUR_RED),
             ),
         )
         .await?;
@@ -118,7 +144,7 @@ pub async fn set_chatbot_channel(
 }
 
 /// Configure the role for the chatbot individually for each user
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(slash_command)]
 pub async fn set_chatbot_role(
     ctx: SContext<'_>,
     #[description = "The role the bot should take; if not set, then default role"]
@@ -355,23 +381,87 @@ pub async fn set_user_ping(
     Ok(())
 }
 
+/// Configure words to react to with custom content
+#[poise::command(slash_command)]
+pub async fn set_word_react(
+    ctx: SContext<'_>,
+    #[description = "Word to react to"] word: String,
+    #[description = "Text to send on react"] content: String,
+    #[description = "Media to send on react; use !gif query for a random gif of query"]
+    media: Option<String>,
+) -> Result<(), Error> {
+    if let Some(guild_id) = ctx.guild_id() {
+        let valid = if let Some(user_media) = &media {
+            if user_media.starts_with("https") {
+                ctx.defer().await?;
+                HTTP_CLIENT
+                    .head(user_media)
+                    .send()
+                    .await
+                    .map_or(false, |response| {
+                        response
+                            .headers()
+                            .get("content-type")
+                            .and_then(|ct| ct.to_str().ok())
+                            .is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif")
+                    })
+            } else if let Some(media_stripped) = user_media.strip_prefix("!gif") {
+                !media_stripped.is_empty()
+            } else {
+                false
+            }
+        } else {
+            true
+        };
+        if valid {
+            query!(
+                "INSERT INTO guild_word_reaction (guild_id, word, content, media)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT(guild_id, word)
+                DO UPDATE SET
+                    word = $2,
+                    content = $3,
+                    media = $4",
+                i64::from(guild_id),
+                word,
+                content,
+                media
+            )
+            .execute(&mut *ctx.data().db.acquire().await?)
+            .await?;
+            ctx.send(
+                CreateReply::default()
+                    .content(format!("{word} will be reacted to from now on... probably"))
+                    .ephemeral(true),
+            )
+            .await?;
+        } else {
+            ctx.send(
+                CreateReply::default()
+                    .content("Invalid media given... really bro?")
+                    .ephemeral(true),
+            )
+            .await?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Configure words to track count of
-#[poise::command(
-    slash_command,
-    required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
-)]
+#[poise::command(slash_command)]
 pub async fn set_word_track(
     ctx: SContext<'_>,
     #[description = "Word to track count of"] word: String,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
-            "INSERT INTO guild_settings (guild_id, word_tracked)
+            "INSERT INTO guild_word_tracking (guild_id, word)
             VALUES ($1, $2)
-            ON CONFLICT(guild_id)
+            ON CONFLICT(guild_id, word)
             DO UPDATE SET
-                word_tracked = $2, 
-                word_count = 0",
+                word = $2, 
+                count = 0",
             i64::from(guild_id),
             word,
         )
