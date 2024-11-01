@@ -453,84 +453,39 @@ pub async fn handle_message(
             )
             .await?;
     }
-    match content.as_str() {
-        "floppaganda" => {
-            new_message
-                .channel_id
-                .send_message(
+    if content == "floppaganda" {
+        new_message
+            .channel_id
+            .send_message(
+                &ctx.http,
+                CreateMessage::default().content("https://i.imgur.com/Pys97pb.png"),
+            )
+            .await?;
+    } else if content.contains("kurukuru_seseren") {
+        let count = content.matches("kurukuru_seseren").count();
+        let mut response = String::with_capacity(EMOJI_KURUKURU.len() * count);
+        for _ in 0..count {
+            response.push_str(EMOJI_KURUKURU);
+        }
+        if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
+            webhook
+                .execute(
                     &ctx.http,
-                    CreateMessage::default().content("https://i.imgur.com/Pys97pb.png"),
+                    false,
+                    ExecuteWebhook::default()
+                        .username("vilbot")
+                        .avatar_url("https://i.postimg.cc/44t5vzWB/IMG-0014.png")
+                        .content(&response),
                 )
                 .await?;
         }
-        _ => {
-            if content.contains("furina") {
-                let gif = FURINA_GIFS[RNG.lock().await.usize(..FURINA_GIFS.len())];
-                new_message
-                    .channel_id
-                    .send_message(
-                        &ctx.http,
-                        CreateMessage::default().embed(
-                            CreateEmbed::default()
-                                .title("your queen has arrived")
-                                .image(gif)
-                                .colour(COLOUR_YELLOW),
-                        ),
-                    )
-                    .await?;
-            } else if content.contains("kafka") {
-                let gif = KAFKA_GIFS[RNG.lock().await.usize(..KAFKA_GIFS.len())];
-                new_message
-                    .channel_id
-                    .send_message(
-                        &ctx.http,
-                        CreateMessage::default().embed(
-                            CreateEmbed::default()
-                                .title("your queen has arrived")
-                                .image(gif)
-                                .colour(COLOUR_YELLOW),
-                        ),
-                    )
-                    .await?;
-            } else if content.contains("kinich") {
-                let gif = KINICH_GIFS[RNG.lock().await.usize(..KINICH_GIFS.len())];
-                new_message
-                    .channel_id
-                    .send_message(
-                        &ctx.http,
-                        CreateMessage::default().embed(
-                            CreateEmbed::default()
-                                .title("pls destroy lily's oven")
-                                .image(gif)
-                                .colour(COLOUR_YELLOW),
-                        ),
-                    )
-                    .await?;
-            } else if content.contains("kurukuru_seseren") {
-                let count = content.matches("kurukuru_seseren").count();
-                let mut response = String::with_capacity(EMOJI_KURUKURU.len() * count);
-                for _ in 0..count {
-                    response.push_str(EMOJI_KURUKURU);
-                }
-                if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
-                    webhook
-                        .execute(
-                            &ctx.http,
-                            false,
-                            ExecuteWebhook::default()
-                                .username("vilbot")
-                                .avatar_url("https://i.postimg.cc/44t5vzWB/IMG-0014.png")
-                                .content(&response),
-                        )
-                        .await?;
-                }
-            } else if content.contains("fabse") {
-                if let Ok(reaction) = ReactionType::try_from(EMOJI_FABSEMAN) {
-                    new_message.react(&ctx.http, reaction).await?;
-                }
-                if content == "fabse" || content == "fabseman" {
-                    if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
-                        webhook
+    } else if content.contains("fabse") {
+        if let Ok(reaction) = ReactionType::try_from(EMOJI_FABSEMAN) {
+            new_message.react(&ctx.http, reaction).await?;
+        }
+        if content == "fabse" || content == "fabseman" {
+            if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
+                webhook
                         .execute(
                             &ctx.http,
                             false,
@@ -540,8 +495,6 @@ pub async fn handle_message(
                                 .content("# such magnificence"),
                         )
                         .await?;
-                    }
-                }
             }
         }
     }
