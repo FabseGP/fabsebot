@@ -21,8 +21,8 @@ use songbird::{
     },
     input::{Input, YoutubeDl},
     tracks::PlayMode,
-    Call, Config, CoreEvent, Event as SongBirdEvent, EventContext,
-    EventHandler as VoiceEventHandler, Songbird,
+    Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
+    Songbird,
 };
 use sqlx::{query, Pool, Postgres};
 use std::sync::Arc;
@@ -77,14 +77,21 @@ pub struct VoiceReceiveHandler {
     guild_id: GuildId,
     music_manager: Arc<Songbird>,
     db: Pool<Postgres>,
+    encoder: Arc<Mutex<Encoder>>,
 }
 
 impl VoiceReceiveHandler {
-    pub const fn new(guild_id: GuildId, music_manager: Arc<Songbird>, db: Pool<Postgres>) -> Self {
+    pub const fn new(
+        guild_id: GuildId,
+        music_manager: Arc<Songbird>,
+        db: Pool<Postgres>,
+        encoder: Arc<Mutex<Encoder>>,
+    ) -> Self {
         Self {
             guild_id,
             music_manager,
             db,
+            encoder,
         }
     }
 }
@@ -92,18 +99,12 @@ impl VoiceReceiveHandler {
 #[async_trait]
 impl VoiceEventHandler for VoiceReceiveHandler {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
-        if let EventContext::VoiceTick(tick) = ctx
-            && let Ok(mut encoder) = Encoder::new(
-                SampleRate::Hz48000,
-                songbird::driver::opus::Channels::Stereo,
-                songbird::driver::opus::Application::Voip,
-            )
-        {
-            let _ = encoder.set_bitrate(Bitrate::Max);
+        if let EventContext::VoiceTick(tick) = ctx {
             for data in tick.speaking.values() {
                 if let Some(voice) = &data.decoded_voice {
                     let mut encode_output = vec![0u8; 1280];
-                    if let Ok(encoded_len) = encoder.encode(voice, &mut encode_output) {
+                    let value = self.encoder.lock().await.encode(voice, &mut encode_output);
+                    if let Ok(encoded_len) = value {
                         encode_output.truncate(encoded_len);
                         if let Ok(mut conn) = self.db.acquire().await {
                             if let Ok(guild_global_call) = query!(
@@ -296,12 +297,20 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
                     .execute(&mut *ctx.data().db.acquire().await?)
                     .await?;
                     let mut handler = handler_lock.lock().await;
+                    let mut encoder = Encoder::new(
+                        SampleRate::Hz48000,
+                        songbird::driver::opus::Channels::Stereo,
+                        songbird::driver::opus::Application::Voip,
+                    )
+                    .unwrap();
+                    encoder.set_bitrate(Bitrate::Max).unwrap();
                     handler.add_global_event(
                         CoreEvent::VoiceTick.into(),
                         VoiceReceiveHandler::new(
                             guild_id,
                             ctx.data().music_manager.clone(),
                             ctx.data().db.clone(),
+                            Arc::new(Mutex::new(encoder)),
                         ),
                     );
 
@@ -628,47 +637,50 @@ pub async fn seek_song(
 #[poise::command(prefix_command, slash_command)]
 pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx).await {
-        let handler = get_configured_handler(&handler_lock).await;
-        let queue = handler.queue();
-        if queue.skip().is_ok() {
-            let content = format!(
-                "Song skipped by {}. {} left in queue",
-                ctx.author().display_name(),
-                queue.len() - 2
-            );
-            ctx.reply(&content).await?;
-            let guild_global_music = query!(
-                "SELECT guild_id FROM guild_settings
+        let queue_len = {
+            let handler = get_configured_handler(&handler_lock).await;
+            let queue = handler.queue();
+            if queue.skip().is_err() {
+                ctx.reply("No songs to skip!").await?;
+                return Ok(());
+            }
+            queue.len()
+        };
+        let content = format!(
+            "Song skipped by {}. {} left in queue",
+            ctx.author().display_name(),
+            queue_len - 2
+        );
+        ctx.reply(&content).await?;
+        let guild_global_music = query!(
+            "SELECT guild_id FROM guild_settings
                 WHERE guild_id != $1 AND global_music = TRUE",
-                i64::from(guild_id)
-            )
-            .fetch_all(&mut *ctx.data().db.acquire().await?)
-            .await?;
-            for guild in &guild_global_music {
-                let current_guild_id = GuildId::new(
-                    u64::try_from(guild.guild_id).expect("guild id out of bounds for u64"),
-                );
-                match ctx.data().music_manager.get(current_guild_id) {
-                    Some(global_handler_lock) => {
-                        let handler = get_configured_handler(&global_handler_lock).await;
-                        let queue = handler.queue();
-                        if queue.skip().is_ok()
-                            && let Some(id) = handler.current_channel()
-                        {
-                            if let Ok(channel) =
-                                ctx.http().get_channel(ChannelId::from(id.get())).await
-                            {
-                                if let Some(guild_channel) = channel.guild() {
-                                    guild_channel.say(ctx.http(), &content).await?;
-                                }
-                            }
+            i64::from(guild_id)
+        )
+        .fetch_all(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        for guild in &guild_global_music {
+            let current_guild_id = GuildId::new(
+                u64::try_from(guild.guild_id).expect("guild id out of bounds for u64"),
+            );
+            if let Some(global_handler_lock) = ctx.data().music_manager.get(current_guild_id) {
+                let channel_id = {
+                    let handler = get_configured_handler(&global_handler_lock).await;
+                    let queue = handler.queue();
+                    if queue.skip().is_err() {
+                        continue;
+                    }
+                    handler.current_channel()
+                };
+
+                if let Some(id) = channel_id {
+                    if let Ok(channel) = ctx.http().get_channel(ChannelId::from(id.get())).await {
+                        if let Some(guild_channel) = channel.guild() {
+                            guild_channel.say(ctx.http(), &content).await?;
                         }
                     }
-                    None => continue,
                 }
             }
-        } else {
-            ctx.reply("No songs to skip!").await?;
         }
     }
     Ok(())
@@ -678,43 +690,48 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn stop_song(ctx: SContext<'_>) -> Result<(), Error> {
     if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx).await {
-        let handler = handler_lock.lock().await;
-        let queue = handler.queue();
-        if !queue.is_empty() {
-            queue.stop();
-            let content = "Queue cleared";
-            ctx.reply(content).await?;
-            let guild_global_music = query!(
-                "SELECT guild_id FROM guild_settings
+        let has_songs = {
+            let handler = get_configured_handler(&handler_lock).await;
+            let queue = handler.queue();
+            if queue.is_empty() {
+                false
+            } else {
+                queue.stop();
+                true
+            }
+        };
+        if !has_songs {
+            ctx.reply("Bruh, empty queue!").await?;
+            return Ok(());
+        }
+        let content = "Queue cleared";
+        ctx.reply(content).await?;
+        let guild_global_music = query!(
+            "SELECT guild_id FROM guild_settings
                 WHERE guild_id != $1 AND global_music = TRUE",
-                i64::from(guild_id)
-            )
-            .fetch_all(&mut *ctx.data().db.acquire().await?)
-            .await?;
-            for guild in &guild_global_music {
-                let current_guild_id = GuildId::new(
-                    u64::try_from(guild.guild_id).expect("guild id out of bounds for u64"),
-                );
-                match ctx.data().music_manager.get(current_guild_id) {
-                    Some(global_handler_lock) => {
-                        let handler = get_configured_handler(&global_handler_lock).await;
-                        let queue = handler.queue();
-                        queue.stop();
-                        if let Some(id) = handler.current_channel() {
-                            if let Ok(channel) =
-                                ctx.http().get_channel(ChannelId::from(id.get())).await
-                            {
-                                if let Some(guild_channel) = channel.guild() {
-                                    guild_channel.say(ctx.http(), content).await?;
-                                }
-                            }
+            i64::from(guild_id)
+        )
+        .fetch_all(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        for guild in &guild_global_music {
+            let current_guild_id = GuildId::new(
+                u64::try_from(guild.guild_id).expect("guild id out of bounds for u64"),
+            );
+            if let Some(global_handler_lock) = ctx.data().music_manager.get(current_guild_id) {
+                let channel_id = {
+                    let handler = get_configured_handler(&global_handler_lock).await;
+                    let queue = handler.queue();
+                    queue.stop();
+                    handler.current_channel()
+                };
+                if let Some(id) = channel_id {
+                    if let Ok(channel) = ctx.http().get_channel(ChannelId::from(id.get())).await {
+                        if let Some(guild_channel) = channel.guild() {
+                            guild_channel.say(ctx.http(), content).await?;
                         }
                     }
-                    None => continue,
                 }
             }
-        } else {
-            ctx.reply("Bruh, empty queue!").await?;
         }
     }
     Ok(())

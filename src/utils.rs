@@ -152,47 +152,50 @@ pub async fn ai_chatbot(
                 }
             }
         }
-        let mut history = conversations.entry(guild_id).or_default();
+        let response_opt = {
+            let content_safe = message.content_safe(&ctx.cache);
+            let mut history = conversations.entry(guild_id).or_default();
 
-        if history.iter().any(|message| message.role == "user") {
-            system_content.push_str("\nCurrent users in the conversation");
-            let mut is_first = true;
-            let seen_users = DashSet::new();
-            for message in history.iter() {
-                if message.role == "user" {
-                    if let Some(user) = message.content.split(':').next().map(str::trim) {
-                        if seen_users.insert(user) {
-                            if !is_first {
-                                system_content.push('\n');
+            if history.iter().any(|message| message.role == "user") {
+                system_content.push_str("\nCurrent users in the conversation");
+                let mut is_first = true;
+                let seen_users = DashSet::new();
+                for message in history.iter() {
+                    if message.role == "user" {
+                        if let Some(user) = message.content.split(':').next().map(str::trim) {
+                            if seen_users.insert(user) {
+                                if !is_first {
+                                    system_content.push('\n');
+                                }
+                                system_content.push_str(user);
+                                is_first = false;
                             }
-                            system_content.push_str(user);
-                            is_first = false;
                         }
                     }
                 }
             }
-        }
 
-        let system_message = history.iter_mut().find(|msg| msg.role == "system");
+            let system_message = history.iter_mut().find(|msg| msg.role == "system");
 
-        match system_message {
-            Some(system_message) => {
-                system_message.content = system_content;
+            match system_message {
+                Some(system_message) => {
+                    system_message.content = system_content;
+                }
+                None => {
+                    history.push(AIChatMessage {
+                        role: "system".to_owned(),
+                        content: system_content,
+                    });
+                }
             }
-            None => {
-                history.push(AIChatMessage {
-                    role: "system".to_owned(),
-                    content: system_content,
-                });
-            }
-        }
-        let content_safe = message.content_safe(&ctx.cache);
-        history.push(AIChatMessage {
-            role: "user".to_owned(),
-            content: format!("User: {author_name}: {content_safe}"),
-        });
+            history.push(AIChatMessage {
+                role: "user".to_owned(),
+                content: format!("User: {author_name}: {content_safe}"),
+            });
+            ai_response(&history).await
+        };
 
-        if let Some(response) = ai_response(&history).await {
+        if let Some(response) = response_opt {
             if response.len() >= 2000 {
                 let mut start = 0;
                 while start < response.len() {
@@ -207,17 +210,23 @@ pub async fn ai_chatbot(
             } else {
                 message.reply(&ctx.http, response.as_str()).await?;
             }
-            history.push(AIChatMessage {
-                role: "assistant".to_owned(),
-                content: response,
-            });
+            conversations
+                .entry(guild_id)
+                .or_default()
+                .push(AIChatMessage {
+                    role: "assistant".to_owned(),
+                    content: response,
+                });
         } else {
             let error_msg = "Sorry, I had to forget our convo, too boring!";
-            history.clear();
-            history.push(AIChatMessage {
-                role: "assistant".to_owned(),
-                content: error_msg.to_owned(),
-            });
+            {
+                let mut history = conversations.entry(guild_id).or_default();
+                history.clear();
+                history.push(AIChatMessage {
+                    role: "assistant".to_owned(),
+                    content: error_msg.to_owned(),
+                });
+            }
             message.reply(&ctx.http, error_msg).await?;
         }
         typing.stop();
