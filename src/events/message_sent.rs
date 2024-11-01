@@ -376,7 +376,7 @@ pub async fn handle_message(
                                     CreateMessage::default().embed(
                                         CreateEmbed::default()
                                             .title(&record.content)
-                                            .colour(COLOUR_BLUE)
+                                            .colour(COLOUR_YELLOW)
                                             .image(image),
                                     )
                                 },
