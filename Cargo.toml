@@ -24,7 +24,7 @@ serde = { version = "1", features = ["serde_derive"] }
 serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "gateway", "model", "rustls_backend", "voice"] }
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "driver", "receive"] }
 sqlx = { version = "0", default-features = false, features = ["macros", "migrate", "postgres", "runtime-tokio"] }
-symphonia = { version = "0", default-features = false, features = ["aac", "flac", "mkv", "opt-simd", "pcm"] }
+symphonia = { version = "0", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm"] }
 textwrap = "0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 #tokio-postgres = "0"
@@ -36,10 +36,7 @@ urlencoding = "2"
 [profile.release]
 codegen-units = 1
 lto = true
-
-[profile.dev]
 strip = true
 
-[profile.fabse]
-inherits = "release"
+[profile.dev]
 strip = true

@@ -112,7 +112,7 @@ pub async fn handle_message(
                                 Some(get_waifu().await)
                             } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
                                 let urls = get_gifs(gif_query).await;
-                                Some(urls[RNG.lock().await.usize(..urls.len())].clone())
+                                urls.get(RNG.lock().await.usize(..urls.len())).cloned()
                             } else if !ping_media.is_empty() {
                                 Some(ping_media.to_string())
                             } else {
@@ -346,32 +346,26 @@ pub async fn handle_message(
         .await?;
         for record in &word_reactions {
             if content.contains(&record.word) {
-                let message = {
-                    match &record.media {
-                        Some(reaction_media) => {
-                            let media = if let Some(gif_query) = reaction_media.strip_prefix("!gif")
-                            {
-                                let urls = get_gifs(gif_query).await;
-                                Some(urls[RNG.lock().await.usize(..urls.len())].clone())
-                            } else if !reaction_media.is_empty() {
-                                Some(reaction_media.to_string())
-                            } else {
-                                None
-                            };
-                            media.map_or_else(
-                                || CreateMessage::default().content(&record.content),
-                                |image| {
-                                    CreateMessage::default().embed(
-                                        CreateEmbed::default()
-                                            .title(&record.content)
-                                            .colour(COLOUR_YELLOW)
-                                            .image(image),
-                                    )
-                                },
+                let message = match &record.media {
+                    Some(media) if !media.is_empty() => {
+                        if let Some(gif_query) = media.strip_prefix("!gif") {
+                            let urls = get_gifs(gif_query).await;
+                            CreateMessage::default().embed(
+                                CreateEmbed::default()
+                                    .title(&record.content)
+                                    .colour(COLOUR_YELLOW)
+                                    .image(urls[RNG.lock().await.usize(..urls.len())].clone()),
+                            )
+                        } else {
+                            CreateMessage::default().embed(
+                                CreateEmbed::default()
+                                    .title(&record.content)
+                                    .colour(COLOUR_YELLOW)
+                                    .image(media),
                             )
                         }
-                        None => CreateMessage::default().content(&record.content),
                     }
+                    _ => CreateMessage::default().content(&record.content),
                 };
                 new_message
                     .channel_id
