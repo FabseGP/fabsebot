@@ -120,7 +120,6 @@ pub async fn ai_summarize(
     ctx: SContext<'_>,
     #[description = "Maximum length of summary in words"] length: u64,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
     let msg = ctx
         .channel_id()
         .message(&ctx.http(), MessageId::from(ctx.id()))
@@ -129,6 +128,7 @@ pub async fn ai_summarize(
         ctx.reply("Bruh, reply to a message").await?;
         return Ok(());
     };
+    ctx.defer().await?;
     let request = SummarizeRequest {
         input_text: reply.content,
         length,
@@ -574,8 +574,8 @@ pub async fn roast(
     #[rest]
     member: Member,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
     if let Some(guild_id) = ctx.guild_id() {
+        ctx.defer().await?;
         let avatar_url = member.avatar_url().unwrap_or_else(|| {
             member
                 .user

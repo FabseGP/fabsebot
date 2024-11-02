@@ -55,17 +55,23 @@ pub async fn user_misuse(
     message: String,
 ) -> Result<(), Error> {
     if ctx.guild_id().is_some() {
-        ctx.defer().await?;
-        let avatar_url = member.avatar_url().unwrap_or_else(|| {
-            member.user.avatar_url().unwrap_or_else(|| {
-                member
-                    .user
-                    .avatar_url()
-                    .unwrap_or_else(|| member.user.default_avatar_url())
-            })
-        });
-        let channel_id = ctx.channel_id();
-        if let Ok(webhook) = webhook_find(ctx.serenity_context(), channel_id, &ctx.data()).await {
+        if let Ok(webhook) =
+            webhook_find(ctx.serenity_context(), ctx.channel_id(), &ctx.data()).await
+        {
+            ctx.send(
+                CreateReply::default()
+                    .content("you're going to hell")
+                    .ephemeral(true),
+            )
+            .await?;
+            let avatar_url = member.avatar_url().unwrap_or_else(|| {
+                member.user.avatar_url().unwrap_or_else(|| {
+                    member
+                        .user
+                        .avatar_url()
+                        .unwrap_or_else(|| member.user.default_avatar_url())
+                })
+            });
             webhook
                 .execute(
                     ctx.http(),
@@ -76,13 +82,14 @@ pub async fn user_misuse(
                         .content(message),
                 )
                 .await?;
+        } else {
+            ctx.send(
+                CreateReply::default()
+                    .content("no misuse for now")
+                    .ephemeral(true),
+            )
+            .await?;
         }
-        ctx.send(
-            CreateReply::default()
-                .content("you're going to hell")
-                .ephemeral(true),
-        )
-        .await?;
     }
     Ok(())
 }

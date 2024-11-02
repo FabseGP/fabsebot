@@ -276,7 +276,6 @@ struct UserCount {
 #[poise::command(prefix_command, slash_command)]
 pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        ctx.defer().await?;
         let thumbnail = match ctx.guild() {
             Some(guild) => guild.banner_url().unwrap_or_else(|| {
                 guild
@@ -287,6 +286,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
                 return Ok(());
             }
         };
+        ctx.defer().await?;
         let users = query_as!(
             UserCount,
             "SELECT message_count, user_id FROM user_settings WHERE guild_id = $1
@@ -356,8 +356,6 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command)]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        ctx.defer().await?;
-
         let msg = ctx
             .channel_id()
             .message(&ctx.http(), MessageId::new(ctx.id()))
@@ -368,6 +366,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             return Ok(());
         };
 
+        ctx.defer().await?;
         let message_url = reply.link();
         let content = reply.content;
         let quote_path = Path::new("quote.webp");

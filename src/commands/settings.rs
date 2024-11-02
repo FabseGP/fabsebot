@@ -25,6 +25,12 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
             .begin()
             .await
             .context("Failed to acquire savepoint")?;
+        ctx.send(
+            CreateReply::default()
+                .content("Server settings resetted... probably")
+                .ephemeral(true),
+        )
+        .await?;
         query!(
             "UPDATE guild_settings
             SET dead_chat_rate = NULL,
@@ -55,12 +61,6 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
             guild_id_i64
         )
         .execute(&mut *tx)
-        .await?;
-        ctx.send(
-            CreateReply::default()
-                .content("Server settings resetted... probably")
-                .ephemeral(true),
-        )
         .await?;
         tx.commit()
             .await
@@ -121,8 +121,6 @@ pub async fn set_chatbot_channel(
     #[description = "Channel to act as chatbot in"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        ctx.defer().await?;
-        let channel_id = channel.id();
         query!(
             "INSERT INTO guild_settings (guild_id, ai_chat_channel)
             VALUES ($1, $2)
@@ -130,7 +128,7 @@ pub async fn set_chatbot_channel(
             DO UPDATE SET
                 ai_chat_channel = $2",
             i64::from(guild_id),
-            i64::from(channel_id),
+            i64::from(ctx.channel_id()),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -153,7 +151,6 @@ pub async fn set_chatbot_role(
     role: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        ctx.defer().await?;
         query!(
             "INSERT INTO user_settings (guild_id, user_id, chatbot_role)
             VALUES ($1, $2, $3)
@@ -187,7 +184,6 @@ pub async fn set_dead_chat(
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let channel_id = channel.id();
         query!(
             "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel)
             VALUES ($1, $2, $3)
@@ -197,7 +193,7 @@ pub async fn set_dead_chat(
                 dead_chat_channel = $3",
             i64::from(guild_id),
             occurrence,
-            i64::from(channel_id),
+            i64::from(ctx.channel_id()),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -260,7 +256,6 @@ pub async fn set_quote_channel(
     #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let channel_id = channel.id();
         query!(
             "INSERT INTO guild_settings (guild_id, quotes_channel)
             VALUES ($1, $2)
@@ -268,7 +263,7 @@ pub async fn set_quote_channel(
             DO UPDATE SET
                 quotes_channel = $2",
             i64::from(guild_id),
-            i64::from(channel_id),
+            i64::from(ctx.channel_id()),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -294,7 +289,6 @@ pub async fn set_spoiler_channel(
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let channel_id = channel.id();
         query!(
             "INSERT INTO guild_settings (guild_id, spoiler_channel)
             VALUES ($1, $2)
@@ -302,7 +296,7 @@ pub async fn set_spoiler_channel(
             DO UPDATE SET
                 spoiler_channel = $2",
             i64::from(guild_id),
-            i64::from(channel_id),
+            i64::from(ctx.channel_id()),
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;

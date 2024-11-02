@@ -147,12 +147,12 @@ pub async fn add_playlist(
     playlist_id: String,
 ) -> Result<(), Error> {
     if let (Some(handler_lock), Some(_)) = voice_check(&ctx).await {
-        ctx.defer().await?;
         if let Ok(request) = HTTP_CLIENT
             .get(format!("https://api.deezer.com/playlist/{playlist_id}"))
             .send()
             .await
         {
+            ctx.defer().await?;
             match request
                 .json::<DeezerResponse>()
                 .await
