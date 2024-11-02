@@ -83,22 +83,23 @@ pub async fn rps(
                     })
                     .await
             {
-                let target_choice = &interaction.data.custom_id.to_string();
+                let target_choice = interaction.data.custom_id.as_str();
 
                 interaction
                     .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                     .await?;
 
                 let response = {
-                    let result = match (author_choice.as_str(), target_choice.as_str()) {
+                    let author_choice_str = author_choice.as_str();
+                    let result = match (author_choice_str, target_choice) {
                         ("rock", "scissor") | ("paper", "rock") | ("scissor", "paper") => {
-                            Some(&author_choice)
+                            Some(author_choice_str)
                         }
                         (a, b) if a == b => None,
                         _ => Some(target_choice),
                     };
                     match result {
-                        Some(winner) if winner == &author_choice => {
+                        Some(winner) if winner == author_choice => {
                             let user_name = ctx
                                 .author()
                                 .nick_in(ctx.http(), guild_id)
@@ -108,7 +109,7 @@ pub async fn rps(
                         }
                         Some(_) => {
                             let user_name = user.nick.as_ref().map_or_else(
-                                || user.display_name().to_string(),
+                                || user.display_name().to_owned(),
                                 ToString::to_string,
                             );
                             format!("{user_name} won!")

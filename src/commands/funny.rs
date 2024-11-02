@@ -54,33 +54,35 @@ pub async fn user_misuse(
     #[rest]
     message: String,
 ) -> Result<(), Error> {
-    let avatar_url = member.avatar_url().unwrap_or_else(|| {
-        member.user.avatar_url().unwrap_or_else(|| {
-            member
-                .user
-                .avatar_url()
-                .unwrap_or_else(|| member.user.default_avatar_url())
-        })
-    });
-    let channel_id = ctx.channel_id();
-    if let Ok(webhook) = webhook_find(ctx.serenity_context(), channel_id, &ctx.data()).await {
-        webhook
-            .execute(
-                ctx.http(),
-                false,
-                ExecuteWebhook::default()
-                    .username(member.display_name())
-                    .avatar_url(avatar_url)
-                    .content(message),
-            )
-            .await?;
+    if ctx.guild_id().is_some() {
+        ctx.defer().await?;
+        let avatar_url = member.avatar_url().unwrap_or_else(|| {
+            member.user.avatar_url().unwrap_or_else(|| {
+                member
+                    .user
+                    .avatar_url()
+                    .unwrap_or_else(|| member.user.default_avatar_url())
+            })
+        });
+        let channel_id = ctx.channel_id();
+        if let Ok(webhook) = webhook_find(ctx.serenity_context(), channel_id, &ctx.data()).await {
+            webhook
+                .execute(
+                    ctx.http(),
+                    false,
+                    ExecuteWebhook::default()
+                        .username(member.display_name())
+                        .avatar_url(avatar_url)
+                        .content(message),
+                )
+                .await?;
+        }
+        ctx.send(
+            CreateReply::default()
+                .content("you're going to hell")
+                .ephemeral(true),
+        )
+        .await?;
     }
-    ctx.send(
-        CreateReply::default()
-            .content("you're going to hell")
-            .ephemeral(true),
-    )
-    .await?;
-
     Ok(())
 }

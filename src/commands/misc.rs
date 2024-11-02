@@ -388,7 +388,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                 return Ok(());
             };
-            (mem_bytes.to_rgba8(), reply.author.display_name().to_owned())
+            (mem_bytes.to_rgba8(), reply.author.name.into_string())
         } else {
             let member = guild_id.member(&ctx.http(), reply.author.id).await?;
             let avatar_url = member.avatar_url().unwrap_or_else(|| {
@@ -406,7 +406,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                 return Ok(());
             };
-            (mem_bytes.to_rgba8(), member.display_name().to_owned())
+            (mem_bytes.to_rgba8(), member.user.name.into_string())
         };
 
         quote_image(&avatar_image, &name, &content)

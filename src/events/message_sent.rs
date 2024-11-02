@@ -114,7 +114,7 @@ pub async fn handle_message(
                                 let urls = get_gifs(gif_query).await;
                                 urls.get(RNG.lock().await.usize(..urls.len())).cloned()
                             } else if !ping_media.is_empty() {
-                                Some(ping_media.to_string())
+                                Some(ping_media.to_owned())
                             } else {
                                 None
                             };
@@ -204,7 +204,7 @@ pub async fn handle_message(
                     .into_iter()
                     .find(|setting| setting.user_id == user_id)
                     .and_then(|setting| setting.chatbot_role)
-                    .unwrap_or_else(|| DEFAULT_BOT_ROLE.to_string());
+                    .unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned());
                 ai_chatbot(ctx, new_message, bot_role, id, &data.ai_conversations).await?;
             }
             if let Some(global_chat_channel) = guild_settings.global_chat_channel
@@ -214,9 +214,9 @@ pub async fn handle_message(
             {
                 let guild_global_chats = query!(
                     "SELECT guild_id, global_chat_channel FROM guild_settings
-                        WHERE guild_id != $1
-                        AND global_chat_channel IS NOT NULL
-                        AND global_chat = TRUE",
+                    WHERE guild_id != $1
+                    AND global_chat_channel IS NOT NULL
+                    AND global_chat = TRUE",
                     guild_id
                 )
                 .fetch_all(&mut *tx)
@@ -382,7 +382,7 @@ pub async fn handle_message(
             let message_id = MessageId::new(url[3].parse().unwrap());
             if let Ok(ref_channel) = channel_id.to_guild_channel(&ctx.http, Some(guild_id)).await {
                 let (channel_name, ref_msg) = (
-                    ref_channel.name.to_string(),
+                    ref_channel.name.as_str(),
                     ref_channel.message(&ctx.http, message_id).await?,
                 );
                 let author_accent = ctx.http.get_user(ref_msg.author.id).await?.accent_colour;
@@ -397,7 +397,7 @@ pub async fn handle_message(
                                 .unwrap_or_else(|| ref_msg.author.default_avatar_url()),
                         ),
                     )
-                    .footer(CreateEmbedFooter::new(&channel_name))
+                    .footer(CreateEmbedFooter::new(channel_name))
                     .timestamp(ref_msg.timestamp);
                 if let Some(attachment) = ref_msg.attachments.first() {
                     embed = embed.image(attachment.url.as_str());

@@ -95,9 +95,9 @@ pub async fn ai_chatbot(
                             Ok(pfp) => {
                                 let binary_pfp = pfp.bytes().await?;
                                 (ai_image_desc(&binary_pfp, None).await)
-                                    .map_or_else(|| "Unable to describe".to_string(), |desc| desc)
+                                    .map_or_else(|| "Unable to describe".to_owned(), |desc| desc)
                             }
-                            Err(_) => "Unable to describe".to_string(),
+                            Err(_) => "Unable to describe".to_owned(),
                         };
                         let target_name = target.display_name();
                         write!(
@@ -131,7 +131,7 @@ pub async fn ai_chatbot(
                 let (guild_name, ref_msg) = (
                     guild_id
                         .name(&ctx.cache)
-                        .unwrap_or_else(|| "unknown".to_string()),
+                        .unwrap_or_else(|| "unknown".to_owned()),
                     ref_channel.message(&ctx.http, message_id).await,
                 );
                 match ref_msg {
@@ -424,10 +424,10 @@ pub async fn get_gifs(input: &str) -> Vec<String> {
         )
     };
     let Ok(response) = HTTP_CLIENT.get(request_url).send().await else {
-        return vec![GIF_FALLBACK.to_string()];
+        return vec![GIF_FALLBACK.to_owned()];
     };
     response.json::<GifResponse>().await.ok().map_or_else(
-        || vec![GIF_FALLBACK.to_string()],
+        || vec![GIF_FALLBACK.to_owned()],
         |urls| {
             urls.results
                 .into_iter()
@@ -448,14 +448,14 @@ struct WaifuData {
 
 pub async fn get_waifu() -> String {
     let Ok(response) = HTTP_CLIENT.get(WAIFU_URL).send().await else {
-        return WAIFU_FALLBACK.to_string();
+        return WAIFU_FALLBACK.to_owned();
     };
     response
         .json::<WaifuResponse>()
         .await
         .ok()
         .and_then(|urls| urls.images.into_iter().next().map(|img| img.url))
-        .unwrap_or_else(|| WAIFU_FALLBACK.to_string())
+        .unwrap_or_else(|| WAIFU_FALLBACK.to_owned())
 }
 
 pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) -> RgbaImage {

@@ -11,26 +11,26 @@ dashmap = { version = "6", features = ["inline"] }
 #deadpool-postgres = "0"
 dotenvy = "0"
 fastrand = "2"
-image = { version = "0", default-features = false, features = ["avif", "rayon", "webp"] }
-imageproc = "0"
+image = { version = "0", default-features = false, features = ["rayon", "webp"] }
+imageproc = { version = "0", default-features = false, features = ["rayon"] }
 once_cell = "1"
-opentelemetry = "0"
-opentelemetry-otlp = "0"
-opentelemetry_sdk = { version = "0", features = ["rt-tokio"] }
+opentelemetry = "0" 
+opentelemetry-otlp = { version = "0", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = { version = "0", default-features = false, features = ["rt-tokio"] }
 poise = { git = "https://github.com/FabseGP/poise-fork", branch = "feat/user_apps", features = ["unstable"] }
 regex = "1"
-reqwest = { version = "0", default-features = false, features = ["json", "rustls-tls"] }
-serde = { version = "1", features = ["serde_derive"] }
+reqwest = { version = "0", default-features = false, features = ["rustls-tls"] }
+serde = "1"
 serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "gateway", "model", "rustls_backend", "voice"] }
-songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "driver", "receive"] }
+songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
 sqlx = { version = "0", default-features = false, features = ["macros", "migrate", "postgres", "runtime-tokio"] }
 symphonia = { version = "0", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm"] }
 textwrap = "0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 #tokio-postgres = "0"
 tracing = "0"
-tracing-opentelemetry = "0"
-tracing-subscriber = { version = "0" }
+tracing-opentelemetry = { version = "0", default-features = false }
+tracing-subscriber = "0"
 urlencoding = "2"
 
 [profile.release]

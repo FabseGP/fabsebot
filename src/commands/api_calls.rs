@@ -630,7 +630,6 @@ pub async fn roast(
                             result.push_str(&index.to_string());
                             result.push(':');
                             result.push_str(&message.content);
-
                             count += 1;
                         }
                     }
@@ -730,7 +729,7 @@ pub async fn translate(
                 .message(&ctx.http(), MessageId::new(ctx.id()))
                 .await?;
             match msg.referenced_message {
-                Some(ref_msg) => ref_msg.content.into_string(),
+                Some(ref_msg) => ref_msg.content.to_string(),
                 None => {
                     if let Some(query) = sentence {
                         query
