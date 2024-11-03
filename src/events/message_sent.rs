@@ -399,9 +399,22 @@ pub async fn handle_message(
                     )
                     .footer(CreateEmbedFooter::new(channel_name))
                     .timestamp(ref_msg.timestamp);
-                if let Some(attachment) = ref_msg.attachments.first() {
-                    embed = embed.image(attachment.url.as_str());
-                }
+                let content_url = if let Some(attachment) = ref_msg.attachments.first() {
+                    if let Some(content_type) = attachment.content_type.as_deref() {
+                        if content_type.starts_with("image") {
+                            embed = embed.image(attachment.url.as_str());
+                            None
+                        } else if content_type.starts_with("video") {
+                            Some(attachment.url.as_str())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 let mut preview_message = CreateMessage::default()
                     .embed(embed)
                     .allowed_mentions(CreateAllowedMentions::default().replied_user(false));
@@ -416,6 +429,9 @@ pub async fn handle_message(
                     .channel_id
                     .send_message(&ctx.http, preview_message)
                     .await?;
+                if let Some(url) = content_url {
+                    new_message.channel_id.say(&ctx.http, url).await?;
+                }
             }
         }
     }

@@ -115,10 +115,12 @@ pub async fn ai_chatbot(
                 message.attachments.len()
             )?;
             for attachment in &message.attachments {
-                if attachment.dimensions().is_some() {
-                    let file = attachment.download().await?;
-                    if let Some(desc) = ai_image_desc(&file, Some(&message.content)).await {
-                        write!(system_content, "\n{desc}")?;
+                if let Some(content_type) = attachment.content_type.as_deref() {
+                    if content_type.starts_with("image") {
+                        let file = attachment.download().await?;
+                        if let Some(desc) = ai_image_desc(&file, Some(&message.content)).await {
+                            write!(system_content, "\n{desc}")?;
+                        }
                     }
                 }
             }

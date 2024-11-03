@@ -2,13 +2,13 @@ use crate::types::{Data, Error};
 
 use poise::{
     builtins,
-    serenity_prelude::{self as serenity, ActivityData, OnlineStatus, Ready},
+    serenity_prelude::{Context as SContext, Ready},
     FrameworkContext,
 };
 use tracing::info;
 
 pub async fn handle_ready(
-    ctx: &serenity::Context,
+    ctx: &SContext,
     data_about_bot: &Ready,
     framework_context: FrameworkContext<'_, Data, Error>,
 ) -> Result<(), Error> {
@@ -21,8 +21,6 @@ pub async fn handle_ready(
         data_about_bot.user.name,
         data_about_bot.guilds.len(),
     );
-    let activity = ActivityData::listening("You Could Be Mine");
-    ctx.set_presence(Some(activity), OnlineStatus::Online);
     builtins::register_globally(
         &framework_context.serenity_context.http,
         &framework_context.options().commands,

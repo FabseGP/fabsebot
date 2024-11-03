@@ -7,16 +7,15 @@ use crate::{
     types::{ClientData, Data, Error, CLIENT_DATA},
 };
 use anyhow::Context as _;
-use core::time::Duration;
 use dashmap::DashMap;
 use poise::{
     builtins,
     serenity_prelude::{
-        cache::Settings, Client, CreateAttachment, EditProfile, FullEvent, GatewayIntents,
-        ShardManager,
+        cache::Settings, ActivityData, Client, CreateAttachment, EditProfile, FullEvent,
+        GatewayIntents, OnlineStatus::Online, ShardManager,
     },
-    EditTracker, Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext,
-    Prefix, PrefixFrameworkOptions,
+    Framework, FrameworkContext, FrameworkError, FrameworkOptions, PartialContext, Prefix,
+    PrefixFrameworkOptions,
 };
 use songbird::{driver::DecodeMode::Decode, Config, Songbird};
 use sqlx::{migrate, postgres::PgPoolOptions, query};
@@ -176,7 +175,6 @@ pub async fn start() -> anyhow::Result<()> {
             ],
             prefix_options: PrefixFrameworkOptions {
                 dynamic_prefix: Some(|ctx| Box::pin(dynamic_prefix(ctx))),
-                edit_tracker: Some(Arc::new(EditTracker::for_timespan(Duration::from_secs(60)))),
                 additional_prefixes: vec![
                     Prefix::Literal("fabsebot"),
                     Prefix::Literal("hey fabsebot"),
@@ -187,8 +185,7 @@ pub async fn start() -> anyhow::Result<()> {
             ..Default::default()
         })
         .build();
-    let intents = GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::GUILDS
+    let intents = GatewayIntents::GUILDS
         | GatewayIntents::GUILD_MEMBERS
         | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::GUILD_VOICE_STATES
@@ -196,10 +193,13 @@ pub async fn start() -> anyhow::Result<()> {
     let token = env::var("DISCORD_TOKEN").context("DISCORD_TOKEN not set in environment")?;
     let mut cache_settings = Settings::default();
     cache_settings.max_messages = 10;
+    let activity = ActivityData::listening("You Could Be Mine");
     let client = Client::builder(&token, intents)
         .framework(framework)
         .voice_manager::<Songbird>(music_manager)
         .cache_settings(cache_settings)
+        .activity(activity)
+        .status(Online)
         .data(user_data)
         .await;
     match client {
@@ -227,7 +227,7 @@ pub async fn start() -> anyhow::Result<()> {
                     &EditProfile::default()
                         .avatar(&avatar)
                         .banner(&banner)
-                        .username(bot_username),
+                        .username(&bot_username),
                 )
                 .await
                 .context("Failed to edit bot profile")?;
