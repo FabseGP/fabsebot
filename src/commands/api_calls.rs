@@ -1,8 +1,8 @@
 use crate::{
     consts::{COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
     types::{
-        Error, SContext, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN, GITHUB_TOKEN, HTTP_CLIENT, RNG,
-        TRANSLATE_SERVER,
+        Error, SContext, AI_TOKEN, GITHUB_TOKEN, HTTP_CLIENT, IMAGE_GEN_SERVER, RNG,
+        SUMMARIZE_SERVER, TRANSLATE_SERVER,
     },
     utils::{ai_response_simple, get_gifs, get_waifu},
 };
@@ -61,21 +61,19 @@ pub async fn ai_image(
         prompt: format!("{prompt} {rand_num}"),
     };
     match HTTP_CLIENT
-        .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/black-forest-labs/flux-1-schnell",
-            *CLOUDFLARE_GATEWAY
-        ))
-        .bearer_auth(&*CLOUDFLARE_TOKEN)
+        .post(&*IMAGE_GEN_SERVER)
+        .bearer_auth(&*AI_TOKEN)
         .json(&request)
         .send()
-        .await {
-            Ok(resp) => {
-                match resp
-                    .json::<FabseAIImage>()
-                    .await
-                    .ok()
-                    .filter(|output| !output.result.image.is_empty())
-                    .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
+        .await
+    {
+        Ok(resp) => {
+            match resp
+                .json::<FabseAIImage>()
+                .await
+                .ok()
+                .filter(|output| !output.result.image.is_empty())
+                .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
             {
                 Some(image_bytes) => {
                     ctx.send(
@@ -85,13 +83,11 @@ pub async fn ai_image(
                     .await?;
                 }
                 None => {
-                    ctx.reply(
-                        format!("\"{prompt}\" is too dangerous to generate"),
-                    )
-                    .await?;
+                    ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
+                        .await?;
                 }
             }
-        },
+        }
         Err(_) => {
             ctx.reply("Oof, AI-server down!").await?;
         }
@@ -134,11 +130,8 @@ pub async fn ai_summarize(
         length,
     };
     match HTTP_CLIENT
-        .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/facebook/bart-large-cnn",
-            *CLOUDFLARE_GATEWAY
-        ))
-        .bearer_auth(&*CLOUDFLARE_TOKEN)
+        .post(&*SUMMARIZE_SERVER)
+        .bearer_auth(&*AI_TOKEN)
         .json(&request)
         .send()
         .await

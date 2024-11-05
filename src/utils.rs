@@ -2,8 +2,8 @@ use crate::{
     commands::music::get_configured_handler,
     consts::{GIF_FALLBACK, WAIFU_FALLBACK, WAIFU_URL},
     types::{
-        AIChatMessage, Data, Error, AI_SERVER, CHANNEL_REGEX, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN,
-        HTTP_CLIENT, QUOTE_REGEX, TENOR_TOKEN,
+        AIChatMessage, Data, Error, AI_SERVER, AI_TOKEN, CHANNEL_REGEX, HTTP_CLIENT,
+        IMAGE_DESC_SERVER, QUOTE_REGEX, TENOR_TOKEN, TEXT_GEN_SERVER, TTS_SERVER,
     },
 };
 
@@ -285,11 +285,8 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
         image: content,
     };
     let resp = HTTP_CLIENT
-        .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.2-11b-vision-instruct",
-            *CLOUDFLARE_GATEWAY
-        ))
-        .bearer_auth(&*CLOUDFLARE_TOKEN)
+        .post(&*IMAGE_DESC_SERVER)
+        .bearer_auth(&*AI_TOKEN)
         .json(&request)
         .send()
         .await
@@ -308,11 +305,8 @@ struct ChatRequest<'a> {
 pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
     let request = ChatRequest { messages: content };
     let resp = HTTP_CLIENT
-        .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-70b-instruct",
-            *CLOUDFLARE_GATEWAY
-        ))
-        .bearer_auth(&*CLOUDFLARE_TOKEN)
+        .post(&*TEXT_GEN_SERVER)
+        .bearer_auth(&*AI_TOKEN)
         .json(&request)
         .send()
         .await
@@ -377,11 +371,8 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
         ],
     };
     let resp = HTTP_CLIENT
-        .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/meta/llama-3.1-70b-instruct",
-            *CLOUDFLARE_GATEWAY
-        ))
-        .bearer_auth(&*CLOUDFLARE_TOKEN)
+        .post(&*TEXT_GEN_SERVER)
+        .bearer_auth(&*AI_TOKEN)
         .json(&request)
         .send()
         .await
@@ -414,11 +405,8 @@ pub async fn ai_voice(prompt: &str) -> Option<Vec<u8>> {
         lang: "en",
     };
     let resp = HTTP_CLIENT
-        .post(format!(
-            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/myshell-ai/melotts",
-            *CLOUDFLARE_GATEWAY
-        ))
-        .bearer_auth(&*CLOUDFLARE_TOKEN)
+        .post(&*TTS_SERVER)
+        .bearer_auth(&*AI_TOKEN)
         .json(&request)
         .send()
         .await
@@ -699,7 +687,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
         author_name_y.try_into().unwrap(),
         author_scale,
         &font_author,
-        format!("- {author_name}").as_str(),
+        author_name,
     );
 
     img

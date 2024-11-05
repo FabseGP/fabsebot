@@ -45,9 +45,13 @@ macro_rules! load_env {
     };
 }
 
-pub static CLOUDFLARE_TOKEN: Lazy<String> = load_env!("CLOUDFLARE_TOKEN");
-pub static CLOUDFLARE_GATEWAY: Lazy<String> = load_env!("CLOUDFLARE_GATEWAY");
+pub static AI_TOKEN: Lazy<String> = load_env!("AI_TOKEN");
 pub static AI_SERVER: Lazy<String> = load_env!("AI_SERVER");
+pub static IMAGE_DESC_SERVER: Lazy<String> = load_env!("IMAGE_DESC_SERVER");
+pub static IMAGE_GEN_SERVER: Lazy<String> = load_env!("IMAGE_GEN_SERVER");
+pub static SUMMARIZE_SERVER: Lazy<String> = load_env!("SUMMARIZE_SERVER");
+pub static TEXT_GEN_SERVER: Lazy<String> = load_env!("TEXT_GEN_SERVER");
+pub static TTS_SERVER: Lazy<String> = load_env!("TTS_SERVER");
 pub static TENOR_TOKEN: Lazy<String> = load_env!("TENOR_TOKEN");
 pub static GITHUB_TOKEN: Lazy<String> = load_env!("GITHUB_TOKEN");
 pub static TRANSLATE_SERVER: Lazy<String> = load_env!("TRANSLATE_SERVER");
