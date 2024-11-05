@@ -1,9 +1,11 @@
 use crate::{
     consts::COLOUR_RED,
     types::{Error, SContext, HTTP_CLIENT},
+    utils::ai_voice,
 };
 
 use anyhow::Context;
+use bytes::{BufMut, BytesMut};
 use core::time::Duration;
 use poise::{
     async_trait,
@@ -15,10 +17,7 @@ use poise::{
 };
 use serde::Deserialize;
 use songbird::{
-    driver::{
-        opus::{coder::Encoder, SampleRate},
-        Bitrate,
-    },
+    driver::Bitrate,
     input::{Input, YoutubeDl},
     tracks::PlayMode,
     Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
@@ -67,7 +66,7 @@ async fn voice_check(ctx: &SContext<'_>) -> (Option<Arc<Mutex<Call>>>, Option<Gu
     }
 }
 
-async fn get_configured_handler(handler_lock: &Arc<Mutex<Call>>) -> MutexGuard<'_, Call> {
+pub async fn get_configured_handler(handler_lock: &Arc<Mutex<Call>>) -> MutexGuard<'_, Call> {
     let mut handler = handler_lock.lock().await;
     handler.set_bitrate(Bitrate::Max);
     handler
@@ -77,21 +76,14 @@ pub struct VoiceReceiveHandler {
     guild_id: GuildId,
     music_manager: Arc<Songbird>,
     db: Pool<Postgres>,
-    encoder: Arc<Mutex<Encoder>>,
 }
 
 impl VoiceReceiveHandler {
-    pub const fn new(
-        guild_id: GuildId,
-        music_manager: Arc<Songbird>,
-        db: Pool<Postgres>,
-        encoder: Arc<Mutex<Encoder>>,
-    ) -> Self {
+    pub const fn new(guild_id: GuildId, music_manager: Arc<Songbird>, db: Pool<Postgres>) -> Self {
         Self {
             guild_id,
             music_manager,
             db,
-            encoder,
         }
     }
 }
@@ -101,32 +93,33 @@ impl VoiceEventHandler for VoiceReceiveHandler {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
         if let EventContext::VoiceTick(tick) = ctx {
             for data in tick.speaking.values() {
-                if let Some(voice) = &data.decoded_voice {
-                    let mut encode_output = vec![0u8; 1280];
-                    let value = self.encoder.lock().await.encode(voice, &mut encode_output);
-                    if let Ok(encoded_len) = value {
-                        encode_output.truncate(encoded_len);
-                        if let Ok(mut conn) = self.db.acquire().await {
-                            if let Ok(guild_global_call) = query!(
-                                "SELECT guild_id FROM guild_settings
+                if let Some(audio) = &data.decoded_voice {
+                    let mut buffer = BytesMut::with_capacity(audio.len() * 2);
+                    for sample in audio {
+                        buffer.put(sample.to_le_bytes().as_ref());
+                    }
+                    let buffer = buffer.freeze();
+                    if let Ok(mut conn) = self.db.acquire().await {
+                        if let Ok(guild_global_call) = query!(
+                            "SELECT guild_id FROM guild_settings
                                 WHERE guild_id != $1 AND global_call = TRUE",
-                                i64::from(self.guild_id)
-                            )
-                            .fetch_all(&mut *conn)
-                            .await
-                            {
-                                for guild in &guild_global_call {
-                                    let current_guild_id = GuildId::new(
-                                        u64::try_from(guild.guild_id)
-                                            .expect("guild id out of bounds for u64"),
-                                    );
-                                    if let Some(global_handler_lock) =
-                                        self.music_manager.get(current_guild_id)
-                                    {
-                                        get_configured_handler(&global_handler_lock)
-                                            .await
-                                            .play_input(Input::from(encode_output.clone()));
-                                    }
+                            i64::from(self.guild_id)
+                        )
+                        .fetch_all(&mut *conn)
+                        .await
+                        {
+                            for guild in &guild_global_call {
+                                let current_guild_id = GuildId::new(
+                                    u64::try_from(guild.guild_id)
+                                        .expect("guild id out of bounds for u64"),
+                                );
+                                if let Some(global_handler_lock) =
+                                    self.music_manager.get(current_guild_id)
+                                {
+                                    get_configured_handler(&global_handler_lock)
+                                        .await
+                                        .enqueue_input(Input::from(buffer.clone()))
+                                        .await;
                                 }
                             }
                         }
@@ -136,6 +129,29 @@ impl VoiceEventHandler for VoiceReceiveHandler {
         }
         None
     }
+}
+
+/// Text to voice, duh
+#[poise::command(prefix_command, slash_command)]
+pub async fn text_to_voice(
+    ctx: SContext<'_>,
+    #[description = "Text to convert to voice"]
+    #[rest]
+    prompt: String,
+) -> Result<(), Error> {
+    if let (Some(handler_lock), Some(_)) = voice_check(&ctx).await {
+        ctx.defer().await?;
+        if let Some(bytes) = ai_voice(&prompt).await {
+            get_configured_handler(&handler_lock)
+                .await
+                .enqueue_input(Input::from(bytes))
+                .await;
+            ctx.reply("here we go").await?;
+        } else {
+            ctx.reply("I don't wanna speak now").await?;
+        }
+    }
+    Ok(())
 }
 
 /// Play all songs in a playlist from Deezer
@@ -297,20 +313,12 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
                     .execute(&mut *ctx.data().db.acquire().await?)
                     .await?;
                     let mut handler = handler_lock.lock().await;
-                    let mut encoder = Encoder::new(
-                        SampleRate::Hz48000,
-                        songbird::driver::opus::Channels::Stereo,
-                        songbird::driver::opus::Application::Voip,
-                    )
-                    .unwrap();
-                    encoder.set_bitrate(Bitrate::Max).unwrap();
                     handler.add_global_event(
                         CoreEvent::VoiceTick.into(),
                         VoiceReceiveHandler::new(
                             guild_id,
                             ctx.data().music_manager.clone(),
                             ctx.data().db.clone(),
-                            Arc::new(Mutex::new(encoder)),
                         ),
                     );
 

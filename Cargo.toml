@@ -7,6 +7,7 @@ edition = "2021"
 ab_glyph = "0"
 anyhow = "1"
 base64 = "0"
+bytes = "0"
 dashmap = { version = "6", features = ["inline"] }
 #deadpool-postgres = "0"
 dotenvy = "0"
@@ -24,7 +25,7 @@ serde = "1"
 serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "gateway", "model", "rustls_backend", "voice"] }
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
 sqlx = { version = "0", default-features = false, features = ["macros", "migrate", "postgres", "runtime-tokio"] }
-symphonia = { version = "0", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm"] }
+symphonia = { version = "0", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }
 textwrap = "0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 #tokio-postgres = "0"

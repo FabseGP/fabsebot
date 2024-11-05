@@ -150,6 +150,7 @@ pub async fn start() -> anyhow::Result<()> {
                 misc::quote(),
                 misc::slow_mode(),
                 misc::word_count(),
+                music::text_to_voice(),
                 music::add_playlist(),
                 music::global_music_end(),
                 music::global_music_start(),

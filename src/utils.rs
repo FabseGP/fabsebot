@@ -1,4 +1,5 @@
 use crate::{
+    commands::music::get_configured_handler,
     consts::{GIF_FALLBACK, WAIFU_FALLBACK, WAIFU_URL},
     types::{
         AIChatMessage, Data, Error, AI_SERVER, CHANNEL_REGEX, CLOUDFLARE_GATEWAY, CLOUDFLARE_TOKEN,
@@ -8,6 +9,7 @@ use crate::{
 
 use ab_glyph::{FontArc, PxScale};
 use anyhow::anyhow;
+use base64::{engine::general_purpose, Engine};
 use core::cmp::Ordering;
 use dashmap::{DashMap, DashSet};
 use image::{
@@ -20,11 +22,13 @@ use poise::serenity_prelude::{
     MessageId, Webhook,
 };
 use serde::{Deserialize, Serialize};
+use songbird::{input::Input, Call};
 use std::{fmt::Write, path::Path, sync::Arc};
 use textwrap::wrap;
 use tokio::{
     fs::{remove_file, File},
     io::AsyncWriteExt as _,
+    sync::Mutex,
 };
 use urlencoding::encode;
 
@@ -34,6 +38,7 @@ pub async fn ai_chatbot(
     bot_role: String,
     guild_id: GuildId,
     conversations: &Arc<DashMap<GuildId, Vec<AIChatMessage>>>,
+    voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> Result<(), Error> {
     if message.content.eq_ignore_ascii_case("clear") {
         if conversations.remove(&guild_id).is_some() {
@@ -212,6 +217,14 @@ pub async fn ai_chatbot(
             } else {
                 message.reply(&ctx.http, response.as_str()).await?;
             }
+            if let Some(handler_lock) = voice_handle {
+                if let Some(bytes) = ai_voice(&response).await {
+                    get_configured_handler(&handler_lock)
+                        .await
+                        .enqueue_input(Input::from(bytes))
+                        .await;
+                }
+            }
             conversations
                 .entry(guild_id)
                 .or_default()
@@ -377,6 +390,43 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
         .await
         .ok()
         .map(|output| output.result.response)
+}
+
+#[derive(Serialize)]
+struct AIVoiceRequest<'a> {
+    prompt: &'a str,
+    lang: &'a str,
+}
+
+#[derive(Deserialize)]
+struct FabseAIVoice {
+    result: AIResponseVoice,
+}
+
+#[derive(Deserialize)]
+struct AIResponseVoice {
+    audio: String,
+}
+
+pub async fn ai_voice(prompt: &str) -> Option<Vec<u8>> {
+    let request = AIVoiceRequest {
+        prompt: &prompt.replace('\'', ""),
+        lang: "en",
+    };
+    let resp = HTTP_CLIENT
+        .post(format!(
+            "https://gateway.ai.cloudflare.com/v1/{}/workers-ai/@cf/myshell-ai/melotts",
+            *CLOUDFLARE_GATEWAY
+        ))
+        .bearer_auth(&*CLOUDFLARE_TOKEN)
+        .json(&request)
+        .send()
+        .await
+        .ok()?;
+    resp.json::<FabseAIVoice>()
+        .await
+        .ok()
+        .and_then(|output| general_purpose::STANDARD.decode(output.result.audio).ok())
 }
 
 pub async fn emoji_id(

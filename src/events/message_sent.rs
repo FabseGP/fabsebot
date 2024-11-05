@@ -205,7 +205,15 @@ pub async fn handle_message(
                     .find(|setting| setting.user_id == user_id)
                     .and_then(|setting| setting.chatbot_role)
                     .unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned());
-                ai_chatbot(ctx, new_message, bot_role, id, &data.ai_conversations).await?;
+                ai_chatbot(
+                    ctx,
+                    new_message,
+                    bot_role,
+                    id,
+                    &data.ai_conversations,
+                    data.music_manager.get(id),
+                )
+                .await?;
             }
             if let Some(global_chat_channel) = guild_settings.global_chat_channel
                 && new_message.channel_id.get()
@@ -399,6 +407,7 @@ pub async fn handle_message(
                     )
                     .footer(CreateEmbedFooter::new(channel_name))
                     .timestamp(ref_msg.timestamp);
+
                 let content_url = if let Some(attachment) = ref_msg.attachments.first() {
                     if let Some(content_type) = attachment.content_type.as_deref() {
                         if content_type.starts_with("image") {
