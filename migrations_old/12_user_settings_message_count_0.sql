@@ -1,2 +1,0 @@
-ALTER TABLE user_settings
-MODIFY message_count BIGINT UNSIGNED NOT NULL DEFAULT 0;

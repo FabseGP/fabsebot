@@ -1,4 +1,4 @@
-use crate::types::Error;
+use crate::config::types::Error;
 use poise::serenity_prelude::RatelimitInfo;
 use tracing::warn;
 

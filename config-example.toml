@@ -1,0 +1,28 @@
+[Main]
+#log_level =
+#jaeger = 
+#token = 
+#username = 
+#avatar = 
+#banner = 
+#activity =
+
+[PostgreSQL-Info]
+#database = 
+#password = 
+#host = 
+#user = 
+#max_connections = 
+
+[AI-Info]
+#token = 
+#base = 
+#translate = 
+#image_desc = 
+#image_gen = 
+#summarize = 
+#text_gen = 
+#tts = 
+
+[API-Info]
+#tenor_token = 

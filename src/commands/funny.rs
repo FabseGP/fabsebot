@@ -1,6 +1,6 @@
 use crate::{
-    types::{Error, SContext},
-    utils::webhook_find,
+    config::types::{Error, SContext},
+    utils::webhook::webhook_find,
 };
 
 use poise::{

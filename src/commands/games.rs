@@ -1,13 +1,13 @@
-use crate::{
-    consts::COLOUR_ORANGE,
+use crate::config::{
+    constants::COLOUR_ORANGE,
     types::{Error, SContext},
 };
 
 use poise::{
-    futures_util::{Stream, StreamExt},
     serenity_prelude::{
-        futures, ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton,
-        CreateEmbed, CreateInteractionResponse, EditMessage, Member,
+        AutocompleteChoice, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
+        CreateAutocompleteResponse, CreateButton, CreateEmbed, CreateInteractionResponse,
+        EditMessage, Member,
     },
     CreateReply,
 };
@@ -16,10 +16,13 @@ use std::{borrow::Cow, string::ToString, time::Duration};
 async fn autocomplete_choice<'a>(
     _ctx: SContext<'_>,
     partial: &'a str,
-) -> impl Stream<Item = String> + 'a {
-    futures::stream::iter(&["rock", "paper", "scissor"])
-        .filter(move |name| futures::future::ready(name.starts_with(partial)))
-        .map(|name| (*name).to_string())
+) -> CreateAutocompleteResponse<'a> {
+    let choices: Vec<_> = ["rock", "paper", "scissors"]
+        .into_iter()
+        .filter(move |name| name.starts_with(partial))
+        .map(AutocompleteChoice::from)
+        .collect();
+    CreateAutocompleteResponse::default().set_choices(choices)
 }
 
 /// Get rekt by an another user in rps
@@ -34,7 +37,7 @@ pub async fn rps(
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         if !user.user.bot() {
-            let valid_choices = ["rock", "paper", "scissor"];
+            let valid_choices = ["rock", "paper", "scissors"];
             let author_choice = choice.to_lowercase();
             if !valid_choices.contains(&author_choice.as_str()) {
                 ctx.reply("Can't you even do smth this simple correct?")
@@ -45,7 +48,7 @@ pub async fn rps(
             let ctx_id = ctx.id();
             let rock_id = format!("{ctx_id}_rock");
             let paper_id = format!("{ctx_id}_paper");
-            let scissor_id = format!("{ctx_id}_scissor");
+            let scissor_id = format!("{ctx_id}_scissors");
 
             let buttons = [
                 CreateButton::new(rock_id.as_str())
@@ -92,7 +95,7 @@ pub async fn rps(
                 let response = {
                     let author_choice_str = author_choice.as_str();
                     let result = match (author_choice_str, target_choice) {
-                        ("rock", "scissor") | ("paper", "rock") | ("scissor", "paper") => {
+                        ("rock", "scissors") | ("paper", "rock") | ("scissors", "paper") => {
                             Some(author_choice_str)
                         }
                         (a, b) if a == b => None,

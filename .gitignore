@@ -1,7 +1,8 @@
 target
-.env
+config.toml
 .sqlx
 perf.data
 perf.data.old
 flamegraph.svg
 profile.json
+.env

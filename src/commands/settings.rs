@@ -1,5 +1,6 @@
-use crate::{
-    consts::COLOUR_RED,
+use crate::config::{
+    constants::COLOUR_RED,
+    settings::{GuildSettings, UserSettings, WordReactions, WordTracking},
     types::{Error, SContext, HTTP_CLIENT},
 };
 
@@ -10,13 +11,13 @@ use poise::{
 };
 use sqlx::query;
 
-/// To reset or not to reset, that's the question
+/// To reset or not to reset the server, that's the question
 #[poise::command(
     prefix_command,
     slash_command,
     required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
-pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
+pub async fn reset_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let guild_id_i64 = i64::from(guild_id);
         let mut tx = ctx
@@ -65,6 +66,56 @@ pub async fn reset_settings(ctx: SContext<'_>) -> Result<(), Error> {
         tx.commit()
             .await
             .context("Failed to commit sql-transaction")?;
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.word_reactions.clear();
+            guild_data.word_reactions.shrink_to_fit();
+            guild_data.word_tracking.clear();
+            guild_data.word_tracking.shrink_to_fit();
+            guild_data.settings = GuildSettings {
+                guild_id: guild_id_i64,
+                ..Default::default()
+            };
+        }
+    }
+    Ok(())
+}
+
+/// To reset or not to reset the user, that's the question
+#[poise::command(prefix_command, slash_command)]
+pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
+    if let Some(guild_id) = ctx.guild_id() {
+        let guild_id_i64 = i64::from(guild_id);
+        let user_id_i64 = i64::from(ctx.author().id);
+        ctx.send(
+            CreateReply::default()
+                .content("Server settings resetted... probably")
+                .ephemeral(true),
+        )
+        .await?;
+        query!(
+            "UPDATE user_settings
+            SET chatbot_role = NULL,
+                afk = FALSE,
+                afk_reason = NULL,
+                pinged_links = NULL,
+                ping_content = NULL,
+                ping_media = NULL
+            WHERE guild_id = $1
+            AND user_id = $2",
+            guild_id_i64,
+            user_id_i64
+        )
+        .execute(&mut *ctx.data().db.acquire().await?)
+        .await?;
+        if let Some(user_settings) = ctx.data().user_settings.get(&guild_id) {
+            if let Some(mut user_setting) = user_settings.get_mut(&ctx.author().id) {
+                *user_setting = UserSettings {
+                    guild_id: guild_id_i64,
+                    user_id: user_id_i64,
+                    ..Default::default()
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -77,12 +128,13 @@ pub async fn set_afk(
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         query!(
-            "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason)
-            VALUES ($1, $2, TRUE, $3)
+            "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)
+            VALUES ($1, $2, TRUE, $3, NULL)
             ON CONFLICT(guild_id, user_id)
             DO UPDATE SET
                 afk = TRUE,
-                afk_reason = $3",
+                afk_reason = $3,
+                pinged_links = NULL",
             i64::from(guild_id),
             i64::from(ctx.author().id),
             reason,
@@ -107,6 +159,12 @@ pub async fn set_afk(
             ),
         )
         .await?;
+        if let Some(user_settings) = ctx.data().user_settings.get(&guild_id) {
+            if let Some(mut user_setting) = user_settings.get_mut(&ctx.author().id) {
+                user_setting.afk = true;
+                user_setting.afk_reason = reason;
+            }
+        }
     }
     Ok(())
 }
@@ -121,6 +179,7 @@ pub async fn set_chatbot_channel(
     #[description = "Channel to act as chatbot in"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let channel_id_i64 = i64::from(channel.id());
         query!(
             "INSERT INTO guild_settings (guild_id, ai_chat_channel)
             VALUES ($1, $2)
@@ -128,7 +187,7 @@ pub async fn set_chatbot_channel(
             DO UPDATE SET
                 ai_chat_channel = $2",
             i64::from(guild_id),
-            i64::from(ctx.channel_id()),
+            channel_id_i64,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -138,6 +197,9 @@ pub async fn set_chatbot_channel(
                 .ephemeral(true),
         )
         .await?;
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.settings.ai_chat_channel = Some(channel_id_i64);
+        }
     }
     Ok(())
 }
@@ -169,6 +231,11 @@ pub async fn set_chatbot_role(
                 .ephemeral(true),
         )
         .await?;
+        if let Some(user_settings) = ctx.data().user_settings.get(&guild_id) {
+            if let Some(mut user_setting) = user_settings.get_mut(&ctx.author().id) {
+                user_setting.chatbot_role = role;
+            }
+        }
     }
     Ok(())
 }
@@ -184,6 +251,7 @@ pub async fn set_dead_chat(
     #[description = "Channel to send dead chat gifs to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let channel_id_i64 = i64::from(channel.id());
         query!(
             "INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel)
             VALUES ($1, $2, $3)
@@ -193,7 +261,7 @@ pub async fn set_dead_chat(
                 dead_chat_channel = $3",
             i64::from(guild_id),
             occurrence,
-            i64::from(ctx.channel_id()),
+            channel_id_i64,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -205,6 +273,10 @@ pub async fn set_dead_chat(
                 .ephemeral(true),
         )
         .await?;
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.settings.dead_chat_rate = Some(channel_id_i64);
+            guild_data.settings.dead_chat_rate = Some(occurrence);
+        }
     }
     Ok(())
 }
@@ -241,8 +313,10 @@ pub async fn set_prefix(
                 .ephemeral(true),
         )
         .await?;
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.settings.prefix = Some(characters);
+        }
     }
-
     Ok(())
 }
 
@@ -256,6 +330,7 @@ pub async fn set_quote_channel(
     #[description = "Channel to send quoted messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let channel_id_i64 = i64::from(channel.id());
         query!(
             "INSERT INTO guild_settings (guild_id, quotes_channel)
             VALUES ($1, $2)
@@ -263,7 +338,7 @@ pub async fn set_quote_channel(
             DO UPDATE SET
                 quotes_channel = $2",
             i64::from(guild_id),
-            i64::from(ctx.channel_id()),
+            channel_id_i64,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -275,6 +350,9 @@ pub async fn set_quote_channel(
                 .ephemeral(true),
         )
         .await?;
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.settings.quotes_channel = Some(channel_id_i64);
+        }
     }
     Ok(())
 }
@@ -289,6 +367,7 @@ pub async fn set_spoiler_channel(
     #[description = "Channel to send spoilered messages to"] channel: Channel,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let channel_id_i64 = i64::from(channel.id());
         query!(
             "INSERT INTO guild_settings (guild_id, spoiler_channel)
             VALUES ($1, $2)
@@ -296,7 +375,7 @@ pub async fn set_spoiler_channel(
             DO UPDATE SET
                 spoiler_channel = $2",
             i64::from(guild_id),
-            i64::from(ctx.channel_id()),
+            channel_id_i64,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
@@ -308,6 +387,9 @@ pub async fn set_spoiler_channel(
                 .ephemeral(true),
         )
         .await?;
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.settings.spoiler_channel = Some(channel_id_i64);
+        }
     }
     Ok(())
 }
@@ -364,6 +446,12 @@ pub async fn set_user_ping(
                     .ephemeral(true),
             )
             .await?;
+            if let Some(user_settings) = ctx.data().user_settings.get(&guild_id) {
+                if let Some(mut user_setting) = user_settings.get_mut(&ctx.author().id) {
+                    user_setting.ping_content = Some(content);
+                    user_setting.ping_media = media;
+                }
+            }
         } else {
             ctx.send(
                 CreateReply::default()
@@ -409,6 +497,7 @@ pub async fn set_word_react(
             true
         };
         if valid {
+            let guild_id_i64 = i64::from(guild_id);
             query!(
                 "INSERT INTO guild_word_reaction (guild_id, word, content, media)
                 VALUES ($1, $2, $3, $4)
@@ -417,7 +506,7 @@ pub async fn set_word_react(
                     word = $2,
                     content = $3,
                     media = $4",
-                i64::from(guild_id),
+                guild_id_i64,
                 word,
                 content,
                 media
@@ -430,6 +519,14 @@ pub async fn set_word_react(
                     .ephemeral(true),
             )
             .await?;
+            if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+                guild_data.word_reactions.push(WordReactions {
+                    guild_id: guild_id_i64,
+                    word,
+                    content,
+                    media,
+                });
+            }
         } else {
             ctx.send(
                 CreateReply::default()
@@ -439,7 +536,6 @@ pub async fn set_word_react(
             .await?;
         }
     }
-
     Ok(())
 }
 
@@ -450,6 +546,7 @@ pub async fn set_word_track(
     #[description = "Word to track count of"] word: String,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let guild_id_i64 = i64::from(guild_id);
         query!(
             "INSERT INTO guild_word_tracking (guild_id, word)
             VALUES ($1, $2)
@@ -457,7 +554,7 @@ pub async fn set_word_track(
             DO UPDATE SET
                 word = $2, 
                 count = 0",
-            i64::from(guild_id),
+            guild_id_i64,
             word,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
@@ -468,7 +565,13 @@ pub async fn set_word_track(
                 .ephemeral(true),
         )
         .await?;
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.word_tracking.push(WordTracking {
+                guild_id: guild_id_i64,
+                word,
+                count: 0,
+            });
+        }
     }
-
     Ok(())
 }

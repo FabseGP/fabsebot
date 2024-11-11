@@ -1,0 +1,7 @@
+ALTER TABLE guild_settings
+ALTER COLUMN global_chat SET NOT NULL,
+ALTER COLUMN global_music SET NOT NULL,
+ALTER COLUMN global_call SET NOT NULL;
+
+ALTER TABLE user_settings
+ALTER COLUMN afk SET NOT NULL;

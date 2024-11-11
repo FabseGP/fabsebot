@@ -1,6 +1,8 @@
-use crate::types::{Data, Error};
+use crate::config::{
+    settings::GuildSettings,
+    types::{Data, Error, GuildData},
+};
 
-use anyhow::Context as _;
 use poise::serenity_prelude::Guild;
 use sqlx::query;
 use std::sync::Arc;
@@ -12,20 +14,28 @@ pub async fn handle_guild_create(
 ) -> Result<(), Error> {
     if let Some(new_guild) = is_new {
         if *new_guild {
-            let mut conn = data
-                .db
-                .acquire()
-                .await
-                .context("Failed to acquire database connection")?;
+            let guild_id_i64 = i64::from(guild.id);
             query!(
                 "INSERT INTO guilds (guild_id)
                 VALUES ($1)
                 ON CONFLICT (guild_id)
                 DO NOTHING",
-                i64::from(guild.id)
+                guild_id_i64
             )
-            .execute(&mut *conn)
+            .execute(&mut *data.db.acquire().await?)
             .await?;
+            let default_settings = GuildSettings {
+                guild_id: guild_id_i64,
+                ..Default::default()
+            };
+            data.guild_data.insert(
+                guild.id,
+                GuildData {
+                    settings: default_settings,
+                    word_reactions: Vec::new(),
+                    word_tracking: Vec::new(),
+                },
+            );
         }
     }
     Ok(())

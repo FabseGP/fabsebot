@@ -1,7 +1,9 @@
 use crate::{
-    consts::{COLOUR_RED, TSUNDERE_FALLBACK},
-    types::{Error, SContext, HTTP_CLIENT},
-    utils::{ai_response_simple, quote_image},
+    config::{
+        constants::{COLOUR_RED, TSUNDERE_FALLBACK},
+        types::{Error, SContext, HTTP_CLIENT},
+    },
+    utils::{ai::ai_response_simple, image::quote_image},
 };
 
 use anyhow::Context;
@@ -16,7 +18,7 @@ use poise::{
     },
     CreateReply,
 };
-use sqlx::{query, query_as};
+use sqlx::query;
 use std::{borrow::Cow, path::Path, time::Duration};
 use tokio::{
     fs::remove_file,
@@ -52,7 +54,7 @@ pub async fn anony_poll(
     let action_row = CreateActionRow::Buttons(Cow::Owned(
         (0..options_count)
             .map(|index| {
-                CreateButton::new(format!("option_{index}_{ctx_id}"))
+                CreateButton::new(format!("{index}_{ctx_id}"))
                     .style(ButtonStyle::Primary)
                     .label((index + 1).to_string())
             })
@@ -75,7 +77,7 @@ pub async fn anony_poll(
             .filter(move |interaction| {
                 let id = interaction.data.custom_id.as_str();
                 (0..options_count).any(|index| {
-                    let expected_id = format!("option_{index}_{ctx_id}");
+                    let expected_id = format!("{index}_{ctx_id}");
                     id == expected_id
                 })
             })
@@ -172,9 +174,12 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         ctx.data()
-            .global_chat_last
+            .global_chats
             .remove(&guild_id)
             .unwrap_or_default();
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.settings.global_chat = false;
+        }
         ctx.reply("Call ended...").await?;
     }
     Ok(())
@@ -185,6 +190,7 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         let guild_id_i64 = i64::from(guild_id);
+        let channel_id_i64 = i64::from(ctx.channel_id());
         let mut tx = ctx.data().db.begin().await?;
         query!(
             "INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
@@ -194,50 +200,51 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
                 global_chat = TRUE,
                 global_chat_channel = $2",
             guild_id_i64,
-            i64::from(ctx.channel_id()),
+            channel_id_i64,
         )
         .execute(&mut *tx)
         .await?;
-        let message = ctx.reply("Calling...").await?;
-        let result = timeout(Duration::from_secs(60), async {
-            loop {
-                let other_calls = query!(
-                    "SELECT EXISTS(
-                        SELECT 1 FROM guild_settings 
-                        WHERE guild_id != $1 AND global_chat = TRUE
-                    ) AS HAS_CALL",
+        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
+            guild_data.settings.global_chat = true;
+            guild_data.settings.global_chat_channel = Some(channel_id_i64);
+            let message = ctx.reply("Calling...").await?;
+            let result = timeout(Duration::from_secs(60), async {
+                loop {
+                    let has_other_calls = ctx.data().guild_data.iter().any(|entry| {
+                        entry.key() != &guild_id
+                            && entry.value().settings.global_chat
+                            && entry.value().settings.global_chat_channel.is_some()
+                    });
+                    if has_other_calls {
+                        return Ok::<_, Error>(true);
+                    }
+                    sleep(Duration::from_secs(5)).await;
+                }
+            })
+            .await;
+            if result.is_ok() {
+                message
+                    .edit(
+                        ctx,
+                        CreateReply::default().content("Connected to global call!"),
+                    )
+                    .await?;
+            } else {
+                query!(
+                    "UPDATE guild_settings SET global_chat = FALSE, global_chat_channel = NULL WHERE guild_id = $1",
                     guild_id_i64
                 )
-                .fetch_optional(&mut *tx)
+                .execute(&mut *tx)
                 .await?;
-                if other_calls.is_some() {
-                    return Ok::<_, Error>(true);
-                }
-                sleep(Duration::from_secs(5)).await;
+                guild_data.settings.global_chat = false;
+                guild_data.settings.global_chat_channel = None;
+                message
+                    .edit(
+                        ctx,
+                        CreateReply::default().content("No one joined the call within 1 minute 😢"),
+                    )
+                    .await?;
             }
-        })
-        .await;
-        let found_call = result.unwrap_or(Ok(false))?;
-        if found_call {
-            message
-                .edit(
-                    ctx,
-                    CreateReply::default().content("Connected to global call!"),
-                )
-                .await?;
-        } else {
-            query!(
-                "UPDATE guild_settings SET global_chat = FALSE WHERE guild_id = $1",
-                guild_id_i64
-            )
-            .execute(&mut *tx)
-            .await?;
-            message
-                .edit(
-                    ctx,
-                    CreateReply::default().content("No one joined the call within 1 minute 😢"),
-                )
-                .await?;
         }
         tx.commit()
             .await
@@ -268,8 +275,8 @@ pub async fn help(
 }
 
 struct UserCount {
-    user_id: i64,
-    message_count: i64,
+    id: i64,
+    count: i32,
 }
 
 /// Leaderboard of lifeless ppl
@@ -287,15 +294,23 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             }
         };
         ctx.defer().await?;
-        let users = query_as!(
-            UserCount,
-            "SELECT message_count, user_id FROM user_settings WHERE guild_id = $1
-            ORDER BY message_count 
-            DESC LIMIT 25",
-            i64::from(guild_id)
-        )
-        .fetch_all(&mut *ctx.data().db.acquire().await?)
-        .await?;
+
+        let mut users =
+            ctx.data()
+                .user_settings
+                .get(&guild_id)
+                .map_or_else(Vec::new, |user_settings| {
+                    user_settings
+                        .iter()
+                        .map(|entry| UserCount {
+                            id: entry.value().user_id,
+                            count: entry.value().message_count,
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+        users.sort_by(|a, b| b.count.cmp(&a.count));
+        users.truncate(25);
 
         let mut embed = CreateEmbed::default()
             .title(format!("Top {} users by message count", users.len()))
@@ -306,9 +321,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             if let Ok(target) = guild_id
                 .member(
                     &ctx.http(),
-                    UserId::new(
-                        u64::try_from(user.user_id).expect("user id out of bounds for u64"),
-                    ),
+                    UserId::new(u64::try_from(user.id).expect("user id out of bounds for u64")),
                 )
                 .await
             {
@@ -316,7 +329,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
                 let user_name = target.display_name();
                 embed = embed.field(
                     format!("#{rank} {user_name}"),
-                    user.message_count.to_string(),
+                    user.count.to_string(),
                     false,
                 );
             }
@@ -331,8 +344,8 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
     prefix_command,
     slash_command,
-    install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel"
+ /*   install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel" */
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
@@ -423,14 +436,8 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             )
             .await?;
 
-        if let Ok(record) = query!(
-            "SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
-            i64::from(guild_id),
-        )
-        .fetch_one(&mut *ctx.data().db.acquire().await?)
-        .await
-        {
-            if let Some(channel) = record.quotes_channel {
+        if let Some(guild_data) = ctx.data().guild_data.get(&guild_id) {
+            if let Some(channel) = guild_data.settings.quotes_channel {
                 let quote_channel = ChannelId::new(
                     u64::try_from(channel).expect("channel id out of bounds for u64"),
                 );
@@ -463,11 +470,16 @@ pub async fn slow_mode(
     channel.id().edit(ctx.http(), settings).await?;
     ctx.send(
         CreateReply::default()
-            .content(format!("{channel} is ratelimited for {duration} seconds"))
+            .content(format!("{channel} is ratelimited for {duration}s"))
             .ephemeral(true),
     )
     .await?;
     Ok(())
+}
+
+struct WordCount {
+    word: String,
+    count: i64,
 }
 
 /// Count of tracked words
@@ -484,14 +496,25 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
                 return Ok(());
             }
         };
-        let words = query!(
-            "SELECT word, count FROM guild_word_tracking WHERE guild_id = $1
-            ORDER BY count
-            DESC LIMIT 25",
-            i64::from(guild_id),
-        )
-        .fetch_all(&mut *ctx.data().db.acquire().await?)
-        .await?;
+
+        let mut words = ctx
+            .data()
+            .guild_data
+            .get(&guild_id)
+            .map_or_else(Vec::new, |guild_data| {
+                guild_data
+                    .word_tracking
+                    .iter()
+                    .map(|entry| WordCount {
+                        word: entry.word.clone(),
+                        count: entry.count,
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+        words.sort_by(|a, b| b.count.cmp(&a.count));
+        words.truncate(25);
+
         let mut embed = CreateEmbed::default()
             .title(format!("Top {} word tracked by count", words.len()))
             .thumbnail(thumbnail)

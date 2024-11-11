@@ -1,4 +1,4 @@
-use crate::types::{Error, SContext};
+use crate::config::types::{Error, SContext};
 
 use poise::{
     serenity_prelude::{CreateEmbed, Member},
