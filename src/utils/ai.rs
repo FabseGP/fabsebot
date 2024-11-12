@@ -22,11 +22,12 @@ pub async fn ai_chatbot(
     voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> Result<(), Error> {
     if message.content.eq_ignore_ascii_case("clear") {
-        if conversations.remove(&guild_id).is_some() {
-            message.reply(&ctx.http, "Conversation cleared!").await?;
+        let msg = if conversations.remove(&guild_id).is_some() {
+            "Conversation cleared!"
         } else {
-            message.reply(&ctx.http, "Bruh, nothing to clear!").await?;
-        }
+            "Bruh, nothing to clear!"
+        };
+        message.reply(&ctx.http, msg).await?;
         return Ok(());
     }
     if !message.content.starts_with('#') {
@@ -176,7 +177,9 @@ pub async fn ai_chatbot(
             history.push(AIChatMessage::user(format!(
                 "User: {author_name}: {content_safe}"
             )));
-            ai_response(&history).await
+            let response = ai_response(&history).await;
+            drop(history);
+            response
         };
 
         if let Some(response) = response_opt {

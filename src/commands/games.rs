@@ -46,9 +46,9 @@ pub async fn rps(
             }
 
             let ctx_id = ctx.id();
-            let rock_id = format!("{ctx_id}_rock");
-            let paper_id = format!("{ctx_id}_paper");
-            let scissor_id = format!("{ctx_id}_scissors");
+            let rock_id = format!("{ctx_id}_r");
+            let paper_id = format!("{ctx_id}_p");
+            let scissor_id = format!("{ctx_id}_s");
 
             let buttons = [
                 CreateButton::new(rock_id.as_str())
@@ -74,15 +74,16 @@ pub async fn rps(
             )
             .await?;
 
+            let ctx_id_copy = ctx.id();
             if let Some(interaction) =
                 ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                     .author_id(user.user.id)
                     .timeout(Duration::from_secs(60))
                     .filter(move |interaction| {
-                        let id = interaction.data.custom_id.as_str();
-                        id == rock_id.as_str()
-                            || id == paper_id.as_str()
-                            || id == scissor_id.as_str()
+                        interaction
+                            .data
+                            .custom_id
+                            .starts_with(ctx_id_copy.to_string().as_str())
                     })
                     .await
             {

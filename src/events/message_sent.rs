@@ -14,12 +14,12 @@ use crate::{
 
 use anyhow::Context as _;
 use poise::serenity_prelude::{
-    self as serenity, ChannelId, Colour, CreateAllowedMentions, CreateAttachment, CreateEmbed,
+    self as serenity, ChannelId, CreateAllowedMentions, CreateAttachment, CreateEmbed,
     CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GuildId,
     Message, MessageId, ReactionType, Timestamp, UserId,
 };
 use sqlx::query;
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 use winnow::Parser;
 
 pub async fn handle_message(
@@ -31,22 +31,22 @@ pub async fn handle_message(
         return Ok(());
     }
     let content = new_message.content.to_lowercase();
-    if let Some(id) = new_message.guild_id {
-        let guild_id = i64::from(id);
-        let user_id = i64::from(new_message.author.id);
+    if let Some(guild_id) = new_message.guild_id {
+        let guild_id_i64 = i64::from(guild_id);
+        let user_id_i64 = i64::from(new_message.author.id);
         let mut tx = data
             .db
             .begin()
             .await
             .context("Failed to acquire savepoint")?;
         let mut bot_role = String::new();
-        if let Some(user_settings) = data.user_settings.get(&id) {
+        if let Some(user_settings) = data.user_settings.get(&guild_id) {
             for mut target in user_settings.iter_mut() {
+                let user_id = UserId::new(
+                    u64::try_from(target.user_id).expect("user id out of bounds for u64"),
+                );
                 if target.afk {
-                    let user_id = UserId::new(
-                        u64::try_from(target.user_id).expect("user id out of bounds for u64"),
-                    );
-                    if new_message.author.id == user_id {
+                    if user_id_i64 == target.user_id {
                         let user = user_id.to_user(&ctx.http).await?;
                         let user_name = user.display_name();
                         let mut response = new_message
@@ -74,7 +74,7 @@ pub async fn handle_message(
                         }
                         query!(
                         "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
-                            guild_id,
+                            guild_id_i64,
                             target.user_id,
                         )
                         .execute(&mut *tx)
@@ -82,16 +82,18 @@ pub async fn handle_message(
                         target.afk = false;
                         target.afk_reason = None;
                         target.pinged_links = None;
-                    } else if new_message.mentions_user_id(user_id) {
-                        let author_name = new_message.author.display_name();
+                    } else if new_message.mentions_user_id(user_id)
+                        && new_message.referenced_message.is_none()
+                    {
                         let message_link = new_message.link();
+                        let author_name = new_message.author.display_name();
                         let pinged_link = format!("{author_name};{message_link}");
                         query!(
                             "UPDATE user_settings 
                             SET pinged_links = COALESCE(pinged_links || ',' || $1, $1) 
                             WHERE guild_id = $2 AND user_id = $3",
                             pinged_link,
-                            guild_id,
+                            guild_id_i64,
                             target.user_id,
                         )
                         .execute(&mut *tx)
@@ -102,7 +104,7 @@ pub async fn handle_message(
                                 existing_links.push_str(&pinged_link);
                             }
                             None => {
-                                target.pinged_links = Some(pinged_link.to_string());
+                                target.pinged_links = Some(pinged_link);
                             }
                         }
                         let reason = target
@@ -110,7 +112,7 @@ pub async fn handle_message(
                             .as_deref()
                             .unwrap_or("Didn't renew life subscription");
                         let user = user_id.to_user(&ctx.http).await?;
-                        let user_name = user.display_name();
+                        let user_name = user.name;
                         new_message
                             .reply(
                                 &ctx.http,
@@ -119,8 +121,8 @@ pub async fn handle_message(
                             .await?;
                     }
                 }
-                let target_id = target.user_id;
-                if content.contains(&format!("<@{target_id}>"))
+                if new_message.mentions_user_id(user_id)
+                    && new_message.referenced_message.is_none()
                     && let Some(ping_content) = &target.ping_content
                 {
                     let message = {
@@ -132,7 +134,7 @@ pub async fn handle_message(
                                     let urls = get_gifs(gif_query).await;
                                     urls.get(RNG.lock().await.usize(..urls.len())).cloned()
                                 } else if !ping_media.is_empty() {
-                                    Some(ping_media.to_owned())
+                                    Some(Cow::Borrowed(ping_media.as_str()))
                                 } else {
                                     None
                                 };
@@ -167,8 +169,8 @@ pub async fn handle_message(
                 ON CONFLICT(guild_id, user_id) 
                 DO UPDATE SET
                     message_count = user_settings.message_count + 1",
-                guild_id,
-                user_id,
+                guild_id_i64,
+                user_id_i64,
             )
             .execute(&mut *tx)
             .await?;
@@ -176,12 +178,12 @@ pub async fn handle_message(
                 user_setting.message_count += 1;
             }
         }
-        if let Some(mut guild_data) = data.guild_data.get_mut(&id) {
+        if let Some(mut guild_data) = data.guild_data.get_mut(&guild_id) {
             if let Some(spoiler_channel) = guild_data.settings.spoiler_channel
                 && new_message.channel_id.get()
                     == u64::try_from(spoiler_channel).expect("channel id out of bounds for u64")
             {
-                spoiler_message(ctx, new_message, &new_message.content, &data).await?;
+                spoiler_message(ctx, new_message, &data).await?;
             }
             if let (Some(dead_channel), Some(dead_chat_rate)) = (
                 guild_data.settings.dead_chat_channel,
@@ -191,7 +193,7 @@ pub async fn handle_message(
                     u64::try_from(dead_channel).expect("channel id out of bounds for u64"),
                 );
                 if let Ok(guild_channel) = dead_chat_channel
-                    .to_guild_channel(&ctx.http, Some(id))
+                    .to_guild_channel(&ctx.http, Some(guild_id))
                     .await
                 {
                     if let Some(message_id) = guild_channel.last_message_id {
@@ -204,12 +206,10 @@ pub async fn handle_message(
                         let current_time = Timestamp::now().timestamp();
                         if current_time - last_message_time > dead_chat_rate * 60 {
                             let urls = get_gifs("dead chat").await;
-                            dead_chat_channel
-                                .say(
-                                    &ctx.http,
-                                    urls[RNG.lock().await.usize(..urls.len())].as_str(),
-                                )
-                                .await?;
+                            let index = RNG.lock().await.usize(..urls.len());
+                            if let Some(url) = urls.get(index).cloned() {
+                                dead_chat_channel.say(&ctx.http, url).await?;
+                            }
                         }
                     }
                 }
@@ -222,9 +222,9 @@ pub async fn handle_message(
                     ctx,
                     new_message,
                     bot_role,
-                    id,
+                    guild_id,
                     &data.ai_chats,
-                    data.music_manager.get(id),
+                    data.music_manager.get(guild_id),
                 )
                 .await?;
             }
@@ -238,7 +238,7 @@ pub async fn handle_message(
                     .iter()
                     .filter(|entry| {
                         let settings = &entry.value().settings;
-                        entry.key() != &id
+                        entry.key() != &guild_id
                             && settings.global_chat_channel.is_some()
                             && settings.global_chat
                     })
@@ -250,7 +250,7 @@ pub async fn handle_message(
                     })
                     .collect();
                 {
-                    let global_chats_history = data.global_chats.entry(id).or_default();
+                    let global_chats_history = data.global_chats.entry(guild_id).or_default();
                     for (guild_id, _) in &guild_global_chats {
                         global_chats_history.insert(*guild_id, new_message.id);
                     }
@@ -353,7 +353,7 @@ pub async fn handle_message(
                          SET count = count + 1 
                          WHERE guild_id = $1
                          AND word = $2",
-                        guild_id,
+                        guild_id_i64,
                         record.word
                     )
                     .execute(&mut *tx)
@@ -367,12 +367,14 @@ pub async fn handle_message(
                         Some(media) if !media.is_empty() => {
                             if let Some(gif_query) = media.strip_prefix("!gif") {
                                 let urls = get_gifs(gif_query).await;
-                                CreateMessage::default().embed(
-                                    CreateEmbed::default()
-                                        .title(&record.content)
-                                        .colour(COLOUR_YELLOW)
-                                        .image(urls[RNG.lock().await.usize(..urls.len())].clone()),
-                                )
+                                let mut embed = CreateEmbed::default()
+                                    .title(&record.content)
+                                    .colour(COLOUR_YELLOW);
+                                let index = RNG.lock().await.usize(..urls.len());
+                                if let Some(url) = urls.get(index).cloned() {
+                                    embed = embed.image(url);
+                                }
+                                CreateMessage::default().embed(embed)
                             } else {
                                 CreateMessage::default().embed(
                                     CreateEmbed::default()
@@ -404,9 +406,8 @@ pub async fn handle_message(
                     ref_channel.id.message(&ctx.http, message_id).await?,
                 );
                 if ref_msg.poll.is_none() {
-                    let author_accent = ctx.http.get_user(ref_msg.author.id).await?.accent_colour;
-                    let mut embed = CreateEmbed::default()
-                        .colour(author_accent.unwrap_or(Colour::new(COLOUR_ORANGE)))
+                    let embed = CreateEmbed::default()
+                        .colour(COLOUR_ORANGE)
                         .description(ref_msg.content.as_str())
                         .author(
                             CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
@@ -418,21 +419,21 @@ pub async fn handle_message(
                         )
                         .footer(CreateEmbedFooter::new(channel_name))
                         .timestamp(ref_msg.timestamp);
-                    let content_url = if let Some(attachment) = ref_msg.attachments.first() {
+                    let (embed, content_url) = if let Some(attachment) = ref_msg.attachments.first()
+                    {
                         if let Some(content_type) = attachment.content_type.as_deref() {
                             if content_type.starts_with("image") {
-                                embed = embed.image(attachment.url.as_str());
-                                None
+                                (embed.image(attachment.url.as_str()), None)
                             } else if content_type.starts_with("video") {
-                                Some(attachment.url.as_str())
+                                (embed, Some(attachment.url.as_str()))
                             } else {
-                                None
+                                (embed, None)
                             }
                         } else {
-                            None
+                            (embed, None)
                         }
                     } else {
-                        None
+                        (embed, None)
                     };
                     let mut preview_message = CreateMessage::default()
                         .embed(embed)
@@ -455,7 +456,9 @@ pub async fn handle_message(
             }
         }
     }
-    if content.contains(&ctx.cache.current_user().to_string()) {
+    if new_message.mentions_user_id(ctx.cache.current_user().id)
+        && new_message.referenced_message.is_none()
+    {
         new_message
             .channel_id
             .send_message(

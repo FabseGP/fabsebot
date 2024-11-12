@@ -5,34 +5,32 @@ use poise::serenity_prelude::{
     self as serenity, builder::CreateAttachment, ChannelId, ExecuteWebhook, Message, Webhook,
 };
 use serde::Serialize;
-use std::{path::Path, sync::Arc};
-use tokio::{
-    fs::{remove_file, File},
-    io::AsyncWriteExt as _,
-};
+use std::sync::Arc;
 
 pub async fn spoiler_message(
     ctx: &serenity::Context,
     message: &Message,
-    text: &str,
     data: &Arc<Data>,
 ) -> Result<(), Error> {
     if let Some(avatar_url) = message.author.avatar_url() {
-        let username = message.author.display_name();
-        let mut is_first = true;
-        for attachment in &message.attachments {
-            let target = attachment.url.as_str();
-            let download = HTTP_CLIENT.get(target).send().await?.bytes().await;
-            let attachment_name = &attachment.filename;
-            let filename = format!("SPOILER_{attachment_name}");
-            let mut file = File::create(&filename).await?;
-            let Ok(download_bytes) = download else {
-                continue;
-            };
-            file.write_all(&download_bytes).await?;
-            let webhook_try = webhook_find(ctx, message.channel_id, data).await;
-            if let Ok(webhook) = webhook_try {
-                let attachment = CreateAttachment::path(Path::new(&filename)).await?;
+        let webhook_try = webhook_find(ctx, message.channel_id, data).await;
+        if let Ok(webhook) = webhook_try {
+            let username = message.author.display_name();
+            let mut is_first = true;
+            for attachment in &message.attachments {
+                let download = HTTP_CLIENT
+                    .get(attachment.url.as_str())
+                    .send()
+                    .await?
+                    .bytes()
+                    .await;
+
+                let Ok(download_bytes) = download else {
+                    continue;
+                };
+                let attachment_name = &attachment.filename;
+                let attachment =
+                    CreateAttachment::bytes(download_bytes, format!("SPOILER_{attachment_name}"));
                 if is_first {
                     webhook
                         .execute(
@@ -41,7 +39,7 @@ pub async fn spoiler_message(
                             ExecuteWebhook::default()
                                 .username(username)
                                 .avatar_url(avatar_url.as_str())
-                                .content(text)
+                                .content(message.content.as_str())
                                 .add_file(attachment),
                         )
                         .await?;
@@ -59,7 +57,6 @@ pub async fn spoiler_message(
                         .await?;
                 }
             }
-            remove_file(&filename).await?;
         }
         message.delete(&ctx.http, None).await?;
     }

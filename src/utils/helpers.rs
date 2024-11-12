@@ -1,10 +1,13 @@
-use crate::config::types::{Error, HTTP_CLIENT, UTILS_CONFIG};
+use crate::config::{
+    constants::{DISCORD_CHANNEL_PREFIX, FALLBACK_GIF, FALLBACK_WAIFU},
+    types::{Error, HTTP_CLIENT, UTILS_CONFIG},
+};
 
 use anyhow::anyhow;
 use poise::serenity_prelude::{self as serenity, GuildId};
 use serde::Deserialize;
+use std::{borrow::Cow, string::ToString};
 use urlencoding::encode;
-
 use winnow::{
     ascii::digit1,
     combinator::{preceded, separated_pair},
@@ -19,13 +22,8 @@ pub async fn emoji_id(
     let guild_emojis = guild_id.emojis(&ctx.http).await?;
     guild_emojis
         .iter()
-        .find_map(|e| {
-            if e.name == emoji_name {
-                Some(e.to_string())
-            } else {
-                None
-            }
-        })
+        .find(|e| e.name.as_str() == emoji_name)
+        .map(ToString::to_string)
         .ok_or_else(|| anyhow!("Emoji not found"))
 }
 
@@ -49,7 +47,7 @@ struct GifObject {
     url: String,
 }
 
-pub async fn get_gifs(input: &str) -> Vec<String> {
+pub async fn get_gifs(input: &str) -> Vec<Cow<'static, str>> {
     let request_url = {
         let encoded_input = encode(input);
         format!(
@@ -57,43 +55,41 @@ pub async fn get_gifs(input: &str) -> Vec<String> {
             UTILS_CONFIG.get().expect("UTILS_CONFIG must be set during initialization").api.tenor_token,
         )
     };
-    let Ok(response) = HTTP_CLIENT.get(request_url).send().await else {
-        return vec!["https://i.postimg.cc/zffntsGs/tenor.gif".to_owned()];
-    };
-    response.json::<GifResponse>().await.ok().map_or_else(
-        || vec!["https://i.postimg.cc/zffntsGs/tenor.gif".to_owned()],
-        |urls| {
-            urls.results
+    match HTTP_CLIENT.get(request_url).send().await {
+        Ok(response) => match response.json::<GifResponse>().await {
+            Ok(urls) => urls
+                .results
                 .into_iter()
-                .filter_map(|result| result.media_formats.gif.map(|media| media.url))
-                .collect()
+                .filter_map(|result| result.media_formats.gif.map(|media| Cow::Owned(media.url)))
+                .collect(),
+            Err(_) => vec![Cow::Borrowed(FALLBACK_GIF)],
         },
-    )
+        Err(_) => vec![Cow::Borrowed(FALLBACK_GIF)],
+    }
 }
 
 #[derive(Deserialize)]
 struct WaifuResponse {
-    images: Vec<WaifuData>,
+    images: [WaifuImage; 1],
 }
 #[derive(Deserialize)]
-struct WaifuData {
+struct WaifuImage {
     url: String,
 }
 
-pub async fn get_waifu() -> String {
-    let Ok(response) = HTTP_CLIENT
+pub async fn get_waifu() -> Cow<'static, str> {
+    match HTTP_CLIENT
         .get("https://api.waifu.im/search?height=>=2000&is_nsfw=false")
         .send()
         .await
-    else {
-        return "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned();
-    };
-    response
-        .json::<WaifuResponse>()
-        .await
-        .ok()
-        .and_then(|urls| urls.images.into_iter().next().map(|img| img.url))
-        .unwrap_or_else(|| "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned())
+    {
+        Ok(response) => response
+            .json::<WaifuResponse>()
+            .await
+            .map(|resp| Cow::Owned(resp.images[0].url.clone()))
+            .unwrap_or(Cow::Borrowed(FALLBACK_WAIFU)),
+        Err(_) => Cow::Borrowed(FALLBACK_WAIFU),
+    }
 }
 
 pub struct DiscordMessageLink {
@@ -107,9 +103,8 @@ fn discord_id(input: &mut &str) -> PResult<u64> {
 }
 
 pub fn discord_message_link(input: &mut &str) -> PResult<DiscordMessageLink> {
-    let prefix_parser = "https://discord.com/channels/";
     let (guild_id, (channel_id, message_id)) = preceded(
-        prefix_parser,
+        DISCORD_CHANNEL_PREFIX,
         separated_pair(discord_id, '/', separated_pair(discord_id, '/', discord_id)),
     )
     .parse_next(input)?;

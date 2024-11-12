@@ -19,7 +19,7 @@ use poise::{
     CreateReply,
 };
 use sqlx::query;
-use std::{borrow::Cow, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 use tokio::{
     fs::remove_file,
     time::{sleep, timeout},
@@ -49,24 +49,21 @@ pub async fn anony_poll(
         .title(title.as_str())
         .colour(COLOUR_RED)
         .fields(options_list.iter().map(|&option| (option, "0", false)));
+    let mut final_embed = embed.clone();
 
-    let ctx_id = ctx.id();
-    let action_row = CreateActionRow::Buttons(Cow::Owned(
-        (0..options_count)
-            .map(|index| {
-                CreateButton::new(format!("{index}_{ctx_id}"))
-                    .style(ButtonStyle::Primary)
-                    .label((index + 1).to_string())
-            })
-            .collect(),
-    ));
+    let ctx_id_copy = ctx.id();
+    let buttons: Vec<CreateButton> = (0..options_count)
+        .map(|index| {
+            CreateButton::new(format!("{ctx_id_copy}_{index}"))
+                .style(ButtonStyle::Primary)
+                .label((index + 1).to_string())
+        })
+        .collect();
+    let action_row = [CreateActionRow::buttons(&buttons)];
 
-    ctx.send(
-        CreateReply::default()
-            .embed(embed)
-            .components(&[action_row]),
-    )
-    .await?;
+    let message = ctx
+        .send(CreateReply::default().embed(embed).components(&action_row))
+        .await?;
 
     let mut vote_counts = vec![0; options_count];
     let voted_users = DashSet::new();
@@ -75,25 +72,22 @@ pub async fn anony_poll(
         ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
             .timeout(Duration::from_secs(duration * 60))
             .filter(move |interaction| {
-                let id = interaction.data.custom_id.as_str();
-                (0..options_count).any(|index| {
-                    let expected_id = format!("{index}_{ctx_id}");
-                    id == expected_id
-                })
+                interaction
+                    .data
+                    .custom_id
+                    .starts_with(ctx_id_copy.to_string().as_str())
             })
             .await
     {
-        let user_id = interaction.user.id;
-        if voted_users.insert(user_id) {
-            let choice = &interaction.data.custom_id;
-
-            interaction
-                .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-                .await?;
-
-            if let Some(index) = choice
-                .strip_prefix("option_")
-                .and_then(|s| s.split('_').next())
+        interaction
+            .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+            .await?;
+        if voted_users.insert(interaction.user.id) {
+            if let Some(index) = interaction
+                .data
+                .custom_id
+                .split('_')
+                .nth(1)
                 .and_then(|s| s.parse::<usize>().ok())
             {
                 if index < options_count {
@@ -108,14 +102,28 @@ pub async fn anony_poll(
                                 .zip(vote_counts.iter())
                                 .map(|(&option, &count)| (option, count.to_string(), false)),
                         );
+                    final_embed = new_embed.clone();
 
                     let mut msg = interaction.message;
                     msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
                         .await?;
                 }
             }
+        } else {
+            ctx.send(
+                CreateReply::default()
+                    .content("bruh, you have already voted!")
+                    .ephemeral(true),
+            )
+            .await?;
         }
     }
+    message
+        .edit(
+            ctx,
+            CreateReply::default().embed(final_embed).components(&[]),
+        )
+        .await?;
 
     Ok(())
 }
