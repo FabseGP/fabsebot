@@ -34,7 +34,8 @@ pub async fn user_dm(
     #[description = "Target"] user: User,
     #[description = "Message to be sent"] message: String,
 ) -> Result<(), Error> {
-    user.direct_message(ctx.http(), CreateMessage::default().content(message))
+    user.id
+        .direct_message(ctx.http(), CreateMessage::default().content(message))
         .await?;
     ctx.send(
         CreateReply::default()

@@ -75,7 +75,7 @@ pub async fn user_info(
     #[rest]
     member: Member,
 ) -> Result<(), Error> {
-    let user_created = member.user.created_at().to_string();
+    let user_created = member.user.id.created_at().to_string();
     let member_joined = member.joined_at.unwrap_or_default().to_string();
     let user_mfa = if member.user.mfa_enabled() {
         "MFA enabled"

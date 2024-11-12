@@ -196,6 +196,7 @@ pub async fn handle_message(
                 {
                     if let Some(message_id) = guild_channel.last_message_id {
                         let last_message_time = guild_channel
+                            .id
                             .message(&ctx.http, message_id)
                             .await?
                             .timestamp
@@ -318,6 +319,7 @@ pub async fn handle_message(
                             }
                             if webhook.execute(&ctx.http, false, message).await.is_err() {
                                 chat_channel
+                                    .id
                                     .say(
                                         &ctx.http,
                                         format!(
@@ -330,6 +332,7 @@ pub async fn handle_message(
                             }
                         } else {
                             chat_channel
+                                .id
                                 .say(
                                     &ctx.http,
                                     format!(
@@ -398,7 +401,7 @@ pub async fn handle_message(
             if let Ok(ref_channel) = channel_id.to_guild_channel(&ctx.http, Some(guild_id)).await {
                 let (channel_name, ref_msg) = (
                     ref_channel.name.as_str(),
-                    ref_channel.message(&ctx.http, message_id).await?,
+                    ref_channel.id.message(&ctx.http, message_id).await?,
                 );
                 if ref_msg.poll.is_none() {
                     let author_accent = ctx.http.get_user(ref_msg.author.id).await?.accent_colour;

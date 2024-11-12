@@ -1,6 +1,6 @@
 use crate::{
     config::{
-        constants::{COLOUR_RED, TSUNDERE_FALLBACK},
+        constants::COLOUR_RED,
         types::{Error, SContext, HTTP_CLIENT},
     },
     utils::{ai::ai_response_simple, image::quote_image},
@@ -359,7 +359,11 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
             ctx.reply(resp).await?;
         }
         None => {
-            ctx.reply(TSUNDERE_FALLBACK).await?;
+            ctx.reply(
+                "Ugh, fine. It's nice to see you again, I suppose... 
+                for now, don't get any ideas thinking this means I actually like you or anything",
+            )
+            .await?;
         }
     }
     Ok(())

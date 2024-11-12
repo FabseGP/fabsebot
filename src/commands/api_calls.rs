@@ -1050,7 +1050,7 @@ pub async fn roast(
             },
         );
         let name = member.display_name();
-        let account_date = member.user.created_at();
+        let account_date = member.user.id.created_at();
         let join_date = member.joined_at.unwrap_or_default();
         let message_count = if let Some(count) = ctx
             .data()

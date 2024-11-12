@@ -1,7 +1,4 @@
-use crate::config::{
-    constants::{GIF_FALLBACK, WAIFU_FALLBACK, WAIFU_URL},
-    types::{Error, HTTP_CLIENT, UTILS_CONFIG},
-};
+use crate::config::types::{Error, HTTP_CLIENT, UTILS_CONFIG};
 
 use anyhow::anyhow;
 use poise::serenity_prelude::{self as serenity, GuildId};
@@ -61,10 +58,10 @@ pub async fn get_gifs(input: &str) -> Vec<String> {
         )
     };
     let Ok(response) = HTTP_CLIENT.get(request_url).send().await else {
-        return vec![GIF_FALLBACK.to_owned()];
+        return vec!["https://i.postimg.cc/zffntsGs/tenor.gif".to_owned()];
     };
     response.json::<GifResponse>().await.ok().map_or_else(
-        || vec![GIF_FALLBACK.to_owned()],
+        || vec!["https://i.postimg.cc/zffntsGs/tenor.gif".to_owned()],
         |urls| {
             urls.results
                 .into_iter()
@@ -84,15 +81,19 @@ struct WaifuData {
 }
 
 pub async fn get_waifu() -> String {
-    let Ok(response) = HTTP_CLIENT.get(WAIFU_URL).send().await else {
-        return WAIFU_FALLBACK.to_owned();
+    let Ok(response) = HTTP_CLIENT
+        .get("https://api.waifu.im/search?height=>=2000&is_nsfw=false")
+        .send()
+        .await
+    else {
+        return "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned();
     };
     response
         .json::<WaifuResponse>()
         .await
         .ok()
         .and_then(|urls| urls.images.into_iter().next().map(|img| img.url))
-        .unwrap_or_else(|| WAIFU_FALLBACK.to_owned())
+        .unwrap_or_else(|| "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned())
 }
 
 pub struct DiscordMessageLink {

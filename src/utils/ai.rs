@@ -120,7 +120,7 @@ pub async fn ai_chatbot(
                     guild_id
                         .name(&ctx.cache)
                         .unwrap_or_else(|| "unknown".to_owned()),
-                    ref_channel.message(&ctx.http, message_id).await,
+                    ref_channel.id.message(&ctx.http, message_id).await,
                 );
                 match ref_msg {
                     Ok(linked_message) => {

@@ -693,7 +693,7 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
                 if let Some(id) = channel_id {
                     if let Ok(channel) = ctx.http().get_channel(ChannelId::from(id.get())).await {
                         if let Some(guild_channel) = channel.guild() {
-                            guild_channel.say(ctx.http(), &content).await?;
+                            guild_channel.id.say(ctx.http(), &content).await?;
                         }
                     }
                 }
@@ -746,7 +746,7 @@ pub async fn stop_song(ctx: SContext<'_>) -> Result<(), Error> {
                 if let Some(id) = channel_id {
                     if let Ok(channel) = ctx.http().get_channel(ChannelId::from(id.get())).await {
                         if let Some(guild_channel) = channel.guild() {
-                            guild_channel.say(ctx.http(), content).await?;
+                            guild_channel.id.say(ctx.http(), content).await?;
                         }
                     }
                 }
