@@ -94,6 +94,7 @@ pub async fn ai_image(
                 Some(image_bytes) => {
                     ctx.send(
                         CreateReply::default()
+                            .reply(true)
                             .attachment(CreateAttachment::bytes(image_bytes, "output.png")),
                     )
                     .await?;
@@ -371,7 +372,12 @@ pub async fn anime(
                     let action_row = [CreateActionRow::buttons(&buttons[1..])];
 
                     let message = ctx
-                        .send(CreateReply::default().embed(embed).components(&action_row))
+                        .send(
+                            CreateReply::default()
+                                .reply(true)
+                                .embed(embed)
+                                .components(&action_row),
+                        )
                         .await?;
 
                     let ctx_id_copy = ctx.id();
@@ -474,11 +480,15 @@ pub async fn anime(
                     message
                         .edit(
                             ctx,
-                            CreateReply::default().embed(final_embed).components(&[]),
+                            CreateReply::default()
+                                .reply(true)
+                                .embed(final_embed)
+                                .components(&[]),
                         )
                         .await?;
                 } else {
-                    ctx.send(CreateReply::default().embed(embed)).await?;
+                    ctx.send(CreateReply::default().reply(true).embed(embed))
+                        .await?;
                 }
             }
             Ok(_) | Err(_) => {
@@ -559,14 +569,20 @@ pub async fn anime_scene(
                         .as_deref()
                         .unwrap_or("Unknown title");
                     ctx.send(
-                        CreateReply::default().embed(
-                            CreateEmbed::default()
-                                .title(title)
-                                .field("Episode", episode_text, true)
-                                .field("From", first_result.from.unwrap_or(0.0).to_string(), true)
-                                .field("To", first_result.to.unwrap_or(0.0).to_string(), true)
-                                .colour(COLOUR_BLUE),
-                        ),
+                        CreateReply::default()
+                            .embed(
+                                CreateEmbed::default()
+                                    .title(title)
+                                    .field("Episode", episode_text, true)
+                                    .field(
+                                        "From",
+                                        first_result.from.unwrap_or(0.0).to_string(),
+                                        true,
+                                    )
+                                    .field("To", first_result.to.unwrap_or(0.0).to_string(), true)
+                                    .colour(COLOUR_BLUE),
+                            )
+                            .reply(true),
                     )
                     .await?;
                     ctx.reply(&first_result.video).await?;
@@ -613,12 +629,14 @@ pub async fn eightball(
         Ok(request) => match request.json::<EightBallResponse>().await {
             Ok(judging) if !judging.reading.is_empty() => {
                 ctx.send(
-                    CreateReply::default().embed(
-                        CreateEmbed::default()
-                            .title(question)
-                            .colour(COLOUR_ORANGE)
-                            .field("", &judging.reading, true),
-                    ),
+                    CreateReply::default()
+                        .embed(
+                            CreateEmbed::default()
+                                .title(question)
+                                .colour(COLOUR_ORANGE)
+                                .field("", &judging.reading, true),
+                        )
+                        .reply(true),
                 )
                 .await?;
             }
@@ -669,7 +687,12 @@ pub async fn gif(
         let action_row = [CreateActionRow::buttons(&buttons[1..])];
 
         let message = ctx
-            .send(CreateReply::default().embed(embed).components(&action_row))
+            .send(
+                CreateReply::default()
+                    .reply(true)
+                    .embed(embed)
+                    .components(&action_row),
+            )
             .await?;
 
         let ctx_id_copy = ctx.id();
@@ -723,11 +746,15 @@ pub async fn gif(
         message
             .edit(
                 ctx,
-                CreateReply::default().embed(final_embed).components(&[]),
+                CreateReply::default()
+                    .reply(true)
+                    .embed(final_embed)
+                    .components(&[]),
             )
             .await?;
     } else {
-        ctx.send(CreateReply::default().embed(embed)).await?;
+        ctx.send(CreateReply::default().reply(true).embed(embed))
+            .await?;
     }
     Ok(())
 }
@@ -861,7 +888,12 @@ pub async fn manga(
                     let action_row = [CreateActionRow::buttons(&buttons[1..])];
 
                     let message = ctx
-                        .send(CreateReply::default().embed(embed).components(&action_row))
+                        .send(
+                            CreateReply::default()
+                                .reply(true)
+                                .embed(embed)
+                                .components(&action_row),
+                        )
                         .await?;
 
                     let ctx_id_copy = ctx.id();
@@ -966,11 +998,15 @@ pub async fn manga(
                     message
                         .edit(
                             ctx,
-                            CreateReply::default().embed(final_embed).components(&[]),
+                            CreateReply::default()
+                                .reply(true)
+                                .embed(final_embed)
+                                .components(&[]),
                         )
                         .await?;
                 } else {
-                    ctx.send(CreateReply::default().embed(embed)).await?;
+                    ctx.send(CreateReply::default().reply(true).embed(embed))
+                        .await?;
                 }
             }
             Ok(_) | Err(_) => {
@@ -1115,7 +1151,8 @@ pub async fn roast(
                     };
                     embed = embed.field(field_name, current_chunk, false);
                 }
-                ctx.send(CreateReply::default().embed(embed)).await?;
+                ctx.send(CreateReply::default().reply(true).embed(embed))
+                    .await?;
             }
             Some(_) | None => {
                 ctx.reply(format!("{name}'s life is already roasted"))
@@ -1235,7 +1272,12 @@ pub async fn translate(
                     let action_row = [CreateActionRow::buttons(&buttons[1..])];
 
                     let message = ctx
-                        .send(CreateReply::default().embed(embed).components(&action_row))
+                        .send(
+                            CreateReply::default()
+                                .reply(true)
+                                .embed(embed)
+                                .components(&action_row),
+                        )
                         .await?;
 
                     let ctx_id_copy = ctx.id();
@@ -1302,11 +1344,15 @@ pub async fn translate(
                     message
                         .edit(
                             ctx,
-                            CreateReply::default().embed(final_embed).components(&[]),
+                            CreateReply::default()
+                                .reply(true)
+                                .embed(final_embed)
+                                .components(&[]),
                         )
                         .await?;
                 } else {
-                    ctx.send(CreateReply::default().embed(embed)).await?;
+                    ctx.send(CreateReply::default().reply(true).embed(embed))
+                        .await?;
                 }
             }
             Ok(_) | Err(_) => {
@@ -1400,7 +1446,12 @@ pub async fn urban(
                     let action_row = [CreateActionRow::buttons(&buttons[1..])];
 
                     let message = ctx
-                        .send(CreateReply::default().embed(embed).components(&action_row))
+                        .send(
+                            CreateReply::default()
+                                .reply(true)
+                                .embed(embed)
+                                .components(&action_row),
+                        )
                         .await?;
 
                     let ctx_id_copy = ctx.id();
@@ -1487,11 +1538,15 @@ pub async fn urban(
                     message
                         .edit(
                             ctx,
-                            CreateReply::default().embed(final_embed).components(&[]),
+                            CreateReply::default()
+                                .reply(true)
+                                .embed(final_embed)
+                                .components(&[]),
                         )
                         .await?;
                 } else {
-                    ctx.send(CreateReply::default().embed(embed)).await?;
+                    ctx.send(CreateReply::default().reply(true).embed(embed))
+                        .await?;
                 }
             }
             Ok(_) | Err(_) => {
@@ -1578,7 +1633,8 @@ pub async fn wiki(
                     if let Some(image) = data.originalimage {
                         embed = embed.image(image.source);
                     }
-                    ctx.send(CreateReply::default().embed(embed)).await?;
+                    ctx.send(CreateReply::default().reply(true).embed(embed))
+                        .await?;
                 }
                 None => {
                     ctx.reply(format!("**Like you, {input} don't exist**"))

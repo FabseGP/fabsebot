@@ -15,6 +15,7 @@ use poise::{
     },
     Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions,
 };
+use serenity::all::CreateAllowedMentions;
 use songbird::{driver::DecodeMode::Decode, Config, Songbird};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::sync::Arc;
@@ -143,6 +144,7 @@ pub async fn bot_start(
                 additional_prefixes: vec![Prefix::Literal(additional_prefix)],
                 ..Default::default()
             },
+            allowed_mentions: Some(CreateAllowedMentions::default().replied_user(false)),
             on_error: |error| {
                 Box::pin(async move {
                     on_error(error)

@@ -70,6 +70,7 @@ pub async fn rps(
             ctx.send(
                 CreateReply::default()
                     .embed(embed)
+                    .reply(true)
                     .components(&[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]),
             )
             .await?;

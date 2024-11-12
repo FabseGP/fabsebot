@@ -139,21 +139,39 @@ pub async fn handle_message(
                                     None
                                 };
                                 media.map_or_else(
-                                    || CreateMessage::default().content(ping_content),
+                                    || {
+                                        CreateMessage::default()
+                                            .content(ping_content)
+                                            .reference_message(new_message)
+                                            .allowed_mentions(
+                                                CreateAllowedMentions::default()
+                                                    .replied_user(false),
+                                            )
+                                    },
                                     |image| {
-                                        CreateMessage::default().embed(
-                                            CreateEmbed::default()
-                                                .title(ping_content)
-                                                .colour(COLOUR_BLUE)
-                                                .image(image),
-                                        )
+                                        CreateMessage::default()
+                                            .embed(
+                                                CreateEmbed::default()
+                                                    .title(ping_content)
+                                                    .colour(COLOUR_BLUE)
+                                                    .image(image),
+                                            )
+                                            .reference_message(new_message)
+                                            .allowed_mentions(
+                                                CreateAllowedMentions::default()
+                                                    .replied_user(false),
+                                            )
                                     },
                                 )
                             }
-                            None => CreateMessage::default().content(ping_content),
+                            None => CreateMessage::default()
+                                .content(ping_content)
+                                .reference_message(new_message)
+                                .allowed_mentions(
+                                    CreateAllowedMentions::default().replied_user(false),
+                                ),
                         }
                     };
-
                     new_message
                         .channel_id
                         .send_message(&ctx.http, message)
@@ -374,17 +392,30 @@ pub async fn handle_message(
                                 if let Some(url) = urls.get(index).cloned() {
                                     embed = embed.image(url);
                                 }
-                                CreateMessage::default().embed(embed)
+                                CreateMessage::default()
+                                    .embed(embed)
+                                    .reference_message(new_message)
+                                    .allowed_mentions(
+                                        CreateAllowedMentions::default().replied_user(false),
+                                    )
                             } else {
-                                CreateMessage::default().embed(
-                                    CreateEmbed::default()
-                                        .title(&record.content)
-                                        .colour(COLOUR_YELLOW)
-                                        .image(media),
-                                )
+                                CreateMessage::default()
+                                    .embed(
+                                        CreateEmbed::default()
+                                            .title(&record.content)
+                                            .colour(COLOUR_YELLOW)
+                                            .image(media),
+                                    )
+                                    .reference_message(new_message)
+                                    .allowed_mentions(
+                                        CreateAllowedMentions::default().replied_user(false),
+                                    )
                             }
                         }
-                        _ => CreateMessage::default().content(&record.content),
+                        _ => CreateMessage::default()
+                            .content(&record.content)
+                            .reference_message(new_message)
+                            .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
                     };
                     new_message
                         .channel_id
@@ -463,12 +494,15 @@ pub async fn handle_message(
             .channel_id
             .send_message(
                 &ctx.http,
-                CreateMessage::default().embed(
-                    CreateEmbed::default()
-                        .title("why ping me bitch, go get a life!")
-                        .image("https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif")
-                        .colour(COLOUR_BLUE),
-                ),
+                CreateMessage::default()
+                    .embed(
+                        CreateEmbed::default()
+                            .title("why ping me bitch, go get a life!")
+                            .image("https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif")
+                            .colour(COLOUR_BLUE),
+                    )
+                    .reference_message(new_message)
+                    .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
             )
             .await?;
     }
@@ -477,7 +511,10 @@ pub async fn handle_message(
             .channel_id
             .send_message(
                 &ctx.http,
-                CreateMessage::default().content("https://i.imgur.com/Pys97pb.png"),
+                CreateMessage::default()
+                    .content("https://i.imgur.com/Pys97pb.png")
+                    .reference_message(new_message)
+                    .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
             )
             .await?;
     } else if content.contains("kurukuru_seseren") {

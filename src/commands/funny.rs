@@ -40,7 +40,8 @@ pub async fn user_dm(
     ctx.send(
         CreateReply::default()
             .content("DM sent successfully, RUN!")
-            .ephemeral(true),
+            .ephemeral(true)
+            .reply(true),
     )
     .await?;
     Ok(())

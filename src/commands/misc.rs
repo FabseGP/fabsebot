@@ -10,11 +10,12 @@ use anyhow::Context;
 use dashmap::DashSet;
 use image::load_from_memory;
 use poise::{
-    builtins,
+    builtins::{self, pretty_help},
     serenity_prelude::{
         nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
-        CreateActionRow, CreateAttachment, CreateButton, CreateEmbed, CreateInteractionResponse,
-        CreateMessage, EditChannel, EditMessage, Member, MessageId, UserId,
+        CreateActionRow, CreateAllowedMentions, CreateAttachment, CreateButton, CreateEmbed,
+        CreateInteractionResponse, CreateMessage, EditChannel, EditMessage, Member, MessageId,
+        UserId,
     },
     CreateReply,
 };
@@ -146,13 +147,15 @@ pub async fn birthday(
     });
     let name = member.display_name();
     ctx.send(
-        CreateReply::default().embed(
-            CreateEmbed::default()
-                .title(format!("HAPPY BIRTHDAY {name}!"))
-                .thumbnail(avatar_url)
-                .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
-                .colour(COLOUR_RED),
-        ),
+        CreateReply::default()
+            .embed(
+                CreateEmbed::default()
+                    .title(format!("HAPPY BIRTHDAY {name}!"))
+                    .thumbnail(avatar_url)
+                    .image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
+                    .colour(COLOUR_RED),
+            )
+            .reply(true),
     )
     .await?;
     Ok(())
@@ -234,7 +237,9 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
                 message
                     .edit(
                         ctx,
-                        CreateReply::default().content("Connected to global call!"),
+                        CreateReply::default()
+                            .reply(true)
+                            .content("Connected to global call!"),
                     )
                     .await?;
             } else {
@@ -249,7 +254,9 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
                 message
                     .edit(
                         ctx,
-                        CreateReply::default().content("No one joined the call within 1 minute 😢"),
+                        CreateReply::default()
+                            .reply(true)
+                            .content("No one joined the call within 1 minute 😢"),
                     )
                     .await?;
             }
@@ -270,7 +277,7 @@ pub async fn help(
     #[rest]
     command: Option<String>,
 ) -> Result<(), Error> {
-    builtins::pretty_help(
+    pretty_help(
         ctx,
         command.as_deref(),
         builtins::PrettyHelpConfiguration {
@@ -343,7 +350,8 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             }
         }
 
-        ctx.send(CreateReply::default().embed(embed)).await?;
+        ctx.send(CreateReply::default().reply(true).embed(embed))
+            .await?;
     }
     Ok(())
 }
@@ -386,14 +394,14 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             .message(&ctx.http(), MessageId::new(ctx.id()))
             .await?;
 
-        let Some(reply) = msg.referenced_message else {
+        let Some(ref reply) = msg.referenced_message else {
             ctx.reply("Bruh, reply to a message").await?;
             return Ok(());
         };
 
         ctx.defer().await?;
         let message_url = reply.link();
-        let content = reply.content;
+        let content = &reply.content;
         let quote_path = Path::new("quote.webp");
 
         let (avatar_image, name) = if reply.webhook_id.is_some() {
@@ -412,7 +420,10 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                 return Ok(());
             };
-            (mem_bytes.to_rgba8(), reply.author.name.into_string())
+            (
+                mem_bytes.to_rgba8(),
+                reply.author.name.clone().into_string(),
+            )
         } else {
             let member = guild_id.member(&ctx.http(), reply.author.id).await?;
             let avatar_url = member.avatar_url().unwrap_or_else(|| {
@@ -433,7 +444,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             (mem_bytes.to_rgba8(), member.user.name.into_string())
         };
 
-        quote_image(&avatar_image, &name, &content)
+        quote_image(&avatar_image, &name, content)
             .await
             .save(quote_path)
             .unwrap();
@@ -444,7 +455,10 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             .send_files(
                 ctx.http(),
                 [attachment.clone()],
-                CreateMessage::default().content(&message_url),
+                CreateMessage::default()
+                    .reference_message(&msg)
+                    .content(&message_url)
+                    .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
             )
             .await?;
 
@@ -539,7 +553,8 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
                 false,
             );
         }
-        ctx.send(CreateReply::default().embed(embed)).await?;
+        ctx.send(CreateReply::default().reply(true).embed(embed))
+            .await?;
     }
     Ok(())
 }

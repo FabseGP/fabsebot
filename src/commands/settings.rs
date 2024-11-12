@@ -29,6 +29,7 @@ pub async fn reset_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
         ctx.send(
             CreateReply::default()
                 .content("Server settings resetted... probably")
+                .reply(true)
                 .ephemeral(true),
         )
         .await?;
@@ -88,6 +89,7 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
         let user_id_i64 = i64::from(ctx.author().id);
         ctx.send(
             CreateReply::default()
+                .reply(true)
                 .content("Server settings resetted... probably")
                 .ephemeral(true),
         )
@@ -307,6 +309,7 @@ pub async fn set_prefix(
         .await?;
         ctx.send(
             CreateReply::default()
+                .reply(true)
                 .content(format!(
                     "{characters} set as the prefix for commands... probably"
                 ))

@@ -60,7 +60,8 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
         None => None,
     };
     if let Some(embed) = opt_embed {
-        ctx.send(CreateReply::default().embed(embed)).await?;
+        ctx.send(CreateReply::default().reply(true).embed(embed))
+            .await?;
     } else {
         ctx.reply("Discord refuse to share the info").await?;
     }
@@ -99,7 +100,8 @@ pub async fn user_info(
             ("Security:", &user_mfa, false),
         ])
         .colour(member.user.accent_colour.unwrap_or_default());
-    ctx.send(CreateReply::default().embed(embed)).await?;
+    ctx.send(CreateReply::default().reply(true).embed(embed))
+        .await?;
 
     Ok(())
 }

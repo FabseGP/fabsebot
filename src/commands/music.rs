@@ -261,7 +261,9 @@ pub async fn global_music_start(ctx: SContext<'_>) -> Result<(), Error> {
                 message
                     .edit(
                         ctx,
-                        CreateReply::default().content("Connected to global music playback!"),
+                        CreateReply::default()
+                            .reply(true)
+                            .content("Connected to global music playback!"),
                     )
                     .await?;
             } else {
@@ -275,6 +277,7 @@ pub async fn global_music_start(ctx: SContext<'_>) -> Result<(), Error> {
                     .edit(
                         ctx,
                         CreateReply::default()
+                            .reply(true)
                             .content("No one joined the party within 1 minute 😢"),
                     )
                     .await?;
@@ -544,7 +547,8 @@ pub async fn play_song(
                     e = e.image(url);
                 };
                 e = e.field("Position:", format!("{queue_len}"), true);
-                ctx.send(CreateReply::default().embed(e.clone())).await?;
+                ctx.send(CreateReply::default().reply(true).embed(e.clone()))
+                    .await?;
                 let guild_global_music: Vec<_> = ctx
                     .data()
                     .guild_data
