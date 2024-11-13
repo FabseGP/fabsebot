@@ -10,14 +10,18 @@ use anyhow::{Context as _, Result as AResult};
 use config::settings::{AIConfig, APIConfig, MainConfig, PostgresConfig};
 use core::client::bot_start;
 use opentelemetry::{global::set_tracer_provider, trace::TracerProvider as _, KeyValue};
-use opentelemetry_otlp::{new_exporter, new_pipeline, WithExportConfig as _};
-use opentelemetry_sdk::{runtime::Tokio, trace::Config, Resource};
+use opentelemetry_otlp::{SpanExporter, WithExportConfig as _};
+use opentelemetry_sdk::{
+    runtime::Tokio,
+    trace::{Config, TracerProvider},
+    Resource,
+};
 use std::fs::read_to_string;
 use toml::{Table, Value};
 use tracing::Level;
-use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_opentelemetry::layer;
 use tracing_subscriber::{
-    filter::LevelFilter, fmt, layer::SubscriberExt as _, registry, util::SubscriberInitExt as _,
+    filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _, Registry,
 };
 
 #[tokio::main]
@@ -31,23 +35,27 @@ async fn main() -> AResult<()> {
     let ai_config: AIConfig = Value::try_into(config_toml["AI-Info"].clone())?;
     let api_config: APIConfig = Value::try_into(config_toml["API-Info"].clone())?;
 
-    let provider = new_pipeline()
-        .tracing()
-        .with_exporter(new_exporter().tonic().with_endpoint(&bot_config.jaeger))
-        .with_trace_config(
-            Config::default().with_resource(Resource::new(vec![KeyValue::new(
-                "service.name",
-                bot_config.username.clone(),
-            )])),
-        )
-        .install_batch(Tokio)?;
+    let new_exporter = SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(&bot_config.jaeger)
+        .build()?;
+
+    let provider_config = Config::default().with_resource(Resource::new(vec![KeyValue::new(
+        "service.name",
+        bot_config.username.clone(),
+    )]));
+
+    let provider = TracerProvider::builder()
+        .with_batch_exporter(new_exporter, Tokio)
+        .with_config(provider_config)
+        .build();
+
     set_tracer_provider(provider.clone());
-    registry()
+
+    Registry::default()
         .with(LevelFilter::from_level(Level::INFO))
         .with(fmt::layer())
-        .with(OpenTelemetryLayer::new(
-            provider.tracer(bot_config.username.clone()),
-        ))
+        .with(layer().with_tracer(provider.tracer(bot_config.username.clone())))
         .init();
 
     bot_start(bot_config, postgres_config, ai_config, api_config).await?;

@@ -1,8 +1,6 @@
 use crate::{
     config::{
-        constants::{
-            COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE, EMOJI_KURUKURU,
-        },
+        constants::{COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE},
         types::{Data, Error, RNG},
     },
     utils::{
@@ -15,8 +13,8 @@ use crate::{
 use anyhow::Context as _;
 use poise::serenity_prelude::{
     self as serenity, ChannelId, CreateAllowedMentions, CreateAttachment, CreateEmbed,
-    CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, EditMessage, ExecuteWebhook, GuildId,
-    Message, MessageId, ReactionType, Timestamp, UserId,
+    CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook,
+    GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
 use sqlx::query;
 use std::{borrow::Cow, sync::Arc};
@@ -39,7 +37,7 @@ pub async fn handle_message(
             .begin()
             .await
             .context("Failed to acquire savepoint")?;
-        let mut bot_role = String::new();
+        let mut bot_role = String::with_capacity(DEFAULT_BOT_ROLE.len());
         if let Some(user_settings) = data.user_settings.get(&guild_id) {
             for mut target in user_settings.iter_mut() {
                 let user_id = UserId::new(
@@ -47,13 +45,12 @@ pub async fn handle_message(
                 );
                 if target.afk {
                     if user_id_i64 == target.user_id {
-                        let user = user_id.to_user(&ctx.http).await?;
-                        let user_name = user.display_name();
                         let mut response = new_message
                         .reply(
                             &ctx.http,
                             format!(
-                                "Ugh, welcome back {user_name}! Guess I didn't manage to kill you after all"
+                                "Ugh, welcome back {}! Guess I didn't manage to kill you after all", 
+                                user_id.to_user(&ctx.http).await?.display_name()
                             ),
                         )
                         .await?;
@@ -85,9 +82,11 @@ pub async fn handle_message(
                     } else if new_message.mentions_user_id(user_id)
                         && new_message.referenced_message.is_none()
                     {
-                        let message_link = new_message.link();
-                        let author_name = new_message.author.display_name();
-                        let pinged_link = format!("{author_name};{message_link}");
+                        let pinged_link = format!(
+                            "{};{},",
+                            new_message.link(),
+                            new_message.author.display_name()
+                        );
                         query!(
                             "UPDATE user_settings 
                             SET pinged_links = COALESCE(pinged_links || ',' || $1, $1) 
@@ -100,7 +99,6 @@ pub async fn handle_message(
                         .await?;
                         match target.pinged_links.as_mut() {
                             Some(existing_links) => {
-                                existing_links.push(',');
                                 existing_links.push_str(&pinged_link);
                             }
                             None => {
@@ -111,12 +109,13 @@ pub async fn handle_message(
                             .afk_reason
                             .as_deref()
                             .unwrap_or("Didn't renew life subscription");
-                        let user = user_id.to_user(&ctx.http).await?;
-                        let user_name = user.name;
                         new_message
                             .reply(
                                 &ctx.http,
-                                format!("{user_name} is currently dead. Reason: {reason}"),
+                                format!(
+                                    "{} is currently dead. Reason: {reason}",
+                                    user_id.to_user(&ctx.http).await?.display_name()
+                                ),
                             )
                             .await?;
                     }
@@ -126,6 +125,10 @@ pub async fn handle_message(
                     && let Some(ping_content) = &target.ping_content
                 {
                     let message = {
+                        let base = CreateMessage::default()
+                            .content(ping_content)
+                            .reference_message(new_message)
+                            .allowed_mentions(CreateAllowedMentions::default().replied_user(false));
                         match &target.ping_media {
                             Some(ping_media) => {
                                 let media = if ping_media.eq_ignore_ascii_case("waifu") {
@@ -138,44 +141,27 @@ pub async fn handle_message(
                                 } else {
                                     None
                                 };
-                                media.map_or_else(
-                                    || {
-                                        CreateMessage::default()
-                                            .content(ping_content)
-                                            .reference_message(new_message)
-                                            .allowed_mentions(
-                                                CreateAllowedMentions::default()
-                                                    .replied_user(false),
-                                            )
-                                    },
-                                    |image| {
-                                        CreateMessage::default()
-                                            .embed(
-                                                CreateEmbed::default()
-                                                    .title(ping_content)
-                                                    .colour(COLOUR_BLUE)
-                                                    .image(image),
-                                            )
-                                            .reference_message(new_message)
-                                            .allowed_mentions(
-                                                CreateAllowedMentions::default()
-                                                    .replied_user(false),
-                                            )
-                                    },
-                                )
+                                if let Some(image) = media {
+                                    base.embed(
+                                        CreateEmbed::default()
+                                            .title(ping_content)
+                                            .colour(COLOUR_BLUE)
+                                            .image(image),
+                                    )
+                                } else {
+                                    base
+                                }
                             }
-                            None => CreateMessage::default()
-                                .content(ping_content)
-                                .reference_message(new_message)
-                                .allowed_mentions(
-                                    CreateAllowedMentions::default().replied_user(false),
-                                ),
+                            None => base,
                         }
                     };
                     new_message
                         .channel_id
                         .send_message(&ctx.http, message)
                         .await?;
+                }
+                if user_id_i64 == target.user_id {
+                    target.message_count += 1;
                 }
             }
             bot_role = user_settings
@@ -192,9 +178,6 @@ pub async fn handle_message(
             )
             .execute(&mut *tx)
             .await?;
-            if let Some(mut user_setting) = user_settings.get_mut(&new_message.author.id) {
-                user_setting.message_count += 1;
-            }
         }
         if let Some(mut guild_data) = data.guild_data.get_mut(&guild_id) {
             if let Some(spoiler_channel) = guild_data.settings.spoiler_channel
@@ -213,21 +196,20 @@ pub async fn handle_message(
                 if let Ok(guild_channel) = dead_chat_channel
                     .to_guild_channel(&ctx.http, Some(guild_id))
                     .await
+                    && let Some(message_id) = guild_channel.last_message_id
                 {
-                    if let Some(message_id) = guild_channel.last_message_id {
-                        let last_message_time = guild_channel
-                            .id
-                            .message(&ctx.http, message_id)
-                            .await?
-                            .timestamp
-                            .timestamp();
-                        let current_time = Timestamp::now().timestamp();
-                        if current_time - last_message_time > dead_chat_rate * 60 {
-                            let urls = get_gifs("dead chat").await;
-                            let index = RNG.lock().await.usize(..urls.len());
-                            if let Some(url) = urls.get(index).cloned() {
-                                dead_chat_channel.say(&ctx.http, url).await?;
-                            }
+                    let last_message_time = guild_channel
+                        .id
+                        .message(&ctx.http, message_id)
+                        .await?
+                        .timestamp
+                        .timestamp();
+                    let current_time = Timestamp::now().timestamp();
+                    if current_time - last_message_time > dead_chat_rate * 60 {
+                        let urls = get_gifs("dead chat").await;
+                        let index = RNG.lock().await.usize(..urls.len());
+                        if let Some(url) = urls.get(index).cloned() {
+                            dead_chat_channel.say(&ctx.http, url).await?;
                         }
                     }
                 }
@@ -381,41 +363,33 @@ pub async fn handle_message(
             }
             for record in &guild_data.word_reactions {
                 if content.contains(&record.word) {
-                    let message = match &record.media {
-                        Some(media) if !media.is_empty() => {
-                            if let Some(gif_query) = media.strip_prefix("!gif") {
-                                let urls = get_gifs(gif_query).await;
-                                let mut embed = CreateEmbed::default()
-                                    .title(&record.content)
-                                    .colour(COLOUR_YELLOW);
-                                let index = RNG.lock().await.usize(..urls.len());
-                                if let Some(url) = urls.get(index).cloned() {
-                                    embed = embed.image(url);
-                                }
-                                CreateMessage::default()
-                                    .embed(embed)
-                                    .reference_message(new_message)
-                                    .allowed_mentions(
-                                        CreateAllowedMentions::default().replied_user(false),
-                                    )
-                            } else {
-                                CreateMessage::default()
-                                    .embed(
+                    let message = {
+                        let base = CreateMessage::default()
+                            .reference_message(new_message)
+                            .allowed_mentions(CreateAllowedMentions::default().replied_user(false));
+                        match &record.media {
+                            Some(media) if !media.is_empty() => {
+                                if let Some(gif_query) = media.strip_prefix("!gif") {
+                                    let urls = get_gifs(gif_query).await;
+                                    let mut embed = CreateEmbed::default()
+                                        .title(&record.content)
+                                        .colour(COLOUR_YELLOW);
+                                    let index = RNG.lock().await.usize(..urls.len());
+                                    if let Some(url) = urls.get(index).cloned() {
+                                        embed = embed.image(url);
+                                    }
+                                    base.embed(embed)
+                                } else {
+                                    base.embed(
                                         CreateEmbed::default()
                                             .title(&record.content)
                                             .colour(COLOUR_YELLOW)
                                             .image(media),
                                     )
-                                    .reference_message(new_message)
-                                    .allowed_mentions(
-                                        CreateAllowedMentions::default().replied_user(false),
-                                    )
+                                }
                             }
+                            _ => base.content(&record.content),
                         }
-                        _ => CreateMessage::default()
-                            .content(&record.content)
-                            .reference_message(new_message)
-                            .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
                     };
                     new_message
                         .channel_id
@@ -423,14 +397,34 @@ pub async fn handle_message(
                         .await?;
                 }
             }
+            for record in &mut guild_data.emoji_reactions {
+                if content.contains(&record.content_reaction) {
+                    let emoji_id_typed = EmojiId::new(
+                        u64::try_from(record.emoji_id).expect("emoji id out of bounds for u64"),
+                    );
+                    let emoji = if record.guild_emoji {
+                        guild_id.emoji(&ctx.http, emoji_id_typed).await?
+                    } else {
+                        ctx.get_application_emoji(emoji_id_typed).await?
+                    };
+                    let reaction = ReactionType::Custom {
+                        animated: emoji.animated(),
+                        id: emoji.id,
+                        name: Some(emoji.name),
+                    };
+                    new_message.react(&ctx.http, reaction).await?;
+                }
+            }
         }
         tx.commit()
             .await
             .context("Failed to commit sql-transaction")?;
         if let Ok(link) = discord_message_link.parse_next(&mut content.as_str()) {
-            let guild_id = GuildId::new(link.guild_id);
-            let channel_id = ChannelId::new(link.channel_id);
-            let message_id = MessageId::new(link.message_id);
+            let (guild_id, channel_id, message_id) = (
+                GuildId::new(link.guild_id),
+                ChannelId::new(link.channel_id),
+                MessageId::new(link.message_id),
+            );
             if let Ok(ref_channel) = channel_id.to_guild_channel(&ctx.http, Some(guild_id)).await {
                 let (channel_name, ref_msg) = (
                     ref_channel.name.as_str(),
@@ -506,6 +500,7 @@ pub async fn handle_message(
             )
             .await?;
     }
+    let app_emojis = ctx.get_application_emojis().await?;
     if content == "floppaganda" {
         new_message
             .channel_id
@@ -518,40 +513,55 @@ pub async fn handle_message(
             )
             .await?;
     } else if content.contains("kurukuru_seseren") {
-        let count = content.matches("kurukuru_seseren").count() - 1;
-        let mut response = String::with_capacity(EMOJI_KURUKURU.len() * count);
-        for _ in 0..count {
-            response.push_str(EMOJI_KURUKURU);
-        }
-        if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
-            webhook
-                .execute(
-                    &ctx.http,
-                    false,
-                    ExecuteWebhook::default()
-                        .username("vilbot")
-                        .avatar_url("https://i.postimg.cc/44t5vzWB/IMG-0014.png")
-                        .content(&response),
-                )
-                .await?;
-        }
-    } else if content.contains("fabse") {
-        if let Ok(reaction) = ReactionType::try_from("<:fabseman_willbeatu:1284742390099480631>") {
-            new_message.react(&ctx.http, reaction).await?;
-        }
-        if content == "fabse" || content == "fabseman" {
+        if let Some(emoji) = app_emojis
+            .iter()
+            .find(|emoji| emoji.name == "kurukuru_seseren")
+        {
+            let emoji_string = if emoji.animated() {
+                format!("<a:{}:{}>", &emoji.name, emoji.id)
+            } else {
+                format!("<:{}:{}>", &emoji.name, emoji.id)
+            };
+            let count = content.matches("kurukuru_seseren").count();
+            let response = emoji_string.repeat(count);
             if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
                 webhook
                     .execute(
                         &ctx.http,
                         false,
                         ExecuteWebhook::default()
-                            .username("yotsuba")
-                            .avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png")
-                            .content("# such magnificence"),
+                            .username("vilbot")
+                            .avatar_url("https://i.postimg.cc/44t5vzWB/IMG-0014.png")
+                            .content(&response),
                     )
                     .await?;
             }
+        }
+    } else if content.contains("fabse") {
+        if let Some(emoji) = app_emojis
+            .iter()
+            .find(|emoji| emoji.name == "fabseman_willbeatu")
+        {
+            let reaction = ReactionType::Custom {
+                animated: emoji.animated(),
+                id: emoji.id,
+                name: Some(emoji.name.clone()),
+            };
+            new_message.react(&ctx.http, reaction).await?;
+        }
+    }
+    if content == "fabse" || content == "fabseman" {
+        if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
+            webhook
+                .execute(
+                    &ctx.http,
+                    false,
+                    ExecuteWebhook::default()
+                        .username("yotsuba")
+                        .avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png")
+                        .content("# such magnificence"),
+                )
+                .await?;
         }
     }
 

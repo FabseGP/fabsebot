@@ -132,6 +132,7 @@ pub async fn bot_start(
                 settings::set_chatbot_channel(),
                 settings::set_chatbot_role(),
                 settings::set_dead_chat(),
+                settings::set_emoji_react(),
                 settings::set_prefix(),
                 settings::set_quote_channel(),
                 settings::set_spoiler_channel(),

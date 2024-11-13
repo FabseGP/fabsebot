@@ -10,7 +10,6 @@ use anyhow::Context;
 use dashmap::DashSet;
 use image::load_from_memory;
 use poise::{
-    builtins::{self, pretty_help},
     serenity_prelude::{
         nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
         CreateActionRow, CreateAllowedMentions, CreateAttachment, CreateButton, CreateEmbed,
@@ -273,19 +272,10 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 pub async fn help(
     ctx: SContext<'_>,
     #[description = "Command to show help about"]
-    #[autocomplete = "builtins::autocomplete_command"]
     #[rest]
     command: Option<String>,
 ) -> Result<(), Error> {
-    pretty_help(
-        ctx,
-        command.as_deref(),
-        builtins::PrettyHelpConfiguration {
-            extra_text_at_bottom: "Courtesy of Fabseman Inc.",
-            ..Default::default()
-        },
-    )
-    .await?;
+    ctx.say("help").await?;
     Ok(())
 }
 
@@ -360,8 +350,8 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
     prefix_command,
     slash_command,
- /*   install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;

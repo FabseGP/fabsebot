@@ -1,31 +1,16 @@
 use crate::config::{
     constants::{DISCORD_CHANNEL_PREFIX, FALLBACK_GIF, FALLBACK_WAIFU},
-    types::{Error, HTTP_CLIENT, UTILS_CONFIG},
+    types::{HTTP_CLIENT, UTILS_CONFIG},
 };
 
-use anyhow::anyhow;
-use poise::serenity_prelude::{self as serenity, GuildId};
 use serde::Deserialize;
-use std::{borrow::Cow, string::ToString};
+use std::borrow::Cow;
 use urlencoding::encode;
 use winnow::{
     ascii::digit1,
     combinator::{preceded, separated_pair},
     PResult, Parser,
 };
-
-pub async fn emoji_id(
-    ctx: &serenity::Context,
-    guild_id: GuildId,
-    emoji_name: &str,
-) -> Result<String, Error> {
-    let guild_emojis = guild_id.emojis(&ctx.http).await?;
-    guild_emojis
-        .iter()
-        .find(|e| e.name.as_str() == emoji_name)
-        .map(ToString::to_string)
-        .ok_or_else(|| anyhow!("Emoji not found"))
-}
 
 #[derive(Deserialize)]
 struct GifResponse {

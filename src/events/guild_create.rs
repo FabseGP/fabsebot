@@ -34,6 +34,7 @@ pub async fn handle_guild_create(
                     settings: default_settings,
                     word_reactions: Vec::new(),
                     word_tracking: Vec::new(),
+                    emoji_reactions: Vec::new(),
                 },
             );
         }

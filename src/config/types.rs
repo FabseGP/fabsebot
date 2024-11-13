@@ -16,6 +16,8 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use super::settings::EmojiReactions;
+
 type AIChatMap = DashMap<GuildId, Vec<AIChatMessage>>;
 type GlobalChatMap = DashMap<GuildId, DashMap<i64, MessageId>>;
 type WebhookMap = DashMap<ChannelId, Webhook>;
@@ -68,6 +70,7 @@ pub struct GuildData {
     pub settings: GuildSettings,
     pub word_reactions: Vec<WordReactions>,
     pub word_tracking: Vec<WordTracking>,
+    pub emoji_reactions: Vec<EmojiReactions>,
 }
 
 pub struct Data {

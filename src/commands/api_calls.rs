@@ -20,7 +20,7 @@ use poise::{
     CreateReply,
 };
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, time::Duration};
+use std::time::Duration;
 use urlencoding::encode;
 
 struct State {
@@ -59,8 +59,8 @@ struct ImageRequest {
 #[poise::command(
     prefix_command,
     slash_command,
- /*   install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn ai_image(
     ctx: SContext<'_>,
@@ -173,8 +173,8 @@ pub async fn ai_summarize(
 
 #[poise::command(
     slash_command,
-/*    install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn ai_text(
     ctx: SContext<'_>,
@@ -289,8 +289,8 @@ struct AniMangaGenres {
 #[poise::command(
     prefix_command,
     slash_command,
- /*   install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn anime(
     ctx: SContext<'_>,
@@ -539,8 +539,8 @@ impl Display for AnimeTitle {
 #[poise::command(
     prefix_command,
     slash_command,
-  /*  install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn anime_scene(
     ctx: SContext<'_>,
@@ -611,8 +611,8 @@ struct EightBallResponse {
 #[poise::command(
     prefix_command,
     slash_command,
-  /*  install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn eightball(
     ctx: SContext<'_>,
@@ -657,8 +657,8 @@ pub async fn eightball(
 #[poise::command(
     prefix_command,
     slash_command,
- /*   install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn gif(
     ctx: SContext<'_>,
@@ -768,8 +768,8 @@ struct JokeResponse {
 #[poise::command(
     prefix_command,
     slash_command,
-/*    install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
     let request_url =
@@ -805,8 +805,8 @@ pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
     prefix_command,
     slash_command,
- /*   install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn manga(
     ctx: SContext<'_>,
@@ -1023,8 +1023,8 @@ pub async fn manga(
 /// When there aren't enough memes
 #[poise::command(
     slash_command,
-/*    install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn memegen(
     ctx: SContext<'_>,
@@ -1190,8 +1190,8 @@ struct TranslateRequest<'a> {
 #[poise::command(
     prefix_command,
     slash_command,
-  /*  install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn translate(
     ctx: SContext<'_>,
@@ -1381,8 +1381,8 @@ struct UrbanDict {
 #[poise::command(
     prefix_command,
     slash_command,
- /*   install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn urban(
     ctx: SContext<'_>,
@@ -1566,8 +1566,8 @@ pub async fn urban(
 #[poise::command(
     prefix_command,
     slash_command,
- /*   install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn waifu(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
@@ -1602,8 +1602,8 @@ struct WikiUrl {
 #[poise::command(
     prefix_command,
     slash_command,
-  /*  install_context = "Guild|User",
-    interaction_context = "Guild|BotDm|PrivateChannel" */
+    install_context = "Guild|User",
+    interaction_context = "Guild|BotDm|PrivateChannel"
 )]
 pub async fn wiki(
     ctx: SContext<'_>,

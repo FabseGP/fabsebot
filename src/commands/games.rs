@@ -11,7 +11,7 @@ use poise::{
     },
     CreateReply,
 };
-use std::{borrow::Cow, string::ToString, time::Duration};
+use std::{string::ToString, time::Duration};
 
 async fn autocomplete_choice<'a>(
     _ctx: SContext<'_>,

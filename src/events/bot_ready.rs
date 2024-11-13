@@ -1,5 +1,5 @@
 use crate::config::{
-    settings::{GuildSettings, UserSettings, WordReactions, WordTracking},
+    settings::{EmojiReactions, GuildSettings, UserSettings, WordReactions, WordTracking},
     types::{Data, Error, GuildData},
 };
 
@@ -36,6 +36,9 @@ pub async fn handle_ready(
     let word_tracking = query_as!(WordTracking, "SELECT * FROM guild_word_tracking")
         .fetch_all(&mut *tx)
         .await?;
+    let emoji_reactions = query_as!(EmojiReactions, "SELECT * FROM guild_emoji_reaction")
+        .fetch_all(&mut *tx)
+        .await?;
     tx.commit()
         .await
         .context("Failed to commit sql-transaction")?;
@@ -46,20 +49,26 @@ pub async fn handle_ready(
                 let guild_id = GuildId::new(
                     u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"),
                 );
-                let guild_reactions: Vec<WordReactions> = word_reactions
+                let guild_word_reactions: Vec<WordReactions> = word_reactions
                     .iter()
                     .filter(|r| r.guild_id == settings.guild_id)
                     .cloned()
                     .collect();
-                let guild_tracking: Vec<WordTracking> = word_tracking
+                let guild_word_tracking: Vec<WordTracking> = word_tracking
+                    .iter()
+                    .filter(|t| t.guild_id == settings.guild_id)
+                    .cloned()
+                    .collect();
+                let guild_emoji_reactions: Vec<EmojiReactions> = emoji_reactions
                     .iter()
                     .filter(|t| t.guild_id == settings.guild_id)
                     .cloned()
                     .collect();
                 let guild_data = GuildData {
                     settings,
-                    word_reactions: guild_reactions,
-                    word_tracking: guild_tracking,
+                    word_reactions: guild_word_reactions,
+                    word_tracking: guild_word_tracking,
+                    emoji_reactions: guild_emoji_reactions,
                 };
                 framework_context
                     .user_data()

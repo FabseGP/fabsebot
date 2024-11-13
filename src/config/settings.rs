@@ -79,3 +79,11 @@ pub struct WordTracking {
     pub word: String,
     pub count: i64,
 }
+
+#[derive(Deserialize, Clone)]
+pub struct EmojiReactions {
+    pub guild_id: i64,
+    pub emoji_id: i64,
+    pub content_reaction: String,
+    pub guild_emoji: bool,
+}
