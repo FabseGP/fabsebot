@@ -19,11 +19,8 @@ use poise::{
     CreateReply,
 };
 use sqlx::query;
-use std::{path::Path, time::Duration};
-use tokio::{
-    fs::remove_file,
-    time::{sleep, timeout},
-};
+use std::time::Duration;
+use tokio::time::{sleep, timeout};
 
 /// When you want to find the imposter
 #[poise::command(slash_command)]
@@ -271,9 +268,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn help(
     ctx: SContext<'_>,
-    #[description = "Command to show help about"]
-    #[rest]
-    command: Option<String>,
+    #[description = "Command to get help with"] command: Option<String>,
 ) -> Result<(), Error> {
     ctx.say("help").await?;
     Ok(())
@@ -390,9 +385,6 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
         };
 
         ctx.defer().await?;
-        let message_url = reply.link();
-        let content = &reply.content;
-        let quote_path = Path::new("quote.webp");
 
         let (avatar_image, name) = if reply.webhook_id.is_some() {
             let avatar_url = reply.author.avatar_url().unwrap_or_else(|| {
@@ -410,10 +402,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                 return Ok(());
             };
-            (
-                mem_bytes.to_rgba8(),
-                reply.author.name.clone().into_string(),
-            )
+            (mem_bytes.to_rgb8(), reply.author.name.clone())
         } else {
             let member = guild_id.member(&ctx.http(), reply.author.id).await?;
             let avatar_url = member.avatar_url().unwrap_or_else(|| {
@@ -431,43 +420,39 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                 return Ok(());
             };
-            (mem_bytes.to_rgba8(), member.user.name.into_string())
+            (mem_bytes.to_rgb8(), member.user.name)
         };
 
-        quote_image(&avatar_image, &name, content)
-            .await
-            .save(quote_path)
-            .unwrap();
-
-        let attachment = CreateAttachment::path(quote_path).await?;
-
-        ctx.channel_id()
-            .send_files(
-                ctx.http(),
-                [attachment.clone()],
-                CreateMessage::default()
-                    .reference_message(&msg)
-                    .content(&message_url)
-                    .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
-            )
-            .await?;
-
-        if let Some(guild_data) = ctx.data().guild_data.get(&guild_id) {
-            if let Some(channel) = guild_data.settings.quotes_channel {
+        let image_opt = quote_image(&avatar_image, &name, &reply.content).await;
+        if let Some(image) = image_opt {
+            let message_url = reply.link();
+            let attachment = CreateAttachment::bytes(image, "quote.webp");
+            ctx.channel_id()
+                .send_message(
+                    ctx.http(),
+                    CreateMessage::default()
+                        .add_file(attachment.clone())
+                        .reference_message(&msg)
+                        .content(&message_url)
+                        .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
+                )
+                .await?;
+            if let Some(guild_data) = ctx.data().guild_data.get(&guild_id)
+                && let Some(channel) = guild_data.settings.quotes_channel
+            {
                 let quote_channel = ChannelId::new(
                     u64::try_from(channel).expect("channel id out of bounds for u64"),
                 );
                 quote_channel
-                    .send_files(
+                    .send_message(
                         ctx.http(),
-                        [attachment],
-                        CreateMessage::default().content(message_url),
+                        CreateMessage::default()
+                            .add_file(attachment)
+                            .content(&message_url),
                     )
                     .await?;
             }
         }
-
-        remove_file(quote_path).await?;
     }
     Ok(())
 }

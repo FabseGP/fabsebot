@@ -1,74 +1,57 @@
-use crate::config::types::HTTP_CLIENT;
-
 use ab_glyph::{FontArc, PxScale};
-use core::cmp::Ordering;
 use image::{
-    imageops::{overlay, resize, FilterType::Gaussian},
-    load_from_memory, Rgba, RgbaImage,
+    imageops::{overlay, resize, FilterType::CatmullRom},
+    ImageFormat::WebP,
+    Rgb, RgbImage,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
+use std::borrow::Cow;
+use std::io::Cursor;
 use textwrap::wrap;
 
-pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: &str) -> RgbaImage {
+pub async fn quote_image(
+    avatar: &RgbImage,
+    author_name: &str,
+    quoted_content: &str,
+) -> Option<Vec<u8>> {
+    const MAX_ITERATIONS: u32 = 200;
+
     let width = 1200;
     let height = 630;
 
-    let avatar_image = resize(avatar, height, height, Gaussian);
-
-    let mut img = RgbaImage::from_pixel(width, height, Rgba([0, 0, 0, 255]));
-
+    let avatar_image = resize(avatar, height, height, CatmullRom);
+    let mut img = RgbImage::from_pixel(width, height, Rgb([0, 0, 0]));
     overlay(&mut img, &avatar_image, 0, 0);
 
-    let font_content_data = include_bytes!("../../fonts/NotoSansJP-Regular.ttf");
-    let font_content = FontArc::try_from_slice(font_content_data as &[u8]).unwrap();
-    overlay(&mut img, &avatar_image, 0, 0);
-
-    let font_author_data = include_bytes!("../../fonts/NotoSansJP-ExtraLight.ttf");
-    let font_author = FontArc::try_from_slice(font_author_data as &[u8]).unwrap();
+    let font_content =
+        FontArc::try_from_slice(include_bytes!("../../fonts/NotoSansJP-Regular.ttf"))
+            .expect("main font not in path");
+    let font_author =
+        FontArc::try_from_slice(include_bytes!("../../fonts/NotoSansJP-ExtraLight.ttf"))
+            .expect("author font not in path");
 
     let content_scale = PxScale::from(128.0);
     let mut author_scale = PxScale::from(40.0);
-    let white = Rgba([255, 255, 255, 255]);
+    let white = Rgb([255, 255, 255]);
 
     let max_content_width = width - height - 96;
     let max_content_height = height - 64;
-
-    let mut emoji_id = String::new();
-    let mut index = 0;
-    let len = quoted_content.len();
-    while index < len {
-        if quoted_content.chars().nth(index).unwrap_or_default() == ':'
-            && index + 1 < len
-            && quoted_content
-                .chars()
-                .nth(index + 1)
-                .unwrap()
-                .is_ascii_digit()
-        {
-            let mut jindex = index + 1;
-            while jindex < len {
-                let current_char = quoted_content.chars().nth(jindex).unwrap();
-                if current_char != '<' && current_char.is_ascii_digit() {
-                    emoji_id.push(current_char);
-                } else {
-                    break;
-                }
-                jindex += 1;
-            }
-            break;
-        }
-        index += 1;
-    }
 
     let mut wrapped_length = 20;
     let mut wrapped_lines = wrap(quoted_content, wrapped_length);
 
     let mut text_offset = 320;
 
-    let mut total_text_height;
+    let mut total_text_height = 0;
     let mut content_scale_adjusted = content_scale;
+    let mut iteration_count = 0;
 
     loop {
+        iteration_count += 1;
+        if iteration_count > MAX_ITERATIONS {
+            break;
+        }
+
         let mut all_fit = true;
         total_text_height = 0;
         let mut line_height = 0;
@@ -92,7 +75,7 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
         }
 
         if all_fit {
-            if wrapped_lines.len() > 18 {
+            if wrapped_lines.len() > 16 {
                 wrapped_length += 2;
                 wrapped_lines = wrap(quoted_content, wrapped_length);
                 content_scale_adjusted = content_scale;
@@ -108,12 +91,20 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
                 break;
             }
         } else {
-            content_scale_adjusted = PxScale::from(content_scale_adjusted.x - 1.0);
+            let new_scale = content_scale_adjusted.x - 2.0;
+            if new_scale < 12.0 {
+                wrapped_length = wrapped_length.max(20);
+                wrapped_lines = wrap(quoted_content, wrapped_length);
+                break;
+            }
+
+            content_scale_adjusted = PxScale::from(new_scale);
+
             if (content_scale_adjusted.x + 2.0 - author_scale.x).abs() < 0.1 {
-                if author_scale.x.partial_cmp(&18.0) != Some(Ordering::Less) {
+                if author_scale.x > 18.0 {
                     author_scale = PxScale::from(author_scale.x - 1.0);
                 } else if line_width > max_content_width {
-                    wrapped_length -= 2;
+                    wrapped_length = wrapped_length.saturating_sub(2);
                     wrapped_lines = wrap(quoted_content, wrapped_length);
                 } else {
                     wrapped_length += 2;
@@ -121,48 +112,16 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
                     dimensions = text_size(
                         content_scale_adjusted,
                         &font_content,
-                        wrapped_lines.first().unwrap(),
+                        wrapped_lines.first().unwrap_or(&Cow::Borrowed("")),
                     );
                     if dimensions.0 > max_content_width {
-                        wrapped_length -= 2;
+                        wrapped_length = wrapped_length.saturating_sub(2);
                         wrapped_lines = wrap(quoted_content, wrapped_length);
                     }
                 }
                 content_scale_adjusted = content_scale;
             }
         }
-    }
-
-    let (_, emoji_height) = text_size(
-        content_scale_adjusted,
-        &font_content,
-        wrapped_lines.join("").as_str(),
-    );
-
-    let emoji_image = if !emoji_id.is_empty() {
-        let emoji_url = format!(
-            "https://cdn.discordapp.com/emojis/{emoji_id}.webp?size={emoji_height}quality=lossless"
-        );
-        let emoji_bytes = HTTP_CLIENT
-            .get(&emoji_url)
-            .send()
-            .await
-            .unwrap()
-            .bytes()
-            .await
-            .unwrap();
-        Some(load_from_memory(&emoji_bytes).unwrap().to_rgba8())
-    } else {
-        None
-    };
-
-    if let Some(emoji) = emoji_image {
-        overlay(
-            &mut img,
-            &emoji,
-            (width - emoji.width()).into(),
-            (height - emoji.height()).into(),
-        );
     }
 
     let mut quoted_content_y = (height - total_text_height) / 2;
@@ -199,5 +158,10 @@ pub async fn quote_image(avatar: &RgbaImage, author_name: &str, quoted_content: 
         author_name,
     );
 
-    img
+    let mut buffer = Cursor::new(Vec::new());
+    if img.write_to(&mut buffer, WebP).is_ok() {
+        Some(buffer.into_inner())
+    } else {
+        None
+    }
 }
