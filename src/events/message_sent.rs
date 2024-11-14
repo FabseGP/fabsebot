@@ -126,7 +126,6 @@ pub async fn handle_message(
                 {
                     let message = {
                         let base = CreateMessage::default()
-                            .content(ping_content)
                             .reference_message(new_message)
                             .allowed_mentions(CreateAllowedMentions::default().replied_user(false));
                         match &target.ping_media {
@@ -149,10 +148,10 @@ pub async fn handle_message(
                                             .image(image),
                                     )
                                 } else {
-                                    base
+                                    base.content(ping_content)
                                 }
                             }
-                            None => base,
+                            None => base.content(ping_content),
                         }
                     };
                     new_message
