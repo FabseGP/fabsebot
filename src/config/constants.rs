@@ -17,16 +17,12 @@ pub const DISCORD_CHANNEL_PREFIX: &str = "https://discord.com/channels/";
 
 pub const FONTS: &[(&str, &[u8])] = &[
     (
-        "NotoSansJP-ExtraLight",
-        include_bytes!("../../fonts/NotoSansJP-ExtraLight.ttf"),
-    ),
-    (
         "NotoSansJP-Regular",
         include_bytes!("../../fonts/NotoSansJP-Regular.ttf"),
     ),
     (
-        "Satoshi-Regular",
-        include_bytes!("../../fonts/Satoshi-Regular.otf"),
+        "Satoshi-LightItalic",
+        include_bytes!("../../fonts/Satoshi-LightItalic.otf"),
     ),
     (
         "RampartOne-Regular",

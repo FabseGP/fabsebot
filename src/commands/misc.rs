@@ -404,7 +404,7 @@ impl ToggleableImage {
         } else if let Some(bw) = &self.bw {
             self.current = bw.clone();
         } else {
-            convert_to_bw(&mut self.current);
+            convert_to_bw(&mut self.current, QUOTE_HEIGHT);
             self.bw = Some(self.current.clone());
         }
         self.is_bw = !self.is_bw;
@@ -494,8 +494,8 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             content: reply.content.to_string(),
         };
 
-        let author_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
-        let content_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
+        let content_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
+        let author_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
 
         let mut toggleable = ToggleableImage::new(quote_image(
             &quote_info.avatar_image,
