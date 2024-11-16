@@ -218,25 +218,20 @@ pub fn quote_image(
 }
 
 pub fn convert_to_bw(image: &mut RgbaImage) {
-    const R_FACTOR: u32 = (0.299 * 256.0) as u32;
-    const G_FACTOR: u32 = (0.587 * 256.0) as u32;
-    const B_FACTOR: u32 = (0.114 * 256.0) as u32;
+    const R_WEIGHT: u32 = 77;
+    const G_WEIGHT: u32 = 150;
+    const B_WEIGHT: u32 = 29;
 
-    for y in 0..image.height() {
-        for x in 0..image.width() {
-            let pixel = image.get_pixel_mut(x, y);
-
-            let gray = u8::try_from(
-                (u32::from(pixel[0]) * R_FACTOR
-                    + u32::from(pixel[1]) * G_FACTOR
-                    + u32::from(pixel[2]) * B_FACTOR)
-                    >> 8,
-            )
-            .expect("out of bounds for u8");
-
-            pixel[0] = gray;
-            pixel[1] = gray;
-            pixel[2] = gray;
-        }
+    for pixel in image.pixels_mut() {
+        let gray = u8::try_from(
+            (u32::from(pixel[0]) * R_WEIGHT
+                + u32::from(pixel[1]) * G_WEIGHT
+                + u32::from(pixel[2]) * B_WEIGHT)
+                >> 8,
+        )
+        .expect("out of bounds for u8");
+        pixel[0] = gray;
+        pixel[1] = gray;
+        pixel[2] = gray;
     }
 }
