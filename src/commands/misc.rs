@@ -1,6 +1,6 @@
 use crate::{
     config::{
-        constants::COLOUR_RED,
+        constants::{COLOUR_RED, FONTS, QUOTE_HEIGHT, QUOTE_WIDTH},
         types::{Error, SContext, HTTP_CLIENT},
     },
     utils::{
@@ -12,7 +12,7 @@ use crate::{
 use ab_glyph::FontArc;
 use anyhow::Context;
 use dashmap::DashSet;
-use image::{load_from_memory, ImageBuffer, ImageError, ImageFormat::WebP, Rgb, RgbImage};
+use image::{load_from_memory, ImageBuffer, ImageError, ImageFormat::WebP, Rgba, RgbaImage};
 use poise::{
     serenity_prelude::{
         nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
@@ -376,20 +376,20 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 pub struct QuoteInfo {
-    avatar_image: ImageBuffer<Rgb<u8>, Vec<u8>>,
+    avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     author_name: String,
     content: String,
 }
 
 pub struct ToggleableImage {
-    base: RgbImage,
-    current: RgbImage,
-    bw: Option<RgbImage>,
+    base: RgbaImage,
+    current: RgbaImage,
+    bw: Option<RgbaImage>,
     is_bw: bool,
 }
 
 impl ToggleableImage {
-    pub fn new(image: RgbImage) -> Self {
+    pub fn new(image: RgbaImage) -> Self {
         Self {
             base: image.clone(),
             current: image,
@@ -432,17 +432,6 @@ impl ToggleableImage {
     }
 }
 
-const FONTS: &[(&str, &[u8])] = &[
-    (
-        "NotoSansJP-ExtraLight_font1",
-        include_bytes!("../../fonts/NotoSansJP-ExtraLight.ttf"),
-    ),
-    (
-        "NotoSansJP-Regular_font0",
-        include_bytes!("../../fonts/NotoSansJP-Regular.ttf"),
-    ),
-];
-
 /// When your memory is not enough
 #[poise::command(prefix_command)]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
@@ -476,7 +465,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                     return Ok(());
                 };
-                mem_bytes.to_rgb8()
+                mem_bytes.to_rgba8()
             } else {
                 let member = guild_id.member(&ctx.http(), reply.author.id).await?;
                 let avatar_url = member.avatar_url().unwrap_or_else(|| {
@@ -494,7 +483,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                     return Ok(());
                 };
-                mem_bytes.to_rgb8()
+                mem_bytes.to_rgba8()
             },
             author_name: if reply.webhook_id.is_some() {
                 format!("- {}", reply.author.name)
@@ -515,22 +504,20 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             &author_font,
             &content_font,
         ));
-        let mut buffer = Vec::with_capacity(1200 * 630);
+        let mut buffer =
+            Vec::with_capacity(usize::try_from(QUOTE_HEIGHT * QUOTE_WIDTH).unwrap_or(0));
         toggleable.write_to_webp(&mut buffer)?;
         let message_url = reply.link();
         let attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
-        let buttons = [
-            CreateButton::new(format!("{}_bw", ctx.id()))
-                .style(ButtonStyle::Primary)
-                .label("🎨"),
-            CreateButton::new(format!("{}_temp", ctx.id()))
-                .style(ButtonStyle::Primary)
-                .label("♾️"),
-        ];
-        let font_select = vec![
-            CreateSelectMenuOption::new(FONTS[0].0, "font1"),
-            CreateSelectMenuOption::new(FONTS[1].0, "font2"),
-        ];
+        let buttons = [CreateButton::new(format!("{}_bw", ctx.id()))
+            .style(ButtonStyle::Primary)
+            .label("🎨")];
+        let mut font_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(FONTS.len());
+
+        for font in FONTS {
+            font_select.push(CreateSelectMenuOption::new(font.0, font.0));
+        }
+
         let font_menu = CreateSelectMenu::new(
             format!("{}_font_option", ctx.id()),
             CreateSelectMenuKind::String {
@@ -541,7 +528,8 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
         .min_values(1)
         .max_values(1);
         let action_row = [CreateActionRow::buttons(&buttons)];
-        ctx.channel_id()
+        let mut message = ctx
+            .channel_id()
             .send_message(
                 ctx.http(),
                 CreateMessage::default()
@@ -562,12 +550,13 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 .send_message(
                     ctx.http(),
                     CreateMessage::default()
-                        .add_file(attachment)
+                        .add_file(attachment.clone())
                         .content(&message_url),
                 )
                 .await?;
         }
         let ctx_id_copy = ctx.id();
+        let mut final_attachment = attachment.clone();
         while let Some(interaction) =
             ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
                 .timeout(Duration::from_secs(60))
@@ -589,22 +578,30 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             };
 
             if let Some(font_choice) = menu_choice
-                && let Some(font) = FONTS.iter().find(|font| font.0.ends_with(font_choice))
+                && let Some(font) = FONTS.iter().find(|font| font.0 == font_choice)
             {
                 let content_font = FontArc::try_from_slice(font.1).unwrap();
                 toggleable.image_gen_font(&author_font, &content_font, &quote_info);
             } else if interaction.data.custom_id.ends_with("bw") {
                 toggleable.toggle();
-                toggleable.write_to_webp(&mut buffer)?;
             }
+            toggleable.write_to_webp(&mut buffer)?;
             let mut msg = interaction.message;
-            let attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
+            final_attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
             msg.edit(
                 ctx.http(),
-                EditMessage::default().new_attachment(attachment),
+                EditMessage::default().new_attachment(final_attachment.clone()),
             )
             .await?;
         }
+        message
+            .edit(
+                ctx,
+                EditMessage::default()
+                    .new_attachment(final_attachment)
+                    .components(&[]),
+            )
+            .await?;
     }
     Ok(())
 }

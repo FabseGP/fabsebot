@@ -14,3 +14,24 @@ pub const FALLBACK_GIF: &str = "https://i.postimg.cc/zffntsGs/tenor.gif";
 pub const FALLBACK_WAIFU: &str = "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif";
 
 pub const DISCORD_CHANNEL_PREFIX: &str = "https://discord.com/channels/";
+
+pub const FONTS: &[(&str, &[u8])] = &[
+    (
+        "NotoSansJP-ExtraLight",
+        include_bytes!("../../fonts/NotoSansJP-ExtraLight.ttf"),
+    ),
+    (
+        "NotoSansJP-Regular",
+        include_bytes!("../../fonts/NotoSansJP-Regular.ttf"),
+    ),
+    (
+        "Satoshi-Regular",
+        include_bytes!("../../fonts/Satoshi-Regular.otf"),
+    ),
+    (
+        "RampartOne-Regular",
+        include_bytes!("../../fonts/RampartOne-Regular.ttf"),
+    ),
+];
+pub const QUOTE_WIDTH: u32 = 1200;
+pub const QUOTE_HEIGHT: u32 = 630;
