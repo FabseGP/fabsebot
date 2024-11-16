@@ -5,7 +5,7 @@ use crate::{
     },
     utils::{
         ai::ai_response_simple,
-        image::{convert_avatar_to_bw, quote_image},
+        image::{convert_to_bw, quote_image},
     },
 };
 
@@ -403,6 +403,7 @@ impl ImageInfo {
             &content_font,
             false,
             false,
+            false,
         );
         Self {
             avatar_image,
@@ -418,12 +419,22 @@ impl ImageInfo {
     }
 
     pub fn toggle_bw(&mut self) {
-        if self.is_bw {
-            self.image_gen();
-        } else {
-            convert_avatar_to_bw(&mut self.current, self.is_reverse);
-        }
         self.is_bw = !self.is_bw;
+        if self.is_bw {
+            convert_to_bw(&mut self.current, Some(self.is_reverse));
+        } else {
+            self.image_gen();
+        }
+    }
+
+    pub fn toggle_reverse(&mut self) {
+        self.is_reverse = !self.is_reverse;
+        self.image_gen();
+    }
+
+    pub fn toggle_light(&mut self) {
+        self.is_light = !self.is_light;
+        self.image_gen();
     }
 
     pub fn write_to_webp(&self, buffer: &mut Vec<u8>) -> Result<(), ImageError> {
@@ -437,16 +448,6 @@ impl ImageInfo {
         self.image_gen();
     }
 
-    pub fn toggle_reverse(&mut self) {
-        self.is_reverse = !self.is_reverse;
-        self.image_gen();
-    }
-
-    pub fn toggle_light(&mut self) {
-        self.is_light = !self.is_light;
-        self.image_gen();
-    }
-
     pub fn image_gen(&mut self) {
         self.current = quote_image(
             &self.avatar_image,
@@ -456,6 +457,7 @@ impl ImageInfo {
             &self.content_font,
             self.is_reverse,
             self.is_light,
+            self.is_bw,
         );
     }
 }
