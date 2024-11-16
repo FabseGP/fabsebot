@@ -1,167 +1,189 @@
 use ab_glyph::{FontArc, PxScale};
 use image::{
     imageops::{overlay, resize, FilterType::CatmullRom},
-    ImageFormat::WebP,
     Rgb, RgbImage,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
-use std::borrow::Cow;
-use std::io::Cursor;
 use textwrap::wrap;
 
-pub async fn quote_image(
+const MIN_FONT_SIZE: f32 = 32.0;
+const MAX_LINES: usize = 16;
+const ELLIPSIS: &str = "...";
+const DEFAULT_WRAP_LENGTH: usize = 80;
+const FONT_SIZE_DECREMENT: f32 = 2.0;
+const WRAP_LENGTH_DECREMENT: usize = 5;
+const LINE_SPACING: u32 = 10;
+
+struct FontMetrics {
+    line_height: u32,
+    scale: PxScale,
+}
+
+impl FontMetrics {
+    fn new(font: &FontArc, scale: PxScale) -> Self {
+        let line_height = text_size(scale, font, "Tg").1;
+        Self { line_height, scale }
+    }
+
+    fn recalculate(&mut self, font: &FontArc, new_scale: PxScale) {
+        self.line_height = text_size(new_scale, font, "Tg").1;
+        self.scale = new_scale;
+    }
+}
+
+fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontArc) -> String {
+    if text.len() <= ELLIPSIS.len() {
+        return text.to_string();
+    }
+
+    let mut end = text.len() - ELLIPSIS.len();
+    let mut truncated = format!("{}{}", &text[..end], ELLIPSIS);
+
+    while text_size(metrics.scale, font, &truncated).0 > max_width && end > ELLIPSIS.len() {
+        end -= 1;
+        truncated = format!("{}{}", &text[..end], ELLIPSIS);
+    }
+
+    truncated
+}
+
+pub fn quote_image(
     avatar: &RgbImage,
     author_name: &str,
     quoted_content: &str,
-) -> Option<Vec<u8>> {
-    const MAX_ITERATIONS: u32 = 200;
-
+    author_font: &FontArc,
+    content_font: &FontArc,
+) -> RgbImage {
     let width = 1200;
     let height = 630;
+    let max_content_width = width - height - 64;
+    let max_content_height = height - 64;
+    let text_offset = height / 2;
 
     let avatar_image = resize(avatar, height, height, CatmullRom);
     let mut img = RgbImage::from_pixel(width, height, Rgb([0, 0, 0]));
     overlay(&mut img, &avatar_image, 0, 0);
 
-    let font_content =
-        FontArc::try_from_slice(include_bytes!("../../fonts/NotoSansJP-Regular.ttf"))
-            .expect("main font not in path");
-    let font_author =
-        FontArc::try_from_slice(include_bytes!("../../fonts/NotoSansJP-ExtraLight.ttf"))
-            .expect("author font not in path");
+    let mut metrics = FontMetrics::new(author_font, PxScale::from(128.0));
+    let author_metrics = FontMetrics::new(content_font, PxScale::from(40.0));
 
-    let content_scale = PxScale::from(128.0);
-    let mut author_scale = PxScale::from(40.0);
-    let white = Rgb([255, 255, 255]);
-
-    let max_content_width = width - height - 96;
-    let max_content_height = height - 64;
-
-    let mut wrapped_length = 20;
-    let mut wrapped_lines = wrap(quoted_content, wrapped_length);
-
-    let mut text_offset = 320;
-
-    let mut total_text_height = 0;
-    let mut content_scale_adjusted = content_scale;
-    let mut iteration_count = 0;
+    let mut wrapped_length = DEFAULT_WRAP_LENGTH;
+    let mut final_lines = Vec::with_capacity(MAX_LINES);
 
     loop {
-        iteration_count += 1;
-        if iteration_count > MAX_ITERATIONS {
+        let wrapped_lines = wrap(quoted_content, wrapped_length);
+
+        if let Some(first_line) = wrapped_lines.first() {
+            if text_size(metrics.scale, &content_font, first_line).0 > max_content_width {
+                if metrics.scale.x == MIN_FONT_SIZE {
+                    wrapped_length = wrapped_length.saturating_sub(WRAP_LENGTH_DECREMENT);
+                    if wrapped_length < 20 {
+                        break;
+                    }
+                } else {
+                    metrics.recalculate(
+                        content_font,
+                        PxScale::from((metrics.scale.x - FONT_SIZE_DECREMENT).max(MIN_FONT_SIZE)),
+                    );
+                }
+                continue;
+            }
+        }
+
+        final_lines.clear();
+        let max_total_height = max_content_height - 64;
+        let max_possible_lines = ((max_total_height / metrics.line_height) as usize).min(MAX_LINES);
+
+        for (i, line) in wrapped_lines.iter().take(max_possible_lines).enumerate() {
+            let mut line_str = line.to_string();
+
+            if text_size(metrics.scale, &content_font, &line_str).0 > max_content_width
+                || (i == max_possible_lines - 1 && wrapped_lines.len() > max_possible_lines)
+            {
+                line_str = truncate_text(&line_str, max_content_width, &metrics, content_font);
+            }
+
+            final_lines.push(line_str);
+        }
+
+        if !final_lines.is_empty() && metrics.scale.x >= MIN_FONT_SIZE {
             break;
         }
 
-        let mut all_fit = true;
-        total_text_height = 0;
-        let mut line_height = 0;
-        let mut line_width = 0;
-        let mut dimensions;
-        let padding = if wrapped_lines.len() == 1 { 32 } else { 16 };
-
-        for line in &wrapped_lines {
-            dimensions = text_size(content_scale_adjusted, &font_content, line);
-            line_height = dimensions.1;
-            line_width = dimensions.0;
-
-            if total_text_height + line_height + padding > max_content_height
-                || line_width > max_content_width
-            {
-                all_fit = false;
-                break;
-            }
-
-            total_text_height += line_height + 10;
-        }
-
-        if all_fit {
-            if wrapped_lines.len() > 16 {
-                wrapped_length += 2;
-                wrapped_lines = wrap(quoted_content, wrapped_length);
-                content_scale_adjusted = content_scale;
-            } else {
-                if wrapped_lines.len() == 1 {
-                    total_text_height = line_height + 40;
-                    if wrapped_lines.first().unwrap().len() < 10 {
-                        text_offset += 64;
-                    }
-                } else {
-                    total_text_height += 16;
-                }
+        if metrics.scale.x == MIN_FONT_SIZE {
+            wrapped_length = wrapped_length.saturating_sub(WRAP_LENGTH_DECREMENT);
+            if wrapped_length < 20 {
                 break;
             }
         } else {
-            let new_scale = content_scale_adjusted.x - 2.0;
-            if new_scale < 12.0 {
-                wrapped_length = wrapped_length.max(20);
-                wrapped_lines = wrap(quoted_content, wrapped_length);
-                break;
-            }
-
-            content_scale_adjusted = PxScale::from(new_scale);
-
-            if (content_scale_adjusted.x + 2.0 - author_scale.x).abs() < 0.1 {
-                if author_scale.x > 18.0 {
-                    author_scale = PxScale::from(author_scale.x - 1.0);
-                } else if line_width > max_content_width {
-                    wrapped_length = wrapped_length.saturating_sub(2);
-                    wrapped_lines = wrap(quoted_content, wrapped_length);
-                } else {
-                    wrapped_length += 2;
-                    wrapped_lines = wrap(quoted_content, wrapped_length);
-                    dimensions = text_size(
-                        content_scale_adjusted,
-                        &font_content,
-                        wrapped_lines.first().unwrap_or(&Cow::Borrowed("")),
-                    );
-                    if dimensions.0 > max_content_width {
-                        wrapped_length = wrapped_length.saturating_sub(2);
-                        wrapped_lines = wrap(quoted_content, wrapped_length);
-                    }
-                }
-                content_scale_adjusted = content_scale;
-            }
+            metrics.recalculate(
+                content_font,
+                PxScale::from((metrics.scale.x - FONT_SIZE_DECREMENT).max(MIN_FONT_SIZE)),
+            );
         }
     }
 
-    let mut quoted_content_y = (height - total_text_height) / 2;
-    let author_name_y = quoted_content_y + total_text_height + 16;
+    let lines_count =
+        u32::try_from(final_lines.len()).expect("amount of lines out of bounds for u32");
+    let total_text_height =
+        (lines_count * metrics.line_height) + ((lines_count - 1) * LINE_SPACING);
+    let quoted_content_y = (height - total_text_height) / 2;
 
-    let (author_name_width, _author_name_height) =
-        text_size(author_scale, &font_author, author_name);
+    let quoted_content_x = i32::try_from(((width - max_content_width) / 2) + text_offset)
+        .expect("wrapped around value");
+    let author_name_width = text_size(author_metrics.scale, &author_font, author_name).0;
+    let author_name_x = i32::try_from(((width - author_name_width) / 2) + text_offset)
+        .expect("wrapped around value");
+    let author_name_y =
+        i32::try_from(quoted_content_y + total_text_height + 16).expect("wrapped around value");
 
-    let quoted_content_x = ((width - max_content_width) / 2) + text_offset;
-    let author_name_x = ((width - author_name_width) / 2) + 320;
+    let white = Rgb([255, 255, 255]);
+    let mut current_y = i32::try_from(quoted_content_y).expect("wrapped around value");
 
-    for line in wrapped_lines {
+    for line in final_lines {
         draw_text_mut(
             &mut img,
             white,
-            quoted_content_x.try_into().unwrap(),
-            quoted_content_y.try_into().unwrap(),
-            content_scale_adjusted,
-            &font_content,
+            quoted_content_x,
+            current_y,
+            metrics.scale,
+            &content_font,
             &line,
         );
-
-        let dimensions = text_size(content_scale_adjusted, &font_content, &line);
-        quoted_content_y += dimensions.1 + 10;
+        current_y +=
+            i32::try_from(metrics.line_height + LINE_SPACING).expect("wrapped around value");
     }
 
     draw_text_mut(
         &mut img,
         white,
-        author_name_x.try_into().unwrap(),
-        author_name_y.try_into().unwrap(),
-        author_scale,
-        &font_author,
+        author_name_x,
+        author_name_y,
+        author_metrics.scale,
+        &author_font,
         author_name,
     );
 
-    let mut buffer = Cursor::new(Vec::new());
-    if img.write_to(&mut buffer, WebP).is_ok() {
-        Some(buffer.into_inner())
-    } else {
-        None
+    img
+}
+
+pub fn convert_to_bw(image: &mut RgbImage) {
+    const R_FACTOR: u32 = (0.299 * 256.0) as u32;
+    const G_FACTOR: u32 = (0.587 * 256.0) as u32;
+    const B_FACTOR: u32 = (0.114 * 256.0) as u32;
+
+    let pixels = image.as_mut();
+
+    for chunk in pixels.array_chunks_mut::<3>() {
+        let gray = u8::try_from(
+            (u32::from(chunk[0]) * R_FACTOR
+                + u32::from(chunk[1]) * G_FACTOR
+                + u32::from(chunk[2]) * B_FACTOR)
+                >> 8,
+        )
+        .expect("out of bounds for u8");
+        chunk[0] = gray;
+        chunk[1] = gray;
+        chunk[2] = gray;
     }
 }

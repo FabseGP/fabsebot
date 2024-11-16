@@ -3,23 +3,28 @@ use crate::{
         constants::COLOUR_RED,
         types::{Error, SContext, HTTP_CLIENT},
     },
-    utils::{ai::ai_response_simple, image::quote_image},
+    utils::{
+        ai::ai_response_simple,
+        image::{convert_to_bw, quote_image},
+    },
 };
 
+use ab_glyph::FontArc;
 use anyhow::Context;
 use dashmap::DashSet;
-use image::load_from_memory;
+use image::{load_from_memory, ImageBuffer, ImageError, ImageFormat::WebP, Rgb, RgbImage};
 use poise::{
     serenity_prelude::{
         nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
-        CreateActionRow, CreateAllowedMentions, CreateAttachment, CreateButton, CreateEmbed,
-        CreateInteractionResponse, CreateMessage, EditChannel, EditMessage, Member, MessageId,
+        ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
+        CreateButton, CreateEmbed, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
+        CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditMessage, Member, MessageId,
         UserId,
     },
     CreateReply,
 };
 use sqlx::query;
-use std::time::Duration;
+use std::{io::Cursor, time::Duration};
 use tokio::time::{sleep, timeout};
 
 /// When you want to find the imposter
@@ -370,6 +375,74 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     Ok(())
 }
 
+pub struct QuoteInfo {
+    avatar_image: ImageBuffer<Rgb<u8>, Vec<u8>>,
+    author_name: String,
+    content: String,
+}
+
+pub struct ToggleableImage {
+    base: RgbImage,
+    current: RgbImage,
+    bw: Option<RgbImage>,
+    is_bw: bool,
+}
+
+impl ToggleableImage {
+    pub fn new(image: RgbImage) -> Self {
+        Self {
+            base: image.clone(),
+            current: image,
+            bw: None,
+            is_bw: false,
+        }
+    }
+
+    pub fn toggle(&mut self) {
+        if self.is_bw {
+            self.current = self.base.clone();
+        } else if let Some(bw) = &self.bw {
+            self.current = bw.clone();
+        } else {
+            convert_to_bw(&mut self.current);
+            self.bw = Some(self.current.clone());
+        }
+        self.is_bw = !self.is_bw;
+    }
+
+    pub fn write_to_webp(&self, buffer: &mut Vec<u8>) -> Result<(), ImageError> {
+        buffer.clear();
+        let mut cursor = Cursor::new(buffer);
+        self.current.write_to(&mut cursor, WebP)
+    }
+
+    pub fn image_gen_font(
+        &mut self,
+        author_font: &FontArc,
+        content_font: &FontArc,
+        quote_info: &QuoteInfo,
+    ) {
+        self.current = quote_image(
+            &quote_info.avatar_image,
+            &quote_info.author_name,
+            &quote_info.content,
+            author_font,
+            content_font,
+        );
+    }
+}
+
+const FONTS: &[(&str, &[u8])] = &[
+    (
+        "NotoSansJP-ExtraLight_font1",
+        include_bytes!("../../fonts/NotoSansJP-ExtraLight.ttf"),
+    ),
+    (
+        "NotoSansJP-Regular_font0",
+        include_bytes!("../../fonts/NotoSansJP-Regular.ttf"),
+    ),
+];
+
 /// When your memory is not enough
 #[poise::command(prefix_command)]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
@@ -386,72 +459,151 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 
         ctx.defer().await?;
 
-        let (avatar_image, name) = if reply.webhook_id.is_some() {
-            let avatar_url = reply.author.avatar_url().unwrap_or_else(|| {
-                reply
+        let quote_info = QuoteInfo {
+            avatar_image: if reply.webhook_id.is_some() {
+                let avatar_url = reply
                     .author
-                    .static_avatar_url()
-                    .unwrap_or_else(|| reply.author.default_avatar_url())
-            });
-            let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
-                return Ok(());
-            };
-            let Ok(avatar_bytes) = resp.bytes().await else {
-                return Ok(());
-            };
-            let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
-                return Ok(());
-            };
-            (mem_bytes.to_rgb8(), reply.author.name.clone())
-        } else {
-            let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-            let avatar_url = member.avatar_url().unwrap_or_else(|| {
-                member
-                    .user
-                    .static_avatar_url()
-                    .unwrap_or_else(|| member.user.default_avatar_url())
-            });
-            let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
-                return Ok(());
-            };
-            let Ok(avatar_bytes) = resp.bytes().await else {
-                return Ok(());
-            };
-            let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
-                return Ok(());
-            };
-            (mem_bytes.to_rgb8(), member.user.name)
+                    .avatar_url()
+                    .or_else(|| reply.author.static_avatar_url())
+                    .unwrap_or_else(|| reply.author.default_avatar_url());
+
+                let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
+                    return Ok(());
+                };
+                let Ok(avatar_bytes) = resp.bytes().await else {
+                    return Ok(());
+                };
+                let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
+                    return Ok(());
+                };
+                mem_bytes.to_rgb8()
+            } else {
+                let member = guild_id.member(&ctx.http(), reply.author.id).await?;
+                let avatar_url = member.avatar_url().unwrap_or_else(|| {
+                    member
+                        .user
+                        .static_avatar_url()
+                        .unwrap_or_else(|| member.user.default_avatar_url())
+                });
+                let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
+                    return Ok(());
+                };
+                let Ok(avatar_bytes) = resp.bytes().await else {
+                    return Ok(());
+                };
+                let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
+                    return Ok(());
+                };
+                mem_bytes.to_rgb8()
+            },
+            author_name: if reply.webhook_id.is_some() {
+                format!("- {}", reply.author.name)
+            } else {
+                let member = guild_id.member(&ctx.http(), reply.author.id).await?;
+                format!("- {}", member.user.name)
+            },
+            content: reply.content.to_string(),
         };
 
-        let image_opt = quote_image(&avatar_image, &name, &reply.content).await;
-        if let Some(image) = image_opt {
-            let message_url = reply.link();
-            let attachment = CreateAttachment::bytes(image, "quote.webp");
-            ctx.channel_id()
+        let author_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
+        let content_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
+
+        let mut toggleable = ToggleableImage::new(quote_image(
+            &quote_info.avatar_image,
+            &quote_info.author_name,
+            &quote_info.content,
+            &author_font,
+            &content_font,
+        ));
+        let mut buffer = Vec::with_capacity(1200 * 630);
+        toggleable.write_to_webp(&mut buffer)?;
+        let message_url = reply.link();
+        let attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
+        let buttons = [
+            CreateButton::new(format!("{}_bw", ctx.id()))
+                .style(ButtonStyle::Primary)
+                .label("🎨"),
+            CreateButton::new(format!("{}_temp", ctx.id()))
+                .style(ButtonStyle::Primary)
+                .label("♾️"),
+        ];
+        let font_select = vec![
+            CreateSelectMenuOption::new(FONTS[0].0, "font1"),
+            CreateSelectMenuOption::new(FONTS[1].0, "font2"),
+        ];
+        let font_menu = CreateSelectMenu::new(
+            format!("{}_font_option", ctx.id()),
+            CreateSelectMenuKind::String {
+                options: font_select.into(),
+            },
+        )
+        .placeholder("Font")
+        .min_values(1)
+        .max_values(1);
+        let action_row = [CreateActionRow::buttons(&buttons)];
+        ctx.channel_id()
+            .send_message(
+                ctx.http(),
+                CreateMessage::default()
+                    .add_file(attachment.clone())
+                    .reference_message(&msg)
+                    .content(&message_url)
+                    .components(&action_row)
+                    .select_menu(font_menu)
+                    .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
+            )
+            .await?;
+        if let Some(guild_data) = ctx.data().guild_data.get(&guild_id)
+            && let Some(channel) = guild_data.settings.quotes_channel
+        {
+            let quote_channel =
+                ChannelId::new(u64::try_from(channel).expect("channel id out of bounds for u64"));
+            quote_channel
                 .send_message(
                     ctx.http(),
                     CreateMessage::default()
-                        .add_file(attachment.clone())
-                        .reference_message(&msg)
-                        .content(&message_url)
-                        .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
+                        .add_file(attachment)
+                        .content(&message_url),
                 )
                 .await?;
-            if let Some(guild_data) = ctx.data().guild_data.get(&guild_id)
-                && let Some(channel) = guild_data.settings.quotes_channel
+        }
+        let ctx_id_copy = ctx.id();
+        while let Some(interaction) =
+            ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                .timeout(Duration::from_secs(60))
+                .filter(move |interaction| {
+                    interaction
+                        .data
+                        .custom_id
+                        .starts_with(ctx_id_copy.to_string().as_str())
+                })
+                .await
+        {
+            interaction
+                .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                .await?;
+
+            let menu_choice = match &interaction.data.kind {
+                ComponentInteractionDataKind::StringSelect { values } => Some(&values[0]),
+                _ => None,
+            };
+
+            if let Some(font_choice) = menu_choice
+                && let Some(font) = FONTS.iter().find(|font| font.0.ends_with(font_choice))
             {
-                let quote_channel = ChannelId::new(
-                    u64::try_from(channel).expect("channel id out of bounds for u64"),
-                );
-                quote_channel
-                    .send_message(
-                        ctx.http(),
-                        CreateMessage::default()
-                            .add_file(attachment)
-                            .content(&message_url),
-                    )
-                    .await?;
+                let content_font = FontArc::try_from_slice(font.1).unwrap();
+                toggleable.image_gen_font(&author_font, &content_font, &quote_info);
+            } else if interaction.data.custom_id.ends_with("bw") {
+                toggleable.toggle();
+                toggleable.write_to_webp(&mut buffer)?;
             }
+            let mut msg = interaction.message;
+            let attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
+            msg.edit(
+                ctx.http(),
+                EditMessage::default().new_attachment(attachment),
+            )
+            .await?;
         }
     }
     Ok(())

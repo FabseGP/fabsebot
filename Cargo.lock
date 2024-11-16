@@ -280,9 +280,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.7.7"
+version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "504e3947307ac8326a5437504c517c4b56716c9d98fac0028c2acc7ca47d70ae"
+checksum = "49c41b948da08fb481a94546cd874843adc1142278b0af4badf9b1b78599d68d"
 dependencies = [
  "async-trait",
  "axum-core",
@@ -575,6 +575,12 @@ checksum = "fb1e43aa7fd152b1f968787f7dbcdeb306d1867ff373c69955211876c053f91a"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "color_quant"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
 
 [[package]]
 name = "concurrent-queue"
@@ -1041,9 +1047,9 @@ checksum = "486f806e73c5707928240ddc295403b1b93c96a02038563881c4a2fd84b81ac4"
 
 [[package]]
 name = "flate2"
-version = "1.0.34"
+version = "1.0.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1b589b4dc103969ad3cf85c950899926ec64300a1a46d76c03a6072957036f0"
+checksum = "c936bfdafb507ebbf50b8074c54fa31c5be9a1e7e5f467dd659697041407d07c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -1245,6 +1251,16 @@ checksum = "f0d8a4362ccb29cb0b265253fb0a2728f592895ee6854fd9bc13f2ffda266ff1"
 dependencies = [
  "opaque-debug",
  "polyval",
+]
+
+[[package]]
+name = "gif"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fb2d69b19215e18bb912fa30f7ce15846e301408695e44e0ef719f1da9e19f2"
+dependencies = [
+ "color_quant",
+ "weezl",
 ]
 
 [[package]]
@@ -1693,6 +1709,8 @@ checksum = "cd6f44aed642f18953a158afeb30206f4d50da59fbc66ecb53c66488de73563b"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
+ "color_quant",
+ "gif",
  "image-webp",
  "num-traits",
  "ravif",
@@ -2429,7 +2447,7 @@ dependencies = [
 [[package]]
 name = "poise"
 version = "0.6.1"
-source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#7a1f571dc9994a1384404b64e1a71e18df733590"
+source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#04e8da5c6d6a3cb25eeed66636f8585e90c96bf4"
 dependencies = [
  "async-trait",
  "derivative",
@@ -2447,7 +2465,7 @@ dependencies = [
 [[package]]
 name = "poise_macros"
 version = "0.6.1"
-source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#7a1f571dc9994a1384404b64e1a71e18df733590"
+source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#04e8da5c6d6a3cb25eeed66636f8585e90c96bf4"
 dependencies = [
  "darling 0.20.10",
  "proc-macro2",
@@ -3290,8 +3308,8 @@ dependencies = [
 
 [[package]]
 name = "serenity"
-version = "0.12.3"
-source = "git+https://github.com/serenity-rs/serenity?branch=next#92960175452efe4b8795d8868488d96831607d31"
+version = "0.12.4"
+source = "git+https://github.com/serenity-rs/serenity?branch=next#efb5820cd5dd3325dff767bb2f96d380715dce30"
 dependencies = [
  "aformat",
  "arrayvec",
@@ -4902,6 +4920,12 @@ checksum = "841c67bff177718f1d4dfefde8d8f0e78f9b6589319ba88312f567fc5841a958"
 dependencies = [
  "rustls-pki-types",
 ]
+
+[[package]]
+name = "weezl"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53a85b86a771b1c87058196170769dd264f66c0782acf1ae6cc51bfd64b39082"
 
 [[package]]
 name = "whoami"

@@ -10,7 +10,7 @@ base64 = "0"
 bytes = "0"
 dashmap = { version = "6", features = ["inline"] }
 fastrand = "2"
-image = { version = "0", default-features = false, features = ["rayon", "webp"] }
+image = { version = "0", default-features = false, features = ["gif", "rayon", "webp"] }
 imageproc = { version = "0", default-features = false, features = ["rayon"] }
 once_cell = "1"
 opentelemetry = "0" 

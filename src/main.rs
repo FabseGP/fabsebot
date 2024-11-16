@@ -1,4 +1,4 @@
-#![feature(let_chains, iter_intersperse)]
+#![feature(let_chains, iter_intersperse, array_chunks)]
 
 mod commands;
 mod config;
