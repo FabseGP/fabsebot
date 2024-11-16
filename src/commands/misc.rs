@@ -5,7 +5,7 @@ use crate::{
     },
     utils::{
         ai::ai_response_simple,
-        image::{convert_to_bw, quote_image},
+        image::{convert_avatar_to_bw, quote_image},
     },
 };
 
@@ -375,37 +375,50 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-pub struct QuoteInfo {
+pub struct ImageInfo {
     avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
     author_name: String,
     content: String,
-}
-
-pub struct ToggleableImage {
-    base: RgbaImage,
     current: RgbaImage,
-    bw: Option<RgbaImage>,
     is_bw: bool,
+    is_reverse: bool,
+    content_font: FontArc,
+    author_font: FontArc,
 }
 
-impl ToggleableImage {
-    pub fn new(image: RgbaImage) -> Self {
+impl ImageInfo {
+    pub fn new(
+        avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+        author_name: String,
+        content: String,
+    ) -> Self {
+        let content_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
+        let author_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
+        let image = quote_image(
+            &avatar_image,
+            &author_name,
+            &content,
+            &author_font,
+            &content_font,
+            false,
+        );
         Self {
-            base: image.clone(),
+            avatar_image,
+            author_name,
+            content,
             current: image,
-            bw: None,
             is_bw: false,
+            is_reverse: false,
+            author_font,
+            content_font,
         }
     }
 
-    pub fn toggle(&mut self) {
+    pub fn bw(&mut self) {
         if self.is_bw {
-            self.current = self.base.clone();
-        } else if let Some(bw) = &self.bw {
-            self.current = bw.clone();
+            self.image_gen();
         } else {
-            convert_to_bw(&mut self.current, QUOTE_HEIGHT);
-            self.bw = Some(self.current.clone());
+            convert_avatar_to_bw(&mut self.current, self.is_reverse);
         }
         self.is_bw = !self.is_bw;
     }
@@ -416,18 +429,24 @@ impl ToggleableImage {
         self.current.write_to(&mut cursor, WebP)
     }
 
-    pub fn image_gen_font(
-        &mut self,
-        author_font: &FontArc,
-        content_font: &FontArc,
-        quote_info: &QuoteInfo,
-    ) {
+    pub fn new_font(&mut self, new_font: FontArc) {
+        self.content_font = new_font;
+        self.image_gen();
+    }
+
+    pub fn reverse(&mut self) {
+        self.is_reverse = !self.is_reverse;
+        self.image_gen();
+    }
+
+    pub fn image_gen(&mut self) {
         self.current = quote_image(
-            &quote_info.avatar_image,
-            &quote_info.author_name,
-            &quote_info.content,
-            author_font,
-            content_font,
+            &self.avatar_image,
+            &self.author_name,
+            &self.content,
+            &self.author_font,
+            &self.content_font,
+            self.is_reverse,
         );
     }
 }
@@ -448,14 +467,14 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 
         ctx.defer().await?;
 
-        let quote_info = QuoteInfo {
-            avatar_image: if reply.webhook_id.is_some() {
-                let avatar_url = reply
-                    .author
-                    .avatar_url()
-                    .or_else(|| reply.author.static_avatar_url())
-                    .unwrap_or_else(|| reply.author.default_avatar_url());
-
+        let mut image_handle = {
+            let (avatar_image, author_name) = if reply.webhook_id.is_some() {
+                let avatar_url = reply.author.avatar_url().unwrap_or_else(|| {
+                    reply
+                        .author
+                        .static_avatar_url()
+                        .unwrap_or_else(|| reply.author.default_avatar_url())
+                });
                 let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
                     return Ok(());
                 };
@@ -465,7 +484,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                     return Ok(());
                 };
-                mem_bytes.to_rgba8()
+                (mem_bytes.to_rgba8(), reply.author.name.to_string())
             } else {
                 let member = guild_id.member(&ctx.http(), reply.author.id).await?;
                 let avatar_url = member.avatar_url().unwrap_or_else(|| {
@@ -483,35 +502,24 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
                     return Ok(());
                 };
-                mem_bytes.to_rgba8()
-            },
-            author_name: if reply.webhook_id.is_some() {
-                format!("- {}", reply.author.name)
-            } else {
-                let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-                format!("- {}", member.user.name)
-            },
-            content: reply.content.to_string(),
+                (mem_bytes.to_rgba8(), member.user.name.into_string())
+            };
+
+            ImageInfo::new(avatar_image, author_name, reply.content.to_string())
         };
-
-        let content_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
-        let author_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
-
-        let mut toggleable = ToggleableImage::new(quote_image(
-            &quote_info.avatar_image,
-            &quote_info.author_name,
-            &quote_info.content,
-            &author_font,
-            &content_font,
-        ));
         let mut buffer =
             Vec::with_capacity(usize::try_from(QUOTE_HEIGHT * QUOTE_WIDTH).unwrap_or(0));
-        toggleable.write_to_webp(&mut buffer)?;
+        image_handle.write_to_webp(&mut buffer)?;
         let message_url = reply.link();
         let attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
-        let buttons = [CreateButton::new(format!("{}_bw", ctx.id()))
-            .style(ButtonStyle::Primary)
-            .label("🎨")];
+        let buttons = [
+            CreateButton::new(format!("{}_bw", ctx.id()))
+                .style(ButtonStyle::Primary)
+                .label("🎨"),
+            CreateButton::new(format!("{}_reverse", ctx.id()))
+                .style(ButtonStyle::Primary)
+                .label("🪞"),
+        ];
         let mut font_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(FONTS.len());
 
         for font in FONTS {
@@ -580,12 +588,13 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             if let Some(font_choice) = menu_choice
                 && let Some(font) = FONTS.iter().find(|font| font.0 == font_choice)
             {
-                let content_font = FontArc::try_from_slice(font.1).unwrap();
-                toggleable.image_gen_font(&author_font, &content_font, &quote_info);
+                image_handle.new_font(FontArc::try_from_slice(font.1).unwrap());
             } else if interaction.data.custom_id.ends_with("bw") {
-                toggleable.toggle();
+                image_handle.bw();
+            } else if interaction.data.custom_id.ends_with("reverse") {
+                image_handle.reverse();
             }
-            toggleable.write_to_webp(&mut buffer)?;
+            image_handle.write_to_webp(&mut buffer)?;
             let mut msg = interaction.message;
             final_attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
             msg.edit(

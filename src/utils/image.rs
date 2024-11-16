@@ -55,17 +55,22 @@ pub fn quote_image(
     quoted_content: &str,
     author_font: &FontArc,
     content_font: &FontArc,
+    is_reverse: bool,
 ) -> RgbaImage {
     let max_content_width = QUOTE_WIDTH - QUOTE_HEIGHT - 64;
     let max_content_height = QUOTE_HEIGHT - 64;
-    let text_offset = QUOTE_HEIGHT / 2;
+    let text_offset = if is_reverse { 0 } else { QUOTE_HEIGHT / 2 };
 
     let mut img = RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba([0, 0, 0, 255]));
 
     overlay(
         &mut img,
         &resize(avatar, QUOTE_HEIGHT, QUOTE_HEIGHT, CatmullRom),
-        0,
+        if is_reverse {
+            i64::from(QUOTE_WIDTH - QUOTE_HEIGHT)
+        } else {
+            0
+        },
         0,
     );
 
@@ -139,8 +144,13 @@ pub fn quote_image(
     let quoted_content_y = (QUOTE_HEIGHT - total_text_height) / 2;
 
     let author_name_width = text_size(author_metrics.scale, &author_font, author_name).0;
-    let author_name_x = i32::try_from(((QUOTE_WIDTH - author_name_width) / 2) + text_offset)
-        .expect("wrapped around value");
+    let author_name_x = if is_reverse {
+        i32::try_from((QUOTE_WIDTH - QUOTE_HEIGHT - author_name_width) / 2)
+            .expect("wrapped around value")
+    } else {
+        i32::try_from(((QUOTE_WIDTH - author_name_width) / 2) + text_offset)
+            .expect("wrapped around value")
+    };
     let author_name_y =
         i32::try_from(quoted_content_y + total_text_height + 16).expect("wrapped around value");
 
@@ -149,8 +159,13 @@ pub fn quote_image(
 
     for line in &final_lines {
         let line_width = text_size(content_metrics.scale, &content_font, line).0;
-        let line_x = i32::try_from(QUOTE_HEIGHT + (QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2)
-            .expect("wrapped around value");
+        let line_x = if is_reverse {
+            i32::try_from((QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2)
+                .expect("wrapped around value")
+        } else {
+            i32::try_from(QUOTE_HEIGHT + (QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2)
+                .expect("wrapped around value")
+        };
 
         draw_text_mut(
             &mut img,
@@ -183,14 +198,20 @@ pub fn quote_image(
     img
 }
 
-pub fn convert_to_bw(image: &mut RgbaImage, avatar_size: u32) {
+pub fn convert_avatar_to_bw(image: &mut RgbaImage, is_reverse: bool) {
     const R_FACTOR: u32 = (0.299 * 256.0) as u32;
     const G_FACTOR: u32 = (0.587 * 256.0) as u32;
     const B_FACTOR: u32 = (0.114 * 256.0) as u32;
 
-    for y in 0..avatar_size {
-        for x in 0..avatar_size {
-            let pixel = image.get_pixel_mut(x, y);
+    let start_x = if is_reverse {
+        QUOTE_WIDTH - QUOTE_HEIGHT
+    } else {
+        0
+    };
+
+    for y in 0..QUOTE_HEIGHT {
+        for x in 0..QUOTE_HEIGHT {
+            let pixel = image.get_pixel_mut(start_x + x, y);
 
             let gray = u8::try_from(
                 (u32::from(pixel[0]) * R_FACTOR
