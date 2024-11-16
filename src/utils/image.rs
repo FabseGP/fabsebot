@@ -56,12 +56,21 @@ pub fn quote_image(
     author_font: &FontArc,
     content_font: &FontArc,
     is_reverse: bool,
+    is_light: bool,
 ) -> RgbaImage {
     let max_content_width = QUOTE_WIDTH - QUOTE_HEIGHT - 64;
     let max_content_height = QUOTE_HEIGHT - 64;
     let text_offset = if is_reverse { 0 } else { QUOTE_HEIGHT / 2 };
 
-    let mut img = RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba([0, 0, 0, 255]));
+    let mut img = RgbaImage::from_pixel(
+        QUOTE_WIDTH,
+        QUOTE_HEIGHT,
+        Rgba(if is_light {
+            [255, 255, 255, 255]
+        } else {
+            [0, 0, 0, 255]
+        }),
+    );
 
     overlay(
         &mut img,
@@ -154,7 +163,11 @@ pub fn quote_image(
     let author_name_y =
         i32::try_from(quoted_content_y + total_text_height + 16).expect("wrapped around value");
 
-    let white = Rgba([255, 255, 255, 255]);
+    let text_colour = Rgba(if is_light {
+        [0, 0, 0, 255]
+    } else {
+        [255, 255, 255, 255]
+    });
     let mut current_y = i32::try_from(quoted_content_y).expect("wrapped around value");
 
     for line in &final_lines {
@@ -169,7 +182,7 @@ pub fn quote_image(
 
         draw_text_mut(
             &mut img,
-            white,
+            text_colour,
             line_x,
             current_y,
             content_metrics.scale,
@@ -183,7 +196,7 @@ pub fn quote_image(
 
     draw_text_mut(
         &mut img,
-        white,
+        text_colour,
         author_name_x,
         if final_lines.len() == 1 {
             author_name_y + i32::try_from(LINE_SPACING * 2).expect("wrapped around value")

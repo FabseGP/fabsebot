@@ -382,6 +382,7 @@ pub struct ImageInfo {
     current: RgbaImage,
     is_bw: bool,
     is_reverse: bool,
+    is_light: bool,
     content_font: FontArc,
     author_font: FontArc,
 }
@@ -401,6 +402,7 @@ impl ImageInfo {
             &author_font,
             &content_font,
             false,
+            false,
         );
         Self {
             avatar_image,
@@ -409,12 +411,13 @@ impl ImageInfo {
             current: image,
             is_bw: false,
             is_reverse: false,
+            is_light: false,
             author_font,
             content_font,
         }
     }
 
-    pub fn bw(&mut self) {
+    pub fn toggle_bw(&mut self) {
         if self.is_bw {
             self.image_gen();
         } else {
@@ -434,8 +437,13 @@ impl ImageInfo {
         self.image_gen();
     }
 
-    pub fn reverse(&mut self) {
+    pub fn toggle_reverse(&mut self) {
         self.is_reverse = !self.is_reverse;
+        self.image_gen();
+    }
+
+    pub fn toggle_light(&mut self) {
+        self.is_light = !self.is_light;
         self.image_gen();
     }
 
@@ -447,6 +455,7 @@ impl ImageInfo {
             &self.author_font,
             &self.content_font,
             self.is_reverse,
+            self.is_light,
         );
     }
 }
@@ -519,6 +528,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             CreateButton::new(format!("{}_reverse", ctx.id()))
                 .style(ButtonStyle::Primary)
                 .label("🪞"),
+            CreateButton::new(format!("{}_light", ctx.id()))
+                .style(ButtonStyle::Primary)
+                .label("🔆"),
         ];
         let mut font_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(FONTS.len());
 
@@ -590,9 +602,11 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             {
                 image_handle.new_font(FontArc::try_from_slice(font.1).unwrap());
             } else if interaction.data.custom_id.ends_with("bw") {
-                image_handle.bw();
+                image_handle.toggle_bw();
             } else if interaction.data.custom_id.ends_with("reverse") {
-                image_handle.reverse();
+                image_handle.toggle_reverse();
+            } else if interaction.data.custom_id.ends_with("light") {
+                image_handle.toggle_light();
             }
             image_handle.write_to_webp(&mut buffer)?;
             let mut msg = interaction.message;
