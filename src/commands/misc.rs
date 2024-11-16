@@ -3,10 +3,7 @@ use crate::{
         constants::{COLOUR_RED, FONTS, QUOTE_HEIGHT, QUOTE_WIDTH},
         types::{Error, SContext, HTTP_CLIENT},
     },
-    utils::{
-        ai::ai_response_simple,
-        image::{convert_to_bw, quote_image},
-    },
+    utils::{ai::ai_response_simple, image::quote_image},
 };
 
 use ab_glyph::FontArc;
@@ -420,11 +417,7 @@ impl ImageInfo {
 
     pub fn toggle_bw(&mut self) {
         self.is_bw = !self.is_bw;
-        if self.is_bw {
-            convert_to_bw(&mut self.current, Some(self.is_reverse));
-        } else {
-            self.image_gen();
-        }
+        self.image_gen();
     }
 
     pub fn toggle_reverse(&mut self) {

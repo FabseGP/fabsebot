@@ -76,7 +76,7 @@ pub fn quote_image(
     let mut resized_avatar = resize(avatar, QUOTE_HEIGHT, QUOTE_HEIGHT, CatmullRom);
 
     if is_bw {
-        convert_to_bw(&mut resized_avatar, None);
+        convert_to_bw(&mut resized_avatar);
     }
 
     overlay(
@@ -218,27 +218,13 @@ pub fn quote_image(
     img
 }
 
-pub fn convert_to_bw(image: &mut RgbaImage, is_reverse_opt: Option<bool>) {
+pub fn convert_to_bw(image: &mut RgbaImage) {
     const R_FACTOR: u32 = (0.299 * 256.0) as u32;
     const G_FACTOR: u32 = (0.587 * 256.0) as u32;
     const B_FACTOR: u32 = (0.114 * 256.0) as u32;
 
-    let (height, width) = is_reverse_opt.map_or_else(
-        || (image.height(), image.width()),
-        |is_reverse| {
-            (
-                QUOTE_HEIGHT,
-                if is_reverse {
-                    QUOTE_WIDTH - QUOTE_HEIGHT
-                } else {
-                    0
-                },
-            )
-        },
-    );
-
-    for y in 0..height {
-        for x in 0..width {
+    for y in 0..image.height() {
+        for x in 0..image.width() {
             let pixel = image.get_pixel_mut(x, y);
 
             let gray = u8::try_from(
