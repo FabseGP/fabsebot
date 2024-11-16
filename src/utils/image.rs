@@ -91,7 +91,7 @@ pub fn quote_image(
     );
 
     let mut content_metrics = FontMetrics::new(content_font, PxScale::from(96.0));
-    let author_metrics = FontMetrics::new(author_font, PxScale::from(40.0));
+    let author_metrics = FontMetrics::new(author_font, PxScale::from(32.0));
 
     let mut wrapped_length = DEFAULT_WRAP_LENGTH;
     let mut final_lines = Vec::with_capacity(MAX_LINES);
@@ -119,9 +119,8 @@ pub fn quote_image(
         }
 
         final_lines.clear();
-        let max_total_height = max_content_height - 64;
         let max_possible_lines =
-            ((max_total_height / content_metrics.line_height) as usize).min(MAX_LINES);
+            ((max_content_height / content_metrics.line_height) as usize).min(MAX_LINES);
 
         for (i, line) in wrapped_lines.iter().take(max_possible_lines).enumerate() {
             let mut line_str = line.to_string();
