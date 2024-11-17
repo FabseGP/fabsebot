@@ -1,12 +1,19 @@
-use crate::config::constants::{QUOTE_HEIGHT, QUOTE_WIDTH};
+use crate::{
+    config::{
+        constants::{QUOTE_HEIGHT, QUOTE_WIDTH},
+        types::HTTP_CLIENT,
+    },
+    utils::helpers::discord_emoji,
+};
 
 use ab_glyph::{FontArc, PxScale};
 use image::{
     imageops::{overlay, resize, FilterType::CatmullRom},
-    Rgba, RgbaImage,
+    load_from_memory, Rgba, RgbaImage,
 };
-use imageproc::drawing::{draw_text_mut, text_size};
+use imageproc::drawing::{draw_text_mut, text_size, Canvas};
 use textwrap::wrap;
+use winnow::Parser;
 
 const MIN_FONT_SIZE: f32 = 32.0;
 const MAX_LINES: usize = 16;
@@ -49,7 +56,31 @@ fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontA
     truncated
 }
 
-pub fn quote_image(
+fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) {
+    let gradient_width = avatar.width() / 2;
+    let gradient_start = if is_reverse {
+        0
+    } else {
+        avatar.width() - gradient_width
+    };
+
+    for x in 0..gradient_width {
+        let progress = x as f32 / gradient_width as f32;
+        let alpha_multiplier = if is_reverse {
+            progress.powf(2.5)
+        } else {
+            (1.0 - progress).powf(2.5)
+        };
+
+        let current_x = gradient_start + x;
+        for y in 0..avatar.height() {
+            let pixel = avatar.get_pixel_mut(current_x, y);
+            pixel[3] = (f32::from(pixel[3]) * alpha_multiplier) as u8;
+        }
+    }
+}
+
+pub async fn quote_image(
     avatar: &RgbaImage,
     author_name: &str,
     quoted_content: &str,
@@ -58,6 +89,7 @@ pub fn quote_image(
     is_reverse: bool,
     is_light: bool,
     is_bw: bool,
+    is_gradient: bool,
 ) -> RgbaImage {
     let max_content_width = QUOTE_WIDTH - QUOTE_HEIGHT - 64;
     let max_content_height = QUOTE_HEIGHT - 64;
@@ -77,6 +109,10 @@ pub fn quote_image(
 
     if is_bw {
         convert_to_bw(&mut resized_avatar);
+    }
+
+    if is_gradient {
+        apply_gradient_to_avatar(&mut resized_avatar, is_reverse);
     }
 
     overlay(
@@ -178,7 +214,7 @@ pub fn quote_image(
 
     for line in &final_lines {
         let line_width = text_size(content_metrics.scale, &content_font, line).0;
-        let line_x = if is_reverse {
+        let mut line_x = if is_reverse {
             i32::try_from((QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2)
                 .expect("wrapped around value")
         } else {
@@ -195,6 +231,49 @@ pub fn quote_image(
             &content_font,
             line,
         );
+
+        let mut remaining_text = line.as_str();
+        while !remaining_text.is_empty() {
+            if let Ok(emoji) = discord_emoji.parse_next(&mut remaining_text) {
+                let emoji_url =
+                    format!("https://cdn.discordapp.com/emojis/{}.webp", emoji.emoji_id);
+                if let Ok(resp) = HTTP_CLIENT.get(&emoji_url).send().await
+                    && let Ok(bytes) = resp.bytes().await
+                    && let Ok(emoji_img) = load_from_memory(&bytes)
+                {
+                    let emoji_size = content_metrics.line_height;
+                    let scaled_emoji =
+                        resize(&emoji_img.to_rgba8(), emoji_size, emoji_size, CatmullRom);
+
+                    overlay(
+                        &mut img,
+                        &scaled_emoji,
+                        i64::from(line_x),
+                        i64::from(current_y),
+                    );
+                    line_x += i32::try_from(emoji_size).expect("emoji size out of bounds for i32");
+                }
+                continue;
+            }
+
+            let text_end = remaining_text.find("<:").unwrap_or(remaining_text.len());
+            let text_chunk = &remaining_text[..text_end];
+            remaining_text = &remaining_text[text_end..];
+
+            if !text_chunk.is_empty() {
+                let text_width = text_size(content_metrics.scale, content_font, text_chunk).0;
+                draw_text_mut(
+                    &mut img,
+                    text_colour,
+                    line_x,
+                    current_y,
+                    content_metrics.scale,
+                    &content_font,
+                    text_chunk,
+                );
+                line_x += i32::try_from(text_width).expect("text width out of bounds for i32");
+            }
+        }
 
         current_y += i32::try_from(content_metrics.line_height + LINE_SPACING)
             .expect("wrapped around value");

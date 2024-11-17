@@ -380,12 +380,13 @@ pub struct ImageInfo {
     is_bw: bool,
     is_reverse: bool,
     is_light: bool,
+    is_gradient: bool,
     content_font: FontArc,
     author_font: FontArc,
 }
 
 impl ImageInfo {
-    pub fn new(
+    pub async fn new(
         avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
         author_name: String,
         content: String,
@@ -401,7 +402,9 @@ impl ImageInfo {
             false,
             false,
             false,
-        );
+            false,
+        )
+        .await;
         Self {
             avatar_image,
             author_name,
@@ -410,24 +413,30 @@ impl ImageInfo {
             is_bw: false,
             is_reverse: false,
             is_light: false,
+            is_gradient: false,
             author_font,
             content_font,
         }
     }
 
-    pub fn toggle_bw(&mut self) {
+    pub async fn toggle_bw(&mut self) {
         self.is_bw = !self.is_bw;
-        self.image_gen();
+        self.image_gen().await;
     }
 
-    pub fn toggle_reverse(&mut self) {
+    pub async fn toggle_reverse(&mut self) {
         self.is_reverse = !self.is_reverse;
-        self.image_gen();
+        self.image_gen().await;
     }
 
-    pub fn toggle_light(&mut self) {
+    pub async fn toggle_light(&mut self) {
         self.is_light = !self.is_light;
-        self.image_gen();
+        self.image_gen().await;
+    }
+
+    pub async fn toggle_gradient(&mut self) {
+        self.is_gradient = !self.is_gradient;
+        self.image_gen().await;
     }
 
     pub fn write_to_webp(&self, buffer: &mut Vec<u8>) -> Result<(), ImageError> {
@@ -436,12 +445,12 @@ impl ImageInfo {
         self.current.write_to(&mut cursor, WebP)
     }
 
-    pub fn new_font(&mut self, new_font: FontArc) {
+    pub async fn new_font(&mut self, new_font: FontArc) {
         self.content_font = new_font;
-        self.image_gen();
+        self.image_gen().await;
     }
 
-    pub fn image_gen(&mut self) {
+    pub async fn image_gen(&mut self) {
         self.current = quote_image(
             &self.avatar_image,
             &self.author_name,
@@ -451,7 +460,9 @@ impl ImageInfo {
             self.is_reverse,
             self.is_light,
             self.is_bw,
-        );
+            self.is_gradient,
+        )
+        .await;
     }
 }
 
@@ -509,7 +520,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 (mem_bytes.to_rgba8(), format!("- {}", member.user.name))
             };
 
-            ImageInfo::new(avatar_image, author_name, reply.content.to_string())
+            ImageInfo::new(avatar_image, author_name, reply.content.to_string()).await
         };
         let mut buffer =
             Vec::with_capacity(usize::try_from(QUOTE_HEIGHT * QUOTE_WIDTH).unwrap_or(0));
@@ -526,6 +537,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             CreateButton::new(format!("{}_light", ctx.id()))
                 .style(ButtonStyle::Primary)
                 .label("🔆"),
+            CreateButton::new(format!("{}_gradient", ctx.id()))
+                .style(ButtonStyle::Primary)
+                .label("🌫️"),
         ];
         let mut font_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(FONTS.len());
 
@@ -595,13 +609,17 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             if let Some(font_choice) = menu_choice
                 && let Some(font) = FONTS.iter().find(|font| font.0 == font_choice)
             {
-                image_handle.new_font(FontArc::try_from_slice(font.1).unwrap());
+                image_handle
+                    .new_font(FontArc::try_from_slice(font.1).unwrap())
+                    .await;
             } else if interaction.data.custom_id.ends_with("bw") {
-                image_handle.toggle_bw();
+                image_handle.toggle_bw().await;
             } else if interaction.data.custom_id.ends_with("reverse") {
-                image_handle.toggle_reverse();
+                image_handle.toggle_reverse().await;
             } else if interaction.data.custom_id.ends_with("light") {
-                image_handle.toggle_light();
+                image_handle.toggle_light().await;
+            } else if interaction.data.custom_id.ends_with("gradient") {
+                image_handle.toggle_gradient().await;
             }
             image_handle.write_to_webp(&mut buffer)?;
             let mut msg = interaction.message;

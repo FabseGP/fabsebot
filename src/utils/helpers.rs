@@ -8,7 +8,8 @@ use std::borrow::Cow;
 use urlencoding::encode;
 use winnow::{
     ascii::digit1,
-    combinator::{preceded, separated_pair},
+    combinator::{delimited, preceded, separated_pair},
+    token::take_till,
     PResult, Parser,
 };
 
@@ -83,8 +84,19 @@ pub struct DiscordMessageLink {
     pub message_id: u64,
 }
 
+pub struct DiscordEmoji {
+    pub emoji_name: String,
+    pub emoji_id: u64,
+}
+
 fn discord_id(input: &mut &str) -> PResult<u64> {
     digit1.parse_to().parse_next(input)
+}
+
+fn emoji_name(input: &mut &str) -> PResult<String> {
+    take_till(0.., |c| c == ':')
+        .map(ToString::to_string)
+        .parse_next(input)
 }
 
 pub fn discord_message_link(input: &mut &str) -> PResult<DiscordMessageLink> {
@@ -97,5 +109,15 @@ pub fn discord_message_link(input: &mut &str) -> PResult<DiscordMessageLink> {
         guild_id,
         channel_id,
         message_id,
+    })
+}
+
+pub fn discord_emoji(input: &mut &str) -> PResult<DiscordEmoji> {
+    let (name, id) =
+        delimited("<:", separated_pair(emoji_name, ':', discord_id), ">").parse_next(input)?;
+
+    Ok(DiscordEmoji {
+        emoji_name: name,
+        emoji_id: id,
     })
 }

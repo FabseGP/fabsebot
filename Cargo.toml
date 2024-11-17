@@ -30,7 +30,7 @@ tracing = "0"
 tracing-opentelemetry = { version = "0", default-features = false }
 tracing-subscriber = "0"
 urlencoding = "2"
-winnow = "0"
+winnow = { version = "0", features = ["simd"] }
 
 [profile.release]
 codegen-units = 1
