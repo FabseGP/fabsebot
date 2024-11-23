@@ -1,3 +1,6 @@
+use image::RgbaImage;
+use once_cell::sync::OnceCell;
+
 pub const COLOUR_BLUE: u32 = 0x00B0F4;
 pub const COLOUR_GREEN: u32 = 0x33D17A;
 pub const COLOUR_ORANGE: u32 = 0xFA6300;
@@ -31,3 +34,6 @@ pub const FONTS: &[(&str, &[u8])] = &[
 ];
 pub const QUOTE_WIDTH: u32 = 1200;
 pub const QUOTE_HEIGHT: u32 = 630;
+
+pub static DARK_BASE_IMAGE: OnceCell<RgbaImage> = OnceCell::new();
+pub static LIGHT_BASE_IMAGE: OnceCell<RgbaImage> = OnceCell::new();

@@ -65,7 +65,7 @@ pub struct UserSettings {
     pub ping_media: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize)]
 pub struct WordReactions {
     pub guild_id: i64,
     pub word: String,
@@ -73,14 +73,14 @@ pub struct WordReactions {
     pub media: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize)]
 pub struct WordTracking {
     pub guild_id: i64,
     pub word: String,
     pub count: i64,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize)]
 pub struct EmojiReactions {
     pub guild_id: i64,
     pub emoji_id: i64,

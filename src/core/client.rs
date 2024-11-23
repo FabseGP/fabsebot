@@ -11,14 +11,14 @@ use dashmap::DashMap;
 use poise::{
     serenity_prelude::{
         cache::Settings, ActivityData, Client, CreateAttachment, EditProfile, GatewayIntents,
-        OnlineStatus::Online, ShardManager,
+        OnlineStatus::Online, ShardManager, Token,
     },
     Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions,
 };
 use serenity::all::CreateAllowedMentions;
 use songbird::{driver::DecodeMode::Decode, Config, Songbird};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use tokio::{
     select,
     signal::unix::{signal, SignalKind},
@@ -164,7 +164,7 @@ pub async fn bot_start(
     let mut cache_settings = Settings::default();
     cache_settings.max_messages = bot_config.cache_max_messages;
     let activity = ActivityData::listening(&bot_config.activity);
-    let client = Client::builder(&bot_config.token, intents)
+    let client = Client::builder(Token::from_str(&bot_config.token)?, intents)
         .framework(framework)
         .voice_manager::<Songbird>(music_manager)
         .cache_settings(cache_settings)

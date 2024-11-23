@@ -40,4 +40,4 @@ panic = "abort"
 
 [profile.dev]
 strip = true
-
+panic = "abort"

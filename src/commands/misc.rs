@@ -1,6 +1,6 @@
 use crate::{
     config::{
-        constants::{COLOUR_RED, FONTS, QUOTE_HEIGHT, QUOTE_WIDTH},
+        constants::{COLOUR_RED, FONTS},
         types::{Error, SContext, HTTP_CLIENT},
     },
     utils::{ai::ai_response_simple, image::quote_image},
@@ -9,7 +9,6 @@ use crate::{
 use ab_glyph::FontArc;
 use anyhow::Context;
 use dashmap::DashSet;
-use image::{load_from_memory, ImageBuffer, ImageError, ImageFormat::WebP, Rgba, RgbaImage};
 use poise::{
     serenity_prelude::{
         nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
@@ -21,8 +20,11 @@ use poise::{
     CreateReply,
 };
 use sqlx::query;
-use std::{io::Cursor, time::Duration};
-use tokio::time::{sleep, timeout};
+use std::time::Duration;
+use tokio::{
+    task,
+    time::{sleep, timeout},
+};
 
 /// When you want to find the imposter
 #[poise::command(slash_command)]
@@ -373,10 +375,11 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 pub struct ImageInfo {
-    avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+    avatar_image: Vec<u8>,
     author_name: String,
     content: String,
-    current: RgbaImage,
+    current: Vec<u8>,
+    is_gif: bool,
     is_bw: bool,
     is_reverse: bool,
     is_light: bool,
@@ -386,30 +389,27 @@ pub struct ImageInfo {
 }
 
 impl ImageInfo {
-    pub async fn new(
-        avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
-        author_name: String,
-        content: String,
-    ) -> Self {
+    pub fn new(avatar_image: &[u8], author_name: String, content: String) -> Self {
         let content_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
         let author_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
-        let image = quote_image(
-            &avatar_image,
+        let (image, is_gif) = quote_image(
+            avatar_image,
             &author_name,
             &content,
             &author_font,
             &content_font,
+            None,
             false,
             false,
             false,
             false,
-        )
-        .await;
+        );
         Self {
-            avatar_image,
+            avatar_image: avatar_image.to_vec(),
             author_name,
             content,
             current: image,
+            is_gif,
             is_bw: false,
             is_reverse: false,
             is_light: false,
@@ -439,30 +439,40 @@ impl ImageInfo {
         self.image_gen().await;
     }
 
-    pub fn write_to_webp(&self, buffer: &mut Vec<u8>) -> Result<(), ImageError> {
-        buffer.clear();
-        let mut cursor = Cursor::new(buffer);
-        self.current.write_to(&mut cursor, WebP)
-    }
-
     pub async fn new_font(&mut self, new_font: FontArc) {
         self.content_font = new_font;
         self.image_gen().await;
     }
 
     pub async fn image_gen(&mut self) {
-        self.current = quote_image(
-            &self.avatar_image,
-            &self.author_name,
-            &self.content,
-            &self.author_font,
-            &self.content_font,
-            self.is_reverse,
-            self.is_light,
-            self.is_bw,
-            self.is_gradient,
-        )
-        .await;
+        let avatar_image = self.avatar_image.clone();
+        let author_name = self.author_name.clone();
+        let content = self.content.clone();
+        let author_font = self.author_font.clone();
+        let content_font = self.content_font.clone();
+        let is_reverse = self.is_reverse;
+        let is_light = self.is_light;
+        let is_bw = self.is_bw;
+        let is_gradient = self.is_gradient;
+        let (new_image, is_gif) = task::spawn_blocking(move || {
+            quote_image(
+                &avatar_image,
+                &author_name,
+                &content,
+                &author_font,
+                &content_font,
+                None,
+                is_reverse,
+                is_light,
+                is_bw,
+                is_gradient,
+            )
+        })
+        .await
+        .expect("blocking task quote_image panicked");
+
+        self.current = new_image;
+        self.is_gif = is_gif;
     }
 }
 
@@ -490,16 +500,10 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                         .static_avatar_url()
                         .unwrap_or_else(|| reply.author.default_avatar_url())
                 });
-                let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
-                    return Ok(());
-                };
-                let Ok(avatar_bytes) = resp.bytes().await else {
-                    return Ok(());
-                };
-                let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
-                    return Ok(());
-                };
-                (mem_bytes.to_rgba8(), format!("- {}", reply.author.name))
+                (
+                    HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
+                    format!("- {}", reply.author.name),
+                )
             } else {
                 let member = guild_id.member(&ctx.http(), reply.author.id).await?;
                 let avatar_url = member.avatar_url().unwrap_or_else(|| {
@@ -508,25 +512,23 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                         .static_avatar_url()
                         .unwrap_or_else(|| member.user.default_avatar_url())
                 });
-                let Ok(resp) = HTTP_CLIENT.get(&avatar_url).send().await else {
-                    return Ok(());
-                };
-                let Ok(avatar_bytes) = resp.bytes().await else {
-                    return Ok(());
-                };
-                let Ok(mem_bytes) = load_from_memory(&avatar_bytes) else {
-                    return Ok(());
-                };
-                (mem_bytes.to_rgba8(), format!("- {}", member.user.name))
+                (
+                    HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
+                    format!("- {}", member.user.name),
+                )
             };
 
-            ImageInfo::new(avatar_image, author_name, reply.content.to_string()).await
+            ImageInfo::new(&avatar_image, author_name, reply.content.to_string())
         };
-        let mut buffer =
-            Vec::with_capacity(usize::try_from(QUOTE_HEIGHT * QUOTE_WIDTH).unwrap_or(0));
-        image_handle.write_to_webp(&mut buffer)?;
         let message_url = reply.link();
-        let attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
+        let attachment = CreateAttachment::bytes(
+            image_handle.current.clone(),
+            if image_handle.is_gif {
+                "quote.gif"
+            } else {
+                "quote.webp"
+            },
+        );
         let buttons = [
             CreateButton::new(format!("{}_bw", ctx.id()))
                 .style(ButtonStyle::Primary)
@@ -621,9 +623,8 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             } else if interaction.data.custom_id.ends_with("gradient") {
                 image_handle.toggle_gradient().await;
             }
-            image_handle.write_to_webp(&mut buffer)?;
             let mut msg = interaction.message;
-            final_attachment = CreateAttachment::bytes(buffer.clone(), "quote.webp");
+            final_attachment = CreateAttachment::bytes(image_handle.current.clone(), "quote.webp");
             msg.edit(
                 ctx.http(),
                 EditMessage::default().new_attachment(final_attachment.clone()),

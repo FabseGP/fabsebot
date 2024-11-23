@@ -4,6 +4,7 @@ use crate::config::{
 };
 
 use anyhow::Context;
+use dashmap::DashMap;
 use poise::{
     builtins::register_globally,
     serenity_prelude::{Context as SContext, GuildId, Ready, UserId},
@@ -43,32 +44,52 @@ pub async fn handle_ready(
         .await
         .context("Failed to commit sql-transaction")?;
 
+    let grouped_word_reactions: DashMap<i64, Vec<WordReactions>> = DashMap::default();
+    let grouped_word_tracking: DashMap<i64, Vec<WordTracking>> = DashMap::default();
+    let grouped_emoji_reactions: DashMap<i64, Vec<EmojiReactions>> = DashMap::default();
+
+    for reaction in word_reactions {
+        grouped_word_reactions
+            .entry(reaction.guild_id)
+            .or_default()
+            .push(reaction);
+    }
+
+    for tracking in word_tracking {
+        grouped_word_tracking
+            .entry(tracking.guild_id)
+            .or_default()
+            .push(tracking);
+    }
+
+    for emoji in emoji_reactions {
+        grouped_emoji_reactions
+            .entry(emoji.guild_id)
+            .or_default()
+            .push(emoji);
+    }
+
     join!(
         async {
             for settings in guild_settings {
                 let guild_id = GuildId::new(
                     u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"),
                 );
-                let guild_word_reactions: Vec<WordReactions> = word_reactions
-                    .iter()
-                    .filter(|r| r.guild_id == settings.guild_id)
-                    .cloned()
-                    .collect();
-                let guild_word_tracking: Vec<WordTracking> = word_tracking
-                    .iter()
-                    .filter(|t| t.guild_id == settings.guild_id)
-                    .cloned()
-                    .collect();
-                let guild_emoji_reactions: Vec<EmojiReactions> = emoji_reactions
-                    .iter()
-                    .filter(|t| t.guild_id == settings.guild_id)
-                    .cloned()
-                    .collect();
+                let settings_guild_id = settings.guild_id;
                 let guild_data = GuildData {
                     settings,
-                    word_reactions: guild_word_reactions,
-                    word_tracking: guild_word_tracking,
-                    emoji_reactions: guild_emoji_reactions,
+                    word_reactions: grouped_word_reactions
+                        .remove(&settings_guild_id)
+                        .unwrap_or_default()
+                        .1,
+                    word_tracking: grouped_word_tracking
+                        .remove(&settings_guild_id)
+                        .unwrap_or_default()
+                        .1,
+                    emoji_reactions: grouped_emoji_reactions
+                        .remove(&settings_guild_id)
+                        .unwrap_or_default()
+                        .1,
                 };
                 framework_context
                     .user_data()

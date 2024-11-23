@@ -564,7 +564,7 @@ pub async fn set_user_ping(
                     .head(user_media)
                     .send()
                     .await
-                    .map_or(false, |response| {
+                    .is_ok_and(|response| {
                         response
                             .headers()
                             .get("content-type")
@@ -635,7 +635,7 @@ pub async fn set_word_react(
                     .head(user_media)
                     .send()
                     .await
-                    .map_or(false, |response| {
+                    .is_ok_and(|response| {
                         response
                             .headers()
                             .get("content-type")
