@@ -6,9 +6,9 @@ use crate::config::{
 use anyhow::Context;
 use dashmap::DashMap;
 use poise::{
+    FrameworkContext,
     builtins::register_globally,
     serenity_prelude::{Context as SContext, GuildId, Ready, UserId},
-    FrameworkContext,
 };
 use sqlx::query_as;
 use tokio::join;

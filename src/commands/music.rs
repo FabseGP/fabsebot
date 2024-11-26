@@ -1,7 +1,7 @@
 use crate::{
     config::{
         constants::COLOUR_RED,
-        types::{Error, GuildData, SContext, HTTP_CLIENT},
+        types::{Error, GuildData, HTTP_CLIENT, SContext},
     },
     utils::ai::ai_voice,
 };
@@ -11,20 +11,19 @@ use bytes::{BufMut, BytesMut};
 use core::time::Duration;
 use dashmap::DashMap;
 use poise::{
-    async_trait,
+    CreateReply, async_trait,
     serenity_prelude::{
         Channel, ChannelId, CreateEmbed, CreateMessage, EmbedMessageBuilding as _, GuildId,
         MessageBuilder,
     },
-    CreateReply,
 };
 use serde::Deserialize;
 use songbird::{
+    Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
+    Songbird,
     driver::Bitrate,
     input::{Input, YoutubeDl},
     tracks::PlayMode,
-    Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
-    Songbird,
 };
 use sqlx::query;
 use std::sync::Arc;
@@ -61,7 +60,7 @@ async fn voice_check(ctx: &SContext<'_>) -> (Option<Arc<Mutex<Call>>>, Option<Gu
                 (Some(handler_lock), Some(guild_id))
             } else {
                 ctx.reply("Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel first")
-                 .await.ok();
+                  .await.ok();
                 (None, None)
             }
         }
@@ -144,14 +143,17 @@ pub async fn text_to_voice(
 ) -> Result<(), Error> {
     if let (Some(handler_lock), Some(_)) = voice_check(&ctx).await {
         ctx.defer().await?;
-        if let Some(bytes) = ai_voice(&prompt).await {
-            get_configured_handler(&handler_lock)
-                .await
-                .enqueue_input(Input::from(bytes))
-                .await;
-            ctx.reply("here we go").await?;
-        } else {
-            ctx.reply("I don't wanna speak now").await?;
+        match ai_voice(&prompt).await {
+            Some(bytes) => {
+                get_configured_handler(&handler_lock)
+                    .await
+                    .enqueue_input(Input::from(bytes))
+                    .await;
+                ctx.reply("here we go").await?;
+            }
+            _ => {
+                ctx.reply("I don't wanna speak now").await?;
+            }
         }
     }
     Ok(())
@@ -166,35 +168,39 @@ pub async fn add_playlist(
     playlist_id: String,
 ) -> Result<(), Error> {
     if let (Some(handler_lock), Some(_)) = voice_check(&ctx).await {
-        if let Ok(request) = HTTP_CLIENT
+        match HTTP_CLIENT
             .get(format!("https://api.deezer.com/playlist/{playlist_id}"))
             .send()
             .await
         {
-            ctx.defer().await?;
-            match request
-                .json::<DeezerResponse>()
-                .await
-                .ok()
-                .filter(|output| !output.tracks.data.is_empty())
-            {
-                Some(payload) => {
-                    for track in payload.tracks.data {
-                        let search = format!("{} {}", track.title, track.artist.name);
-                        let src = Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), search));
-                        get_configured_handler(&handler_lock)
-                            .await
-                            .enqueue_input(src)
-                            .await;
+            Ok(request) => {
+                ctx.defer().await?;
+                match request
+                    .json::<DeezerResponse>()
+                    .await
+                    .ok()
+                    .filter(|output| !output.tracks.data.is_empty())
+                {
+                    Some(payload) => {
+                        for track in payload.tracks.data {
+                            let search = format!("{} {}", track.title, track.artist.name);
+                            let src =
+                                Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), search));
+                            get_configured_handler(&handler_lock)
+                                .await
+                                .enqueue_input(src)
+                                .await;
+                        }
+                        ctx.reply("Added playlist to queue").await?;
                     }
-                    ctx.reply("Added playlist to queue").await?;
-                }
-                None => {
-                    ctx.reply("Deezer refused to serve your request").await?;
+                    None => {
+                        ctx.reply("Deezer refused to serve your request").await?;
+                    }
                 }
             }
-        } else {
-            ctx.reply("Invalid playlist-id for Deezer playlist").await?;
+            _ => {
+                ctx.reply("Invalid playlist-id for Deezer playlist").await?;
+            }
         }
     }
     Ok(())
@@ -304,9 +310,8 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
                 .and_then(|voice_state| voice_state.channel_id)
         });
         let reply = match channel_id {
-            Some(channel_id) => {
-                if let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
-                {
+            Some(channel_id) => match ctx.data().music_manager.join(guild_id, channel_id).await {
+                Ok(handler_lock) => {
                     query!(
                         "INSERT INTO guild_settings (guild_id, global_call)
                         VALUES ($1, TRUE)
@@ -331,10 +336,9 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
                     );
 
                     "I've joined the party"
-                } else {
-                    "I don't wanna join"
                 }
-            }
+                _ => "I don't wanna join",
+            },
             None => "I don't wanna join",
         };
         ctx.reply(reply).await?;
@@ -425,11 +429,12 @@ pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
                     match ctx.data().music_manager.get(current_guild_id) {
                         Some(global_handler_lock) => {
                             let handler = get_configured_handler(&global_handler_lock).await;
-                            let channel_opt = if let Some(id) = handler.current_channel() {
-                                (ctx.http().get_channel(ChannelId::from(id.get())).await)
-                                    .map_or_else(|_| None, Channel::guild)
-                            } else {
-                                None
+                            let channel_opt = match handler.current_channel() {
+                                Some(id) => {
+                                    (ctx.http().get_channel(ChannelId::from(id.get())).await)
+                                        .map_or_else(|_| None, Channel::guild)
+                                }
+                                _ => None,
                             };
                             (handler.queue().current(), channel_opt)
                         }
@@ -438,8 +443,8 @@ pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
                 } else {
                     (None, None)
                 };
-                if let Some(current_track) = current_track_opt {
-                    match current_track.get_info().await {
+                match current_track_opt {
+                    Some(current_track) => match current_track.get_info().await {
                         Ok(track_info) => {
                             let response = match track_info.playing {
                                 PlayMode::Pause => match current_track.play() {
@@ -455,23 +460,27 @@ pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
                                     return Ok(());
                                 }
                             };
-                            if let Some(channel) = global_channel {
-                                channel
-                                    .send_message(
-                                        ctx.http(),
-                                        CreateMessage::default().content(response),
-                                    )
-                                    .await?;
-                            } else {
-                                ctx.reply(response).await?;
+                            match global_channel {
+                                Some(channel) => {
+                                    channel
+                                        .send_message(
+                                            ctx.http(),
+                                            CreateMessage::default().content(response),
+                                        )
+                                        .await?;
+                                }
+                                _ => {
+                                    ctx.reply(response).await?;
+                                }
                             }
                         }
                         Err(_) => {
                             ctx.reply("Failed to get current track information").await?;
                         }
+                    },
+                    _ => {
+                        ctx.reply("Bruh, nothing is playing!").await?;
                     }
-                } else {
-                    ctx.reply("Bruh, nothing is playing!").await?;
                 }
             }
         } else {

@@ -4,11 +4,12 @@ use crate::config::constants::{DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, QUOTE_HEIGHT, 
 
 use ab_glyph::{FontArc, PxScale};
 use image::{
-    codecs::gif::{GifDecoder, GifEncoder, Repeat::Infinite},
-    imageops::{overlay, resize, FilterType},
-    load_from_memory, AnimationDecoder, Frame,
+    AnimationDecoder, Frame,
     ImageFormat::WebP,
     Rgba, RgbaImage,
+    codecs::gif::{GifDecoder, GifEncoder, Repeat::Infinite},
+    imageops::{FilterType, overlay, resize},
+    load_from_memory,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
 use textwrap::wrap;

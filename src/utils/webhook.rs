@@ -2,7 +2,7 @@ use crate::config::types::{Data, Error, HTTP_CLIENT};
 
 use anyhow::anyhow;
 use poise::serenity_prelude::{
-    self as serenity, builder::CreateAttachment, ChannelId, ExecuteWebhook, Message, Webhook,
+    self as serenity, ChannelId, ExecuteWebhook, Message, Webhook, builder::CreateAttachment,
 };
 use serde::Serialize;
 use std::sync::Arc;

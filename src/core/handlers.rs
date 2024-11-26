@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use anyhow::Result;
-use poise::{serenity_prelude::FullEvent, FrameworkContext, FrameworkError, PartialContext};
+use poise::{FrameworkContext, FrameworkError, PartialContext, serenity_prelude::FullEvent};
 use std::borrow::Cow;
 use tracing::error;
 
@@ -27,14 +27,13 @@ pub async fn dynamic_prefix(
     ctx: PartialContext<'_, Data, Error>,
 ) -> anyhow::Result<Option<Cow<'static, str>>> {
     let prefix = ctx.guild_id.map_or(Cow::Borrowed("!"), |id| {
-        if let Some(guild_data) = ctx.framework.user_data().guild_data.get(&id) {
-            guild_data
+        match ctx.framework.user_data().guild_data.get(&id) {
+            Some(guild_data) => guild_data
                 .settings
                 .prefix
                 .clone()
-                .map_or(Cow::Borrowed("!"), Cow::Owned)
-        } else {
-            Cow::Borrowed("!")
+                .map_or(Cow::Borrowed("!"), Cow::Owned),
+            _ => Cow::Borrowed("!"),
         }
     });
 

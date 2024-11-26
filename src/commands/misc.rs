@@ -1,7 +1,7 @@
 use crate::{
     config::{
         constants::{COLOUR_RED, FONTS},
-        types::{Error, SContext, HTTP_CLIENT},
+        types::{Error, HTTP_CLIENT, SContext},
     },
     utils::{ai::ai_response_simple, image::quote_image},
 };
@@ -10,14 +10,14 @@ use ab_glyph::FontArc;
 use anyhow::Context;
 use dashmap::DashSet;
 use poise::{
+    CreateReply,
     serenity_prelude::{
-        nonmax::NonMaxU16, ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
+        ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
         ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
         CreateButton, CreateEmbed, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
         CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditMessage, Member, MessageId,
-        UserId,
+        UserId, nonmax::NonMaxU16,
     },
-    CreateReply,
 };
 use sqlx::query;
 use std::time::Duration;

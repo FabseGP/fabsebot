@@ -4,8 +4,8 @@ use crate::{
 };
 
 use poise::{
-    serenity_prelude::{ChannelId, CreateMessage, ExecuteWebhook, Member, User},
     CreateReply,
+    serenity_prelude::{ChannelId, CreateMessage, ExecuteWebhook, Member, User},
 };
 
 /// Send an anonymous message
@@ -57,40 +57,41 @@ pub async fn user_misuse(
     message: String,
 ) -> Result<(), Error> {
     if ctx.guild_id().is_some() {
-        if let Ok(webhook) =
-            webhook_find(ctx.serenity_context(), ctx.channel_id(), &ctx.data()).await
-        {
-            ctx.send(
-                CreateReply::default()
-                    .content("you're going to hell")
-                    .ephemeral(true),
-            )
-            .await?;
-            let avatar_url = member.avatar_url().unwrap_or_else(|| {
-                member.user.avatar_url().unwrap_or_else(|| {
-                    member
-                        .user
-                        .avatar_url()
-                        .unwrap_or_else(|| member.user.default_avatar_url())
-                })
-            });
-            webhook
-                .execute(
-                    ctx.http(),
-                    false,
-                    ExecuteWebhook::default()
-                        .username(member.display_name())
-                        .avatar_url(avatar_url)
-                        .content(message),
+        match webhook_find(ctx.serenity_context(), ctx.channel_id(), &ctx.data()).await {
+            Ok(webhook) => {
+                ctx.send(
+                    CreateReply::default()
+                        .content("you're going to hell")
+                        .ephemeral(true),
                 )
                 .await?;
-        } else {
-            ctx.send(
-                CreateReply::default()
-                    .content("no misuse for now")
-                    .ephemeral(true),
-            )
-            .await?;
+                let avatar_url = member.avatar_url().unwrap_or_else(|| {
+                    member.user.avatar_url().unwrap_or_else(|| {
+                        member
+                            .user
+                            .avatar_url()
+                            .unwrap_or_else(|| member.user.default_avatar_url())
+                    })
+                });
+                webhook
+                    .execute(
+                        ctx.http(),
+                        false,
+                        ExecuteWebhook::default()
+                            .username(member.display_name())
+                            .avatar_url(avatar_url)
+                            .content(message),
+                    )
+                    .await?;
+            }
+            _ => {
+                ctx.send(
+                    CreateReply::default()
+                        .content("no misuse for now")
+                        .ephemeral(true),
+                )
+                .await?;
+            }
         }
     }
     Ok(())

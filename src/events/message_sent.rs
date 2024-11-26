@@ -268,55 +268,71 @@ pub async fn handle_message(
                         .await?
                         .guild()
                     {
-                        if let Ok(webhook) = webhook_find(ctx, chat_channel.id, &data).await {
-                            let content = if new_message.content.is_empty() {
-                                ""
-                            } else {
-                                new_message.content.as_str()
-                            };
-                            let mut message = ExecuteWebhook::default()
-                                .username(new_message.author.display_name())
-                                .avatar_url(new_message.author.avatar_url().unwrap_or_else(|| {
-                                    new_message
-                                        .author
-                                        .static_avatar_url()
-                                        .unwrap_or_else(|| new_message.author.default_avatar_url())
-                                }))
-                                .content(content);
-                            if !new_message.attachments.is_empty() {
-                                for attachment in &new_message.attachments {
-                                    if attachment.dimensions().is_some() {
-                                        message = message.add_file(
-                                            CreateAttachment::url(
-                                                &ctx.http,
-                                                attachment.url.as_str(),
-                                                attachment.filename.to_string(),
+                        match webhook_find(ctx, chat_channel.id, &data).await {
+                            Ok(webhook) => {
+                                let content = if new_message.content.is_empty() {
+                                    ""
+                                } else {
+                                    new_message.content.as_str()
+                                };
+                                let mut message = ExecuteWebhook::default()
+                                    .username(new_message.author.display_name())
+                                    .avatar_url(new_message.author.avatar_url().unwrap_or_else(
+                                        || {
+                                            new_message.author.static_avatar_url().unwrap_or_else(
+                                                || new_message.author.default_avatar_url(),
                                             )
-                                            .await?,
-                                        );
+                                        },
+                                    ))
+                                    .content(content);
+                                if !new_message.attachments.is_empty() {
+                                    for attachment in &new_message.attachments {
+                                        if attachment.dimensions().is_some() {
+                                            message = message.add_file(
+                                                CreateAttachment::url(
+                                                    &ctx.http,
+                                                    attachment.url.as_str(),
+                                                    attachment.filename.to_string(),
+                                                )
+                                                .await?,
+                                            );
+                                        }
                                     }
                                 }
-                            }
-                            if let Some(replied_message) = &new_message.referenced_message {
-                                let mut embed = CreateEmbed::default()
-                                    .description(replied_message.content.as_str())
-                                    .author(
-                                        CreateEmbedAuthor::new(
-                                            replied_message.author.display_name(),
-                                        )
-                                        .icon_url(
-                                            replied_message.author.avatar_url().unwrap_or_else(
-                                                || replied_message.author.default_avatar_url(),
+                                if let Some(replied_message) = &new_message.referenced_message {
+                                    let mut embed = CreateEmbed::default()
+                                        .description(replied_message.content.as_str())
+                                        .author(
+                                            CreateEmbedAuthor::new(
+                                                replied_message.author.display_name(),
+                                            )
+                                            .icon_url(
+                                                replied_message.author.avatar_url().unwrap_or_else(
+                                                    || replied_message.author.default_avatar_url(),
+                                                ),
                                             ),
-                                        ),
-                                    )
-                                    .timestamp(new_message.timestamp);
-                                if let Some(attachment) = replied_message.attachments.first() {
-                                    embed = embed.image(attachment.url.as_str());
+                                        )
+                                        .timestamp(new_message.timestamp);
+                                    if let Some(attachment) = replied_message.attachments.first() {
+                                        embed = embed.image(attachment.url.as_str());
+                                    }
+                                    message = message.embed(embed);
                                 }
-                                message = message.embed(embed);
+                                if webhook.execute(&ctx.http, false, message).await.is_err() {
+                                    chat_channel
+                                        .id
+                                        .say(
+                                            &ctx.http,
+                                            format!(
+                                                "{} sent this: {}",
+                                                new_message.author.display_name(),
+                                                new_message.content.as_str()
+                                            ),
+                                        )
+                                        .await?;
+                                }
                             }
-                            if webhook.execute(&ctx.http, false, message).await.is_err() {
+                            _ => {
                                 chat_channel
                                     .id
                                     .say(
@@ -329,18 +345,6 @@ pub async fn handle_message(
                                     )
                                     .await?;
                             }
-                        } else {
-                            chat_channel
-                                .id
-                                .say(
-                                    &ctx.http,
-                                    format!(
-                                        "{} sent this: {}",
-                                        new_message.author.display_name(),
-                                        new_message.content.as_str()
-                                    ),
-                                )
-                                .await?;
                         }
                     }
                 }
@@ -443,21 +447,20 @@ pub async fn handle_message(
                         )
                         .footer(CreateEmbedFooter::new(channel_name))
                         .timestamp(ref_msg.timestamp);
-                    let (embed, content_url) = if let Some(attachment) = ref_msg.attachments.first()
-                    {
-                        if let Some(content_type) = attachment.content_type.as_deref() {
-                            if content_type.starts_with("image") {
-                                (embed.image(attachment.url.as_str()), None)
-                            } else if content_type.starts_with("video") {
-                                (embed, Some(attachment.url.as_str()))
-                            } else {
-                                (embed, None)
+                    let (embed, content_url) = match ref_msg.attachments.first() {
+                        Some(attachment) => match attachment.content_type.as_deref() {
+                            Some(content_type) => {
+                                if content_type.starts_with("image") {
+                                    (embed.image(attachment.url.as_str()), None)
+                                } else if content_type.starts_with("video") {
+                                    (embed, Some(attachment.url.as_str()))
+                                } else {
+                                    (embed, None)
+                                }
                             }
-                        } else {
-                            (embed, None)
-                        }
-                    } else {
-                        (embed, None)
+                            _ => (embed, None),
+                        },
+                        _ => (embed, None),
                     };
                     let mut preview_message = CreateMessage::default()
                         .embed(embed)

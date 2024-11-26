@@ -1,7 +1,7 @@
 use crate::{
     config::{
         constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
-        types::{Error, SContext, HTTP_CLIENT, RNG, UTILS_CONFIG},
+        types::{Error, HTTP_CLIENT, RNG, SContext, UTILS_CONFIG},
     },
     utils::{
         ai::ai_response_simple,
@@ -9,15 +9,15 @@ use crate::{
     },
 };
 
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use poise::{
-    serenity_prelude::{
-        futures::StreamExt as _, small_fixed_array::FixedString, ButtonStyle,
-        ComponentInteractionCollector, CreateActionRow, CreateAttachment, CreateButton,
-        CreateEmbed, CreateInteractionResponse, EditMessage, Member, MessageId,
-    },
     CreateReply,
+    serenity_prelude::{
+        ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment,
+        CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage, Member, MessageId,
+        futures::StreamExt as _, small_fixed_array::FixedString,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -1080,16 +1080,15 @@ pub async fn roast(
         let name = member.display_name();
         let account_date = member.user.id.created_at();
         let join_date = member.joined_at.unwrap_or_default();
-        let message_count = if let Some(count) = ctx
+        let message_count = match ctx
             .data()
             .user_settings
             .entry(guild_id)
             .or_default()
             .get(&member.user.id)
         {
-            count.message_count
-        } else {
-            0
+            Some(count) => count.message_count,
+            _ => 0,
         };
         let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
@@ -1121,7 +1120,9 @@ pub async fn roast(
             result
         };
 
-        let description = format!("name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles},acc_create:{account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:{messages_string}");
+        let description = format!(
+            "name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles},acc_create:{account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:{messages_string}"
+        );
         let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target";
         match ai_response_simple(role, &description).await {
             Some(resp) if !resp.is_empty() => {

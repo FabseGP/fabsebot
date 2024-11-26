@@ -9,19 +9,19 @@ mod utils;
 use anyhow::{Context as _, Result as AResult};
 use config::settings::{AIConfig, APIConfig, MainConfig, PostgresConfig};
 use core::client::bot_start;
-use opentelemetry::{global::set_tracer_provider, trace::TracerProvider as _, KeyValue};
+use opentelemetry::{KeyValue, global::set_tracer_provider, trace::TracerProvider as _};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig as _};
 use opentelemetry_sdk::{
+    Resource,
     runtime::Tokio,
     trace::{Config, TracerProvider},
-    Resource,
 };
 use std::fs::read_to_string;
 use toml::{Table, Value};
 use tracing::Level;
 use tracing_opentelemetry::layer;
 use tracing_subscriber::{
-    filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _, Registry,
+    Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _,
 };
 
 #[tokio::main]

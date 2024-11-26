@@ -2,26 +2,26 @@ use crate::{
     commands::{api_calls, funny, games, info, misc, music, settings},
     config::{
         settings::{AIConfig, APIConfig, MainConfig, PostgresConfig},
-        types::{Data, UtilsConfig, SHARD_MANAGER, UTILS_CONFIG},
+        types::{Data, SHARD_MANAGER, UTILS_CONFIG, UtilsConfig},
     },
     core::handlers::{dynamic_prefix, event_handler, on_error},
 };
 use anyhow::Context;
 use dashmap::DashMap;
 use poise::{
-    serenity_prelude::{
-        cache::Settings, ActivityData, Client, CreateAttachment, EditProfile, GatewayIntents,
-        OnlineStatus::Online, ShardManager, Token,
-    },
     Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions,
+    serenity_prelude::{
+        ActivityData, Client, CreateAttachment, EditProfile, GatewayIntents, OnlineStatus::Online,
+        ShardManager, Token, cache::Settings,
+    },
 };
 use serenity::all::CreateAllowedMentions;
-use songbird::{driver::DecodeMode::Decode, Config, Songbird};
+use songbird::{Config, Songbird, driver::DecodeMode::Decode};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::{str::FromStr, sync::Arc};
 use tokio::{
     select,
-    signal::unix::{signal, SignalKind},
+    signal::unix::{SignalKind, signal},
     spawn,
 };
 use tracing::{error, warn};

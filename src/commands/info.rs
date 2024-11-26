@@ -1,8 +1,8 @@
 use crate::config::types::{Error, SContext};
 
 use poise::{
-    serenity_prelude::{CreateEmbed, Member},
     CreateReply,
+    serenity_prelude::{CreateEmbed, Member},
 };
 use std::string::ToString;
 

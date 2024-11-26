@@ -1,13 +1,15 @@
+cargo-features = ["edition2024"]
+
 [package]
 name = "fabsebot_supremacy"
 version = "0.6.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 ab_glyph = "0"
 anyhow = "1"
 base64 = "0"
-bytes = "0"
+bytes = "1"
 dashmap = { version = "6", features = ["inline"] }
 fastrand = "2"
 image = { version = "0", default-features = false, features = ["gif", "rayon", "webp"] }

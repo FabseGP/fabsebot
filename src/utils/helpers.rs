@@ -7,10 +7,10 @@ use serde::Deserialize;
 use std::borrow::Cow;
 use urlencoding::encode;
 use winnow::{
+    PResult, Parser,
     ascii::digit1,
     combinator::{delimited, preceded, separated_pair},
     token::take_till,
-    PResult, Parser,
 };
 
 #[derive(Deserialize)]
@@ -38,7 +38,11 @@ pub async fn get_gifs(input: &str) -> Vec<Cow<'static, str>> {
         let encoded_input = encode(input);
         format!(
             "https://tenor.googleapis.com/v2/search?q={encoded_input}&key={}&contentfilter=medium&limit=40",
-            UTILS_CONFIG.get().expect("UTILS_CONFIG must be set during initialization").api.tenor_token,
+            UTILS_CONFIG
+                .get()
+                .expect("UTILS_CONFIG must be set during initialization")
+                .api
+                .tenor_token,
         )
     };
     match HTTP_CLIENT.get(request_url).send().await {
