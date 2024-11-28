@@ -1,5 +1,5 @@
 use crate::config::settings::{
-    AIConfig, APIConfig, GuildSettings, UserSettings, WordReactions, WordTracking,
+    AIConfig, APIConfig, GuildSettings, MainConfig, UserSettings, WordReactions, WordTracking,
 };
 
 use dashmap::DashMap;
@@ -18,9 +18,9 @@ use tokio::sync::Mutex;
 
 use super::settings::EmojiReactions;
 
-type AIChatMap = DashMap<GuildId, Vec<AIChatMessage>>;
+pub type AIChatMap = DashMap<GuildId, Vec<AIChatMessage>>;
 type GlobalChatMap = DashMap<GuildId, DashMap<i64, MessageId>>;
-type WebhookMap = DashMap<ChannelId, Webhook>;
+pub type WebhookMap = DashMap<ChannelId, Webhook>;
 type GuildDataMap = DashMap<GuildId, GuildData>;
 type UserSettingsMap = DashMap<GuildId, DashMap<UserId, UserSettings>>;
 
@@ -87,6 +87,7 @@ pub type Error = anyhow::Error;
 pub type SContext<'a> = PContext<'a, Data, Error>;
 
 pub struct UtilsConfig {
+    pub bot: MainConfig,
     pub ai: AIConfig,
     pub api: APIConfig,
 }

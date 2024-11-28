@@ -6,6 +6,7 @@
 #avatar = 
 #banner = 
 #activity =
+#ping_message = ""
 
 [PostgreSQL-Info]
 #database = 

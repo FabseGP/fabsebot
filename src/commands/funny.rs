@@ -57,7 +57,13 @@ pub async fn user_misuse(
     message: String,
 ) -> Result<(), Error> {
     if ctx.guild_id().is_some() {
-        match webhook_find(ctx.serenity_context(), ctx.channel_id(), &ctx.data()).await {
+        match webhook_find(
+            ctx.serenity_context(),
+            ctx.channel_id(),
+            ctx.data().channel_webhooks.clone(),
+        )
+        .await
+        {
             Ok(webhook) => {
                 ctx.send(
                     CreateReply::default()

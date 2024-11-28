@@ -1,7 +1,7 @@
 use crate::{
     config::{
         constants::{COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE},
-        types::{Data, Error, RNG},
+        types::{Data, Error, RNG, UTILS_CONFIG},
     },
     utils::{
         ai::ai_chatbot,
@@ -38,152 +38,151 @@ pub async fn handle_message(
             .await
             .context("Failed to acquire savepoint")?;
         let mut bot_role = String::with_capacity(DEFAULT_BOT_ROLE.len());
-        if let Some(user_settings) = data.user_settings.get(&guild_id) {
-            for mut target in user_settings.iter_mut() {
-                let user_id = UserId::new(
-                    u64::try_from(target.user_id).expect("user id out of bounds for u64"),
-                );
-                if target.afk {
-                    if user_id_i64 == target.user_id {
-                        let mut response = new_message
+        for mut target in data.user_settings.entry(guild_id).or_default().iter_mut() {
+            let user_id =
+                UserId::new(u64::try_from(target.user_id).expect("user id out of bounds for u64"));
+            if user_id == new_message.author.id {
+                bot_role = target
+                    .chatbot_role
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned());
+            }
+            if target.afk {
+                if user_id_i64 == target.user_id {
+                    let mut response = new_message
                         .reply(
                             &ctx.http,
                             format!(
-                                "Ugh, welcome back {}! Guess I didn't manage to kill you after all", 
+                                "Ugh, welcome back {}! Guess I didn't manage to kill you after all",
                                 user_id.to_user(&ctx.http).await?.display_name()
                             ),
                         )
                         .await?;
-                        if let Some(links) = target.pinged_links.as_deref()
-                            && !links.is_empty()
-                        {
-                            let mut e = CreateEmbed::default()
-                                .colour(COLOUR_RED)
-                                .title("Pings you retrieved:");
-                            for entry in links.split(',') {
-                                if let Some((name, role)) = entry.split_once(';') {
-                                    e = e.field(name, role, false);
-                                }
+                    if let Some(links) = target.pinged_links.as_deref()
+                        && !links.is_empty()
+                    {
+                        let mut e = CreateEmbed::default()
+                            .colour(COLOUR_RED)
+                            .title("Pings you retrieved:");
+                        for entry in links.split(',') {
+                            if let Some((name, role)) = entry.split_once(';') {
+                                e = e.field(name, role, false);
                             }
-                            response
-                                .edit(&ctx.http, EditMessage::default().embed(e))
-                                .await?;
                         }
-                        query!(
+                        response
+                            .edit(&ctx.http, EditMessage::default().embed(e))
+                            .await?;
+                    }
+                    query!(
                         "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
                             guild_id_i64,
                             target.user_id,
                         )
                         .execute(&mut *tx)
                         .await?;
-                        target.afk = false;
-                        target.afk_reason = None;
-                        target.pinged_links = None;
-                    } else if new_message.mentions_user_id(user_id)
-                        && new_message.referenced_message.is_none()
-                    {
-                        let pinged_link = format!(
-                            "{};{},",
-                            new_message.link(),
-                            new_message.author.display_name()
-                        );
-                        query!(
-                            "UPDATE user_settings 
+                    target.afk = false;
+                    target.afk_reason = None;
+                    target.pinged_links = None;
+                } else if new_message.mentions_user_id(user_id)
+                    && new_message.referenced_message.is_none()
+                {
+                    let pinged_link = format!(
+                        "{};{},",
+                        new_message.link(),
+                        new_message.author.display_name()
+                    );
+                    query!(
+                        "UPDATE user_settings 
                             SET pinged_links = COALESCE(pinged_links || ',' || $1, $1) 
                             WHERE guild_id = $2 AND user_id = $3",
-                            pinged_link,
-                            guild_id_i64,
-                            target.user_id,
-                        )
-                        .execute(&mut *tx)
-                        .await?;
-                        match target.pinged_links.as_mut() {
-                            Some(existing_links) => {
-                                existing_links.push_str(&pinged_link);
-                            }
-                            None => {
-                                target.pinged_links = Some(pinged_link);
-                            }
+                        pinged_link,
+                        guild_id_i64,
+                        target.user_id,
+                    )
+                    .execute(&mut *tx)
+                    .await?;
+                    match target.pinged_links.as_mut() {
+                        Some(existing_links) => {
+                            existing_links.push_str(&pinged_link);
                         }
-                        let reason = target
-                            .afk_reason
-                            .as_deref()
-                            .unwrap_or("Didn't renew life subscription");
-                        new_message
-                            .reply(
-                                &ctx.http,
-                                format!(
-                                    "{} is currently dead. Reason: {reason}",
-                                    user_id.to_user(&ctx.http).await?.display_name()
-                                ),
-                            )
-                            .await?;
+                        None => {
+                            target.pinged_links = Some(pinged_link);
+                        }
                     }
-                }
-                if new_message.mentions_user_id(user_id)
-                    && new_message.referenced_message.is_none()
-                    && let Some(ping_content) = &target.ping_content
-                {
-                    let message = {
-                        let base = CreateMessage::default()
-                            .reference_message(new_message)
-                            .allowed_mentions(CreateAllowedMentions::default().replied_user(false));
-                        match &target.ping_media {
-                            Some(ping_media) => {
-                                let media = if ping_media.eq_ignore_ascii_case("waifu") {
-                                    Some(get_waifu().await)
-                                } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
-                                    let urls = get_gifs(gif_query).await;
-                                    urls.get(RNG.lock().await.usize(..urls.len())).cloned()
-                                } else if !ping_media.is_empty() {
-                                    Some(Cow::Borrowed(ping_media.as_str()))
-                                } else {
-                                    None
-                                };
-                                if let Some(image) = media {
-                                    base.embed(
-                                        CreateEmbed::default()
-                                            .title(ping_content)
-                                            .colour(COLOUR_BLUE)
-                                            .image(image),
-                                    )
-                                } else {
-                                    base.content(ping_content)
-                                }
-                            }
-                            None => base.content(ping_content),
-                        }
-                    };
+                    let reason = target
+                        .afk_reason
+                        .as_deref()
+                        .unwrap_or("Didn't renew life subscription");
                     new_message
-                        .channel_id
-                        .send_message(&ctx.http, message)
+                        .reply(
+                            &ctx.http,
+                            format!(
+                                "{} is currently dead. Reason: {reason}",
+                                user_id.to_user(&ctx.http).await?.display_name()
+                            ),
+                        )
                         .await?;
-                }
-                if user_id_i64 == target.user_id {
-                    target.message_count += 1;
                 }
             }
-            bot_role = user_settings
-                .get(&new_message.author.id)
-                .and_then(|setting| setting.chatbot_role.clone())
-                .unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned());
-            query!(
-                "INSERT INTO user_settings (guild_id, user_id, message_count) VALUES ($1, $2, 1)
+            if new_message.mentions_user_id(user_id)
+                && new_message.referenced_message.is_none()
+                && let Some(ping_content) = &target.ping_content
+            {
+                let message = {
+                    let base = CreateMessage::default()
+                        .reference_message(new_message)
+                        .allowed_mentions(CreateAllowedMentions::default().replied_user(false));
+                    match &target.ping_media {
+                        Some(ping_media) => {
+                            let media = if ping_media.eq_ignore_ascii_case("waifu") {
+                                Some(get_waifu().await)
+                            } else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
+                                let urls = get_gifs(gif_query).await;
+                                urls.get(RNG.lock().await.usize(..urls.len())).cloned()
+                            } else if !ping_media.is_empty() {
+                                Some(Cow::Borrowed(ping_media.as_str()))
+                            } else {
+                                None
+                            };
+                            if let Some(image) = media {
+                                base.embed(
+                                    CreateEmbed::default()
+                                        .title(ping_content)
+                                        .colour(COLOUR_BLUE)
+                                        .image(image),
+                                )
+                            } else {
+                                base.content(ping_content)
+                            }
+                        }
+                        None => base.content(ping_content),
+                    }
+                };
+                new_message
+                    .channel_id
+                    .send_message(&ctx.http, message)
+                    .await?;
+            }
+            if user_id_i64 == target.user_id {
+                target.message_count += 1;
+            }
+        }
+        query!(
+            "INSERT INTO user_settings (guild_id, user_id, message_count) VALUES ($1, $2, 1)
                 ON CONFLICT(guild_id, user_id) 
                 DO UPDATE SET
                     message_count = user_settings.message_count + 1",
-                guild_id_i64,
-                user_id_i64,
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
+            guild_id_i64,
+            user_id_i64,
+        )
+        .execute(&mut *tx)
+        .await?;
         if let Some(mut guild_data) = data.guild_data.get_mut(&guild_id) {
             if let Some(spoiler_channel) = guild_data.settings.spoiler_channel
                 && new_message.channel_id.get()
                     == u64::try_from(spoiler_channel).expect("channel id out of bounds for u64")
             {
-                spoiler_message(ctx, new_message, &data).await?;
+                spoiler_message(ctx, new_message, data.channel_webhooks.clone()).await?;
             }
             if let (Some(dead_channel), Some(dead_chat_rate)) = (
                 guild_data.settings.dead_chat_channel,
@@ -222,7 +221,7 @@ pub async fn handle_message(
                     new_message,
                     bot_role,
                     guild_id,
-                    &data.ai_chats,
+                    data.ai_chats.clone(),
                     data.music_manager.get(guild_id),
                 )
                 .await?;
@@ -268,7 +267,9 @@ pub async fn handle_message(
                         .await?
                         .guild()
                     {
-                        match webhook_find(ctx, chat_channel.id, &data).await {
+                        match webhook_find(ctx, chat_channel.id, data.channel_webhooks.clone())
+                            .await
+                        {
                             Ok(webhook) => {
                                 let content = if new_message.content.is_empty() {
                                     ""
@@ -493,7 +494,13 @@ pub async fn handle_message(
                 CreateMessage::default()
                     .embed(
                         CreateEmbed::default()
-                            .title("why ping me bitch, go get a life!")
+                            .title(
+                                &UTILS_CONFIG
+                                    .get()
+                                    .expect("UTILS_CONFIG must be set during initialization")
+                                    .bot
+                                    .ping_message,
+                            )
                             .image("https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif")
                             .colour(COLOUR_BLUE),
                     )
@@ -526,7 +533,9 @@ pub async fn handle_message(
             };
             let count = content.matches("kurukuru_seseren").count();
             let response = emoji_string.repeat(count);
-            if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
+            if let Ok(webhook) =
+                webhook_find(ctx, new_message.channel_id, data.channel_webhooks.clone()).await
+            {
                 webhook
                     .execute(
                         &ctx.http,
@@ -553,7 +562,9 @@ pub async fn handle_message(
         }
     }
     if content == "fabse" || content == "fabseman" {
-        if let Ok(webhook) = webhook_find(ctx, new_message.channel_id, &data).await {
+        if let Ok(webhook) =
+            webhook_find(ctx, new_message.channel_id, data.channel_webhooks.clone()).await
+        {
             webhook
                 .execute(
                     &ctx.http,

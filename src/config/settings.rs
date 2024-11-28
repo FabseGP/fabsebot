@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct MainConfig {
     pub token: String,
     pub jaeger: String,
@@ -9,6 +9,7 @@ pub struct MainConfig {
     pub avatar: String,
     pub banner: String,
     pub activity: String,
+    pub ping_message: String,
 }
 
 #[derive(Deserialize)]

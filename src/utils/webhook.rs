@@ -1,4 +1,4 @@
-use crate::config::types::{Data, Error, HTTP_CLIENT};
+use crate::config::types::{Error, HTTP_CLIENT, WebhookMap};
 
 use anyhow::anyhow;
 use poise::serenity_prelude::{
@@ -10,7 +10,7 @@ use std::sync::Arc;
 pub async fn spoiler_message(
     ctx: &serenity::Context,
     message: &Message,
-    data: &Arc<Data>,
+    data: Arc<WebhookMap>,
 ) -> Result<(), Error> {
     if let Some(avatar_url) = message.author.avatar_url() {
         let webhook_try = webhook_find(ctx, message.channel_id, data).await;
@@ -72,9 +72,9 @@ struct WebhookInfo {
 pub async fn webhook_find(
     ctx: &serenity::Context,
     channel_id: ChannelId,
-    data: &Arc<Data>,
+    cached_webhooks: Arc<WebhookMap>,
 ) -> Result<Webhook, Error> {
-    if let Some(webhook) = data.channel_webhooks.get(&channel_id) {
+    if let Some(webhook) = cached_webhooks.get(&channel_id) {
         return Ok(webhook.clone());
     }
     let existing_webhooks_get = channel_id.webhooks(&ctx.http).await;
@@ -95,7 +95,7 @@ pub async fn webhook_find(
                 .map_or_else(
                     |_| Err(anyhow!("")),
                     |webhook| {
-                        data.channel_webhooks.insert(channel_id, webhook.clone());
+                        cached_webhooks.insert(channel_id, webhook.clone());
                         Ok(webhook)
                     },
                 )

@@ -48,6 +48,7 @@ pub async fn bot_start(
 ) -> anyhow::Result<()> {
     if UTILS_CONFIG
         .set(Arc::new(UtilsConfig {
+            bot: bot_config.clone(),
             ai: ai_config,
             api: api_config,
         }))

@@ -11,7 +11,6 @@ use poise::{
     serenity_prelude::{Context as SContext, GuildId, Ready, UserId},
 };
 use sqlx::query_as;
-use tokio::join;
 use tracing::info;
 
 pub async fn handle_ready(
@@ -69,51 +68,43 @@ pub async fn handle_ready(
             .push(emoji);
     }
 
-    join!(
-        async {
-            for settings in guild_settings {
-                let guild_id = GuildId::new(
-                    u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"),
-                );
-                let settings_guild_id = settings.guild_id;
-                let guild_data = GuildData {
-                    settings,
-                    word_reactions: grouped_word_reactions
-                        .remove(&settings_guild_id)
-                        .unwrap_or_default()
-                        .1,
-                    word_tracking: grouped_word_tracking
-                        .remove(&settings_guild_id)
-                        .unwrap_or_default()
-                        .1,
-                    emoji_reactions: grouped_emoji_reactions
-                        .remove(&settings_guild_id)
-                        .unwrap_or_default()
-                        .1,
-                };
-                framework_context
-                    .user_data()
-                    .guild_data
-                    .insert(guild_id, guild_data);
-            }
-        },
-        async {
-            for settings in user_settings {
-                let guild_id = GuildId::new(
-                    u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"),
-                );
-                let user_id = UserId::new(
-                    u64::try_from(settings.user_id).expect("User-id out of bounds for u64"),
-                );
-                framework_context
-                    .user_data()
-                    .user_settings
-                    .entry(guild_id)
-                    .or_default()
-                    .insert(user_id, settings);
-            }
-        }
-    );
+    for settings in guild_settings {
+        let guild_id =
+            GuildId::new(u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"));
+        let settings_guild_id = settings.guild_id;
+        let guild_data = GuildData {
+            settings,
+            word_reactions: grouped_word_reactions
+                .remove(&settings_guild_id)
+                .unwrap_or_default()
+                .1,
+            word_tracking: grouped_word_tracking
+                .remove(&settings_guild_id)
+                .unwrap_or_default()
+                .1,
+            emoji_reactions: grouped_emoji_reactions
+                .remove(&settings_guild_id)
+                .unwrap_or_default()
+                .1,
+        };
+        framework_context
+            .user_data()
+            .guild_data
+            .insert(guild_id, guild_data);
+    }
+
+    for settings in user_settings {
+        let guild_id =
+            GuildId::new(u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"));
+        let user_id =
+            UserId::new(u64::try_from(settings.user_id).expect("User-id out of bounds for u64"));
+        framework_context
+            .user_data()
+            .user_settings
+            .entry(guild_id)
+            .or_default()
+            .insert(user_id, settings);
+    }
 
     let user_count = match ctx.http.get_current_application_info().await {
         Ok(info) => info.approximate_user_install_count.unwrap_or(0),

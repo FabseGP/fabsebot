@@ -1,12 +1,10 @@
-cargo-features = ["edition2024"]
-
 [package]
 name = "fabsebot_supremacy"
 version = "0.6.0"
 edition = "2024"
 
 [dependencies]
-ab_glyph = "0"
+ab_glyph = "*"
 anyhow = "1"
 base64 = "0"
 bytes = "1"
@@ -26,7 +24,7 @@ songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity
 sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
 symphonia = { version = "0", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }
 textwrap = "0"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "signal"] }
 toml = "0"
 tracing = "0"
 tracing-opentelemetry = { version = "0", default-features = false }

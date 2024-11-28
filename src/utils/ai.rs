@@ -1,11 +1,11 @@
 use crate::{
     commands::music::get_configured_handler,
-    config::types::{AIChatMessage, Error, HTTP_CLIENT, UTILS_CONFIG},
+    config::types::{AIChatMap, AIChatMessage, Error, HTTP_CLIENT, UTILS_CONFIG},
     utils::helpers::discord_message_link,
 };
 
 use base64::{Engine, engine::general_purpose};
-use dashmap::{DashMap, DashSet};
+use dashmap::DashSet;
 use poise::serenity_prelude::{self as serenity, ChannelId, GuildId, Http, Message, MessageId};
 use serde::{Deserialize, Serialize};
 use songbird::{Call, input::Input};
@@ -18,7 +18,7 @@ pub async fn ai_chatbot(
     message: &Message,
     bot_role: String,
     guild_id: GuildId,
-    conversations: &Arc<DashMap<GuildId, Vec<AIChatMessage>>>,
+    conversations: Arc<AIChatMap>,
     voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> Result<(), Error> {
     if message.content.eq_ignore_ascii_case("clear") {
