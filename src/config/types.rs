@@ -1,9 +1,9 @@
 use crate::config::settings::{
-    AIConfig, APIConfig, GuildSettings, MainConfig, UserSettings, WordReactions, WordTracking,
+    AIConfig, APIConfig, EmojiReactions, GuildSettings, MainConfig, UserSettings, WordReactions,
+    WordTracking,
 };
-
-use dashmap::DashMap;
 use fastrand::Rng;
+use mini_moka::sync::Cache;
 use once_cell::sync::{Lazy, OnceCell};
 use poise::{
     Context as PContext,
@@ -13,16 +13,17 @@ use reqwest::Client;
 use serde::Serialize;
 use songbird::Songbird;
 use sqlx::PgPool;
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 
-use super::settings::EmojiReactions;
-
-pub type AIChatMap = DashMap<GuildId, Vec<AIChatMessage>>;
-type GlobalChatMap = DashMap<GuildId, DashMap<i64, MessageId>>;
-pub type WebhookMap = DashMap<ChannelId, Webhook>;
-type GuildDataMap = DashMap<GuildId, GuildData>;
-type UserSettingsMap = DashMap<GuildId, DashMap<UserId, UserSettings>>;
+pub type AIChatMap = Cache<GuildId, Arc<Mutex<Vec<AIChatMessage>>>>;
+type GlobalChatMap = Cache<GuildId, Arc<HashMap<GuildId, MessageId>>>;
+pub type WebhookMap = Cache<ChannelId, Webhook>;
+pub type GuildDataMap = Cache<GuildId, Arc<GuildData>>;
+type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -66,11 +67,12 @@ impl AIChatMessage {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct GuildData {
     pub settings: GuildSettings,
-    pub word_reactions: Vec<WordReactions>,
-    pub word_tracking: Vec<WordTracking>,
-    pub emoji_reactions: Vec<EmojiReactions>,
+    pub word_reactions: HashSet<WordReactions>,
+    pub word_tracking: HashSet<WordTracking>,
+    pub emoji_reactions: HashSet<EmojiReactions>,
 }
 
 pub struct Data {
@@ -79,8 +81,8 @@ pub struct Data {
     pub ai_chats: Arc<AIChatMap>,
     pub global_chats: Arc<GlobalChatMap>,
     pub channel_webhooks: Arc<WebhookMap>,
-    pub guild_data: Arc<GuildDataMap>,
-    pub user_settings: Arc<UserSettingsMap>,
+    pub guild_data: Arc<Mutex<GuildDataMap>>,
+    pub user_settings: Arc<Mutex<UserSettingsMap>>,
 }
 
 pub type Error = anyhow::Error;

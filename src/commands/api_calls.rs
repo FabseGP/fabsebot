@@ -1,6 +1,7 @@
 use crate::{
     config::{
         constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
+        settings::UserSettings,
         types::{Error, HTTP_CLIENT, RNG, SContext, UTILS_CONFIG},
     },
     utils::{
@@ -20,7 +21,7 @@ use poise::{
     },
 };
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use urlencoding::encode;
 
 struct State {
@@ -1080,15 +1081,26 @@ pub async fn roast(
         let name = member.display_name();
         let account_date = member.user.id.created_at();
         let join_date = member.joined_at.unwrap_or_default();
-        let message_count = match ctx
-            .data()
-            .user_settings
-            .entry(guild_id)
-            .or_default()
-            .get(&member.user.id)
-        {
-            Some(count) => count.message_count,
-            _ => 0,
+        let message_count = {
+            let ctx_data = ctx.data();
+            let user_settings_lock = ctx_data.user_settings.lock().await;
+            let mut user_settings_opt = user_settings_lock.get(&guild_id);
+            match user_settings_opt {
+                Some(settings) => settings
+                    .get(&member.user.id)
+                    .map_or(0, |count| count.message_count),
+                _ => {
+                    let mut modified_settings =
+                        user_settings_opt.get_or_insert_default().as_ref().clone();
+                    modified_settings.insert(member.user.id, UserSettings {
+                        guild_id: i64::from(guild_id),
+                        user_id: i64::from(member.user.id),
+                        ..Default::default()
+                    });
+                    user_settings_lock.insert(guild_id, Arc::new(modified_settings.clone()));
+                    0
+                }
+            }
         };
         let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 

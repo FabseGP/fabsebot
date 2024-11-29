@@ -4,13 +4,16 @@ use crate::config::{
 };
 
 use anyhow::Context;
-use dashmap::DashMap;
 use poise::{
     FrameworkContext,
     builtins::register_globally,
     serenity_prelude::{Context as SContext, GuildId, Ready, UserId},
 };
 use sqlx::query_as;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tracing::info;
 
 pub async fn handle_ready(
@@ -43,69 +46,78 @@ pub async fn handle_ready(
         .await
         .context("Failed to commit sql-transaction")?;
 
-    let grouped_word_reactions: DashMap<i64, Vec<WordReactions>> = DashMap::default();
-    let grouped_word_tracking: DashMap<i64, Vec<WordTracking>> = DashMap::default();
-    let grouped_emoji_reactions: DashMap<i64, Vec<EmojiReactions>> = DashMap::default();
+    let mut grouped_word_reactions: HashMap<i64, HashSet<WordReactions>> = HashMap::default();
+    let mut grouped_word_tracking: HashMap<i64, HashSet<WordTracking>> = HashMap::default();
+    let mut grouped_emoji_reactions: HashMap<i64, HashSet<EmojiReactions>> = HashMap::default();
 
     for reaction in word_reactions {
         grouped_word_reactions
             .entry(reaction.guild_id)
             .or_default()
-            .push(reaction);
+            .insert(reaction);
     }
 
     for tracking in word_tracking {
         grouped_word_tracking
             .entry(tracking.guild_id)
             .or_default()
-            .push(tracking);
+            .insert(tracking);
     }
 
     for emoji in emoji_reactions {
         grouped_emoji_reactions
             .entry(emoji.guild_id)
             .or_default()
-            .push(emoji);
+            .insert(emoji);
     }
 
-    for settings in guild_settings {
-        let guild_id =
-            GuildId::new(u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"));
-        let settings_guild_id = settings.guild_id;
-        let guild_data = GuildData {
-            settings,
-            word_reactions: grouped_word_reactions
-                .remove(&settings_guild_id)
-                .unwrap_or_default()
-                .1,
-            word_tracking: grouped_word_tracking
-                .remove(&settings_guild_id)
-                .unwrap_or_default()
-                .1,
-            emoji_reactions: grouped_emoji_reactions
-                .remove(&settings_guild_id)
-                .unwrap_or_default()
-                .1,
-        };
-        framework_context
-            .user_data()
-            .guild_data
-            .insert(guild_id, guild_data);
+    let user_data = framework_context.user_data();
+
+    {
+        let guild_data_lock = user_data.guild_data.lock().await;
+        for settings in guild_settings {
+            let guild_id = GuildId::new(
+                u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"),
+            );
+            let settings_guild_id = settings.guild_id;
+            let guild_data = GuildData {
+                settings,
+                word_reactions: grouped_word_reactions
+                    .remove_entry(&settings_guild_id)
+                    .unwrap_or_default()
+                    .1,
+                word_tracking: grouped_word_tracking
+                    .remove_entry(&settings_guild_id)
+                    .unwrap_or_default()
+                    .1,
+                emoji_reactions: grouped_emoji_reactions
+                    .remove_entry(&settings_guild_id)
+                    .unwrap_or_default()
+                    .1,
+            };
+            guild_data_lock.insert(guild_id, Arc::new(guild_data));
+        }
     }
 
-    for settings in user_settings {
-        let guild_id =
-            GuildId::new(u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"));
-        let user_id =
-            UserId::new(u64::try_from(settings.user_id).expect("User-id out of bounds for u64"));
-        framework_context
-            .user_data()
-            .user_settings
-            .entry(guild_id)
-            .or_default()
-            .insert(user_id, settings);
+    {
+        let mut guild_maps: HashMap<GuildId, HashMap<UserId, UserSettings>> = HashMap::default();
+        for settings in user_settings {
+            let guild_id = GuildId::new(
+                u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"),
+            );
+            let user_id = UserId::new(
+                u64::try_from(settings.user_id).expect("User-id out of bounds for u64"),
+            );
+            guild_maps
+                .entry(guild_id)
+                .or_default()
+                .insert(user_id, settings);
+        }
+        let user_settings_lock = user_data.user_settings.lock().await;
+        for (guild_id, map) in guild_maps {
+            user_settings_lock.insert(guild_id, Arc::new(map));
+        }
     }
-
     let user_count = match ctx.http.get_current_application_info().await {
         Ok(info) => info.approximate_user_install_count.unwrap_or(0),
         Err(_) => 0,

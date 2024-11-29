@@ -20,7 +20,7 @@ use poise::{
     },
 };
 use sqlx::query;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{
     task,
     time::{sleep, timeout},
@@ -184,13 +184,18 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
-        ctx.data()
-            .global_chats
-            .remove(&guild_id)
-            .unwrap_or_default();
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.settings.global_chat = false;
-        }
+        ctx.data().global_chats.invalidate(&guild_id);
+        let ctx_data = ctx.data();
+        let guild_settings_lock = ctx_data.guild_data.lock().await;
+        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+        let mut modified_settings = current_settings_opt
+            .get_or_insert_default()
+            .as_ref()
+            .clone();
+        modified_settings.settings.global_chat = false;
+        modified_settings.settings.global_chat_channel = None;
+        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+        drop(guild_settings_lock);
         ctx.reply("Call ended...").await?;
     }
     Ok(())
@@ -215,52 +220,69 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
         )
         .execute(&mut *tx)
         .await?;
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.settings.global_chat = true;
-            guild_data.settings.global_chat_channel = Some(channel_id_i64);
-            let message = ctx.reply("Calling...").await?;
-            let result = timeout(Duration::from_secs(60), async {
-                loop {
-                    let has_other_calls = ctx.data().guild_data.iter().any(|entry| {
-                        entry.key() != &guild_id
-                            && entry.value().settings.global_chat
-                            && entry.value().settings.global_chat_channel.is_some()
-                    });
-                    if has_other_calls {
-                        return Ok::<_, Error>(true);
-                    }
-                    sleep(Duration::from_secs(5)).await;
+        let ctx_data = ctx.data();
+        {
+            let guild_settings_lock = ctx_data.guild_data.lock().await;
+            let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+            let mut modified_settings = current_settings_opt
+                .get_or_insert_default()
+                .as_ref()
+                .clone();
+            modified_settings.settings.global_chat = true;
+            modified_settings.settings.global_chat_channel = Some(channel_id_i64);
+            guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+        }
+        let message = ctx.reply("Calling...").await?;
+        let result = timeout(Duration::from_secs(60), async {
+            loop {
+                let has_other_calls = ctx_data.guild_data.lock().await.iter().any(|entry| {
+                    entry.key() != &guild_id
+                        && entry.value().settings.global_chat
+                        && entry.value().settings.global_chat_channel.is_some()
+                });
+                if has_other_calls {
+                    return Ok::<_, Error>(true);
                 }
-            })
-            .await;
-            if result.is_ok() {
-                message
-                    .edit(
-                        ctx,
-                        CreateReply::default()
-                            .reply(true)
-                            .content("Connected to global call!"),
-                    )
-                    .await?;
-            } else {
-                query!(
+                sleep(Duration::from_secs(5)).await;
+            }
+        })
+        .await;
+        if result.is_ok() {
+            message
+                .edit(
+                    ctx,
+                    CreateReply::default()
+                        .reply(true)
+                        .content("Connected to global call!"),
+                )
+                .await?;
+        } else {
+            query!(
                     "UPDATE guild_settings SET global_chat = FALSE, global_chat_channel = NULL WHERE guild_id = $1",
                     guild_id_i64
                 )
                 .execute(&mut *tx)
                 .await?;
-                guild_data.settings.global_chat = false;
-                guild_data.settings.global_chat_channel = None;
-                message
-                    .edit(
-                        ctx,
-                        CreateReply::default()
-                            .reply(true)
-                            .content("No one joined the call within 1 minute 😢"),
-                    )
-                    .await?;
-            }
+            let guild_settings_lock = ctx_data.guild_data.lock().await;
+            let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+            let mut modified_settings = current_settings_opt
+                .get_or_insert_default()
+                .as_ref()
+                .clone();
+            modified_settings.settings.global_chat = false;
+            modified_settings.settings.global_chat_channel = None;
+            guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+            drop(guild_settings_lock);
+            message
+                .edit(
+                    ctx,
+                    CreateReply::default()
+                        .reply(true)
+                        .content("No one joined the call within 1 minute 😢"),
+                )
+                .await?;
         }
+
         tx.commit()
             .await
             .context("Failed to commit sql-transaction")?;
@@ -299,19 +321,21 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
         };
         ctx.defer().await?;
 
-        let mut users =
-            ctx.data()
-                .user_settings
-                .get(&guild_id)
-                .map_or_else(Vec::new, |user_settings| {
-                    user_settings
-                        .iter()
-                        .map(|entry| UserCount {
-                            id: entry.value().user_id,
-                            count: entry.value().message_count,
-                        })
-                        .collect::<Vec<_>>()
-                });
+        let mut users = ctx
+            .data()
+            .user_settings
+            .lock()
+            .await
+            .get(&guild_id)
+            .map_or_else(Vec::new, |user_settings| {
+                user_settings
+                    .iter()
+                    .map(|entry| UserCount {
+                        id: entry.1.user_id,
+                        count: entry.1.message_count,
+                    })
+                    .collect::<Vec<_>>()
+            });
 
         users.sort_by(|a, b| b.count.cmp(&a.count));
         users.truncate(25);
@@ -572,7 +596,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                     .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
             )
             .await?;
-        if let Some(guild_data) = ctx.data().guild_data.get(&guild_id)
+        if let Some(guild_data) = ctx.data().guild_data.lock().await.get(&guild_id)
             && let Some(channel) = guild_data.settings.quotes_channel
         {
             let quote_channel =
@@ -687,6 +711,8 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
         let mut words = ctx
             .data()
             .guild_data
+            .lock()
+            .await
             .get(&guild_id)
             .map_or_else(Vec::new, |guild_data| {
                 guild_data

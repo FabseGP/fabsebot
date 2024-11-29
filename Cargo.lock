@@ -1012,6 +1012,7 @@ dependencies = [
  "fastrand",
  "image",
  "imageproc",
+ "mini-moka 0.11.0",
  "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -1990,6 +1991,19 @@ dependencies = [
  "crossbeam-utils",
  "dashmap 5.5.3",
  "skeptic",
+ "smallvec",
+ "tagptr",
+ "triomphe",
+]
+
+[[package]]
+name = "mini-moka"
+version = "0.11.0"
+source = "git+https://github.com/moka-rs/mini-moka.git?branch=v0.11.x#d886697167e59c9fb3e9c3e82670f35350d96fe1"
+dependencies = [
+ "crossbeam-channel",
+ "crossbeam-utils",
+ "dashmap 6.1.0",
  "smallvec",
  "tagptr",
  "triomphe",
@@ -3316,7 +3330,7 @@ dependencies = [
  "futures",
  "fxhash",
  "mime_guess",
- "mini-moka",
+ "mini-moka 0.10.3",
  "nonmax",
  "parking_lot",
  "percent-encoding",
@@ -4594,7 +4608,7 @@ checksum = "549e54551d85ba6718a95333d9bc4367f69793d7aba638de30f8d25a1f554a1d"
 dependencies = [
  "chrono",
  "extract_map",
- "mini-moka",
+ "mini-moka 0.10.3",
  "nonmax",
  "parking_lot",
  "secrecy",

@@ -7,7 +7,7 @@ use crate::{
     core::handlers::{dynamic_prefix, event_handler, on_error},
 };
 use anyhow::Context;
-use dashmap::DashMap;
+use mini_moka::sync::Cache;
 use poise::{
     Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions,
     serenity_prelude::{
@@ -23,6 +23,7 @@ use tokio::{
     select,
     signal::unix::{SignalKind, signal},
     spawn,
+    sync::Mutex,
 };
 use tracing::{error, warn};
 
@@ -71,11 +72,11 @@ pub async fn bot_start(
     let user_data = Arc::new(Data {
         db: database,
         music_manager: Arc::<Songbird>::clone(&music_manager),
-        ai_chats: Arc::new(DashMap::default()),
-        global_chats: Arc::new(DashMap::default()),
-        channel_webhooks: Arc::new(DashMap::default()),
-        guild_data: Arc::new(DashMap::default()),
-        user_settings: Arc::new(DashMap::default()),
+        ai_chats: Arc::new(Cache::new(1000)),
+        global_chats: Arc::new(Cache::new(1000)),
+        channel_webhooks: Arc::new(Cache::new(1000)),
+        guild_data: Arc::new(Mutex::new(Cache::new(1000))),
+        user_settings: Arc::new(Mutex::new(Cache::new(1000))),
     });
     let additional_prefix: &'static str =
         Box::leak(format!("hey {}", &bot_config.username).into_boxed_str());

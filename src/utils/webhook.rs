@@ -75,7 +75,7 @@ pub async fn webhook_find(
     cached_webhooks: Arc<WebhookMap>,
 ) -> Result<Webhook, Error> {
     if let Some(webhook) = cached_webhooks.get(&channel_id) {
-        return Ok(webhook.clone());
+        return Ok(webhook);
     }
     let existing_webhooks_get = channel_id.webhooks(&ctx.http).await;
     match existing_webhooks_get {

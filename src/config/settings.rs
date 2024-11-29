@@ -38,7 +38,7 @@ pub struct APIConfig {
     pub tenor_token: String,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 pub struct GuildSettings {
     pub guild_id: i64,
     pub dead_chat_rate: Option<i64>,
@@ -53,7 +53,7 @@ pub struct GuildSettings {
     pub global_call: bool,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 pub struct UserSettings {
     pub guild_id: i64,
     pub user_id: i64,
@@ -66,7 +66,7 @@ pub struct UserSettings {
     pub ping_media: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Eq, Hash, PartialEq, Clone)]
 pub struct WordReactions {
     pub guild_id: i64,
     pub word: String,
@@ -74,14 +74,14 @@ pub struct WordReactions {
     pub media: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Eq, Hash, PartialEq, Clone)]
 pub struct WordTracking {
     pub guild_id: i64,
     pub word: String,
     pub count: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Eq, Hash, PartialEq, Clone)]
 pub struct EmojiReactions {
     pub guild_id: i64,
     pub emoji_id: i64,

@@ -5,7 +5,7 @@ use crate::config::{
 
 use poise::serenity_prelude::Guild;
 use sqlx::query;
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 pub async fn handle_guild_create(
     data: Arc<Data>,
@@ -28,12 +28,15 @@ pub async fn handle_guild_create(
                 guild_id: guild_id_i64,
                 ..Default::default()
             };
-            data.guild_data.insert(guild.id, GuildData {
-                settings: default_settings,
-                word_reactions: Vec::new(),
-                word_tracking: Vec::new(),
-                emoji_reactions: Vec::new(),
-            });
+            data.guild_data.lock().await.insert(
+                guild.id,
+                Arc::new(GuildData {
+                    settings: default_settings,
+                    word_reactions: HashSet::new(),
+                    word_tracking: HashSet::new(),
+                    emoji_reactions: HashSet::new(),
+                }),
+            );
         }
     }
     Ok(())

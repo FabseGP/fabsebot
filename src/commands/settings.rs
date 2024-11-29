@@ -1,7 +1,7 @@
 use crate::config::{
     constants::COLOUR_RED,
     settings::{EmojiReactions, GuildSettings, UserSettings, WordReactions, WordTracking},
-    types::{Error, HTTP_CLIENT, SContext},
+    types::{Error, GuildData, HTTP_CLIENT, SContext},
 };
 
 use anyhow::Context;
@@ -12,6 +12,7 @@ use poise::{
 };
 use serde::Serialize;
 use sqlx::query;
+use std::sync::Arc;
 
 /// To reset or not to reset the server, that's the question
 #[poise::command(
@@ -69,16 +70,16 @@ pub async fn reset_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
         tx.commit()
             .await
             .context("Failed to commit sql-transaction")?;
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.word_reactions.clear();
-            guild_data.word_reactions.shrink_to_fit();
-            guild_data.word_tracking.clear();
-            guild_data.word_tracking.shrink_to_fit();
-            guild_data.settings = GuildSettings {
-                guild_id: guild_id_i64,
+        ctx.data().guild_data.lock().await.insert(
+            guild_id,
+            Arc::new(GuildData {
+                settings: GuildSettings {
+                    guild_id: guild_id_i64,
+                    ..Default::default()
+                },
                 ..Default::default()
-            };
-        }
+            }),
+        );
     }
     Ok(())
 }
@@ -87,8 +88,6 @@ pub async fn reset_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        let guild_id_i64 = i64::from(guild_id);
-        let user_id_i64 = i64::from(ctx.author().id);
         ctx.send(
             CreateReply::default()
                 .reply(true)
@@ -106,20 +105,24 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 ping_media = NULL
             WHERE guild_id = $1
             AND user_id = $2",
-            guild_id_i64,
-            user_id_i64
+            i64::from(guild_id),
+            i64::from(ctx.author().id)
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
-        if let Some(user_settings) = ctx.data().user_settings.get(&guild_id) {
-            if let Some(mut user_setting) = user_settings.get_mut(&ctx.author().id) {
-                *user_setting = UserSettings {
-                    guild_id: guild_id_i64,
-                    user_id: user_id_i64,
-                    ..Default::default()
-                }
-            }
-        }
+        let ctx_data = ctx.data();
+        let user_settings_lock = ctx_data.user_settings.lock().await;
+        let mut guild_user_settings_opt = user_settings_lock.get(&guild_id);
+        let mut modified_settings = guild_user_settings_opt
+            .get_or_insert_default()
+            .as_ref()
+            .clone();
+        modified_settings.insert(ctx.author().id, UserSettings {
+            guild_id: i64::from(guild_id),
+            user_id: i64::from(ctx.author().id),
+            ..Default::default()
+        });
+        user_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }
@@ -131,6 +134,8 @@ pub async fn set_afk(
     #[description = "Reason for afk"] reason: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let guild_id_i64 = i64::from(guild_id);
+        let user_id_i64 = i64::from(ctx.author().id);
         query!(
             "INSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)
             VALUES ($1, $2, TRUE, $3, NULL)
@@ -139,8 +144,8 @@ pub async fn set_afk(
                 afk = TRUE,
                 afk_reason = $3,
                 pinged_links = NULL",
-            i64::from(guild_id),
-            i64::from(ctx.author().id),
+            guild_id_i64,
+            user_id_i64,
             reason,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
@@ -163,12 +168,23 @@ pub async fn set_afk(
             ),
         )
         .await?;
-        if let Some(user_settings) = ctx.data().user_settings.get(&guild_id) {
-            if let Some(mut user_setting) = user_settings.get_mut(&ctx.author().id) {
-                user_setting.afk = true;
-                user_setting.afk_reason = reason;
-            }
+        let ctx_data = ctx.data();
+        let user_settings_lock = ctx_data.user_settings.lock().await;
+        let current_settings = user_settings_lock.get(&guild_id).unwrap_or_default();
+        let mut modified_settings = current_settings.as_ref().clone();
+        if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+            user_settings.afk = true;
+            user_settings.afk_reason = reason;
+        } else {
+            modified_settings.insert(ctx.author().id, UserSettings {
+                guild_id: guild_id_i64,
+                user_id: user_id_i64,
+                afk: true,
+                afk_reason: reason,
+                ..Default::default()
+            });
         }
+        user_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }
@@ -201,9 +217,15 @@ pub async fn set_chatbot_channel(
                 .ephemeral(true),
         )
         .await?;
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.settings.ai_chat_channel = Some(channel_id_i64);
-        }
+        let ctx_data = ctx.data();
+        let guild_settings_lock = ctx_data.guild_data.lock().await;
+        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+        let mut modified_settings = current_settings_opt
+            .get_or_insert_default()
+            .as_ref()
+            .clone();
+        modified_settings.settings.ai_chat_channel = Some(channel_id_i64);
+        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }
@@ -217,14 +239,16 @@ pub async fn set_chatbot_role(
     role: Option<String>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        let guild_id_i64 = i64::from(guild_id);
+        let user_id_i64 = i64::from(ctx.author().id);
         query!(
             "INSERT INTO user_settings (guild_id, user_id, chatbot_role)
             VALUES ($1, $2, $3)
             ON CONFLICT(guild_id, user_id)
             DO UPDATE SET
                 chatbot_role = $3",
-            i64::from(guild_id),
-            i64::from(ctx.author().id),
+            guild_id_i64,
+            user_id_i64,
             role,
         )
         .execute(&mut *ctx.data().db.acquire().await?)
@@ -235,11 +259,21 @@ pub async fn set_chatbot_role(
                 .ephemeral(true),
         )
         .await?;
-        if let Some(user_settings) = ctx.data().user_settings.get(&guild_id) {
-            if let Some(mut user_setting) = user_settings.get_mut(&ctx.author().id) {
-                user_setting.chatbot_role = role;
-            }
+        let ctx_data = ctx.data();
+        let user_settings_lock = ctx_data.user_settings.lock().await;
+        let current_settings = user_settings_lock.get(&guild_id).unwrap_or_default();
+        let mut modified_settings = current_settings.as_ref().clone();
+        if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+            user_settings.chatbot_role = role;
+        } else {
+            modified_settings.insert(ctx.author().id, UserSettings {
+                guild_id: guild_id_i64,
+                user_id: user_id_i64,
+                chatbot_role: role,
+                ..Default::default()
+            });
         }
+        user_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }
@@ -277,10 +311,16 @@ pub async fn set_dead_chat(
                 .ephemeral(true),
         )
         .await?;
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.settings.dead_chat_rate = Some(channel_id_i64);
-            guild_data.settings.dead_chat_rate = Some(occurrence);
-        }
+        let ctx_data = ctx.data();
+        let guild_settings_lock = ctx_data.guild_data.lock().await;
+        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+        let mut modified_settings = current_settings_opt
+            .get_or_insert_default()
+            .as_ref()
+            .clone();
+        modified_settings.settings.dead_chat_channel = Some(channel_id_i64);
+        modified_settings.settings.dead_chat_rate = Some(occurrence);
+        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }
@@ -313,19 +353,19 @@ pub async fn set_emoji_react(
             Some(emoji) => {
                 let emoji_id_i64 = i64::from(emoji.id);
                 query!(
-                "INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, content_reaction)
-                VALUES ($1, $2, TRUE, $3)
-                ON CONFLICT(guild_id, emoji_id)
-                DO UPDATE SET
-                    emoji_id = $2,
-                    guild_emoji = TRUE,
-                    content_reaction = $3",
-                guild_id_i64,
-                emoji_id_i64,
-                content,
-            )
-            .execute(&mut *ctx.data().db.acquire().await?)
-            .await?;
+                    "INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, content_reaction)
+                    VALUES ($1, $2, TRUE, $3)
+                    ON CONFLICT(guild_id, emoji_id)
+                    DO UPDATE SET
+                        emoji_id = $2,
+                        guild_emoji = TRUE,
+                        content_reaction = $3",
+                    guild_id_i64,
+                    emoji_id_i64,
+                    content,
+                )
+                .execute(&mut *ctx.data().db.acquire().await?)
+                .await?;
                 ctx.send(
                     CreateReply::default()
                         .content(format!(
@@ -335,14 +375,20 @@ pub async fn set_emoji_react(
                         .ephemeral(true),
                 )
                 .await?;
-                if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-                    guild_data.emoji_reactions.push(EmojiReactions {
-                        guild_id: guild_id_i64,
-                        emoji_id: emoji_id_i64,
-                        guild_emoji: true,
-                        content_reaction: content,
-                    });
-                }
+                let ctx_data = ctx.data();
+                let guild_settings_lock = ctx_data.guild_data.lock().await;
+                let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+                let mut modified_settings = current_settings_opt
+                    .get_or_insert_default()
+                    .as_ref()
+                    .clone();
+                modified_settings.emoji_reactions.insert(EmojiReactions {
+                    guild_id: guild_id_i64,
+                    emoji_id: emoji_id_i64,
+                    guild_emoji: true,
+                    content_reaction: content,
+                });
+                guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
             }
             _ => {
                 if let Some(emoji_media) = media {
@@ -355,7 +401,6 @@ pub async fn set_emoji_react(
                             .and_then(|ct| ct.to_str().ok())
                             .unwrap_or("image/png")
                             .to_string();
-
                         if content_type.starts_with("image/") || content_type == "application/gif" {
                             Some(content_type)
                         } else {
@@ -387,36 +432,42 @@ pub async fn set_emoji_react(
                         };
                         let emoji_id_i64 = i64::from(emoji.id);
                         query!(
-                    "INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, content_reaction)
-                    VALUES ($1, $2, FALSE, $3)
-                    ON CONFLICT(guild_id, emoji_id)
-                    DO UPDATE SET
-                        emoji_id = $2,
-                        guild_emoji = FALSE,
-                        content_reaction = $3",
-                    guild_id_i64,
-                    emoji_id_i64,
-                    content,
-                )
-                .execute(&mut *ctx.data().db.acquire().await?)
-                .await?;
+                            "INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, content_reaction)
+                            VALUES ($1, $2, FALSE, $3)
+                            ON CONFLICT(guild_id, emoji_id)
+                            DO UPDATE SET
+                                emoji_id = $2,
+                                guild_emoji = FALSE,
+                                content_reaction = $3",
+                            guild_id_i64,
+                            emoji_id_i64,
+                            content,
+                        )
+                        .execute(&mut *ctx.data().db.acquire().await?)
+                        .await?;
                         ctx.send(
-                    CreateReply::default()
-                        .content(format!(
-                            "Every time {content} is sent, {} will be reacted with... probably",
-                            emoji.name
-                        ))
-                        .ephemeral(true),
-                )
-                .await?;
-                        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-                            guild_data.emoji_reactions.push(EmojiReactions {
-                                guild_id: guild_id_i64,
-                                emoji_id: emoji_id_i64,
-                                guild_emoji: false,
-                                content_reaction: content,
-                            });
-                        }
+                            CreateReply::default()
+                                .content(format!(
+                                    "Every time {content} is sent, {} will be reacted with... probably",
+                                    emoji.name
+                                ))
+                                .ephemeral(true),
+                        )
+                        .await?;
+                        let ctx_data = ctx.data();
+                        let guild_settings_lock = ctx_data.guild_data.lock().await;
+                        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+                        let mut modified_settings = current_settings_opt
+                            .get_or_insert_default()
+                            .as_ref()
+                            .clone();
+                        modified_settings.emoji_reactions.insert(EmojiReactions {
+                            guild_id: guild_id_i64,
+                            emoji_id: emoji_id_i64,
+                            guild_emoji: false,
+                            content_reaction: content,
+                        });
+                        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
                     } else {
                         ctx.send(
                             CreateReply::default()
@@ -472,9 +523,15 @@ pub async fn set_prefix(
                 .ephemeral(true),
         )
         .await?;
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.settings.prefix = Some(characters);
-        }
+        let ctx_data = ctx.data();
+        let guild_settings_lock = ctx_data.guild_data.lock().await;
+        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+        let mut modified_settings = current_settings_opt
+            .get_or_insert_default()
+            .as_ref()
+            .clone();
+        modified_settings.settings.prefix = Some(characters);
+        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }
@@ -509,9 +566,15 @@ pub async fn set_quote_channel(
                 .ephemeral(true),
         )
         .await?;
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.settings.quotes_channel = Some(channel_id_i64);
-        }
+        let ctx_data = ctx.data();
+        let guild_settings_lock = ctx_data.guild_data.lock().await;
+        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+        let mut modified_settings = current_settings_opt
+            .get_or_insert_default()
+            .as_ref()
+            .clone();
+        modified_settings.settings.quotes_channel = Some(channel_id_i64);
+        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }
@@ -546,9 +609,15 @@ pub async fn set_spoiler_channel(
                 .ephemeral(true),
         )
         .await?;
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.settings.spoiler_channel = Some(channel_id_i64);
-        }
+        let ctx_data = ctx.data();
+        let guild_settings_lock = ctx_data.guild_data.lock().await;
+        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+        let mut modified_settings = current_settings_opt
+            .get_or_insert_default()
+            .as_ref()
+            .clone();
+        modified_settings.settings.spoiler_channel = Some(channel_id_i64);
+        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }
@@ -585,6 +654,8 @@ pub async fn set_user_ping(
             true
         };
         if valid {
+            let guild_id_i64 = i64::from(guild_id);
+            let user_id_i64 = i64::from(ctx.author().id);
             query!(
                 "INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
                 VALUES ($1, $2, $3, $4)
@@ -592,8 +663,8 @@ pub async fn set_user_ping(
                 DO UPDATE SET 
                     ping_content = $3, 
                     ping_media = $4",
-                i64::from(guild_id),
-                i64::from(ctx.author().id),
+                guild_id_i64,
+                user_id_i64,
                 content,
                 media,
             )
@@ -605,12 +676,23 @@ pub async fn set_user_ping(
                     .ephemeral(true),
             )
             .await?;
-            if let Some(user_settings) = ctx.data().user_settings.get(&guild_id) {
-                if let Some(mut user_setting) = user_settings.get_mut(&ctx.author().id) {
-                    user_setting.ping_content = Some(content);
-                    user_setting.ping_media = media;
-                }
+            let ctx_data = ctx.data();
+            let user_settings_lock = ctx_data.user_settings.lock().await;
+            let current_settings = user_settings_lock.get(&guild_id).unwrap_or_default();
+            let mut modified_settings = current_settings.as_ref().clone();
+            if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+                user_settings.ping_content = Some(content);
+                user_settings.ping_media = media;
+            } else {
+                modified_settings.insert(ctx.author().id, UserSettings {
+                    guild_id: guild_id_i64,
+                    user_id: user_id_i64,
+                    ping_content: Some(content),
+                    ping_media: media,
+                    ..Default::default()
+                });
             }
+            user_settings_lock.insert(guild_id, Arc::new(modified_settings));
         } else {
             ctx.send(
                 CreateReply::default()
@@ -678,14 +760,20 @@ pub async fn set_word_react(
                     .ephemeral(true),
             )
             .await?;
-            if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-                guild_data.word_reactions.push(WordReactions {
-                    guild_id: guild_id_i64,
-                    word,
-                    content,
-                    media,
-                });
-            }
+            let ctx_data = ctx.data();
+            let guild_settings_lock = ctx_data.guild_data.lock().await;
+            let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+            let mut modified_settings = current_settings_opt
+                .get_or_insert_default()
+                .as_ref()
+                .clone();
+            modified_settings.word_reactions.insert(WordReactions {
+                guild_id: guild_id_i64,
+                word,
+                content,
+                media,
+            });
+            guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
         } else {
             ctx.send(
                 CreateReply::default()
@@ -724,13 +812,19 @@ pub async fn set_word_track(
                 .ephemeral(true),
         )
         .await?;
-        if let Some(mut guild_data) = ctx.data().guild_data.get_mut(&guild_id) {
-            guild_data.word_tracking.push(WordTracking {
-                guild_id: guild_id_i64,
-                word,
-                count: 0,
-            });
-        }
+        let ctx_data = ctx.data();
+        let guild_settings_lock = ctx_data.guild_data.lock().await;
+        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+        let mut modified_settings = current_settings_opt
+            .get_or_insert_default()
+            .as_ref()
+            .clone();
+        modified_settings.word_tracking.insert(WordTracking {
+            guild_id: guild_id_i64,
+            word,
+            count: 0,
+        });
+        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
 }

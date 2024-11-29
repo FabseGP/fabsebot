@@ -26,16 +26,22 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) -> Result<()> {
 pub async fn dynamic_prefix(
     ctx: PartialContext<'_, Data, Error>,
 ) -> anyhow::Result<Option<Cow<'static, str>>> {
-    let prefix = ctx.guild_id.map_or(Cow::Borrowed("!"), |id| {
-        match ctx.framework.user_data().guild_data.get(&id) {
-            Some(guild_data) => guild_data
-                .settings
-                .prefix
-                .clone()
-                .map_or(Cow::Borrowed("!"), Cow::Owned),
-            _ => Cow::Borrowed("!"),
+    let prefix = match ctx.guild_id {
+        Some(id) => {
+            let ctx_data = ctx.framework.user_data();
+            let guild_data = ctx_data.guild_data.lock().await;
+            guild_data
+                .get(&id)
+                .map_or(Cow::Borrowed("!"), |guild_data| {
+                    guild_data
+                        .settings
+                        .prefix
+                        .clone()
+                        .map_or(Cow::Borrowed("!"), Cow::Owned)
+                })
         }
-    });
+        None => Cow::Borrowed("!"),
+    };
 
     Ok(Some(prefix))
 }

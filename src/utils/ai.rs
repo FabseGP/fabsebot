@@ -1,15 +1,14 @@
 use crate::{
     commands::music::get_configured_handler,
-    config::types::{AIChatMap, AIChatMessage, Error, HTTP_CLIENT, UTILS_CONFIG},
+    config::types::{AIChatMessage, Error, HTTP_CLIENT, UTILS_CONFIG},
     utils::helpers::discord_message_link,
 };
 
 use base64::{Engine, engine::general_purpose};
-use dashmap::DashSet;
 use poise::serenity_prelude::{self as serenity, ChannelId, GuildId, Http, Message, MessageId};
 use serde::{Deserialize, Serialize};
 use songbird::{Call, input::Input};
-use std::{fmt::Write, sync::Arc};
+use std::{collections::HashSet, fmt::Write, sync::Arc};
 use tokio::sync::Mutex;
 use winnow::Parser;
 
@@ -18,16 +17,15 @@ pub async fn ai_chatbot(
     message: &Message,
     bot_role: String,
     guild_id: GuildId,
-    conversations: Arc<AIChatMap>,
+    conversations: &Arc<Mutex<Vec<AIChatMessage>>>,
     voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> Result<(), Error> {
     if message.content.eq_ignore_ascii_case("clear") {
-        let msg = if conversations.remove(&guild_id).is_some() {
-            "Conversation cleared!"
-        } else {
-            "Bruh, nothing to clear!"
-        };
-        message.reply(&ctx.http, msg).await?;
+        let mut convo_lock = conversations.lock().await;
+        convo_lock.clear();
+        convo_lock.shrink_to_fit();
+        drop(convo_lock);
+        message.reply(&ctx.http, "Conversation cleared!").await?;
         return Ok(());
     }
     if !message.content.starts_with('#') {
@@ -142,14 +140,12 @@ pub async fn ai_chatbot(
             }
         }
         let response_opt = {
-            let content_safe = message.content_safe(&ctx.cache);
-            let mut history = conversations.entry(guild_id).or_default();
-
-            if history.iter().any(|message| message.role.is_user()) {
+            let mut convo_history = conversations.lock().await;
+            if convo_history.iter().any(|message| message.role.is_user()) {
                 system_content.push_str("\nCurrent users in the conversation");
                 let mut is_first = true;
-                let seen_users = DashSet::new();
-                for message in history.iter() {
+                let mut seen_users: HashSet<&str, _> = HashSet::new();
+                for message in convo_history.iter() {
                     if message.role.is_user() {
                         if let Some(user) = message.content.split(':').next().map(str::trim) {
                             if seen_users.insert(user) {
@@ -164,22 +160,21 @@ pub async fn ai_chatbot(
                 }
             }
 
-            let system_message = history.iter_mut().find(|msg| msg.role.is_system());
+            let system_message = convo_history.iter_mut().find(|msg| msg.role.is_system());
 
             match system_message {
                 Some(system_message) => {
                     system_message.content = system_content;
                 }
                 None => {
-                    history.push(AIChatMessage::system(system_content));
+                    convo_history.push(AIChatMessage::system(system_content));
                 }
             }
-            history.push(AIChatMessage::user(format!(
+            let content_safe = message.content_safe(&ctx.cache);
+            convo_history.push(AIChatMessage::user(format!(
                 "User: {author_name}: {content_safe}"
             )));
-            let response = ai_response(&history).await;
-            drop(history);
-            response
+            ai_response(&convo_history).await
         };
 
         if let Some(response) = response_opt {
@@ -205,16 +200,14 @@ pub async fn ai_chatbot(
                         .await;
                 }
             }
-            conversations
-                .entry(guild_id)
-                .or_default()
-                .push(AIChatMessage::assistant(response));
+            let mut convo_lock = conversations.lock().await;
+            convo_lock.push(AIChatMessage::assistant(response));
         } else {
             let error_msg = "Sorry, I had to forget our convo, too boring!";
             {
-                let mut history = conversations.entry(guild_id).or_default();
-                history.clear();
-                history.push(AIChatMessage::assistant(error_msg.to_string()));
+                let mut convo_lock = conversations.lock().await;
+                convo_lock.clear();
+                convo_lock.push(AIChatMessage::assistant(error_msg.to_string()));
             }
             message.reply(&ctx.http, error_msg).await?;
         }
