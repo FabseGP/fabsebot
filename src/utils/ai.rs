@@ -27,12 +27,11 @@ pub async fn ai_chatbot(
         drop(convo_lock);
         message.reply(&ctx.http, "Conversation cleared!").await?;
         return Ok(());
-    }
-    if !message.content.starts_with('#') {
+    } else if !message.content.starts_with('#') {
         let typing = message
             .channel_id
             .start_typing(Arc::<Http>::clone(&ctx.http));
-        let author_name = message.author.display_name();
+        let author_name = message.author.name.as_str();
         let mut system_content = bot_role;
         if let Some(guild) = message.guild(&ctx.cache) {
             let owner_message = if message.author.id == guild.owner_id {
@@ -84,9 +83,10 @@ pub async fn ai_chatbot(
                 }
                 Err(_) => "Unable to describe".to_owned(),
             };
+            let author_name_guild = author_member.display_name();
             write!(
                 system_content,
-                "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}"
+                "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}. Their nickname in the current guild is {author_name_guild}"
             )?;
         }
         if !message.mentions.is_empty() {
@@ -119,7 +119,7 @@ pub async fn ai_chatbot(
                         }
                         Err(_) => "Unable to describe".to_owned(),
                     };
-                    let target_name = target.display_name();
+                    let target_name = target_member.display_name();
                     write!(
                         system_content,
                         "\n{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"

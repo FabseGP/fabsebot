@@ -2,7 +2,8 @@ use crate::{
     config::types::{Data, Error},
     events::{
         bot_ready::handle_ready, guild_create::handle_guild_create,
-        http_ratelimit::handle_ratelimit, message_sent::handle_message,
+        http_ratelimit::handle_ratelimit, message_delete::handle_message_delete,
+        message_sent::handle_message,
     },
 };
 use anyhow::Result;
@@ -60,6 +61,11 @@ pub async fn event_handler(
             handle_guild_create(data, guild, is_new.as_ref()).await?;
         }
         FullEvent::Ratelimit { data } => handle_ratelimit(data).await?,
+        FullEvent::MessageDelete {
+            channel_id,
+            deleted_message_id,
+            guild_id,
+        } => handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id).await?,
         _ => {}
     }
 
