@@ -162,7 +162,6 @@ pub async fn bot_start(
         | GatewayIntents::GUILD_MEMBERS
         | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::GUILD_VOICE_STATES
-        | GatewayIntents::GUILD_PRESENCES
         | GatewayIntents::MESSAGE_CONTENT;
     let mut cache_settings = Settings::default();
     cache_settings.max_messages = bot_config.cache_max_messages;

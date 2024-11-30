@@ -51,12 +51,6 @@ pub async fn ai_chatbot(
                     "\nThe guild you're currently talking in has this description: {guild_desc}"
                 )?;
             }
-            if let Some(presence_count) = guild.approximate_presence_count {
-                write!(
-                    system_content,
-                    "\nCurrently {presence_count} members are online"
-                )?;
-            }
         }
         if let Some(reply) = &message.referenced_message {
             let ref_name = reply.author.display_name();
