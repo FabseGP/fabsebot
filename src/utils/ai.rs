@@ -84,9 +84,10 @@ pub async fn ai_chatbot(
                 Err(_) => "Unable to describe".to_owned(),
             };
             let author_name_guild = author_member.display_name();
+            let author_joined_guild = author_member.joined_at.unwrap_or_default();
             write!(
                 system_content,
-                "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}. Their nickname in the current guild is {author_name_guild}"
+                "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}. Their nickname in the current guild is {author_name_guild} which they joined on this date {author_joined_guild}"
             )?;
         }
         if !message.mentions.is_empty() {
@@ -120,9 +121,11 @@ pub async fn ai_chatbot(
                         Err(_) => "Unable to describe".to_owned(),
                     };
                     let target_name = target_member.display_name();
+                    let target_global_name = target.name.as_str();
+                    let target_joined_guild = target_member.joined_at.unwrap_or_default();
                     write!(
                         system_content,
-                        "\n{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
+                        "\n{target_name} was mentioned (global name is {target_global_name}). Roles: {target_roles}. Profile picture: {pfp_desc}. Joined this guild at this date: {target_joined_guild}"
                     )?;
                 }
             }
