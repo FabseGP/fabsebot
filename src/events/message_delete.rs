@@ -1,6 +1,8 @@
 use crate::config::types::Error;
 
-use poise::serenity_prelude::{ChannelId, Context, CreateMessage, GuildId, MessageId, audit_log};
+use poise::serenity_prelude::{
+    ChannelId, Context, CreateEmbed, CreateMessage, GuildId, MessageId, audit_log,
+};
 
 pub async fn handle_message_delete(
     ctx: &Context,
@@ -15,7 +17,7 @@ pub async fn handle_message_delete(
     let deleted_content = ctx
         .cache
         .message(channel_id, deleted_message_id)
-        .map(|msg| (msg.content.clone(), msg.embeds.clone()));
+        .map(|msg| (msg.content.clone(), msg.embeds.first().cloned()));
     if let (Some(author_id), Some(guild_id)) = (message_author_id, guild_id_opt)
         && author_id == ctx.cache.current_user().id
     {
@@ -30,7 +32,7 @@ pub async fn handle_message_delete(
             .await?;
         if let Some(entry) = audit.entries.first()
             && let Some(user_id) = entry.user_id
-            && let Some((content, embeds)) = deleted_content
+            && let Some((content, embed_opt)) = deleted_content
         {
             let (guild_owner_id, evil_person_id, evil_person_name, neccessary_perms) = {
                 if let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
@@ -54,13 +56,13 @@ pub async fn handle_message_delete(
                     .send_message(
                         &ctx.http,
                         CreateMessage::default().content(format!(
-                            "**Bruh, {evil_person_name} deleted my message while not being an admin or mod!**\nSending it again",
+                            "**Bruh, {evil_person_name} deleted my message while not being an admin or a mod!**\nSending it again",
                         )),
                     )
                     .await?;
                 let mut message = CreateMessage::default().content(content);
-                if !embeds.is_empty() {
-                    message = message.embed(embeds[0].clone().into());
+                if let Some(embed) = embed_opt {
+                    message = message.embed(CreateEmbed::from(embed));
                 }
                 channel_id.send_message(&ctx.http, message).await?;
             }
