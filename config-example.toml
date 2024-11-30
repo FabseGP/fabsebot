@@ -16,8 +16,10 @@
 #max_connections = 
 
 [AI-Info]
-#token = 
-#base = 
+#token = ''
+#token_fallback = ''
+#fallback_provider = ''
+#text_model = ''
 #translate = 
 #image_desc = 
 #image_gen = 

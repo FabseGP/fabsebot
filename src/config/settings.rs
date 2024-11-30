@@ -24,7 +24,9 @@ pub struct PostgresConfig {
 #[derive(Deserialize)]
 pub struct AIConfig {
     pub token: String,
-    pub base: String,
+    pub token_fallback: String,
+    pub fallback_provider: String,
+    pub text_model: String,
     pub translate: String,
     pub image_desc: String,
     pub image_gen: String,

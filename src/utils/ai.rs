@@ -34,6 +34,30 @@ pub async fn ai_chatbot(
             .start_typing(Arc::<Http>::clone(&ctx.http));
         let author_name = message.author.display_name();
         let mut system_content = bot_role;
+        if let Some(guild) = message.guild(&ctx.cache) {
+            let owner_message = if message.author.id == guild.owner_id {
+                "You're also talking to this guild's owner"
+            } else {
+                "But you're not talking to this guild's owner"
+            };
+            write!(
+                system_content,
+                "\nthe guild you're currently talking in is named {} and have {} members. {owner_message}",
+                guild.name, guild.member_count,
+            )?;
+            if let Some(guild_desc) = &guild.description {
+                write!(
+                    system_content,
+                    "\nThe guild you're currently talking in has this description: {guild_desc}"
+                )?;
+            }
+            if let Some(presence_count) = guild.approximate_presence_count {
+                write!(
+                    system_content,
+                    "\nCurrently {presence_count} members are online"
+                )?;
+            }
+        }
         if let Some(reply) = &message.referenced_message {
             let ref_name = reply.author.display_name();
             write!(
@@ -42,54 +66,70 @@ pub async fn ai_chatbot(
                 reply.content
             )?;
         }
-        if let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await {
-            if let Some(author_roles) = author_member.roles(&ctx.cache) {
-                let roles_joined = author_roles
-                    .iter()
-                    .map(|role| role.name.as_str())
-                    .intersperse(", ")
-                    .collect::<String>();
-                write!(
-                    system_content,
-                    "\n{author_name} has the following roles: {roles_joined}"
-                )?;
-            }
-            if !message.mentions.is_empty() {
-                write!(
-                    system_content,
-                    "\n{} user(s) were mentioned:",
-                    message.mentions.len()
-                )?;
-                for target in &message.mentions {
-                    if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await {
-                        let target_roles = target_member.roles(&ctx.cache).map_or_else(
-                            || "No roles found".to_owned(),
-                            |roles| {
-                                roles
-                                    .iter()
-                                    .map(|role| role.name.as_str())
-                                    .intersperse(", ")
-                                    .collect::<String>()
-                            },
-                        );
-                        let pfp_desc = match HTTP_CLIENT
-                            .get(target.avatar_url().unwrap_or_else(|| target.static_face()))
-                            .send()
-                            .await
-                        {
-                            Ok(pfp) => {
-                                let binary_pfp = pfp.bytes().await?;
-                                (ai_image_desc(&binary_pfp, None).await)
-                                    .map_or_else(|| "Unable to describe".to_owned(), |desc| desc)
-                            }
-                            Err(_) => "Unable to describe".to_owned(),
-                        };
-                        let target_name = target.display_name();
-                        write!(
-                            system_content,
-                            "\n{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
-                        )?;
-                    }
+        if let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await
+            && let Some(author_roles) = author_member.roles(&ctx.cache)
+        {
+            let roles_joined = author_roles
+                .iter()
+                .map(|role| role.name.as_str())
+                .intersperse(", ")
+                .collect::<String>();
+            let pfp_desc = match HTTP_CLIENT
+                .get(
+                    author_member
+                        .avatar_url()
+                        .unwrap_or_else(|| message.author.static_face()),
+                )
+                .send()
+                .await
+            {
+                Ok(pfp) => {
+                    let binary_pfp = pfp.bytes().await?;
+                    (ai_image_desc(&binary_pfp, None).await)
+                        .map_or_else(|| "Unable to describe".to_owned(), |desc| desc)
+                }
+                Err(_) => "Unable to describe".to_owned(),
+            };
+            write!(
+                system_content,
+                "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}"
+            )?;
+        }
+        if !message.mentions.is_empty() {
+            write!(
+                system_content,
+                "\n{} user(s) were mentioned:",
+                message.mentions.len()
+            )?;
+            for target in &message.mentions {
+                if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await {
+                    let target_roles = target_member.roles(&ctx.cache).map_or_else(
+                        || "No roles found".to_owned(),
+                        |roles| {
+                            roles
+                                .iter()
+                                .map(|role| role.name.as_str())
+                                .intersperse(", ")
+                                .collect::<String>()
+                        },
+                    );
+                    let pfp_desc = match HTTP_CLIENT
+                        .get(target.avatar_url().unwrap_or_else(|| target.static_face()))
+                        .send()
+                        .await
+                    {
+                        Ok(pfp) => {
+                            let binary_pfp = pfp.bytes().await?;
+                            (ai_image_desc(&binary_pfp, None).await)
+                                .map_or_else(|| "Unable to describe".to_owned(), |desc| desc)
+                        }
+                        Err(_) => "Unable to describe".to_owned(),
+                    };
+                    let target_name = target.display_name();
+                    write!(
+                        system_content,
+                        "\n{target_name} was mentioned. Roles: {target_roles}. Profile picture: {pfp_desc}"
+                    )?;
                 }
             }
         }
@@ -273,10 +313,26 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
 #[derive(Serialize)]
 struct ChatRequest<'a> {
     messages: &'a [AIChatMessage],
+    max_tokens: i32,
+    temperature: f32,
+    top_p: f32,
+    top_k: i32,
+    repetition_penalty: f32,
+    frequency_penalty: f32,
+    presence_penalty: f32,
 }
 
 pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
-    let request = ChatRequest { messages: content };
+    let request = ChatRequest {
+        messages: content,
+        max_tokens: 2048,
+        temperature: 1.1,
+        top_p: 0.9,
+        top_k: 45,
+        repetition_penalty: 1.0,
+        frequency_penalty: 0.8,
+        presence_penalty: 0.8,
+    };
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
@@ -294,49 +350,53 @@ pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
 }
 
 #[derive(Deserialize)]
-struct LocalAIResponse {
-    message: LocalAIText,
+struct FallbackAIResponse {
+    choices: Vec<FallbackAIChoice>,
 }
 
 #[derive(Deserialize)]
-struct LocalAIText {
+struct FallbackAIChoice {
+    message: FallbackAIText,
+}
+
+#[derive(Deserialize)]
+struct FallbackAIText {
     content: String,
 }
 
 #[derive(Serialize)]
-struct LocalAIRequest<'a> {
+struct FallbackAIRequest<'a> {
     model: &'static str,
     stream: bool,
     messages: &'a [AIChatMessage],
 }
 
-pub async fn ai_response_local(messages: &[AIChatMessage]) -> Option<String> {
-    let request = LocalAIRequest {
-        model: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+pub async fn ai_response_fallback(messages: &[AIChatMessage]) -> Option<String> {
+    let utils_config = UTILS_CONFIG
+        .get()
+        .expect("UTILS_CONFIG must be set during initialization");
+    let request = FallbackAIRequest {
+        model: &utils_config.ai.text_model,
         stream: false,
         messages,
     };
     let resp = HTTP_CLIENT
-        .post(
-            &UTILS_CONFIG
-                .get()
-                .expect("UTILS_CONFIG must be set during initialization")
-                .ai
-                .base,
-        )
+        .post(&utils_config.ai.fallback_provider)
+        .bearer_auth(&utils_config.ai.token_fallback)
         .json(&request)
         .send()
         .await
         .ok()?;
-    resp.json::<LocalAIResponse>()
+    resp.json::<FallbackAIResponse>()
         .await
         .ok()
-        .map(|output| output.message.content)
+        .map(|output| output.choices[0].message.content.clone())
 }
 
 #[derive(Serialize)]
 struct SimpleAIRequest<'a> {
     messages: [SimpleMessage<'a>; 2],
+    max_tokens: i32,
 }
 
 pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
@@ -351,6 +411,7 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
                 content: prompt,
             },
         ],
+        max_tokens: 512,
     };
     let utils_config = UTILS_CONFIG
         .get()
