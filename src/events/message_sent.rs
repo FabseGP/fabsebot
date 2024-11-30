@@ -34,7 +34,6 @@ pub async fn handle_message(
     if new_message.author.bot() {
         return Ok(());
     }
-    let content = new_message.content.to_lowercase();
     if new_message.mentions_user_id(ctx.cache.current_user().id)
         && new_message.referenced_message.is_none()
     {
@@ -60,6 +59,7 @@ pub async fn handle_message(
             )
             .await?;
     }
+    let content = new_message.content.to_lowercase();
     let app_emojis = ctx.get_application_emojis().await?;
     if content == "floppaganda" {
         new_message
@@ -151,10 +151,7 @@ pub async fn handle_message(
                     u64::try_from(target.user_id).expect("user id out of bounds for u64"),
                 );
                 if user_id == new_message.author.id {
-                    bot_role = target
-                        .chatbot_role
-                        .clone()
-                        .unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned());
+                    bot_role.push_str(target.chatbot_role.as_ref().map_or(DEFAULT_BOT_ROLE, |r| r));
                 }
                 if target.afk {
                     if user_id_i64 == target.user_id {
@@ -343,7 +340,7 @@ pub async fn handle_message(
                         }
                     };
                     let ctx_clone = ctx.clone();
-                    let music_manager_clone = data.music_manager.get(guild_id).clone();
+                    let music_manager_clone = data.music_manager.get(guild_id);
                     let new_message_clone = new_message.clone();
                     let bot_role_clone = bot_role.clone();
                     let guild_id_clone = guild_id;

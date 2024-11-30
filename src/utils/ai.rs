@@ -140,41 +140,44 @@ pub async fn ai_chatbot(
             }
         }
         let response_opt = {
-            let mut convo_history = conversations.lock().await;
-            if convo_history.iter().any(|message| message.role.is_user()) {
-                system_content.push_str("\nCurrent users in the conversation");
-                let mut is_first = true;
-                let mut seen_users: HashSet<&str, _> = HashSet::new();
-                for message in convo_history.iter() {
-                    if message.role.is_user() {
-                        if let Some(user) = message.content.split(':').next().map(str::trim) {
-                            if seen_users.insert(user) {
-                                if !is_first {
-                                    system_content.push('\n');
+            let convo_copy = {
+                let mut convo_history = conversations.lock().await;
+                if convo_history.iter().any(|message| message.role.is_user()) {
+                    system_content.push_str("\nCurrent users in the conversation");
+                    let mut is_first = true;
+                    let mut seen_users: HashSet<&str, _> = HashSet::new();
+                    for message in convo_history.iter() {
+                        if message.role.is_user() {
+                            if let Some(user) = message.content.split(':').next().map(str::trim) {
+                                if seen_users.insert(user) {
+                                    if !is_first {
+                                        system_content.push('\n');
+                                    }
+                                    system_content.push_str(user);
+                                    is_first = false;
                                 }
-                                system_content.push_str(user);
-                                is_first = false;
                             }
                         }
                     }
                 }
-            }
 
-            let system_message = convo_history.iter_mut().find(|msg| msg.role.is_system());
+                let system_message = convo_history.iter_mut().find(|msg| msg.role.is_system());
 
-            match system_message {
-                Some(system_message) => {
-                    system_message.content = system_content;
+                match system_message {
+                    Some(system_message) => {
+                        system_message.content = system_content;
+                    }
+                    None => {
+                        convo_history.push(AIChatMessage::system(system_content));
+                    }
                 }
-                None => {
-                    convo_history.push(AIChatMessage::system(system_content));
-                }
-            }
-            let content_safe = message.content_safe(&ctx.cache);
-            convo_history.push(AIChatMessage::user(format!(
-                "User: {author_name}: {content_safe}"
-            )));
-            ai_response(&convo_history).await
+                let content_safe = message.content_safe(&ctx.cache);
+                convo_history.push(AIChatMessage::user(format!(
+                    "User: {author_name}: {content_safe}"
+                )));
+                convo_history.clone()
+            };
+            ai_response(&convo_copy).await
         };
 
         if let Some(response) = response_opt {

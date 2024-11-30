@@ -25,7 +25,7 @@ pub type WebhookMap = Cache<ChannelId, Webhook>;
 pub type GuildDataMap = Cache<GuildId, Arc<GuildData>>;
 type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     System,
@@ -43,7 +43,7 @@ impl Role {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct AIChatMessage {
     pub role: Role,
     pub content: String,
