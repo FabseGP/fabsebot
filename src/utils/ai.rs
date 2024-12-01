@@ -8,10 +8,12 @@ use base64::{Engine, engine::general_purpose};
 use poise::serenity_prelude::{
     self as serenity, ChannelId, GuildId, Http, Message, MessageId, Timestamp,
 };
+use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use songbird::{Call, input::Input};
 use std::{collections::HashSet, fmt::Write, sync::Arc};
 use tokio::sync::Mutex;
+use urlencoding::encode;
 use winnow::Parser;
 
 pub async fn ai_chatbot(
@@ -233,6 +235,28 @@ pub async fn ai_chatbot(
                 }
             }
         }
+        let internet_search_opt = {
+            if let Ok(resp) = HTTP_CLIENT
+                .get(format!(
+                    "https://html.duckduckgo.com/html/?q={}",
+                    encode(&message.content)
+                ))
+                .send()
+                .await
+                && let Ok(resp_text) = resp.text().await
+            {
+                let parsed_page = Html::parse_document(&resp_text);
+                let summary_selector = Selector::parse("a.result__snippet").unwrap();
+                Some(
+                    parsed_page
+                        .select(&summary_selector)
+                        .map(|c| c.inner_html())
+                        .collect::<String>(),
+                )
+            } else {
+                None
+            }
+        };
         let response_opt = {
             let convo_copy = {
                 let content_safe = message.content_safe(&ctx.cache);
@@ -260,11 +284,15 @@ pub async fn ai_chatbot(
                     }
                 }
                 let bot_context = format!(
-                    "{}{}{}Currently the date and time in your timezone converted to UTC is{}\n{}",
+                    "{}{}{}Currently the date and time in your timezone converted to UTC is{}\nScraping DuckDuckGo for the user's message gives this: {}\n{}",
                     convo_history.static_info.bot_role,
                     convo_history.static_info.guild_desc,
                     convo_history.static_info.users.get(&author_id_u64).unwrap(),
                     Timestamp::now(),
+                    internet_search_opt.map_or_else(
+                        || "Nothing scraped from the internet".to_string(),
+                        |internet_search| internet_search
+                    ),
                     system_content
                 );
                 if let Some(system_message) = convo_history
