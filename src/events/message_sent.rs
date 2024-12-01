@@ -513,9 +513,9 @@ pub async fn handle_message(
                         if content.contains(&record.word) {
                             query!(
                                 "UPDATE guild_word_tracking 
-                         SET count = count + 1 
-                         WHERE guild_id = $1
-                         AND word = $2",
+                                 SET count = count + 1 
+                                 WHERE guild_id = $1
+                                 AND word = $2",
                                 guild_id_i64,
                                 record.word
                             )

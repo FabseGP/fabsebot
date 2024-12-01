@@ -1,6 +1,6 @@
 use crate::{
     commands::music::get_configured_handler,
-    config::types::{AIChatMessage, Error, HTTP_CLIENT, UTILS_CONFIG},
+    config::types::{AIChatContext, AIChatMessage, AIChatStatic, Error, HTTP_CLIENT, UTILS_CONFIG},
     utils::helpers::discord_message_link,
 };
 
@@ -17,13 +17,14 @@ pub async fn ai_chatbot(
     message: &Message,
     bot_role: String,
     guild_id: GuildId,
-    conversations: &Arc<Mutex<Vec<AIChatMessage>>>,
+    conversations: &Arc<Mutex<AIChatContext>>,
     voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> Result<(), Error> {
     if message.content.eq_ignore_ascii_case("clear") {
         let mut convo_lock = conversations.lock().await;
-        convo_lock.clear();
-        convo_lock.shrink_to_fit();
+        convo_lock.messages.clear();
+        convo_lock.messages.shrink_to_fit();
+        convo_lock.static_info = AIChatStatic::default();
         drop(convo_lock);
         message.reply(&ctx.http, "Conversation cleared!").await?;
         return Ok(());
@@ -32,25 +33,101 @@ pub async fn ai_chatbot(
             .channel_id
             .start_typing(Arc::<Http>::clone(&ctx.http));
         let author_name = message.author.name.as_str();
-        let mut system_content = bot_role;
-        if let Some(guild) = message.guild(&ctx.cache) {
-            let owner_message = if message.author.id == guild.owner_id {
-                "You're also talking to this guild's owner"
-            } else {
-                "But you're not talking to this guild's owner"
+        let author_id_u64 = message.author.id.get();
+        {
+            let (static_set, known_user, same_bot_role) = {
+                let convo_lock = conversations.lock().await;
+                (
+                    convo_lock.static_info.is_set,
+                    convo_lock.static_info.users.contains_key(&author_id_u64),
+                    convo_lock.static_info.bot_role == bot_role,
+                )
             };
-            write!(
-                system_content,
-                "\nthe guild you're currently talking in is named {} and have {} members. {owner_message}",
-                guild.name, guild.member_count,
-            )?;
-            if let Some(guild_desc) = &guild.description {
-                write!(
-                    system_content,
-                    "\nThe guild you're currently talking in has this description: {guild_desc}"
-                )?;
+            if static_set {
+                if !known_user
+                    && let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await
+                    && let Some(author_roles) = author_member.roles(&ctx.cache)
+                {
+                    let roles_joined = author_roles
+                        .iter()
+                        .map(|role| role.name.as_str())
+                        .intersperse(", ")
+                        .collect::<String>();
+                    let pfp_desc = match HTTP_CLIENT
+                        .get(
+                            author_member
+                                .avatar_url()
+                                .unwrap_or_else(|| message.author.static_face()),
+                        )
+                        .send()
+                        .await
+                    {
+                        Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
+                            .map_or_else(|| "Unable to describe".to_owned(), |desc| desc),
+                        Err(_) => "Unable to describe".to_owned(),
+                    };
+                    let author_name_guild = author_member.display_name();
+                    let author_joined_guild = author_member.joined_at.unwrap_or_default();
+                    conversations.lock().await.static_info.users.insert(author_id_u64, format!(
+                            "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}. Their nickname in the current guild is {author_name_guild} which they joined on this date {author_joined_guild}"
+                        ));
+                }
+                if !same_bot_role {
+                    let mut convo_lock = conversations.lock().await;
+                    convo_lock.static_info.bot_role = bot_role;
+                }
+            } else {
+                let author_name = message.author.name.as_str();
+                {
+                    let mut convo_lock = conversations.lock().await;
+                    convo_lock.static_info.bot_role = bot_role;
+                    if let Some(guild) = message.guild(&ctx.cache) {
+                        convo_lock.static_info.guild_desc = format!(
+                            "\nThe guild you're currently talking in is named {} with this description {} and have {} members. {}",
+                            guild.name,
+                            guild
+                                .description
+                                .as_ref()
+                                .map_or("not known", |guild_desc| guild_desc),
+                            guild.member_count,
+                            if message.author.id == guild.owner_id {
+                                "You're also talking to this guild's owner"
+                            } else {
+                                "But you're not talking to this guild's owner"
+                            }
+                        );
+                    }
+                }
+                if let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await
+                    && let Some(author_roles) = author_member.roles(&ctx.cache)
+                {
+                    let roles_joined = author_roles
+                        .iter()
+                        .map(|role| role.name.as_str())
+                        .intersperse(", ")
+                        .collect::<String>();
+                    let pfp_desc = match HTTP_CLIENT
+                        .get(
+                            author_member
+                                .avatar_url()
+                                .unwrap_or_else(|| message.author.static_face()),
+                        )
+                        .send()
+                        .await
+                    {
+                        Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
+                            .map_or_else(|| "Unable to describe".to_owned(), |desc| desc),
+                        Err(_) => "Unable to describe".to_owned(),
+                    };
+                    let author_name_guild = author_member.display_name();
+                    let author_joined_guild = author_member.joined_at.unwrap_or_default();
+                    conversations.lock().await.static_info.users.insert(author_id_u64, format!(
+                        "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}. Their nickname in the current guild is {author_name_guild} which they joined on this date {author_joined_guild}"
+                    ));
+                }
             }
         }
+        let mut system_content = String::new();
         if let Some(reply) = &message.referenced_message {
             let ref_name = reply.author.display_name();
             write!(
@@ -59,43 +136,13 @@ pub async fn ai_chatbot(
                 reply.content
             )?;
         }
-        if let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await
-            && let Some(author_roles) = author_member.roles(&ctx.cache)
-        {
-            let roles_joined = author_roles
-                .iter()
-                .map(|role| role.name.as_str())
-                .intersperse(", ")
-                .collect::<String>();
-            let pfp_desc = match HTTP_CLIENT
-                .get(
-                    author_member
-                        .avatar_url()
-                        .unwrap_or_else(|| message.author.static_face()),
-                )
-                .send()
-                .await
-            {
-                Ok(pfp) => {
-                    let binary_pfp = pfp.bytes().await?;
-                    (ai_image_desc(&binary_pfp, None).await)
-                        .map_or_else(|| "Unable to describe".to_owned(), |desc| desc)
-                }
-                Err(_) => "Unable to describe".to_owned(),
-            };
-            let author_name_guild = author_member.display_name();
-            let author_joined_guild = author_member.joined_at.unwrap_or_default();
-            write!(
-                system_content,
-                "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}. Their nickname in the current guild is {author_name_guild} which they joined on this date {author_joined_guild}"
-            )?;
-        }
         if !message.mentions.is_empty() {
             write!(
                 system_content,
                 "\n{} user(s) were mentioned:",
                 message.mentions.len()
             )?;
+            let mut convo_lock = conversations.lock().await;
             for target in &message.mentions {
                 if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await {
                     let target_roles = target_member.roles(&ctx.cache).map_or_else(
@@ -113,50 +160,56 @@ pub async fn ai_chatbot(
                         .send()
                         .await
                     {
-                        Ok(pfp) => {
-                            let binary_pfp = pfp.bytes().await?;
-                            (ai_image_desc(&binary_pfp, None).await)
-                                .map_or_else(|| "Unable to describe".to_owned(), |desc| desc)
-                        }
+                        Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
+                            .map_or_else(|| "Unable to describe".to_owned(), |desc| desc),
                         Err(_) => "Unable to describe".to_owned(),
                     };
                     let target_name = target_member.display_name();
                     let target_global_name = target.name.as_str();
                     let target_joined_guild = target_member.joined_at.unwrap_or_default();
-                    write!(
-                        system_content,
+                    let target_desc = format!(
                         "\n{target_name} was mentioned (global name is {target_global_name}). Roles: {target_roles}. Profile picture: {pfp_desc}. Joined this guild at this date: {target_joined_guild}"
-                    )?;
+                    );
+                    write!(system_content, "{target_desc}")?;
+                    convo_lock
+                        .static_info
+                        .users
+                        .insert(target.id.get(), target_desc);
                 }
             }
         }
         if !message.attachments.is_empty() {
             write!(
                 system_content,
-                "\n{} image(s) were sent:",
+                "\n{} attachment(s) were sent:",
                 message.attachments.len()
             )?;
             for attachment in &message.attachments {
-                if let Some(content_type) = attachment.content_type.as_deref() {
-                    if content_type.starts_with("image") {
-                        let file = attachment.download().await?;
-                        if let Some(desc) = ai_image_desc(&file, Some(&message.content)).await {
-                            write!(system_content, "\n{desc}")?;
-                        }
+                if let Some(content_type) = attachment.content_type.as_deref()
+                    && content_type.starts_with("image")
+                {
+                    if let Some(desc) =
+                        ai_image_desc(&attachment.download().await?, Some(&message.content)).await
+                    {
+                        write!(system_content, "\n{desc}")?;
                     }
                 }
             }
         }
         if let Ok(link) = discord_message_link.parse_next(&mut message.content.as_str()) {
             let guild_id = GuildId::new(link.guild_id);
-            let channel_id = ChannelId::new(link.channel_id);
-            let message_id = MessageId::new(link.message_id);
-            if let Ok(ref_channel) = channel_id.to_guild_channel(&ctx.http, Some(guild_id)).await {
+            if let Ok(ref_channel) = ChannelId::new(link.channel_id)
+                .to_guild_channel(&ctx.http, Some(guild_id))
+                .await
+            {
                 let (guild_name, ref_msg) = (
                     guild_id
                         .name(&ctx.cache)
                         .unwrap_or_else(|| "unknown".to_owned()),
-                    ref_channel.id.message(&ctx.http, message_id).await,
+                    ref_channel
+                        .id
+                        .message(&ctx.http, MessageId::new(link.message_id))
+                        .await,
                 );
                 match ref_msg {
                     Ok(linked_message) => {
@@ -178,12 +231,17 @@ pub async fn ai_chatbot(
         }
         let response_opt = {
             let convo_copy = {
+                let content_safe = message.content_safe(&ctx.cache);
                 let mut convo_history = conversations.lock().await;
-                if convo_history.iter().any(|message| message.role.is_user()) {
+                if convo_history
+                    .messages
+                    .iter()
+                    .any(|message| message.role.is_user())
+                {
                     system_content.push_str("\nCurrent users in the conversation");
                     let mut is_first = true;
                     let mut seen_users: HashSet<&str, _> = HashSet::new();
-                    for message in convo_history.iter() {
+                    for message in &convo_history.messages {
                         if message.role.is_user() {
                             if let Some(user) = message.content.split(':').next().map(str::trim) {
                                 if seen_users.insert(user) {
@@ -197,22 +255,28 @@ pub async fn ai_chatbot(
                         }
                     }
                 }
-
-                let system_message = convo_history.iter_mut().find(|msg| msg.role.is_system());
-
-                match system_message {
-                    Some(system_message) => {
-                        system_message.content = system_content;
-                    }
-                    None => {
-                        convo_history.push(AIChatMessage::system(system_content));
-                    }
+                let bot_context = format!(
+                    "{}{}{}{}",
+                    convo_history.static_info.bot_role,
+                    convo_history.static_info.guild_desc,
+                    convo_history.static_info.users.get(&author_id_u64).unwrap(),
+                    system_content
+                );
+                if let Some(system_message) = convo_history
+                    .messages
+                    .iter_mut()
+                    .find(|msg| msg.role.is_system())
+                {
+                    system_message.content = bot_context;
+                } else {
+                    let system_msg = AIChatMessage::system(bot_context);
+                    convo_history.messages.push(system_msg);
                 }
-                let content_safe = message.content_safe(&ctx.cache);
-                convo_history.push(AIChatMessage::user(format!(
+                convo_history.static_info.is_set = true;
+                convo_history.messages.push(AIChatMessage::user(format!(
                     "User: {author_name}: {content_safe}"
                 )));
-                convo_history.clone()
+                convo_history.messages.clone()
             };
             ai_response(&convo_copy).await
         };
@@ -241,16 +305,19 @@ pub async fn ai_chatbot(
                 }
             }
             let mut convo_lock = conversations.lock().await;
-            convo_lock.push(AIChatMessage::assistant(response));
+            convo_lock.messages.push(AIChatMessage::assistant(response));
         } else {
             let error_msg = "Sorry, I had to forget our convo, too boring!";
             {
                 let mut convo_lock = conversations.lock().await;
-                convo_lock.clear();
-                convo_lock.push(AIChatMessage::assistant(error_msg.to_string()));
+                convo_lock.messages.clear();
+                convo_lock
+                    .messages
+                    .push(AIChatMessage::assistant(error_msg.to_string()));
             }
             message.reply(&ctx.http, error_msg).await?;
         }
+
         typing.stop();
     }
     Ok(())

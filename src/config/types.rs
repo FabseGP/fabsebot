@@ -19,15 +19,30 @@ use std::{
 };
 use tokio::sync::Mutex;
 
-pub type AIChatMap = Cache<GuildId, Arc<Mutex<Vec<AIChatMessage>>>>;
+pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
 type GlobalChatMap = Cache<GuildId, Arc<HashMap<GuildId, MessageId>>>;
 pub type WebhookMap = Cache<ChannelId, Webhook>;
 pub type GuildDataMap = Cache<GuildId, Arc<GuildData>>;
 type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 
-#[derive(Serialize, Clone)]
+#[derive(Default)]
+pub struct AIChatContext {
+    pub messages: Vec<AIChatMessage>,
+    pub static_info: AIChatStatic,
+}
+
+#[derive(Default)]
+pub struct AIChatStatic {
+    pub is_set: bool,
+    pub bot_role: String,
+    pub guild_desc: String,
+    pub users: HashMap<u64, String>,
+}
+
+#[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
+    #[default]
     System,
     User,
     Assistant,
@@ -43,7 +58,7 @@ impl Role {
     }
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct AIChatMessage {
     pub role: Role,
     pub content: String,

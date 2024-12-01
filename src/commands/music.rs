@@ -537,8 +537,8 @@ pub async fn play_song(
     #[rest]
     url: String,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
     if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx).await {
-        ctx.defer().await?;
         let src = if url.starts_with("https") {
             if url.contains("youtu") {
                 YoutubeDl::new(HTTP_CLIENT.clone(), url)
