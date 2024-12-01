@@ -185,17 +185,18 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         ctx.data().global_chats.invalidate(&guild_id);
-        let ctx_data = ctx.data();
-        let guild_settings_lock = ctx_data.guild_data.lock().await;
-        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-        let mut modified_settings = current_settings_opt
-            .get_or_insert_default()
-            .as_ref()
-            .clone();
-        modified_settings.settings.global_chat = false;
-        modified_settings.settings.global_chat_channel = None;
-        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-        drop(guild_settings_lock);
+        {
+            let ctx_data = ctx.data();
+            let guild_settings_lock = ctx_data.guild_data.lock().await;
+            let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+            let mut modified_settings = current_settings_opt
+                .get_or_insert_default()
+                .as_ref()
+                .clone();
+            modified_settings.settings.global_chat = false;
+            modified_settings.settings.global_chat_channel = None;
+            guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+        }
         ctx.reply("Call ended...").await?;
     }
     Ok(())
@@ -263,16 +264,17 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
                 )
                 .execute(&mut *tx)
                 .await?;
-            let guild_settings_lock = ctx_data.guild_data.lock().await;
-            let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-            let mut modified_settings = current_settings_opt
-                .get_or_insert_default()
-                .as_ref()
-                .clone();
-            modified_settings.settings.global_chat = false;
-            modified_settings.settings.global_chat_channel = None;
-            guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-            drop(guild_settings_lock);
+            {
+                let guild_settings_lock = ctx_data.guild_data.lock().await;
+                let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+                let mut modified_settings = current_settings_opt
+                    .get_or_insert_default()
+                    .as_ref()
+                    .clone();
+                modified_settings.settings.global_chat = false;
+                modified_settings.settings.global_chat_channel = None;
+                guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+            }
             message
                 .edit(
                     ctx,

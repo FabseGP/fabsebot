@@ -222,16 +222,17 @@ pub async fn global_music_end(ctx: SContext<'_>) -> Result<(), Error> {
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         ctx.data().global_chats.invalidate(&guild_id);
-        let ctx_data = ctx.data();
-        let guild_settings_lock = ctx_data.guild_data.lock().await;
-        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-        let mut modified_settings = current_settings_opt
-            .get_or_insert_default()
-            .as_ref()
-            .clone();
-        modified_settings.settings.global_music = false;
-        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-        drop(guild_settings_lock);
+        {
+            let ctx_data = ctx.data();
+            let guild_settings_lock = ctx_data.guild_data.lock().await;
+            let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+            let mut modified_settings = current_settings_opt
+                .get_or_insert_default()
+                .as_ref()
+                .clone();
+            modified_settings.settings.global_music = false;
+            guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+        }
         ctx.reply("Global music playback ended...").await?;
     }
     Ok(())
@@ -343,16 +344,17 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
                     )
                     .execute(&mut *ctx.data().db.acquire().await?)
                     .await?;
-                    let ctx_data = ctx.data();
-                    let guild_settings_lock = ctx_data.guild_data.lock().await;
-                    let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-                    let mut modified_settings = current_settings_opt
-                        .get_or_insert_default()
-                        .as_ref()
-                        .clone();
-                    modified_settings.settings.global_call = true;
-                    guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-                    drop(guild_settings_lock);
+                    {
+                        let ctx_data = ctx.data();
+                        let guild_settings_lock = ctx_data.guild_data.lock().await;
+                        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+                        let mut modified_settings = current_settings_opt
+                            .get_or_insert_default()
+                            .as_ref()
+                            .clone();
+                        modified_settings.settings.global_call = true;
+                        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+                    }
                     let mut handler = handler_lock.lock().await;
                     handler.add_global_event(
                         CoreEvent::VoiceTick.into(),

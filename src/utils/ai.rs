@@ -21,11 +21,12 @@ pub async fn ai_chatbot(
     voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> Result<(), Error> {
     if message.content.eq_ignore_ascii_case("clear") {
-        let mut convo_lock = conversations.lock().await;
-        convo_lock.messages.clear();
-        convo_lock.messages.shrink_to_fit();
-        convo_lock.static_info = AIChatStatic::default();
-        drop(convo_lock);
+        {
+            let mut convo_lock = conversations.lock().await;
+            convo_lock.messages.clear();
+            convo_lock.messages.shrink_to_fit();
+            convo_lock.static_info = AIChatStatic::default();
+        }
         message.reply(&ctx.http, "Conversation cleared!").await?;
         return Ok(());
     } else if !message.content.starts_with('#') {
@@ -311,9 +312,8 @@ pub async fn ai_chatbot(
             {
                 let mut convo_lock = conversations.lock().await;
                 convo_lock.messages.clear();
-                convo_lock
-                    .messages
-                    .push(AIChatMessage::assistant(error_msg.to_string()));
+                convo_lock.messages.shrink_to_fit();
+                convo_lock.static_info = AIChatStatic::default();
             }
             message.reply(&ctx.http, error_msg).await?;
         }
