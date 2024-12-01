@@ -5,7 +5,9 @@ use crate::{
 };
 
 use base64::{Engine, engine::general_purpose};
-use poise::serenity_prelude::{self as serenity, ChannelId, GuildId, Http, Message, MessageId};
+use poise::serenity_prelude::{
+    self as serenity, ChannelId, GuildId, Http, Message, MessageId, Timestamp,
+};
 use serde::{Deserialize, Serialize};
 use songbird::{Call, input::Input};
 use std::{collections::HashSet, fmt::Write, sync::Arc};
@@ -70,8 +72,8 @@ pub async fn ai_chatbot(
                     let author_name_guild = author_member.display_name();
                     let author_joined_guild = author_member.joined_at.unwrap_or_default();
                     conversations.lock().await.static_info.users.insert(author_id_u64, format!(
-                            "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}. Their nickname in the current guild is {author_name_guild} which they joined on this date {author_joined_guild}"
-                        ));
+                        "\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the following roles: {roles_joined}. Their nickname in the current guild is {author_name_guild} which they joined on this date {author_joined_guild}"
+                    ));
                 }
                 if !same_bot_role {
                     let mut convo_lock = conversations.lock().await;
@@ -143,7 +145,6 @@ pub async fn ai_chatbot(
                 "\n{} user(s) were mentioned:",
                 message.mentions.len()
             )?;
-            let mut convo_lock = conversations.lock().await;
             for target in &message.mentions {
                 if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await {
                     let target_roles = target_member.roles(&ctx.cache).map_or_else(
@@ -171,11 +172,13 @@ pub async fn ai_chatbot(
                     let target_desc = format!(
                         "\n{target_name} was mentioned (global name is {target_global_name}). Roles: {target_roles}. Profile picture: {pfp_desc}. Joined this guild at this date: {target_joined_guild}"
                     );
-                    write!(system_content, "{target_desc}")?;
-                    convo_lock
+                    conversations
+                        .lock()
+                        .await
                         .static_info
                         .users
-                        .insert(target.id.get(), target_desc);
+                        .insert(target.id.get(), target_desc.clone());
+                    write!(system_content, "{target_desc}")?;
                 }
             }
         }
@@ -257,10 +260,11 @@ pub async fn ai_chatbot(
                     }
                 }
                 let bot_context = format!(
-                    "{}{}{}{}",
+                    "{}{}{}Currently the date and time in your timezone converted to UTC is{}\n{}",
                     convo_history.static_info.bot_role,
                     convo_history.static_info.guild_desc,
                     convo_history.static_info.users.get(&author_id_u64).unwrap(),
+                    Timestamp::now(),
                     system_content
                 );
                 if let Some(system_message) = convo_history
