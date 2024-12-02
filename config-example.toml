@@ -17,15 +17,14 @@
 
 [AI-Info]
 #token = ''
-#token_fallback = ''
-#fallback_provider = ''
-#text_model = ''
+#token_huggingface = ''
 #translate = 
 #image_desc = 
 #image_gen = 
 #summarize = 
 #text_gen = 
 #tts = 
+#universal = 
 
 [API-Info]
 #tenor_token = 

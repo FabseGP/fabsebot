@@ -82,7 +82,6 @@ pub async fn ai_chatbot(
                     convo_lock.static_info.bot_role = bot_role;
                 }
             } else {
-                let author_name = message.author.name.as_str();
                 {
                     let mut convo_lock = conversations.lock().await;
                     convo_lock.static_info.bot_role = bot_role;
@@ -148,7 +147,14 @@ pub async fn ai_chatbot(
                 message.mentions.len()
             )?;
             for target in &message.mentions {
-                if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await {
+                if !conversations
+                    .lock()
+                    .await
+                    .static_info
+                    .users
+                    .contains_key(&target.id.get())
+                    && let Ok(target_member) = guild_id.member(&ctx.http, target.id).await
+                {
                     let target_roles = target_member.roles(&ctx.cache).map_or_else(
                         || "No roles found".to_owned(),
                         |roles| {
@@ -172,15 +178,31 @@ pub async fn ai_chatbot(
                     let target_global_name = target.name.as_str();
                     let target_joined_guild = target_member.joined_at.unwrap_or_default();
                     let target_desc = format!(
-                        "\n{target_name} was mentioned (global name is {target_global_name}). Roles: {target_roles}. Profile picture: {pfp_desc}. Joined this guild at this date: {target_joined_guild}"
+                        "\n{target_name}'s global name is {target_global_name}. Roles: {target_roles}. Profile picture: {pfp_desc}. Joined this guild at this date: {target_joined_guild}"
                     );
+                    write!(
+                        system_content,
+                        "This user was mentioned: {}",
+                        target_desc.as_str()
+                    )?;
                     conversations
                         .lock()
                         .await
                         .static_info
                         .users
-                        .insert(target.id.get(), target_desc.clone());
-                    write!(system_content, "{target_desc}")?;
+                        .insert(target.id.get(), target_desc);
+                } else {
+                    write!(
+                        system_content,
+                        "{}",
+                        conversations
+                            .lock()
+                            .await
+                            .static_info
+                            .users
+                            .get(&target.id.get())
+                            .unwrap()
+                    )?;
                 }
             }
         }
@@ -443,50 +465,6 @@ pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
         .await
         .ok()
         .map(|output| output.result.response)
-}
-
-#[derive(Deserialize)]
-struct FallbackAIResponse {
-    choices: Vec<FallbackAIChoice>,
-}
-
-#[derive(Deserialize)]
-struct FallbackAIChoice {
-    message: FallbackAIText,
-}
-
-#[derive(Deserialize)]
-struct FallbackAIText {
-    content: String,
-}
-
-#[derive(Serialize)]
-struct FallbackAIRequest<'a> {
-    model: &'static str,
-    stream: bool,
-    messages: &'a [AIChatMessage],
-}
-
-pub async fn ai_response_fallback(messages: &[AIChatMessage]) -> Option<String> {
-    let utils_config = UTILS_CONFIG
-        .get()
-        .expect("UTILS_CONFIG must be set during initialization");
-    let request = FallbackAIRequest {
-        model: &utils_config.ai.text_model,
-        stream: false,
-        messages,
-    };
-    let resp = HTTP_CLIENT
-        .post(&utils_config.ai.fallback_provider)
-        .bearer_auth(&utils_config.ai.token_fallback)
-        .json(&request)
-        .send()
-        .await
-        .ok()?;
-    resp.json::<FallbackAIResponse>()
-        .await
-        .ok()
-        .map(|output| output.choices[0].message.content.clone())
 }
 
 #[derive(Serialize)]
