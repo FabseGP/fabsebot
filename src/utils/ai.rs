@@ -178,13 +178,9 @@ pub async fn ai_chatbot(
                     let target_global_name = target.name.as_str();
                     let target_joined_guild = target_member.joined_at.unwrap_or_default();
                     let target_desc = format!(
-                        "\n{target_name}'s global name is {target_global_name}. Roles: {target_roles}. Profile picture: {pfp_desc}. Joined this guild at this date: {target_joined_guild}"
+                        "\n{target_name} was mentioned (global name is {target_global_name}). Roles: {target_roles}. Profile picture: {pfp_desc}. Joined this guild at this date: {target_joined_guild}"
                     );
-                    write!(
-                        system_content,
-                        "This user was mentioned: {}",
-                        target_desc.as_str()
-                    )?;
+                    write!(system_content, "{}", target_desc.as_str())?;
                     conversations
                         .lock()
                         .await
