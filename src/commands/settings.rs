@@ -98,6 +98,12 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
         query!(
             "UPDATE user_settings
             SET chatbot_role = NULL,
+                chatbot_temperature = NULL,
+                chatbot_top_p = NULL,
+                chatbot_top_k = NULL,
+                chatbot_repetition_penalty = NULL,
+                chatbot_frequency_penalty = NULL,
+                chatbot_presence_penalty = NULL,
                 afk = FALSE,
                 afk_reason = NULL,
                 pinged_links = NULL,
@@ -230,32 +236,71 @@ pub async fn set_chatbot_channel(
     Ok(())
 }
 
-/// Configure the role for the chatbot individually for each user
+/// Configure the chatbot to your preferences; an empty field forces the default value
 #[poise::command(slash_command)]
-pub async fn set_chatbot_role(
+pub async fn set_chatbot_options(
     ctx: SContext<'_>,
-    #[description = "The role the bot should take; if not set, then default role"]
-    #[rest]
-    role: Option<String>,
+    #[description = "The role the bot should take; if not set, then default role"] role: Option<
+        String,
+    >,
+    #[description = "Higher values produce more random results; 0 - 5 (1.1 default)"]
+    temperature: Option<f32>,
+    #[description = "Higher values = more creative, but less predictable; 0 - 1 (0.9 default)"]
+    top_p: Option<f32>,
+    #[description = "Higher values produces more varied word choices; 0 - 50 (45 default)"]
+    top_k: Option<i32>,
+    #[description = "Higher values forces more different phrases; 0 - 2 (1.2 default)"]
+    repetition_penalty: Option<f32>,
+    #[description = "Higher values avoids reusing the same words; 0 - 1 (0.5 default)"]
+    frequency_penalty: Option<f32>,
+    #[description = "Higher values = more new topics, but less related; 0 - 1 (0.5 default)"]
+    presence_penalty: Option<f32>,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
+        if temperature.is_some_and(|temp| !(0.0..=5.0).contains(&temp))
+            || top_p.is_some_and(|p| !(0.0..=1.0).contains(&p))
+            || top_k.is_some_and(|k| !(0..=50).contains(&k))
+            || repetition_penalty.is_some_and(|rp| !(0.0..=2.0).contains(&rp))
+            || frequency_penalty.is_some_and(|fp| !(0.0..=2.0).contains(&fp))
+            || presence_penalty.is_some_and(|pp| !(0.0..=2.0).contains(&pp))
+        {
+            ctx.send(
+                CreateReply::default()
+                    .content("Bruh, invalid values for the parameters!")
+                    .ephemeral(true),
+            )
+            .await?;
+        }
         let guild_id_i64 = i64::from(guild_id);
         let user_id_i64 = i64::from(ctx.author().id);
         query!(
-            "INSERT INTO user_settings (guild_id, user_id, chatbot_role)
-            VALUES ($1, $2, $3)
+            "INSERT INTO user_settings 
+            (guild_id, user_id, chatbot_role, chatbot_temperature, chatbot_top_p, chatbot_top_k, chatbot_repetition_penalty, chatbot_frequency_penalty, chatbot_presence_penalty)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT(guild_id, user_id)
             DO UPDATE SET
-                chatbot_role = $3",
+                chatbot_role = $3,
+                chatbot_temperature = $4,
+                chatbot_top_p = $5,
+                chatbot_top_k = $6,
+                chatbot_repetition_penalty = $7,
+                chatbot_frequency_penalty = $8,
+                chatbot_presence_penalty = $9",
             guild_id_i64,
             user_id_i64,
             role,
+            temperature,
+            top_p,
+            top_k,
+            repetition_penalty,
+            frequency_penalty,
+            presence_penalty
         )
         .execute(&mut *ctx.data().db.acquire().await?)
         .await?;
         ctx.send(
             CreateReply::default()
-                .content("Role for chatbot set... probably")
+                .content("Options for chatbot set... probably")
                 .ephemeral(true),
         )
         .await?;
@@ -265,11 +310,23 @@ pub async fn set_chatbot_role(
         let mut modified_settings = current_settings.as_ref().clone();
         if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
             user_settings.chatbot_role = role;
+            user_settings.chatbot_temperature = temperature;
+            user_settings.chatbot_top_p = top_p;
+            user_settings.chatbot_top_k = top_k;
+            user_settings.chatbot_repetition_penalty = repetition_penalty;
+            user_settings.chatbot_frequency_penalty = frequency_penalty;
+            user_settings.chatbot_presence_penalty = presence_penalty;
         } else {
             modified_settings.insert(ctx.author().id, UserSettings {
                 guild_id: guild_id_i64,
                 user_id: user_id_i64,
                 chatbot_role: role,
+                chatbot_temperature: temperature,
+                chatbot_top_p: top_p,
+                chatbot_top_k: top_k,
+                chatbot_repetition_penalty: repetition_penalty,
+                chatbot_frequency_penalty: frequency_penalty,
+                chatbot_presence_penalty: presence_penalty,
                 ..Default::default()
             });
         }

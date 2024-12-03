@@ -34,7 +34,7 @@ pub struct AIChatContext {
 #[derive(Default)]
 pub struct AIChatStatic {
     pub is_set: bool,
-    pub bot_role: String,
+    pub chatbot_role: String,
     pub guild_desc: String,
     pub users: HashMap<u64, String>,
 }

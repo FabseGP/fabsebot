@@ -24,6 +24,7 @@ use std::{
     sync::Arc,
 };
 use tokio::task::spawn;
+use tracing::warn;
 use winnow::Parser;
 
 pub async fn handle_message(
@@ -136,7 +137,6 @@ pub async fn handle_message(
             .begin()
             .await
             .context("Failed to acquire savepoint")?;
-        let mut bot_role = String::with_capacity(DEFAULT_BOT_ROLE.len());
         {
             let mut modified_settings = data
                 .user_settings
@@ -150,9 +150,6 @@ pub async fn handle_message(
                 let user_id = UserId::new(
                     u64::try_from(target.user_id).expect("user id out of bounds for u64"),
                 );
-                if user_id == new_message.author.id {
-                    bot_role.push_str(target.chatbot_role.as_ref().map_or(DEFAULT_BOT_ROLE, |r| r));
-                }
                 if target.afk {
                     if user_id_i64 == target.user_id {
                         let mut response = new_message
@@ -291,12 +288,6 @@ pub async fn handle_message(
         {
             let guild_data_opt = data.guild_data.lock().await.get(&guild_id);
             if let Some(guild_data) = guild_data_opt {
-                if let Some(spoiler_channel) = guild_data.settings.spoiler_channel
-                    && new_message.channel_id.get()
-                        == u64::try_from(spoiler_channel).expect("channel id out of bounds for u64")
-                {
-                    spoiler_message(ctx, new_message, data.channel_webhooks.clone()).await?;
-                }
                 if let (Some(dead_channel), Some(dead_chat_rate)) = (
                     guild_data.settings.dead_chat_channel,
                     guild_data.settings.dead_chat_rate,
@@ -325,7 +316,12 @@ pub async fn handle_message(
                         }
                     }
                 }
-                if let Some(ai_chat_channel) = guild_data.settings.ai_chat_channel
+                if let Some(spoiler_channel) = guild_data.settings.spoiler_channel
+                    && new_message.channel_id.get()
+                        == u64::try_from(spoiler_channel).expect("channel id out of bounds for u64")
+                {
+                    spoiler_message(ctx, new_message, data.channel_webhooks.clone()).await?;
+                } else if let Some(ai_chat_channel) = guild_data.settings.ai_chat_channel
                     && new_message.channel_id.get()
                         == u64::try_from(ai_chat_channel).expect("channel id out of bounds for u64")
                 {
@@ -339,27 +335,81 @@ pub async fn handle_message(
                             modified_settings
                         }
                     };
+                    let (
+                        chatbot_role,
+                        chatbot_temperature,
+                        chatbot_top_p,
+                        chatbot_top_k,
+                        chatbot_repetition_penalty,
+                        chatbot_frequency_penalty,
+                        chatbot_presence_penalty,
+                    ) = {
+                        let user_settings_opt = data.user_settings.lock().await.get(&guild_id);
+                        if let Some(user_settings) = user_settings_opt {
+                            user_settings
+                                .get(&new_message.author.id)
+                                .map(|a| {
+                                    (
+                                        a.chatbot_role.clone(),
+                                        a.chatbot_temperature,
+                                        a.chatbot_top_p,
+                                        a.chatbot_top_k,
+                                        a.chatbot_repetition_penalty,
+                                        a.chatbot_frequency_penalty,
+                                        a.chatbot_presence_penalty,
+                                    )
+                                })
+                                .unwrap_or_default()
+                        } else {
+                            let new_settings = user_settings_opt.unwrap_or_default();
+                            data.user_settings
+                                .lock()
+                                .await
+                                .insert(guild_id, new_settings.clone());
+                            new_settings
+                                .get(&new_message.author.id)
+                                .map(|a| {
+                                    (
+                                        a.chatbot_role.clone(),
+                                        a.chatbot_temperature,
+                                        a.chatbot_top_p,
+                                        a.chatbot_top_k,
+                                        a.chatbot_repetition_penalty,
+                                        a.chatbot_frequency_penalty,
+                                        a.chatbot_presence_penalty,
+                                    )
+                                })
+                                .unwrap_or_default()
+                        }
+                    };
                     let ctx_clone = ctx.clone();
                     let music_manager_clone = data.music_manager.get(guild_id);
                     let new_message_clone = new_message.clone();
-                    let bot_role_clone = bot_role.clone();
                     let guild_id_clone = guild_id;
                     spawn(async move {
                         if let Err(e) = ai_chatbot(
                             &ctx_clone,
                             &new_message_clone,
-                            bot_role_clone,
+                            chatbot_role.map_or_else(
+                                || DEFAULT_BOT_ROLE.to_string(),
+                                |role| format!("The current user wants you to act as: {role}"),
+                            ),
+                            chatbot_temperature,
+                            chatbot_top_p,
+                            chatbot_top_k,
+                            chatbot_repetition_penalty,
+                            chatbot_frequency_penalty,
+                            chatbot_presence_penalty,
                             guild_id_clone,
                             &guild_ai_chats,
                             music_manager_clone,
                         )
                         .await
                         {
-                            eprintln!("AI chatbot error: {e:?}");
+                            warn!("AI chatbot error: {e:?}");
                         }
                     });
-                }
-                if let Some(global_chat_channel) = guild_data.settings.global_chat_channel
+                } else if let Some(global_chat_channel) = guild_data.settings.global_chat_channel
                     && new_message.channel_id.get()
                         == u64::try_from(global_chat_channel)
                             .expect("channel id out of bounds for u64")

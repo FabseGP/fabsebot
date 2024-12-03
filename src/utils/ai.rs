@@ -19,7 +19,13 @@ use winnow::Parser;
 pub async fn ai_chatbot(
     ctx: &serenity::Context,
     message: &Message,
-    bot_role: String,
+    chatbot_role: String,
+    chatbot_temperature: Option<f32>,
+    chatbot_top_p: Option<f32>,
+    chatbot_top_k: Option<i32>,
+    chatbot_repetition_penalty: Option<f32>,
+    chatbot_frequency_penalty: Option<f32>,
+    chatbot_presence_penalty: Option<f32>,
     guild_id: GuildId,
     conversations: &Arc<Mutex<AIChatContext>>,
     voice_handle: Option<Arc<Mutex<Call>>>,
@@ -45,7 +51,7 @@ pub async fn ai_chatbot(
                 (
                     convo_lock.static_info.is_set,
                     convo_lock.static_info.users.contains_key(&author_id_u64),
-                    convo_lock.static_info.bot_role == bot_role,
+                    convo_lock.static_info.chatbot_role == chatbot_role,
                 )
             };
             if static_set {
@@ -79,21 +85,27 @@ pub async fn ai_chatbot(
                 }
                 if !same_bot_role {
                     let mut convo_lock = conversations.lock().await;
-                    convo_lock.static_info.bot_role = bot_role;
+                    convo_lock.static_info.chatbot_role = chatbot_role;
                 }
             } else {
                 {
                     let mut convo_lock = conversations.lock().await;
-                    convo_lock.static_info.bot_role = bot_role;
+                    convo_lock.static_info.chatbot_role = chatbot_role;
                     if let Some(guild) = message.guild(&ctx.cache) {
                         convo_lock.static_info.guild_desc = format!(
-                            "\nThe guild you're currently talking in is named {} with this description {} and have {} members. {}",
+                            "\nThe guild you're currently talking in is named {} with this description {}, have {} members and have {} channels with these names {}. {}",
                             guild.name,
                             guild
                                 .description
                                 .as_ref()
                                 .map_or("not known", |guild_desc| guild_desc),
                             guild.member_count,
+                            guild.channels.len(),
+                            guild
+                                .channels
+                                .iter()
+                                .map(|c| c.name.to_string())
+                                .collect::<String>(),
                             if message.author.id == guild.owner_id {
                                 "You're also talking to this guild's owner"
                             } else {
@@ -302,8 +314,8 @@ pub async fn ai_chatbot(
                     }
                 }
                 let bot_context = format!(
-                    "{}{}{}Currently the date and time in your timezone converted to UTC is{}\nScraping DuckDuckGo for the user's message gives this: {}\n{}",
-                    convo_history.static_info.bot_role,
+                    "{}{}{}Currently the date and time in UTC-timezone is{}\nScraping DuckDuckGo for the user's message gives this: {}\n{}",
+                    convo_history.static_info.chatbot_role,
                     convo_history.static_info.guild_desc,
                     convo_history.static_info.users.get(&author_id_u64).unwrap(),
                     Timestamp::now(),
@@ -329,7 +341,16 @@ pub async fn ai_chatbot(
                 )));
                 convo_history.messages.clone()
             };
-            ai_response(&convo_copy).await
+            ai_response(
+                &convo_copy,
+                chatbot_temperature,
+                chatbot_top_p,
+                chatbot_top_k,
+                chatbot_repetition_penalty,
+                chatbot_frequency_penalty,
+                chatbot_presence_penalty,
+            )
+            .await
         };
 
         if let Some(response) = response_opt {
@@ -436,16 +457,24 @@ struct ChatRequest<'a> {
     presence_penalty: f32,
 }
 
-pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
+pub async fn ai_response(
+    content: &[AIChatMessage],
+    chatbot_temperature: Option<f32>,
+    chatbot_top_p: Option<f32>,
+    chatbot_top_k: Option<i32>,
+    chatbot_repetition_penalty: Option<f32>,
+    chatbot_frequency_penalty: Option<f32>,
+    chatbot_presence_penalty: Option<f32>,
+) -> Option<String> {
     let request = ChatRequest {
         messages: content,
         max_tokens: 2048,
-        temperature: 1.1,
-        top_p: 0.9,
-        top_k: 45,
-        repetition_penalty: 1.0,
-        frequency_penalty: 0.8,
-        presence_penalty: 0.8,
+        temperature: chatbot_temperature.unwrap_or(1.1),
+        top_p: chatbot_top_p.unwrap_or(0.9),
+        top_k: chatbot_top_k.unwrap_or(45),
+        repetition_penalty: chatbot_repetition_penalty.unwrap_or(1.2),
+        frequency_penalty: chatbot_frequency_penalty.unwrap_or(0.5),
+        presence_penalty: chatbot_presence_penalty.unwrap_or(0.5),
     };
     let utils_config = UTILS_CONFIG
         .get()

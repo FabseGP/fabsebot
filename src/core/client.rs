@@ -132,7 +132,7 @@ pub async fn bot_start(
                 settings::reset_user_settings(),
                 settings::set_afk(),
                 settings::set_chatbot_channel(),
-                settings::set_chatbot_role(),
+                settings::set_chatbot_options(),
                 settings::set_dead_chat(),
                 settings::set_emoji_react(),
                 settings::set_prefix(),
