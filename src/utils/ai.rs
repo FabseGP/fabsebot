@@ -439,10 +439,23 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
         .send()
         .await
         .ok()?;
-    resp.json::<FabseAIText>()
-        .await
-        .ok()
-        .map(|output| output.result.response)
+    if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
+        && !resp_parsed.result.response.contains("AiError")
+    {
+        Some(resp_parsed.result.response)
+    } else {
+        let resp = HTTP_CLIENT
+            .post(&utils_config.ai.image_desc_fallback)
+            .bearer_auth(&utils_config.ai.token_fallback)
+            .json(&request)
+            .send()
+            .await
+            .ok()?;
+        resp.json::<FabseAIText>()
+            .await
+            .ok()
+            .map(|output| output.result.response)
+    }
 }
 
 #[derive(Serialize)]
@@ -486,10 +499,24 @@ pub async fn ai_response(
         .send()
         .await
         .ok()?;
-    resp.json::<FabseAIText>()
-        .await
-        .ok()
-        .map(|output| output.result.response)
+
+    if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
+        && !resp_parsed.result.response.contains("AiError")
+    {
+        Some(resp_parsed.result.response)
+    } else {
+        let resp = HTTP_CLIENT
+            .post(&utils_config.ai.text_gen_fallback)
+            .bearer_auth(&utils_config.ai.token_fallback)
+            .json(&request)
+            .send()
+            .await
+            .ok()?;
+        resp.json::<FabseAIText>()
+            .await
+            .ok()
+            .map(|output| output.result.response)
+    }
 }
 
 #[derive(Serialize)]
@@ -522,10 +549,23 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
         .send()
         .await
         .ok()?;
-    resp.json::<FabseAIText>()
-        .await
-        .ok()
-        .map(|output| output.result.response)
+    if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
+        && !resp_parsed.result.response.contains("AiError")
+    {
+        Some(resp_parsed.result.response)
+    } else {
+        let resp = HTTP_CLIENT
+            .post(&utils_config.ai.text_gen_fallback)
+            .bearer_auth(&utils_config.ai.token_fallback)
+            .json(&request)
+            .send()
+            .await
+            .ok()?;
+        resp.json::<FabseAIText>()
+            .await
+            .ok()
+            .map(|output| output.result.response)
+    }
 }
 
 #[derive(Serialize)]
@@ -559,8 +599,23 @@ pub async fn ai_voice(prompt: &str) -> Option<Vec<u8>> {
         .send()
         .await
         .ok()?;
-    resp.json::<FabseAIVoice>()
-        .await
-        .ok()
-        .and_then(|output| general_purpose::STANDARD.decode(output.result.audio).ok())
+    if let Ok(resp_parsed) = resp.json::<FabseAIVoice>().await
+        && !resp_parsed.result.audio.contains("AiError")
+    {
+        general_purpose::STANDARD
+            .decode(resp_parsed.result.audio)
+            .ok()
+    } else {
+        let resp = HTTP_CLIENT
+            .post(&utils_config.ai.tts_fallback)
+            .bearer_auth(&utils_config.ai.token_fallback)
+            .json(&request)
+            .send()
+            .await
+            .ok()?;
+        resp.json::<FabseAIVoice>()
+            .await
+            .ok()
+            .and_then(|output| general_purpose::STANDARD.decode(output.result.audio).ok())
+    }
 }

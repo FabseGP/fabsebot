@@ -77,39 +77,52 @@ pub async fn ai_image(
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
-    match HTTP_CLIENT
+    let resp = HTTP_CLIENT
         .post(&utils_config.ai.image_gen)
         .bearer_auth(&utils_config.ai.token)
         .json(&request)
         .send()
+        .await?;
+
+    if let Some(image_bytes) = resp
+        .json::<FabseAIImage>()
         .await
+        .ok()
+        .filter(|output| !output.result.image.is_empty())
+        .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
     {
-        Ok(resp) => {
-            match resp
-                .json::<FabseAIImage>()
-                .await
-                .ok()
-                .filter(|output| !output.result.image.is_empty())
-                .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
-            {
-                Some(image_bytes) => {
-                    ctx.send(
-                        CreateReply::default()
-                            .reply(true)
-                            .attachment(CreateAttachment::bytes(image_bytes, "output.png")),
-                    )
-                    .await?;
-                }
-                None => {
-                    ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
-                        .await?;
-                }
-            }
-        }
-        Err(_) => {
-            ctx.reply("Oof, AI-server down!").await?;
+        ctx.send(
+            CreateReply::default()
+                .reply(true)
+                .attachment(CreateAttachment::bytes(image_bytes, "output.png")),
+        )
+        .await?;
+    } else {
+        let resp = HTTP_CLIENT
+            .post(&utils_config.ai.image_gen_fallback)
+            .bearer_auth(&utils_config.ai.token_fallback)
+            .json(&request)
+            .send()
+            .await?;
+        if let Some(image_bytes) = resp
+            .json::<FabseAIImage>()
+            .await
+            .ok()
+            .filter(|output| !output.result.image.is_empty())
+            .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
+        {
+            ctx.send(
+                CreateReply::default()
+                    .reply(true)
+                    .attachment(CreateAttachment::bytes(image_bytes, "output.png")),
+            )
+            .await?;
+        } else {
+            ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
+                .await?;
         }
     }
+
     Ok(())
 }
 
@@ -150,23 +163,31 @@ pub async fn ai_summarize(
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
-    match HTTP_CLIENT
+    let resp = HTTP_CLIENT
         .post(&utils_config.ai.summarize)
         .bearer_auth(&utils_config.ai.token)
         .json(&request)
         .send()
-        .await
-    {
-        Ok(resp) => match resp.json::<FabseAISummary>().await {
-            Ok(output) if !output.result.summary.is_empty() => {
-                ctx.say(output.result.summary).await?;
+        .await?;
+    match resp.json::<FabseAISummary>().await {
+        Ok(output) if !output.result.summary.is_empty() => {
+            ctx.say(output.result.summary).await?;
+        }
+        _ => {
+            let resp = HTTP_CLIENT
+                .post(&utils_config.ai.summarize_fallback)
+                .bearer_auth(&utils_config.ai.token_fallback)
+                .json(&request)
+                .send()
+                .await?;
+            match resp.json::<FabseAISummary>().await {
+                Ok(output) if !output.result.summary.is_empty() => {
+                    ctx.say(output.result.summary).await?;
+                }
+                _ => {
+                    ctx.reply("This is too much work").await?;
+                }
             }
-            _ => {
-                ctx.reply("This is too much work").await?;
-            }
-        },
-        Err(_) => {
-            ctx.reply("Oof, AI-server down!").await?;
         }
     }
     Ok(())

@@ -24,14 +24,19 @@ pub struct PostgresConfig {
 #[derive(Deserialize)]
 pub struct AIConfig {
     pub token: String,
+    pub token_fallback: String,
     pub token_huggingface: String,
     pub translate: String,
     pub image_desc: String,
+    pub image_desc_fallback: String,
     pub image_gen: String,
+    pub image_gen_fallback: String,
     pub summarize: String,
+    pub summarize_fallback: String,
     pub text_gen: String,
+    pub text_gen_fallback: String,
     pub tts: String,
-    pub universal: String,
+    pub tts_fallback: String,
 }
 
 #[derive(Deserialize)]
