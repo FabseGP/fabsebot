@@ -6,7 +6,7 @@
 #avatar = 
 #banner = 
 #activity =
-#ping_message = ""
+#ping_message = 
 
 [PostgreSQL-Info]
 #database = 
@@ -16,15 +16,20 @@
 #max_connections = 
 
 [AI-Info]
-#token = ''
-#token_huggingface = ''
+#token = 
+#token_huggingface = 
+#token_fallback = 
 #translate = 
 #image_desc = 
+#image_desc_fallback
 #image_gen = 
+#image_gen_fallback
 #summarize = 
+#summarize_fallback
 #text_gen = 
+#text_gen_fallback
 #tts = 
-#universal = 
+#tts_fallback
 
 [API-Info]
 #tenor_token = 
