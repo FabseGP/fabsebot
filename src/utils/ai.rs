@@ -104,7 +104,7 @@ pub async fn ai_chatbot(
                             guild
                                 .channels
                                 .iter()
-                                .map(|c| c.name.to_string())
+                                .map(|c| c.name.as_str())
                                 .collect::<String>(),
                             if message.author.id == guild.owner_id {
                                 "You're also talking to this guild's owner"
@@ -396,6 +396,7 @@ pub async fn ai_chatbot(
 
 #[derive(Deserialize)]
 struct FabseAIText {
+    success: bool,
     result: AIResponseText,
 }
 #[derive(Deserialize)]
@@ -440,7 +441,7 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
         .await
         .ok()?;
     if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
-        && !resp_parsed.result.response.contains("AiError")
+        && resp_parsed.success
     {
         Some(resp_parsed.result.response)
     } else {
@@ -501,7 +502,7 @@ pub async fn ai_response(
         .ok()?;
 
     if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
-        && !resp_parsed.result.response.contains("AiError")
+        && resp_parsed.success
     {
         Some(resp_parsed.result.response)
     } else {
@@ -550,7 +551,7 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
         .await
         .ok()?;
     if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
-        && !resp_parsed.result.response.contains("AiError")
+        && resp_parsed.success
     {
         Some(resp_parsed.result.response)
     } else {
@@ -576,6 +577,7 @@ struct AIVoiceRequest<'a> {
 
 #[derive(Deserialize)]
 struct FabseAIVoice {
+    success: bool,
     result: AIResponseVoice,
 }
 
@@ -600,7 +602,7 @@ pub async fn ai_voice(prompt: &str) -> Option<Vec<u8>> {
         .await
         .ok()?;
     if let Ok(resp_parsed) = resp.json::<FabseAIVoice>().await
-        && !resp_parsed.result.audio.contains("AiError")
+        && resp_parsed.success
     {
         general_purpose::STANDARD
             .decode(resp_parsed.result.audio)

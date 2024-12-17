@@ -86,7 +86,6 @@ pub async fn bot_start(
             commands: vec![
                 api_calls::anime_scene(),
                 api_calls::ai_image(),
-                api_calls::ai_summarize(),
                 api_calls::ai_text(),
                 api_calls::anime(),
                 api_calls::eightball(),

@@ -17,13 +17,13 @@ once_cell = "1"
 opentelemetry = "0" 
 opentelemetry-otlp = { version = "0", default-features = false, features = ["grpc-tonic", "trace"] }
 opentelemetry_sdk = { version = "0", default-features = false, features = ["rt-tokio", "trace"] }
-poise = { git = "https://github.com/serenity-rs/poise", branch = "serenity-next" }
-reqwest = { version = "0", default-features = false, features = ["rustls-tls"] }
+poise = { git = "https://github.com/jamesbt365/poise", branch = "fix-compile-serenity-next" }
+reqwest = { version = "0", default-features = false, features = ["json", "rustls-tls"] }
 scraper = "0"
 serde = "1"
 serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "rustls_backend", "temp_cache", "voice"] }
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
-sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio", "tls-rustls"] }
 symphonia = { version = "0", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }
 textwrap = "0"
 tokio = { version = "1", features = ["rt-multi-thread", "signal"] }

@@ -112,12 +112,11 @@ pub async fn handle_message(
             };
             new_message.react(&ctx.http, reaction).await?;
         }
-    }
-    if content == "fabse" || content == "fabseman" {
-        if let Ok(webhook) =
-            webhook_find(ctx, new_message.channel_id, data.channel_webhooks.clone()).await
-        {
-            webhook
+        if content == "fabse" || content == "fabseman" {
+            if let Ok(webhook) =
+                webhook_find(ctx, new_message.channel_id, data.channel_webhooks.clone()).await
+            {
+                webhook
                 .execute(
                     &ctx.http,
                     false,
@@ -127,6 +126,7 @@ pub async fn handle_message(
                         .content("# such magnificence"),
                 )
                 .await?;
+            }
         }
     }
     if let Some(guild_id) = new_message.guild_id {

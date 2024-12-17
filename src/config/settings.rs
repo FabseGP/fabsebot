@@ -2,6 +2,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Clone)]
 pub struct MainConfig {
+    pub log_level: String,
     pub token: String,
     pub jaeger: String,
     pub cache_max_messages: usize,
@@ -31,8 +32,6 @@ pub struct AIConfig {
     pub image_desc_fallback: String,
     pub image_gen: String,
     pub image_gen_fallback: String,
-    pub summarize: String,
-    pub summarize_fallback: String,
     pub text_gen: String,
     pub text_gen_fallback: String,
     pub tts: String,
@@ -44,7 +43,7 @@ pub struct APIConfig {
     pub tenor_token: String,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct GuildSettings {
     pub guild_id: i64,
     pub dead_chat_rate: Option<i64>,
@@ -59,7 +58,7 @@ pub struct GuildSettings {
     pub global_call: bool,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct UserSettings {
     pub guild_id: i64,
     pub user_id: i64,
@@ -78,7 +77,7 @@ pub struct UserSettings {
     pub ping_media: Option<String>,
 }
 
-#[derive(Deserialize, Default, Eq, Hash, PartialEq, Clone)]
+#[derive(Default, Eq, Hash, PartialEq, Clone)]
 pub struct WordReactions {
     pub guild_id: i64,
     pub word: String,
@@ -86,14 +85,14 @@ pub struct WordReactions {
     pub media: Option<String>,
 }
 
-#[derive(Deserialize, Default, Eq, Hash, PartialEq, Clone)]
+#[derive(Default, Eq, Hash, PartialEq, Clone)]
 pub struct WordTracking {
     pub guild_id: i64,
     pub word: String,
     pub count: i64,
 }
 
-#[derive(Deserialize, Default, Eq, Hash, PartialEq, Clone)]
+#[derive(Default, Eq, Hash, PartialEq, Clone)]
 pub struct EmojiReactions {
     pub guild_id: i64,
     pub emoji_id: i64,

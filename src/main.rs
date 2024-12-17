@@ -31,6 +31,14 @@ async fn main() -> AResult<()> {
     let ai_config: AIConfig = Value::try_into(config_toml["AI-Info"].clone())?;
     let api_config: APIConfig = Value::try_into(config_toml["API-Info"].clone())?;
 
+    let log_level = match bot_config.log_level.to_lowercase().as_str() {
+        "trace" => Level::TRACE,
+        "debug" => Level::DEBUG,
+        "warn" => Level::WARN,
+        "error" => Level::ERROR,
+        _ => Level::INFO,
+    };
+
     let new_exporter = SpanExporter::builder()
         .with_tonic()
         .with_endpoint(&bot_config.jaeger)
@@ -47,7 +55,7 @@ async fn main() -> AResult<()> {
     set_tracer_provider(provider.clone());
 
     Registry::default()
-        .with(LevelFilter::from_level(Level::INFO))
+        .with(LevelFilter::from_level(log_level))
         .with(fmt::layer())
         .with(layer().with_tracer(provider.tracer(bot_config.username.clone())))
         .init();

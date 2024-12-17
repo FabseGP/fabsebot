@@ -17,7 +17,7 @@ use poise::{
     serenity_prelude::{
         ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment,
         CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage, Member, MessageId,
-        futures::StreamExt as _, small_fixed_array::FixedString,
+        futures::StreamExt as _,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,7 @@ impl State {
 
 #[derive(Deserialize)]
 struct FabseAIImage {
+    success: bool,
     result: AIResponseImage,
 }
 #[derive(Deserialize)]
@@ -84,17 +85,18 @@ pub async fn ai_image(
         .send()
         .await?;
 
-    if let Some(image_bytes) = resp
-        .json::<FabseAIImage>()
-        .await
-        .ok()
-        .filter(|output| !output.result.image.is_empty())
-        .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
+    if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
+        && resp_parsed.success
     {
         ctx.send(
             CreateReply::default()
                 .reply(true)
-                .attachment(CreateAttachment::bytes(image_bytes, "output.png")),
+                .attachment(CreateAttachment::bytes(
+                    general_purpose::STANDARD
+                        .decode(resp_parsed.result.image)
+                        .unwrap(),
+                    "output.png",
+                )),
         )
         .await?;
     } else {
@@ -104,17 +106,18 @@ pub async fn ai_image(
             .json(&request)
             .send()
             .await?;
-        if let Some(image_bytes) = resp
-            .json::<FabseAIImage>()
-            .await
-            .ok()
-            .filter(|output| !output.result.image.is_empty())
-            .and_then(|output| general_purpose::STANDARD.decode(output.result.image).ok())
+        if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
+            && resp_parsed.success
         {
             ctx.send(
                 CreateReply::default()
                     .reply(true)
-                    .attachment(CreateAttachment::bytes(image_bytes, "output.png")),
+                    .attachment(CreateAttachment::bytes(
+                        general_purpose::STANDARD
+                            .decode(resp_parsed.result.image)
+                            .unwrap(),
+                        "output.png",
+                    )),
             )
             .await?;
         } else {
@@ -123,73 +126,6 @@ pub async fn ai_image(
         }
     }
 
-    Ok(())
-}
-
-#[derive(Deserialize)]
-struct FabseAISummary {
-    result: AIResponseSummary,
-}
-#[derive(Deserialize)]
-struct AIResponseSummary {
-    summary: String,
-}
-
-#[derive(Serialize)]
-struct SummarizeRequest {
-    input_text: FixedString<u16>,
-    length: u64,
-}
-
-/// Did someone say AI summarize?
-#[poise::command(prefix_command, slash_command)]
-pub async fn ai_summarize(
-    ctx: SContext<'_>,
-    #[description = "Maximum length of summary in words"] length: u64,
-) -> Result<(), Error> {
-    let msg = ctx
-        .channel_id()
-        .message(&ctx.http(), MessageId::from(ctx.id()))
-        .await?;
-    let Some(reply) = msg.referenced_message else {
-        ctx.reply("Bruh, reply to a message").await?;
-        return Ok(());
-    };
-    ctx.defer().await?;
-    let request = SummarizeRequest {
-        input_text: reply.content,
-        length,
-    };
-    let utils_config = UTILS_CONFIG
-        .get()
-        .expect("UTILS_CONFIG must be set during initialization");
-    let resp = HTTP_CLIENT
-        .post(&utils_config.ai.summarize)
-        .bearer_auth(&utils_config.ai.token)
-        .json(&request)
-        .send()
-        .await?;
-    match resp.json::<FabseAISummary>().await {
-        Ok(output) if !output.result.summary.is_empty() => {
-            ctx.say(output.result.summary).await?;
-        }
-        _ => {
-            let resp = HTTP_CLIENT
-                .post(&utils_config.ai.summarize_fallback)
-                .bearer_auth(&utils_config.ai.token_fallback)
-                .json(&request)
-                .send()
-                .await?;
-            match resp.json::<FabseAISummary>().await {
-                Ok(output) if !output.result.summary.is_empty() => {
-                    ctx.say(output.result.summary).await?;
-                }
-                _ => {
-                    ctx.reply("This is too much work").await?;
-                }
-            }
-        }
-    }
     Ok(())
 }
 
