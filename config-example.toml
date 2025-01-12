@@ -7,6 +7,7 @@
 #banner = 
 #activity =
 #ping_message = 
+#uptime_url = 
 
 [PostgreSQL-Info]
 #database = 

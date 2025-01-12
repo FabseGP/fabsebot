@@ -1063,25 +1063,30 @@ pub async fn roast(
 
         let messages_string = {
             let mut result = String::new();
-            let mut count = 0;
+            let mut result_count = 0;
+            let mut missing_match_count = 0;
 
             while let Some(message_result) = messages.next().await {
                 match message_result {
                     Ok(message) => {
                         if message.author.id == member.user.id {
-                            let index = count + 1;
-                            if count > 0 {
+                            let index = result_count + 1;
+                            if result_count > 0 {
                                 result.push(',');
                             }
                             result.push_str(&index.to_string());
                             result.push(':');
                             result.push_str(&message.content);
-                            count += 1;
+                            result_count += 1;
+                        } else {
+                            missing_match_count += 1;
                         }
                     }
-                    Err(_) => break,
+                    Err(_) => {
+                        break;
+                    }
                 }
-                if count >= 25 {
+                if result_count >= 25 || missing_match_count >= 100 {
                     break;
                 }
             }

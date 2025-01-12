@@ -7,18 +7,30 @@ mod events;
 mod utils;
 
 use anyhow::{Context as _, Result as AResult};
-use config::settings::{AIConfig, APIConfig, MainConfig, PostgresConfig};
+use config::{
+    settings::{AIConfig, APIConfig, MainConfig, PostgresConfig},
+    types::HTTP_CLIENT,
+};
 use core::client::bot_start;
 use opentelemetry::{KeyValue, global::set_tracer_provider, trace::TracerProvider as _};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig as _};
 use opentelemetry_sdk::{Resource, runtime::Tokio, trace::TracerProvider};
-use std::fs::read_to_string;
+use std::{fs::read_to_string, time::Duration};
+use tokio::{spawn, time::interval};
 use toml::{Table, Value};
 use tracing::Level;
 use tracing_opentelemetry::layer;
 use tracing_subscriber::{
     Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _,
 };
+
+async fn periodic_task(url: &String) {
+    let mut interval = interval(Duration::from_secs(60));
+    loop {
+        interval.tick().await;
+        let _ = HTTP_CLIENT.get(url).send().await;
+    }
+}
 
 #[tokio::main]
 async fn main() -> AResult<()> {
@@ -59,6 +71,12 @@ async fn main() -> AResult<()> {
         .with(fmt::layer())
         .with(layer().with_tracer(provider.tracer(bot_config.username.clone())))
         .init();
+
+    let uptime_task_url = bot_config.uptime_url.clone();
+
+    spawn(async move {
+        periodic_task(&uptime_task_url).await;
+    });
 
     bot_start(bot_config, postgres_config, ai_config, api_config).await?;
 

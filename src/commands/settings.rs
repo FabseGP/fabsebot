@@ -91,7 +91,7 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
         ctx.send(
             CreateReply::default()
                 .reply(true)
-                .content("Server settings resetted... probably")
+                .content("User settings resetted... probably")
                 .ephemeral(true),
         )
         .await?;
