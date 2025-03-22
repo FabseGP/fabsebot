@@ -76,17 +76,16 @@ pub async fn rps(
             .await?;
 
             let ctx_id_copy = ctx.id();
-            if let Some(interaction) =
-                ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                    .author_id(user.user.id)
-                    .timeout(Duration::from_secs(60))
-                    .filter(move |interaction| {
-                        interaction
-                            .data
-                            .custom_id
-                            .starts_with(ctx_id_copy.to_string().as_str())
-                    })
-                    .await
+            if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
+                .author_id(user.user.id)
+                .timeout(Duration::from_secs(60))
+                .filter(move |interaction| {
+                    interaction
+                        .data
+                        .custom_id
+                        .starts_with(ctx_id_copy.to_string().as_str())
+                })
+                .await
             {
                 let target_choice = interaction.data.custom_id.as_str();
 

@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::borrow::Cow;
 use urlencoding::encode;
 use winnow::{
-    PResult, Parser,
+    ModalResult, Parser,
     ascii::digit1,
     combinator::{delimited, preceded, separated_pair},
     token::take_till,
@@ -93,17 +93,17 @@ pub struct DiscordEmoji {
     pub emoji_id: u64,
 }
 
-fn discord_id(input: &mut &str) -> PResult<u64> {
+fn discord_id(input: &mut &str) -> ModalResult<u64> {
     digit1.parse_to().parse_next(input)
 }
 
-fn emoji_name(input: &mut &str) -> PResult<String> {
+fn emoji_name(input: &mut &str) -> ModalResult<String> {
     take_till(0.., |c| c == ':')
         .map(ToString::to_string)
         .parse_next(input)
 }
 
-pub fn discord_message_link(input: &mut &str) -> PResult<DiscordMessageLink> {
+pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink> {
     let (guild_id, (channel_id, message_id)) = preceded(
         DISCORD_CHANNEL_PREFIX,
         separated_pair(discord_id, '/', separated_pair(discord_id, '/', discord_id)),
@@ -116,7 +116,7 @@ pub fn discord_message_link(input: &mut &str) -> PResult<DiscordMessageLink> {
     })
 }
 
-pub fn discord_emoji(input: &mut &str) -> PResult<DiscordEmoji> {
+pub fn discord_emoji(input: &mut &str) -> ModalResult<DiscordEmoji> {
     let (name, id) =
         delimited("<:", separated_pair(emoji_name, ':', discord_id), ">").parse_next(input)?;
 

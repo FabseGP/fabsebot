@@ -5,8 +5,6 @@ use crate::config::{
 
 use anyhow::Context;
 use poise::{
-    FrameworkContext,
-    builtins::register_globally,
     serenity_prelude::{Context as SContext, GuildId, Ready, UserId},
 };
 use sqlx::query_as;
@@ -16,13 +14,9 @@ use std::{
 };
 use tracing::info;
 
-pub async fn handle_ready(
-    ctx: &SContext,
-    data_about_bot: &Ready,
-    framework_context: FrameworkContext<'_, Data, Error>,
-) -> Result<(), Error> {
-    let mut tx = framework_context
-        .user_data()
+pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> Result<(), Error> {
+    let data: Arc<Data> = ctx.data();
+    let mut tx = data
         .db
         .begin()
         .await
@@ -71,10 +65,8 @@ pub async fn handle_ready(
             .insert(emoji);
     }
 
-    let user_data = framework_context.user_data();
-
     {
-        let guild_data_lock = user_data.guild_data.lock().await;
+        let guild_data_lock = data.guild_data.lock().await;
         for settings in guild_settings {
             let guild_id = GuildId::new(
                 u64::try_from(settings.guild_id).expect("Guild-id out of bounds for u64"),
@@ -113,7 +105,7 @@ pub async fn handle_ready(
                 .or_default()
                 .insert(user_id, settings);
         }
-        let user_settings_lock = user_data.user_settings.lock().await;
+        let user_settings_lock = data.user_settings.lock().await;
         for (guild_id, map) in guild_maps {
             user_settings_lock.insert(guild_id, Arc::new(map));
         }
@@ -127,12 +119,6 @@ pub async fn handle_ready(
         data_about_bot.user.name,
         data_about_bot.guilds.len(),
     );
-
-    register_globally(
-        &framework_context.serenity_context.http,
-        &framework_context.options().commands,
-    )
-    .await?;
 
     Ok(())
 }

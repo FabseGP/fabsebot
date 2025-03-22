@@ -340,7 +340,7 @@ pub async fn anime(
 
                     let ctx_id_copy = ctx.id();
                     while let Some(interaction) =
-                        ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                        ComponentInteractionCollector::new(ctx.serenity_context())
                             .timeout(Duration::from_secs(60))
                             .filter(move |interaction| {
                                 interaction
@@ -654,16 +654,15 @@ pub async fn gif(
             .await?;
 
         let ctx_id_copy = ctx.id();
-        while let Some(interaction) =
-            ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                .timeout(Duration::from_secs(60))
-                .filter(move |interaction| {
-                    interaction
-                        .data
-                        .custom_id
-                        .starts_with(ctx_id_copy.to_string().as_str())
-                })
-                .await
+        while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
+            .timeout(Duration::from_secs(60))
+            .filter(move |interaction| {
+                interaction
+                    .data
+                    .custom_id
+                    .starts_with(ctx_id_copy.to_string().as_str())
+            })
+            .await
         {
             interaction
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
@@ -856,7 +855,7 @@ pub async fn manga(
 
                     let ctx_id_copy = ctx.id();
                     while let Some(interaction) =
-                        ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                        ComponentInteractionCollector::new(ctx.serenity_context())
                             .timeout(Duration::from_secs(60))
                             .filter(move |interaction| {
                                 interaction
@@ -1049,11 +1048,14 @@ pub async fn roast(
                 _ => {
                     let mut modified_settings =
                         user_settings_opt.get_or_insert_default().as_ref().clone();
-                    modified_settings.insert(member.user.id, UserSettings {
-                        guild_id: i64::from(guild_id),
-                        user_id: i64::from(member.user.id),
-                        ..Default::default()
-                    });
+                    modified_settings.insert(
+                        member.user.id,
+                        UserSettings {
+                            guild_id: i64::from(guild_id),
+                            user_id: i64::from(member.user.id),
+                            ..Default::default()
+                        },
+                    );
                     user_settings_lock.insert(guild_id, Arc::new(modified_settings.clone()));
                     0
                 }
@@ -1257,7 +1259,7 @@ pub async fn translate(
 
                     let ctx_id_copy = ctx.id();
                     while let Some(interaction) =
-                        ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                        ComponentInteractionCollector::new(ctx.serenity_context())
                             .timeout(Duration::from_secs(60))
                             .filter(move |interaction| {
                                 interaction
@@ -1431,7 +1433,7 @@ pub async fn urban(
 
                     let ctx_id_copy = ctx.id();
                     while let Some(interaction) =
-                        ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
+                        ComponentInteractionCollector::new(ctx.serenity_context())
                             .timeout(Duration::from_secs(60))
                             .filter(move |interaction| {
                                 interaction

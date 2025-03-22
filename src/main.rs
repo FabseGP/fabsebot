@@ -14,7 +14,7 @@ use config::{
 use core::client::bot_start;
 use opentelemetry::{KeyValue, global::set_tracer_provider, trace::TracerProvider as _};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig as _};
-use opentelemetry_sdk::{Resource, runtime::Tokio, trace::TracerProvider};
+use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use std::{fs::read_to_string, time::Duration};
 use tokio::{spawn, time::interval};
 use toml::{Table, Value};
@@ -56,12 +56,13 @@ async fn main() -> AResult<()> {
         .with_endpoint(&bot_config.jaeger)
         .build()?;
 
-    let provider = TracerProvider::builder()
-        .with_batch_exporter(new_exporter, Tokio)
-        .with_resource(Resource::new(vec![KeyValue::new(
-            "service.name",
-            bot_config.username.clone(),
-        )]))
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(new_exporter)
+        .with_resource(
+            Resource::builder()
+                .with_attribute(KeyValue::new("service.name", bot_config.username.clone()))
+                .build(),
+        )
         .build();
 
     set_tracer_provider(provider.clone());

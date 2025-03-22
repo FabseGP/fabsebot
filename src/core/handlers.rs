@@ -2,12 +2,12 @@ use crate::{
     config::types::{Data, Error},
     events::{
         bot_ready::handle_ready, guild_create::handle_guild_create,
-        http_ratelimit::handle_ratelimit, message_delete::handle_message_delete,
-        message_sent::handle_message,
+        message_delete::handle_message_delete, message_sent::handle_message,
     },
 };
 use anyhow::Result;
-use poise::{FrameworkContext, FrameworkError, PartialContext, serenity_prelude::FullEvent};
+use poise::{FrameworkError, PartialContext, serenity_prelude::FullEvent};
+use serenity::prelude::{Context, EventHandler as SEventHandler};
 use std::borrow::Cow;
 use tracing::error;
 
@@ -47,27 +47,40 @@ pub async fn dynamic_prefix(
     Ok(Some(prefix))
 }
 
-pub async fn event_handler(
-    framework: FrameworkContext<'_, Data, Error>,
-    event: &FullEvent,
-) -> Result<(), Error> {
-    let data = framework.user_data();
-    let ctx = framework.serenity_context;
+pub struct EventHandler;
 
-    match event {
-        FullEvent::Ready { data_about_bot } => handle_ready(ctx, data_about_bot, framework).await?,
-        FullEvent::Message { new_message } => handle_message(ctx, data, new_message).await?,
-        FullEvent::GuildCreate { guild, is_new } => {
-            handle_guild_create(data, guild, is_new.as_ref()).await?;
+#[serenity::async_trait]
+impl SEventHandler for EventHandler {
+    async fn dispatch(&self, ctx: &Context, event: &FullEvent) {
+        match event {
+            FullEvent::Ready { data_about_bot, .. } => {
+                if let Err(error) = handle_ready(ctx, data_about_bot).await {
+                    println!("Error handling connection to Discord: {error}");
+                }
+            }
+            FullEvent::Message { new_message, .. } => {
+                if let Err(error) = handle_message(ctx, new_message).await {
+                    println!("Error handling sent message: {error}");
+                }
+            }
+            FullEvent::GuildCreate { guild, is_new, .. } => {
+                if let Err(error) = handle_guild_create(ctx.data(), guild, is_new.as_ref()).await {
+                    println!("Error handling newly created guild: {error}");
+                }
+            }
+            FullEvent::MessageDelete {
+                channel_id,
+                deleted_message_id,
+                guild_id,
+                ..
+            } => {
+                if let Err(error) =
+                    handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id).await
+                {
+                    println!("Error handling deleted message: {error}");
+                }
+            }
+            _ => {}
         }
-        FullEvent::Ratelimit { data } => handle_ratelimit(data).await?,
-        FullEvent::MessageDelete {
-            channel_id,
-            deleted_message_id,
-            guild_id,
-        } => handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id).await?,
-        _ => {}
     }
-
-    Ok(())
 }

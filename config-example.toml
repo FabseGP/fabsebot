@@ -12,7 +12,8 @@
 [PostgreSQL-Info]
 #database = 
 #password = 
-#host = 
+#host =
+#port = 
 #user = 
 #max_connections = 
 

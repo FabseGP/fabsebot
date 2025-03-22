@@ -17,6 +17,7 @@ pub struct MainConfig {
 #[derive(Deserialize)]
 pub struct PostgresConfig {
     pub host: String,
+    pub port: u16,
     pub user: String,
     pub database: String,
     pub password: String,

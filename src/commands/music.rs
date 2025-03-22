@@ -612,7 +612,7 @@ pub async fn play_song(
                 }
                 if let Some(url) = thumbnail {
                     e = e.image(url);
-                };
+                }
                 e = e.field("Position:", format!("{queue_len}"), true);
                 ctx.send(CreateReply::default().reply(true).embed(e.clone()))
                     .await?;
@@ -655,7 +655,7 @@ pub async fn play_song(
                                 }
                             }
                         }
-                        None => continue,
+                        None => todo!(),
                     }
                 }
             }

@@ -2,9 +2,9 @@ use crate::{
     commands::{api_calls, funny, games, info, misc, music, settings},
     config::{
         settings::{AIConfig, APIConfig, MainConfig, PostgresConfig},
-        types::{Data, SHARD_MANAGER, UTILS_CONFIG, UtilsConfig},
+        types::{Data, UTILS_CONFIG, UtilsConfig},
     },
-    core::handlers::{dynamic_prefix, event_handler, on_error},
+    core::handlers::{EventHandler, dynamic_prefix, on_error},
 };
 use anyhow::Context;
 use mini_moka::sync::Cache;
@@ -12,7 +12,7 @@ use poise::{
     Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions,
     serenity_prelude::{
         ActivityData, Client, CreateAttachment, EditProfile, GatewayIntents, OnlineStatus::Online,
-        ShardManager, Token, cache::Settings,
+        Token, cache::Settings,
     },
 };
 use serenity::all::CreateAllowedMentions;
@@ -59,6 +59,7 @@ pub async fn bot_start(
     }
     let pool_options = PgConnectOptions::new()
         .host(&postgres_config.host)
+        .port(postgres_config.port)
         .username(&postgres_config.user)
         .database(&postgres_config.database)
         .password(&postgres_config.password);
@@ -82,7 +83,6 @@ pub async fn bot_start(
         Box::leak(format!("hey {}", &bot_config.username).into_boxed_str());
     let framework = Framework::builder()
         .options(FrameworkOptions {
-            event_handler: |framework, event| Box::pin(event_handler(framework, event)),
             commands: vec![
                 api_calls::anime_scene(),
                 api_calls::ai_image(),
@@ -169,24 +169,17 @@ pub async fn bot_start(
         .framework(framework)
         .voice_manager::<Songbird>(music_manager)
         .cache_settings(cache_settings)
+        .event_handler(EventHandler)
         .activity(activity)
         .status(Online)
         .data(user_data)
         .await;
     match client {
         Ok(mut client) => {
-            if SHARD_MANAGER
-                .set(Arc::<ShardManager>::clone(&client.shard_manager))
-                .is_err()
-            {
-                error!("Failed to store shard manager");
-            }
             spawn(async move {
                 wait_until_shutdown().await;
                 warn!("Recieved control C and shutting down...");
-                if let Some(shard_manager) = SHARD_MANAGER.get() {
-                    shard_manager.shutdown_all().await;
-                }
+                // IMPLEMENT SHUTTING DOWN ALL SHARDS
             });
             if let Err(e) = client.start_autosharded().await {
                 warn!("Client error: {:?}", e);

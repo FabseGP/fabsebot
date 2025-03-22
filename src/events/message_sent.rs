@@ -27,11 +27,8 @@ use tokio::task::spawn;
 use tracing::warn;
 use winnow::Parser;
 
-pub async fn handle_message(
-    ctx: &serenity::Context,
-    data: Arc<Data>,
-    new_message: &Message,
-) -> Result<(), Error> {
+pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> Result<(), Error> {
+    let data: Arc<Data> = ctx.data();
     if new_message.author.bot() {
         return Ok(());
     }

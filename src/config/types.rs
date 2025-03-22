@@ -7,7 +7,7 @@ use mini_moka::sync::Cache;
 use once_cell::sync::{Lazy, OnceCell};
 use poise::{
     Context as PContext,
-    serenity_prelude::{ChannelId, GuildId, MessageId, ShardManager, UserId, Webhook},
+    serenity_prelude::{ChannelId, GuildId, MessageId, UserId, Webhook},
 };
 use reqwest::Client;
 use serde::Serialize;
@@ -109,7 +109,6 @@ pub struct UtilsConfig {
     pub api: APIConfig,
 }
 
-pub static SHARD_MANAGER: OnceCell<Arc<ShardManager>> = OnceCell::new();
 pub static UTILS_CONFIG: OnceCell<Arc<UtilsConfig>> = OnceCell::new();
 pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(Client::new);
 pub static RNG: Lazy<Mutex<Rng>> = Lazy::new(|| Mutex::new(Rng::new()));

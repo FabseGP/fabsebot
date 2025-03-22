@@ -11,6 +11,7 @@ use anyhow::Context;
 use dashmap::DashSet;
 use poise::{
     CreateReply,
+    builtins::register_globally,
     serenity_prelude::{
         ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
         ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
@@ -69,16 +70,15 @@ pub async fn anony_poll(
     let mut vote_counts = vec![0; options_count];
     let voted_users = DashSet::new();
 
-    while let Some(interaction) =
-        ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-            .timeout(Duration::from_secs(duration * 60))
-            .filter(move |interaction| {
-                interaction
-                    .data
-                    .custom_id
-                    .starts_with(ctx_id_copy.to_string().as_str())
-            })
-            .await
+    while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
+        .timeout(Duration::from_secs(duration * 60))
+        .filter(move |interaction| {
+            interaction
+                .data
+                .custom_id
+                .starts_with(ctx_id_copy.to_string().as_str())
+        })
+        .await
     {
         interaction
             .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
@@ -614,16 +614,15 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
         }
         let ctx_id_copy = ctx.id();
         let mut final_attachment = attachment.clone();
-        while let Some(interaction) =
-            ComponentInteractionCollector::new(ctx.serenity_context().shard.clone())
-                .timeout(Duration::from_secs(60))
-                .filter(move |interaction| {
-                    interaction
-                        .data
-                        .custom_id
-                        .starts_with(ctx_id_copy.to_string().as_str())
-                })
-                .await
+        while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
+            .timeout(Duration::from_secs(60))
+            .filter(move |interaction| {
+                interaction
+                    .data
+                    .custom_id
+                    .starts_with(ctx_id_copy.to_string().as_str())
+            })
+            .await
         {
             interaction
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
@@ -666,6 +665,14 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
             )
             .await?;
     }
+    Ok(())
+}
+
+#[poise::command(prefix_command, owners_only)]
+async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
+    let commands = &ctx.framework().options().commands;
+    register_globally(ctx.http(), commands).await?;
+    ctx.say("Successfully registered slash commands!").await?;
     Ok(())
 }
 

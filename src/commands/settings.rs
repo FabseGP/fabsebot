@@ -123,11 +123,14 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
             .get_or_insert_default()
             .as_ref()
             .clone();
-        modified_settings.insert(ctx.author().id, UserSettings {
-            guild_id: i64::from(guild_id),
-            user_id: i64::from(ctx.author().id),
-            ..Default::default()
-        });
+        modified_settings.insert(
+            ctx.author().id,
+            UserSettings {
+                guild_id: i64::from(guild_id),
+                user_id: i64::from(ctx.author().id),
+                ..Default::default()
+            },
+        );
         user_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
     Ok(())
@@ -182,13 +185,16 @@ pub async fn set_afk(
             user_settings.afk = true;
             user_settings.afk_reason = reason;
         } else {
-            modified_settings.insert(ctx.author().id, UserSettings {
-                guild_id: guild_id_i64,
-                user_id: user_id_i64,
-                afk: true,
-                afk_reason: reason,
-                ..Default::default()
-            });
+            modified_settings.insert(
+                ctx.author().id,
+                UserSettings {
+                    guild_id: guild_id_i64,
+                    user_id: user_id_i64,
+                    afk: true,
+                    afk_reason: reason,
+                    ..Default::default()
+                },
+            );
         }
         user_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
@@ -317,18 +323,21 @@ pub async fn set_chatbot_options(
             user_settings.chatbot_frequency_penalty = frequency_penalty;
             user_settings.chatbot_presence_penalty = presence_penalty;
         } else {
-            modified_settings.insert(ctx.author().id, UserSettings {
-                guild_id: guild_id_i64,
-                user_id: user_id_i64,
-                chatbot_role: role,
-                chatbot_temperature: temperature,
-                chatbot_top_p: top_p,
-                chatbot_top_k: top_k,
-                chatbot_repetition_penalty: repetition_penalty,
-                chatbot_frequency_penalty: frequency_penalty,
-                chatbot_presence_penalty: presence_penalty,
-                ..Default::default()
-            });
+            modified_settings.insert(
+                ctx.author().id,
+                UserSettings {
+                    guild_id: guild_id_i64,
+                    user_id: user_id_i64,
+                    chatbot_role: role,
+                    chatbot_temperature: temperature,
+                    chatbot_top_p: top_p,
+                    chatbot_top_k: top_k,
+                    chatbot_repetition_penalty: repetition_penalty,
+                    chatbot_frequency_penalty: frequency_penalty,
+                    chatbot_presence_penalty: presence_penalty,
+                    ..Default::default()
+                },
+            );
         }
         user_settings_lock.insert(guild_id, Arc::new(modified_settings));
     }
@@ -741,13 +750,16 @@ pub async fn set_user_ping(
                 user_settings.ping_content = Some(content);
                 user_settings.ping_media = media;
             } else {
-                modified_settings.insert(ctx.author().id, UserSettings {
-                    guild_id: guild_id_i64,
-                    user_id: user_id_i64,
-                    ping_content: Some(content),
-                    ping_media: media,
-                    ..Default::default()
-                });
+                modified_settings.insert(
+                    ctx.author().id,
+                    UserSettings {
+                        guild_id: guild_id_i64,
+                        user_id: user_id_i64,
+                        ping_content: Some(content),
+                        ping_media: media,
+                        ..Default::default()
+                    },
+                );
             }
             user_settings_lock.insert(guild_id, Arc::new(modified_settings));
         } else {
