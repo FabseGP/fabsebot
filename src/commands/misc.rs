@@ -3,7 +3,7 @@ use crate::{
         constants::{COLOUR_RED, FONTS},
         types::{Error, HTTP_CLIENT, SContext},
     },
-    utils::{ai::ai_response_simple, image::quote_image},
+    utils::{ai::ai_response_cloud_simple, image::quote_image},
 };
 
 use ab_glyph::FontArc;
@@ -380,7 +380,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
-    match ai_response_simple(
+    match ai_response_cloud_simple(
         "you're a tsundere",
         "generate a one-line love-hate greeting",
     )

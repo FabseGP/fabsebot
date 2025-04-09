@@ -36,8 +36,10 @@ pub struct AIConfig {
     pub image_gen_fallback: String,
     pub text_gen: String,
     pub text_gen_fallback: String,
+    pub text_gen_local: String,
     pub tts: String,
     pub tts_fallback: String,
+    pub search: String,
 }
 
 #[derive(Deserialize)]

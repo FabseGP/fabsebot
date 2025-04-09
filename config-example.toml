@@ -23,13 +23,15 @@
 #token_fallback = 
 #translate = 
 #image_desc = 
-#image_desc_fallback
+#image_desc_fallback = 
 #image_gen = 
-#image_gen_fallback
+#image_gen_fallback = 
 #text_gen = 
-#text_gen_fallback
+#text_gen_fallback = 
+#text_gen_local =
 #tts = 
-#tts_fallback
+#tts_fallback = 
+#search = 
 
 [API-Info]
 #tenor_token = 

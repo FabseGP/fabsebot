@@ -266,9 +266,13 @@ pub async fn ai_chatbot(
             }
         }
         let internet_search_opt = {
+            let utils_config = UTILS_CONFIG
+                .get()
+                .expect("UTILS_CONFIG must be set during initialization");
             if let Ok(resp) = HTTP_CLIENT
                 .get(format!(
-                    "https://html.duckduckgo.com/html/?q={}",
+                    "{}/search?q={}&categories=general",
+                    utils_config.ai.search,
                     encode(&message.content)
                 ))
                 .send()
@@ -276,12 +280,18 @@ pub async fn ai_chatbot(
                 && let Ok(resp_text) = resp.text().await
             {
                 let parsed_page = Html::parse_document(&resp_text);
-                let summary_selector = Selector::parse("a.result__snippet").unwrap();
+                let snippet_selector = Selector::parse("article.result-default p.content")
+                    .expect("Failed to parse search results");
                 Some(
                     parsed_page
-                        .select(&summary_selector)
-                        .map(|c| c.inner_html())
-                        .collect::<String>(),
+                        .select(&snippet_selector)
+                        .fold(String::with_capacity(2048), |mut acc, element| {
+                            element.text().for_each(|text| acc.push_str(text));
+                            acc.push(' ');
+                            acc
+                        })
+                        .trim_end()
+                        .to_string(),
                 )
             } else {
                 None
@@ -341,16 +351,19 @@ pub async fn ai_chatbot(
                 )));
                 convo_history.messages.clone()
             };
-            ai_response(
-                &convo_copy,
-                chatbot_temperature,
-                chatbot_top_p,
-                chatbot_top_k,
-                chatbot_repetition_penalty,
-                chatbot_frequency_penalty,
-                chatbot_presence_penalty,
-            )
-            .await
+            /*
+                        ai_response_cloud(
+                            &convo_copy,
+                            chatbot_temperature,
+                            chatbot_top_p,
+                            chatbot_top_k,
+                            chatbot_repetition_penalty,
+                            chatbot_frequency_penalty,
+                            chatbot_presence_penalty,
+                        )
+                        .await
+            */
+            ai_response_local(&convo_copy).await
         };
 
         if let Some(response) = response_opt {
@@ -395,10 +408,11 @@ pub async fn ai_chatbot(
 }
 
 #[derive(Deserialize)]
-struct FabseAIText {
+struct FabseCloudAIText {
     success: bool,
     result: AIResponseText,
 }
+
 #[derive(Deserialize)]
 struct AIResponseText {
     response: String,
@@ -440,7 +454,7 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
         .send()
         .await
         .ok()?;
-    if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
+    if let Ok(resp_parsed) = resp.json::<FabseCloudAIText>().await
         && resp_parsed.success
     {
         Some(resp_parsed.result.response)
@@ -452,7 +466,7 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
             .send()
             .await
             .ok()?;
-        resp.json::<FabseAIText>()
+        resp.json::<FabseCloudAIText>()
             .await
             .ok()
             .map(|output| output.result.response)
@@ -460,7 +474,7 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
 }
 
 #[derive(Serialize)]
-struct ChatRequest<'a> {
+struct ChatRequestCloud<'a> {
     messages: &'a [AIChatMessage],
     max_tokens: i32,
     temperature: f32,
@@ -471,7 +485,7 @@ struct ChatRequest<'a> {
     presence_penalty: f32,
 }
 
-pub async fn ai_response(
+pub async fn ai_response_cloud(
     content: &[AIChatMessage],
     chatbot_temperature: Option<f32>,
     chatbot_top_p: Option<f32>,
@@ -480,7 +494,7 @@ pub async fn ai_response(
     chatbot_frequency_penalty: Option<f32>,
     chatbot_presence_penalty: Option<f32>,
 ) -> Option<String> {
-    let request = ChatRequest {
+    let request = ChatRequestCloud {
         messages: content,
         max_tokens: 2048,
         temperature: chatbot_temperature.unwrap_or(1.1),
@@ -501,7 +515,7 @@ pub async fn ai_response(
         .await
         .ok()?;
 
-    if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
+    if let Ok(resp_parsed) = resp.json::<FabseCloudAIText>().await
         && resp_parsed.success
     {
         Some(resp_parsed.result.response)
@@ -513,7 +527,7 @@ pub async fn ai_response(
             .send()
             .await
             .ok()?;
-        resp.json::<FabseAIText>()
+        resp.json::<FabseCloudAIText>()
             .await
             .ok()
             .map(|output| output.result.response)
@@ -526,7 +540,7 @@ struct SimpleAIRequest<'a> {
     max_tokens: i32,
 }
 
-pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
+pub async fn ai_response_cloud_simple(role: &str, prompt: &str) -> Option<String> {
     let request = SimpleAIRequest {
         messages: [
             SimpleMessage {
@@ -550,7 +564,7 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
         .send()
         .await
         .ok()?;
-    if let Ok(resp_parsed) = resp.json::<FabseAIText>().await
+    if let Ok(resp_parsed) = resp.json::<FabseCloudAIText>().await
         && resp_parsed.success
     {
         Some(resp_parsed.result.response)
@@ -562,7 +576,59 @@ pub async fn ai_response_simple(role: &str, prompt: &str) -> Option<String> {
             .send()
             .await
             .ok()?;
-        resp.json::<FabseAIText>()
+        resp.json::<FabseCloudAIText>()
+            .await
+            .ok()
+            .map(|output| output.result.response)
+    }
+}
+
+#[derive(Serialize)]
+struct ChatRequestLocal<'a> {
+    messages: &'a [AIChatMessage],
+    model: &'a str,
+    stream: bool,
+    keep_alive: &'a str,
+}
+
+#[derive(Deserialize)]
+struct FabseLocalAIText {
+    message: MessageLocal,
+}
+
+#[derive(Deserialize)]
+struct MessageLocal {
+    content: String,
+}
+
+pub async fn ai_response_local(content: &[AIChatMessage]) -> Option<String> {
+    let request = ChatRequestLocal {
+        messages: content,
+        model: "gemma3:4b",
+        stream: false,
+        keep_alive: "5m",
+    };
+    let utils_config = UTILS_CONFIG
+        .get()
+        .expect("UTILS_CONFIG must be set during initialization");
+    let resp = HTTP_CLIENT
+        .post(&utils_config.ai.text_gen_local)
+        .json(&request)
+        .send()
+        .await
+        .ok()?;
+
+    if let Ok(resp_parsed) = resp.json::<FabseLocalAIText>().await {
+        Some(resp_parsed.message.content)
+    } else {
+        let resp = HTTP_CLIENT
+            .post(&utils_config.ai.text_gen_fallback)
+            .bearer_auth(&utils_config.ai.token_fallback)
+            .json(&request)
+            .send()
+            .await
+            .ok()?;
+        resp.json::<FabseCloudAIText>()
             .await
             .ok()
             .map(|output| output.result.response)
