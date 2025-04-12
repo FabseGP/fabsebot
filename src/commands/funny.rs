@@ -5,14 +5,14 @@ use crate::{
 
 use poise::{
     CreateReply,
-    serenity_prelude::{ChannelId, CreateMessage, ExecuteWebhook, Member, User},
+    serenity_prelude::{CreateMessage, ExecuteWebhook, GenericChannelId, Member, User},
 };
 
 /// Send an anonymous message
 #[poise::command(slash_command)]
 pub async fn anonymous(
     ctx: SContext<'_>,
-    #[description = "Channel to send message"] channel: ChannelId,
+    #[description = "Channel to send message"] channel: GenericChannelId,
     #[description = "Message to send"]
     #[rest]
     message: String,
@@ -59,6 +59,7 @@ pub async fn user_misuse(
     if ctx.guild_id().is_some() {
         match webhook_find(
             ctx.serenity_context(),
+            ctx.guild_id(),
             ctx.channel_id(),
             ctx.data().channel_webhooks.clone(),
         )

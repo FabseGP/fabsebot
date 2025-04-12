@@ -13,8 +13,8 @@ use crate::{
 
 use anyhow::Context as _;
 use poise::serenity_prelude::{
-    self as serenity, ChannelId, CreateAllowedMentions, CreateAttachment, CreateEmbed,
-    CreateEmbedAuthor, CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook,
+    self as serenity, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
+    CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
     GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
 use sqlx::query;
@@ -82,8 +82,13 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
             };
             let count = content.matches("kurukuru_seseren").count();
             let response = emoji_string.repeat(count);
-            if let Ok(webhook) =
-                webhook_find(ctx, new_message.channel_id, data.channel_webhooks.clone()).await
+            if let Ok(webhook) = webhook_find(
+                ctx,
+                new_message.guild_id,
+                new_message.channel_id,
+                data.channel_webhooks.clone(),
+            )
+            .await
             {
                 webhook
                     .execute(
@@ -110,8 +115,13 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
             new_message.react(&ctx.http, reaction).await?;
         }
         if content == "fabse" || content == "fabseman" {
-            if let Ok(webhook) =
-                webhook_find(ctx, new_message.channel_id, data.channel_webhooks.clone()).await
+            if let Ok(webhook) = webhook_find(
+                ctx,
+                new_message.guild_id,
+                new_message.channel_id,
+                data.channel_webhooks.clone(),
+            )
+            .await
             {
                 webhook
                 .execute(
@@ -289,16 +299,17 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                     guild_data.settings.dead_chat_channel,
                     guild_data.settings.dead_chat_rate,
                 ) {
-                    let dead_chat_channel = ChannelId::new(
+                    let dead_chat_channel = GenericChannelId::new(
                         u64::try_from(dead_channel).expect("channel id out of bounds for u64"),
                     );
-                    if let Ok(guild_channel) = dead_chat_channel
-                        .to_guild_channel(&ctx.http, Some(guild_id))
+                    if let Ok(channel) = dead_chat_channel
+                        .to_channel(&ctx.http, new_message.guild_id)
                         .await
-                        && let Some(message_id) = guild_channel.last_message_id
+                        && let Some(guild_channel) = channel.clone().guild()
+                        && let Some(message_id) = guild_channel.base.last_message_id
                     {
-                        let last_message_time = guild_channel
-                            .id
+                        let last_message_time = channel
+                            .id()
                             .message(&ctx.http, message_id)
                             .await?
                             .timestamp
@@ -451,17 +462,20 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                         }
                     }
                     for (guild_id, guild_channel_id) in &guild_global_chats {
-                        let channel_id_type = ChannelId::new(
+                        let channel_id_type = GenericChannelId::new(
                             u64::try_from(*guild_channel_id)
                                 .expect("channel id out of bounds for u64"),
                         );
-                        if let Some(chat_channel) = channel_id_type
-                            .to_channel(&ctx.http, Some(*guild_id))
-                            .await?
-                            .guild()
+                        if let Ok(chat_channel) =
+                            channel_id_type.to_channel(&ctx.http, Some(*guild_id)).await
                         {
-                            match webhook_find(ctx, chat_channel.id, data.channel_webhooks.clone())
-                                .await
+                            match webhook_find(
+                                ctx,
+                                new_message.guild_id,
+                                chat_channel.id(),
+                                data.channel_webhooks.clone(),
+                            )
+                            .await
                             {
                                 Ok(webhook) => {
                                     let content = if new_message.content.is_empty() {
@@ -524,7 +538,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                                     }
                                     if webhook.execute(&ctx.http, false, message).await.is_err() {
                                         chat_channel
-                                            .id
+                                            .id()
                                             .say(
                                                 &ctx.http,
                                                 format!(
@@ -538,7 +552,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                                 }
                                 _ => {
                                     chat_channel
-                                        .id
+                                        .id()
                                         .say(
                                             &ctx.http,
                                             format!(
@@ -647,13 +661,15 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
         if let Ok(link) = discord_message_link.parse_next(&mut content.as_str()) {
             let (guild_id, channel_id, message_id) = (
                 GuildId::new(link.guild_id),
-                ChannelId::new(link.channel_id),
+                GenericChannelId::new(link.channel_id),
                 MessageId::new(link.message_id),
             );
-            if let Ok(ref_channel) = channel_id.to_guild_channel(&ctx.http, Some(guild_id)).await {
+            if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
+                && let Some(ref_channel) = channel.clone().guild()
+            {
                 let (channel_name, ref_msg) = (
-                    ref_channel.name.as_str(),
-                    ref_channel.id.message(&ctx.http, message_id).await?,
+                    ref_channel.base.name.as_str(),
+                    channel.id().message(&ctx.http, message_id).await?,
                 );
                 if ref_msg.poll.is_none() {
                     let embed = CreateEmbed::default()

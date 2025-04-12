@@ -7,7 +7,7 @@ use mini_moka::sync::Cache;
 use once_cell::sync::{Lazy, OnceCell};
 use poise::{
     Context as PContext,
-    serenity_prelude::{ChannelId, GuildId, MessageId, UserId, Webhook},
+    serenity_prelude::{GenericChannelId, GuildId, MessageId, UserId, Webhook},
 };
 use reqwest::Client;
 use serde::Serialize;
@@ -21,7 +21,7 @@ use tokio::sync::Mutex;
 
 pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
 type GlobalChatMap = Cache<GuildId, Arc<HashMap<GuildId, MessageId>>>;
-pub type WebhookMap = Cache<ChannelId, Webhook>;
+pub type WebhookMap = Cache<GenericChannelId, Webhook>;
 pub type GuildDataMap = Cache<GuildId, Arc<GuildData>>;
 type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 

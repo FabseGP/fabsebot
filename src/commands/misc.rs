@@ -13,11 +13,11 @@ use poise::{
     CreateReply,
     builtins::register_globally,
     serenity_prelude::{
-        ButtonStyle, Channel, ChannelId, ComponentInteractionCollector,
-        ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
-        CreateButton, CreateEmbed, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
-        CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditMessage, Member, MessageId,
-        UserId, nonmax::NonMaxU16,
+        ButtonStyle, ComponentInteractionCollector, ComponentInteractionDataKind, CreateActionRow,
+        CreateAllowedMentions, CreateAttachment, CreateButton, CreateEmbed,
+        CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
+        CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, Member,
+        MessageId, UserId, nonmax::NonMaxU16,
     },
 };
 use sqlx::query;
@@ -601,8 +601,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
         if let Some(guild_data) = ctx.data().guild_data.lock().await.get(&guild_id)
             && let Some(channel) = guild_data.settings.quotes_channel
         {
-            let quote_channel =
-                ChannelId::new(u64::try_from(channel).expect("channel id out of bounds for u64"));
+            let quote_channel = GenericChannelId::new(
+                u64::try_from(channel).expect("channel id out of bounds for u64"),
+            );
             quote_channel
                 .send_message(
                     ctx.http(),
@@ -683,11 +684,11 @@ async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
 )]
 pub async fn slow_mode(
     ctx: SContext<'_>,
-    #[description = "Channel to rate limit"] channel: Channel,
+    #[description = "Channel to rate limit"] mut channel: GuildChannel,
     #[description = "Duration of rate limit in seconds"] duration: NonMaxU16,
 ) -> Result<(), Error> {
     let settings = EditChannel::default().rate_limit_per_user(duration);
-    channel.id().edit(ctx.http(), settings).await?;
+    channel.edit(ctx.http(), settings).await?;
     ctx.send(
         CreateReply::default()
             .content(format!("{channel} is ratelimited for {duration}s"))

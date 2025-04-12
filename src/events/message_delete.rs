@@ -1,12 +1,12 @@
 use crate::config::types::Error;
 
 use poise::serenity_prelude::{
-    ChannelId, Context, CreateEmbed, CreateMessage, GuildId, MessageId, audit_log,
+    Context, CreateEmbed, CreateMessage, GenericChannelId, GuildId, MessageId, audit_log,
 };
 
 pub async fn handle_message_delete(
     ctx: &Context,
-    channel_id: ChannelId,
+    channel_id: GenericChannelId,
     guild_id_opt: Option<GuildId>,
     deleted_message_id: MessageId,
 ) -> Result<(), Error> {
@@ -36,8 +36,8 @@ pub async fn handle_message_delete(
         {
             let (guild_owner_id, evil_person_id, evil_person_name, neccessary_perms) = {
                 if let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
-                    && let Ok(guild_channel) =
-                        channel_id.to_guild_channel(&ctx.http, guild_id_opt).await
+                    && let Ok(channel) = channel_id.to_channel(&ctx.http, guild_id_opt).await
+                    && let Some(guild_channel) = channel.guild()
                     && let Ok(member) = guild.member(&ctx.http, user_id).await
                 {
                     let user_perms = guild.user_permissions_in(&guild_channel, &member);

@@ -37,6 +37,7 @@ pub struct AIConfig {
     pub text_gen: String,
     pub text_gen_fallback: String,
     pub text_gen_local: String,
+    pub text_gen_local_model: String,
     pub tts: String,
     pub tts_fallback: String,
     pub search: String,

@@ -6,7 +6,7 @@ use crate::{
 
 use base64::{Engine, engine::general_purpose};
 use poise::serenity_prelude::{
-    self as serenity, ChannelId, GuildId, Http, Message, MessageId, Timestamp,
+    self as serenity, GenericChannelId, GuildId, Http, Message, MessageId, Timestamp,
 };
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -104,7 +104,7 @@ pub async fn ai_chatbot(
                             guild
                                 .channels
                                 .iter()
-                                .map(|c| c.name.as_str())
+                                .map(|c| c.base.name.as_str())
                                 .collect::<String>(),
                             if message.author.id == guild.owner_id {
                                 "You're also talking to this guild's owner"
@@ -234,8 +234,8 @@ pub async fn ai_chatbot(
         }
         if let Ok(link) = discord_message_link.parse_next(&mut message.content.as_str()) {
             let guild_id = GuildId::new(link.guild_id);
-            if let Ok(ref_channel) = ChannelId::new(link.channel_id)
-                .to_guild_channel(&ctx.http, Some(guild_id))
+            if let Ok(ref_channel) = GenericChannelId::new(link.channel_id)
+                .to_channel(&ctx.http, Some(guild_id))
                 .await
             {
                 let (guild_name, ref_msg) = (
@@ -243,7 +243,7 @@ pub async fn ai_chatbot(
                         .name(&ctx.cache)
                         .unwrap_or_else(|| "unknown".to_owned()),
                     ref_channel
-                        .id
+                        .id()
                         .message(&ctx.http, MessageId::new(link.message_id))
                         .await,
                 );
@@ -602,15 +602,15 @@ struct MessageLocal {
 }
 
 pub async fn ai_response_local(content: &[AIChatMessage]) -> Option<String> {
-    let request = ChatRequestLocal {
-        messages: content,
-        model: "gemma3:4b",
-        stream: false,
-        keep_alive: "5m",
-    };
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
+    let request = ChatRequestLocal {
+        messages: content,
+        model: &utils_config.ai.text_gen_local_model,
+        stream: false,
+        keep_alive: "5m",
+    };
     let resp = HTTP_CLIENT
         .post(&utils_config.ai.text_gen_local)
         .json(&request)

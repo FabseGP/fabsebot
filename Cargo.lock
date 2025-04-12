@@ -389,9 +389,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.18"
+version = "1.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "525046617d8376e3db1deffb079e91cef90a89fc3ca5c185bbf8c9ecdd15cd5c"
+checksum = "8e3a13707ac958681c13b39b458c073d0d9bc8a22cb1b2f4c8e55eb72c13f362"
 dependencies = [
  "jobserver",
  "libc",
@@ -549,9 +549,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.14"
+version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06ba6d68e24814cb8de6bb986db8222d3a027d15872cabc0d18817bc3c0e4471"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -733,9 +733,9 @@ dependencies = [
 
 [[package]]
 name = "data-encoding"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
+checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "deranged"
@@ -1839,9 +1839,9 @@ checksum = "8355be11b20d696c8f18f6cc018c4e372165b1fa8126cef092399c9951984ffa"
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe7db12097d22ec582439daf8618b8fdd1a7bef6270e9af3b1ebcd30893cf413"
+checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
 
 [[package]]
 name = "litemap"
@@ -2017,9 +2017,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff70ce3e48ae43fa075863cef62e8b43b71a4f2382229920e0df362592919430"
+checksum = "3be647b768db090acb35d5ec5db2b0e1f1de11133ca123b9eacf5137868f892a"
 dependencies = [
  "adler2",
 ]
@@ -2503,7 +2503,7 @@ dependencies = [
 [[package]]
 name = "poise"
 version = "0.6.1"
-source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#2a10bf958ef83b40ad7d7c6db29af6687c1b8628"
+source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#a1edcc09085be800a8593602910d2a09eaf986dc"
 dependencies = [
  "async-trait",
  "derivative",
@@ -2521,7 +2521,7 @@ dependencies = [
 [[package]]
 name = "poise_macros"
 version = "0.6.1"
-source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#2a10bf958ef83b40ad7d7c6db29af6687c1b8628"
+source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#a1edcc09085be800a8593602910d2a09eaf986dc"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -2899,6 +2899,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ref-cast"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a0ae411dbe946a674d89546582cea4ba2bb8defac896622d6496f14c23ba5cf"
+dependencies = [
+ "ref-cast-impl",
+]
+
+[[package]]
+name = "ref-cast-impl"
+version = "1.0.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1165225c21bff1f3bbce98f5a1f889949bc902d3575308cc7b0de30b4f6d27c7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "regex"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3082,9 +3102,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.25"
+version = "0.23.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "822ee9188ac4ec04a2f0531e55d035fb2de73f18b41a63c70c2712503b6fb13c"
+checksum = "df51b5869f3a441595eac5e8ff14d486ff285f7b8c0df8770e49c3b56351f0f0"
 dependencies = [
  "once_cell",
  "ring",
@@ -3372,7 +3392,7 @@ dependencies = [
 [[package]]
 name = "serenity"
 version = "0.12.4"
-source = "git+https://github.com/serenity-rs/serenity?branch=next#bd4d91dd02dac0a78bc90ee7e7dc709a1ed60edf"
+source = "git+https://github.com/serenity-rs/serenity?branch=next#06a16ac2d65c192f47541dfe6c45aacc29f38f9a"
 dependencies = [
  "aformat",
  "arrayvec",
@@ -3392,6 +3412,7 @@ dependencies = [
  "nonmax",
  "parking_lot",
  "percent-encoding",
+ "ref-cast",
  "reqwest",
  "serde",
  "serde_cow",
@@ -3648,7 +3669,7 @@ dependencies = [
 [[package]]
 name = "sqlx"
 version = "0.8.3"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#082aed5c2b6e68172bf29c377c3f5c87ca17cde4"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#e283bf9645713985f4a6c37b80b3fb5d9c07e087"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -3658,7 +3679,7 @@ dependencies = [
 [[package]]
 name = "sqlx-core"
 version = "0.8.3"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#082aed5c2b6e68172bf29c377c3f5c87ca17cde4"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#e283bf9645713985f4a6c37b80b3fb5d9c07e087"
 dependencies = [
  "base64",
  "bytes",
@@ -3693,7 +3714,7 @@ dependencies = [
 [[package]]
 name = "sqlx-macros"
 version = "0.8.3"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#082aed5c2b6e68172bf29c377c3f5c87ca17cde4"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#e283bf9645713985f4a6c37b80b3fb5d9c07e087"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3705,7 +3726,7 @@ dependencies = [
 [[package]]
 name = "sqlx-macros-core"
 version = "0.8.3"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#082aed5c2b6e68172bf29c377c3f5c87ca17cde4"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#e283bf9645713985f4a6c37b80b3fb5d9c07e087"
 dependencies = [
  "dotenvy",
  "either",
@@ -3728,7 +3749,7 @@ dependencies = [
 [[package]]
 name = "sqlx-postgres"
 version = "0.8.3"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#082aed5c2b6e68172bf29c377c3f5c87ca17cde4"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#e283bf9645713985f4a6c37b80b3fb5d9c07e087"
 dependencies = [
  "atoi",
  "base64",
@@ -5321,9 +5342,9 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "winnow"
-version = "0.7.4"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e97b544156e9bebe1a0ffbc03484fc1ffe3100cbce3ffb17eac35f7cdd7ab36"
+checksum = "63d3fcd9bba44b03821e7d699eeee959f3126dcc4aa8e4ae18ec617c2a5cea10"
 dependencies = [
  "memchr",
 ]
