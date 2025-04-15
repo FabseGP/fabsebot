@@ -462,7 +462,6 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
 #[derive(Serialize)]
 struct SimpleAIRequest<'a> {
     messages: [SimpleMessage<'a>; 2],
-    max_tokens: i32,
     model: &'a str,
 }
 
@@ -478,7 +477,6 @@ pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> Option
                 content: prompt,
             },
         ],
-        max_tokens: 512,
         model,
     };
     let utils_config = UTILS_CONFIG
