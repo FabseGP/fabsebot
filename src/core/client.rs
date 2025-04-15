@@ -1,7 +1,7 @@
 use crate::{
     commands::{api_calls, funny, games, info, misc, music, settings},
     config::{
-        settings::{AIConfig, APIConfig, MainConfig, PostgresConfig},
+        settings::{APIConfig, FabseserverConfig, MainConfig, PostgresConfig},
         types::{Data, UTILS_CONFIG, UtilsConfig},
     },
     core::handlers::{EventHandler, dynamic_prefix, on_error},
@@ -44,13 +44,13 @@ async fn wait_until_shutdown() {
 pub async fn bot_start(
     bot_config: MainConfig,
     postgres_config: PostgresConfig,
-    ai_config: AIConfig,
+    fabseserver_config: FabseserverConfig,
     api_config: APIConfig,
 ) -> anyhow::Result<()> {
     if UTILS_CONFIG
         .set(Arc::new(UtilsConfig {
             bot: bot_config.clone(),
-            ai: ai_config,
+            fabseserver: fabseserver_config,
             api: api_config,
         }))
         .is_err()

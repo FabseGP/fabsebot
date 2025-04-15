@@ -1,9 +1,9 @@
 use crate::{
     config::{
         constants::{COLOUR_RED, FONTS},
-        types::{Error, HTTP_CLIENT, SContext},
+        types::{Error, HTTP_CLIENT, SContext, UTILS_CONFIG},
     },
-    utils::{ai::ai_response_cloud_simple, image::quote_image},
+    utils::{ai::ai_response_simple, image::quote_image},
 };
 
 use ab_glyph::FontArc;
@@ -380,9 +380,13 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
-    match ai_response_cloud_simple(
+    let utils_config = UTILS_CONFIG
+        .get()
+        .expect("UTILS_CONFIG must be set during initialization");
+    match ai_response_simple(
         "you're a tsundere",
         "generate a one-line love-hate greeting",
+        &utils_config.fabseserver.text_gen_model,
     )
     .await
     {

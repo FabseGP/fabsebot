@@ -1,10 +1,9 @@
 use crate::config::settings::{
-    AIConfig, APIConfig, EmojiReactions, GuildSettings, MainConfig, UserSettings, WordReactions,
-    WordTracking,
+    APIConfig, EmojiReactions, FabseserverConfig, GuildSettings, MainConfig, UserSettings,
+    WordReactions, WordTracking,
 };
 use fastrand::Rng;
 use mini_moka::sync::Cache;
-use once_cell::sync::{Lazy, OnceCell};
 use poise::{
     Context as PContext,
     serenity_prelude::{GenericChannelId, GuildId, MessageId, UserId, Webhook},
@@ -15,7 +14,7 @@ use songbird::Songbird;
 use sqlx::PgPool;
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, LazyLock, OnceLock},
 };
 use tokio::sync::Mutex;
 
@@ -105,10 +104,10 @@ pub type SContext<'a> = PContext<'a, Data, Error>;
 
 pub struct UtilsConfig {
     pub bot: MainConfig,
-    pub ai: AIConfig,
+    pub fabseserver: FabseserverConfig,
     pub api: APIConfig,
 }
 
-pub static UTILS_CONFIG: OnceCell<Arc<UtilsConfig>> = OnceCell::new();
-pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(Client::new);
-pub static RNG: Lazy<Mutex<Rng>> = Lazy::new(|| Mutex::new(Rng::new()));
+pub static UTILS_CONFIG: OnceLock<Arc<UtilsConfig>> = OnceLock::new();
+pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+pub static RNG: LazyLock<Mutex<Rng>> = LazyLock::new(|| Mutex::new(Rng::new()));

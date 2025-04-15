@@ -5,7 +5,7 @@ use crate::{
         types::{Error, HTTP_CLIENT, RNG, SContext, UTILS_CONFIG},
     },
     utils::{
-        ai::ai_response_cloud_simple,
+        ai::ai_response_simple,
         helpers::{get_gifs, get_waifu},
     },
 };
@@ -79,8 +79,8 @@ pub async fn ai_image(
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
     let resp = HTTP_CLIENT
-        .post(&utils_config.ai.image_gen)
-        .bearer_auth(&utils_config.ai.token)
+        .post(&utils_config.api.cloudflare_image_gen)
+        .bearer_auth(&utils_config.api.cloudflare_token)
         .json(&request)
         .send()
         .await?;
@@ -101,8 +101,8 @@ pub async fn ai_image(
         .await?;
     } else {
         let resp = HTTP_CLIENT
-            .post(&utils_config.ai.image_gen_fallback)
-            .bearer_auth(&utils_config.ai.token_fallback)
+            .post(&utils_config.api.cloudflare_image_gen_fallback)
+            .bearer_auth(&utils_config.api.cloudflare_token_fallback)
             .json(&request)
             .send()
             .await?;
@@ -142,7 +142,10 @@ pub async fn ai_text(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    match ai_response_cloud_simple(&role, &prompt).await {
+    let utils_config = UTILS_CONFIG
+        .get()
+        .expect("UTILS_CONFIG must be set during initialization");
+    match ai_response_simple(&role, &prompt, &utils_config.fabseserver.text_gen_model).await {
         Some(resp) if !resp.is_empty() => {
             let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
             let mut current_chunk = String::with_capacity(1024);
@@ -1100,7 +1103,11 @@ pub async fn roast(
             "name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles},acc_create:{account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:{messages_string}"
         );
         let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target";
-        match ai_response_cloud_simple(role, &description).await {
+        let utils_config = UTILS_CONFIG
+            .get()
+            .expect("UTILS_CONFIG must be set during initialization");
+        match ai_response_simple(role, &description, &utils_config.fabseserver.text_gen_model).await
+        {
             Some(resp) if !resp.is_empty() => {
                 let mut embed = CreateEmbed::default()
                     .title(format!("Roasting {name}"))
@@ -1217,7 +1224,7 @@ pub async fn translate(
             &UTILS_CONFIG
                 .get()
                 .expect("UTILS_CONFIG must be set during initialization")
-                .ai
+                .fabseserver
                 .translate,
         )
         .json(&request)

@@ -345,6 +345,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                     };
                     let (
                         chatbot_role,
+                        chatbot_internet_search,
                         chatbot_temperature,
                         chatbot_top_p,
                         chatbot_top_k,
@@ -359,6 +360,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                                 .map(|a| {
                                     (
                                         a.chatbot_role.clone(),
+                                        a.chatbot_internet_search,
                                         a.chatbot_temperature,
                                         a.chatbot_top_p,
                                         a.chatbot_top_k,
@@ -379,6 +381,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                                 .map(|a| {
                                     (
                                         a.chatbot_role.clone(),
+                                        a.chatbot_internet_search,
                                         a.chatbot_temperature,
                                         a.chatbot_top_p,
                                         a.chatbot_top_k,
@@ -402,6 +405,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                                 || DEFAULT_BOT_ROLE.to_string(),
                                 |role| format!("The current user wants you to act as: {role}"),
                             ),
+                            chatbot_internet_search,
                             chatbot_temperature,
                             chatbot_top_p,
                             chatbot_top_k,

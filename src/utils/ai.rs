@@ -4,7 +4,7 @@ use crate::{
     utils::helpers::discord_message_link,
 };
 
-use base64::{Engine, engine::general_purpose};
+use bytes::Bytes;
 use poise::serenity_prelude::{
     self as serenity, GenericChannelId, GuildId, Http, Message, MessageId, Timestamp,
 };
@@ -20,6 +20,7 @@ pub async fn ai_chatbot(
     ctx: &serenity::Context,
     message: &Message,
     chatbot_role: String,
+    chatbot_internet_search: Option<bool>,
     chatbot_temperature: Option<f32>,
     chatbot_top_p: Option<f32>,
     chatbot_top_k: Option<i32>,
@@ -265,14 +266,16 @@ pub async fn ai_chatbot(
                 }
             }
         }
-        let internet_search_opt = {
+        let internet_search_opt = if let Some(internet_search) = chatbot_internet_search
+            && internet_search
+        {
             let utils_config = UTILS_CONFIG
                 .get()
                 .expect("UTILS_CONFIG must be set during initialization");
             if let Ok(resp) = HTTP_CLIENT
                 .get(format!(
                     "{}/search?q={}&categories=general",
-                    utils_config.ai.search,
+                    utils_config.fabseserver.search,
                     encode(&message.content)
                 ))
                 .send()
@@ -296,6 +299,8 @@ pub async fn ai_chatbot(
             } else {
                 None
             }
+        } else {
+            None
         };
         let response_opt = {
             let convo_copy = {
@@ -351,19 +356,7 @@ pub async fn ai_chatbot(
                 )));
                 convo_history.messages.clone()
             };
-            /*
-                        ai_response_cloud(
-                            &convo_copy,
-                            chatbot_temperature,
-                            chatbot_top_p,
-                            chatbot_top_k,
-                            chatbot_repetition_penalty,
-                            chatbot_frequency_penalty,
-                            chatbot_presence_penalty,
-                        )
-                        .await
-            */
-            ai_response_local(&convo_copy).await
+            ai_response(&convo_copy).await
         };
 
         if let Some(response) = response_opt {
@@ -407,17 +400,6 @@ pub async fn ai_chatbot(
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct FabseCloudAIText {
-    success: bool,
-    result: AIResponseText,
-}
-
-#[derive(Deserialize)]
-struct AIResponseText {
-    response: String,
-}
-
 #[derive(Serialize)]
 struct SimpleMessage<'a> {
     role: &'a str,
@@ -427,10 +409,29 @@ struct SimpleMessage<'a> {
 #[derive(Serialize)]
 struct ImageDesc<'a> {
     messages: [SimpleMessage<'a>; 2],
+    model: &'a str,
     image: &'a [u8],
 }
 
+#[derive(Deserialize)]
+struct AIReponse {
+    choices: Vec<AIText>,
+}
+
+#[derive(Deserialize)]
+struct AIText {
+    message: AIMessage,
+}
+
+#[derive(Deserialize)]
+struct AIMessage {
+    content: String,
+}
+
 pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option<String> {
+    let utils_config = UTILS_CONFIG
+        .get()
+        .expect("UTILS_CONFIG must be set during initialization");
     let request = ImageDesc {
         messages: [
             SimpleMessage {
@@ -442,105 +443,30 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option
                 content: user_context.map_or("What is in this image?", |context| context),
             },
         ],
+        model: &utils_config.fabseserver.image_to_text_model,
         image: content,
     };
-    let utils_config = UTILS_CONFIG
-        .get()
-        .expect("UTILS_CONFIG must be set during initialization");
     let resp = HTTP_CLIENT
-        .post(&utils_config.ai.image_desc)
-        .bearer_auth(&utils_config.ai.token)
-        .json(&request)
-        .send()
-        .await
-        .ok()?;
-    if let Ok(resp_parsed) = resp.json::<FabseCloudAIText>().await
-        && resp_parsed.success
-    {
-        Some(resp_parsed.result.response)
-    } else {
-        let resp = HTTP_CLIENT
-            .post(&utils_config.ai.image_desc_fallback)
-            .bearer_auth(&utils_config.ai.token_fallback)
-            .json(&request)
-            .send()
-            .await
-            .ok()?;
-        resp.json::<FabseCloudAIText>()
-            .await
-            .ok()
-            .map(|output| output.result.response)
-    }
-}
-
-#[derive(Serialize)]
-struct ChatRequestCloud<'a> {
-    messages: &'a [AIChatMessage],
-    max_tokens: i32,
-    temperature: f32,
-    top_p: f32,
-    top_k: i32,
-    repetition_penalty: f32,
-    frequency_penalty: f32,
-    presence_penalty: f32,
-}
-
-pub async fn ai_response_cloud(
-    content: &[AIChatMessage],
-    chatbot_temperature: Option<f32>,
-    chatbot_top_p: Option<f32>,
-    chatbot_top_k: Option<i32>,
-    chatbot_repetition_penalty: Option<f32>,
-    chatbot_frequency_penalty: Option<f32>,
-    chatbot_presence_penalty: Option<f32>,
-) -> Option<String> {
-    let request = ChatRequestCloud {
-        messages: content,
-        max_tokens: 2048,
-        temperature: chatbot_temperature.unwrap_or(1.1),
-        top_p: chatbot_top_p.unwrap_or(0.9),
-        top_k: chatbot_top_k.unwrap_or(45),
-        repetition_penalty: chatbot_repetition_penalty.unwrap_or(1.2),
-        frequency_penalty: chatbot_frequency_penalty.unwrap_or(0.5),
-        presence_penalty: chatbot_presence_penalty.unwrap_or(0.5),
-    };
-    let utils_config = UTILS_CONFIG
-        .get()
-        .expect("UTILS_CONFIG must be set during initialization");
-    let resp = HTTP_CLIENT
-        .post(&utils_config.ai.text_gen)
-        .bearer_auth(&utils_config.ai.token)
+        .post(&utils_config.fabseserver.llm_host_text)
         .json(&request)
         .send()
         .await
         .ok()?;
 
-    if let Ok(resp_parsed) = resp.json::<FabseCloudAIText>().await
-        && resp_parsed.success
-    {
-        Some(resp_parsed.result.response)
-    } else {
-        let resp = HTTP_CLIENT
-            .post(&utils_config.ai.text_gen_fallback)
-            .bearer_auth(&utils_config.ai.token_fallback)
-            .json(&request)
-            .send()
-            .await
-            .ok()?;
-        resp.json::<FabseCloudAIText>()
-            .await
-            .ok()
-            .map(|output| output.result.response)
-    }
+    resp.json::<AIReponse>()
+        .await
+        .ok()
+        .map(|output| output.choices[0].message.content.clone())
 }
 
 #[derive(Serialize)]
 struct SimpleAIRequest<'a> {
     messages: [SimpleMessage<'a>; 2],
     max_tokens: i32,
+    model: &'a str,
 }
 
-pub async fn ai_response_cloud_simple(role: &str, prompt: &str) -> Option<String> {
+pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> Option<String> {
     let request = SimpleAIRequest {
         messages: [
             SimpleMessage {
@@ -553,137 +479,89 @@ pub async fn ai_response_cloud_simple(role: &str, prompt: &str) -> Option<String
             },
         ],
         max_tokens: 512,
+        model,
     };
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
     let resp = HTTP_CLIENT
-        .post(&utils_config.ai.text_gen)
-        .bearer_auth(&utils_config.ai.token)
+        .post(&utils_config.fabseserver.llm_host_text)
         .json(&request)
         .send()
         .await
         .ok()?;
-    if let Ok(resp_parsed) = resp.json::<FabseCloudAIText>().await
-        && resp_parsed.success
-    {
-        Some(resp_parsed.result.response)
-    } else {
-        let resp = HTTP_CLIENT
-            .post(&utils_config.ai.text_gen_fallback)
-            .bearer_auth(&utils_config.ai.token_fallback)
-            .json(&request)
-            .send()
-            .await
-            .ok()?;
-        resp.json::<FabseCloudAIText>()
-            .await
-            .ok()
-            .map(|output| output.result.response)
-    }
+    resp.json::<AIReponse>()
+        .await
+        .ok()
+        .map(|output| output.choices[0].message.content.clone())
 }
 
 #[derive(Serialize)]
-struct ChatRequestLocal<'a> {
+struct ChatRequest<'a> {
     messages: &'a [AIChatMessage],
     model: &'a str,
-    stream: bool,
-    keep_alive: &'a str,
 }
 
-#[derive(Deserialize)]
-struct FabseLocalAIText {
-    message: MessageLocal,
-}
-
-#[derive(Deserialize)]
-struct MessageLocal {
-    content: String,
-}
-
-pub async fn ai_response_local(content: &[AIChatMessage]) -> Option<String> {
+pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
-    let request = ChatRequestLocal {
+    let request = ChatRequest {
         messages: content,
-        model: &utils_config.ai.text_gen_local_model,
-        stream: false,
-        keep_alive: "5m",
+        model: &utils_config.fabseserver.text_gen_model,
     };
     let resp = HTTP_CLIENT
-        .post(&utils_config.ai.text_gen_local)
+        .post(&utils_config.fabseserver.llm_host_text)
         .json(&request)
         .send()
         .await
         .ok()?;
 
-    if let Ok(resp_parsed) = resp.json::<FabseLocalAIText>().await {
-        Some(resp_parsed.message.content)
-    } else {
-        let resp = HTTP_CLIENT
-            .post(&utils_config.ai.text_gen_fallback)
-            .bearer_auth(&utils_config.ai.token_fallback)
-            .json(&request)
-            .send()
-            .await
-            .ok()?;
-        resp.json::<FabseCloudAIText>()
-            .await
-            .ok()
-            .map(|output| output.result.response)
-    }
+    resp.json::<AIReponse>()
+        .await
+        .ok()
+        .map(|output| output.choices[0].message.content.clone())
 }
 
 #[derive(Serialize)]
 struct AIVoiceRequest<'a> {
-    prompt: &'a str,
-    lang: &'a str,
+    input: &'a str,
+    voice: &'a str,
+    model: &'a str,
+    response_format: &'a str,
+    return_timestamps: bool,
+    stream: bool,
+    speed: f32,
+    normalization_options: NormalizationOptions,
 }
 
-#[derive(Deserialize)]
-struct FabseAIVoice {
-    success: bool,
-    result: AIResponseVoice,
+#[derive(Serialize)]
+struct NormalizationOptions {
+    unit_normalization: bool,
 }
 
-#[derive(Deserialize)]
-struct AIResponseVoice {
-    audio: String,
-}
-
-pub async fn ai_voice(prompt: &str) -> Option<Vec<u8>> {
-    let request = AIVoiceRequest {
-        prompt: &prompt.replace('\'', ""),
-        lang: "en",
-    };
+pub async fn ai_voice(prompt: &str) -> Option<Bytes> {
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
+    let request = AIVoiceRequest {
+        input: &prompt.replace('\'', ""),
+        model: &utils_config.fabseserver.text_to_speech_model,
+        voice: "af_heart",
+        response_format: "wav",
+        return_timestamps: false,
+        stream: false,
+        speed: 1.25,
+        normalization_options: NormalizationOptions {
+            unit_normalization: true,
+        },
+    };
     let resp = HTTP_CLIENT
-        .post(&utils_config.ai.tts)
-        .bearer_auth(&utils_config.ai.token)
+        .post(&utils_config.fabseserver.llm_host_tts)
         .json(&request)
         .send()
         .await
         .ok()?;
-    if let Ok(resp_parsed) = resp.json::<FabseAIVoice>().await
-        && resp_parsed.success
-    {
-        general_purpose::STANDARD
-            .decode(resp_parsed.result.audio)
-            .ok()
-    } else {
-        let resp = HTTP_CLIENT
-            .post(&utils_config.ai.tts_fallback)
-            .bearer_auth(&utils_config.ai.token_fallback)
-            .json(&request)
-            .send()
-            .await
-            .ok()?;
-        resp.json::<FabseAIVoice>()
-            .await
-            .ok()
-            .and_then(|output| general_purpose::STANDARD.decode(output.result.audio).ok())
-    }
+
+    resp.bytes().await.ok()
 }

@@ -17,21 +17,20 @@
 #user = 
 #max_connections = 
 
-[AI-Info]
-#token = 
-#token_huggingface = 
-#token_fallback = 
-#translate = 
-#image_desc = 
-#image_desc_fallback = 
-#image_gen = 
-#image_gen_fallback = 
-#text_gen = 
-#text_gen_fallback = 
-#text_gen_local =
-#tts = 
-#tts_fallback = 
-#search = 
+[Fabseserver]
+#translate =
+#search =
+#llm_host_text =
+#llm_host_tts =
+#llm_host_stt =
+#text_gen_model =
+#image_to_text_model =
+#text_to_speech_model = 
+#speech_to_text_model = 
 
 [API-Info]
-#tenor_token = 
+#tenor_token =
+#cloudflare_token =
+#cloudflare_token_fallback = 
+#cloudflare_image_gen = 
+#cloudflare_image_gen_fallback = 

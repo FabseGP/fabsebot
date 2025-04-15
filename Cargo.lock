@@ -950,7 +950,6 @@ dependencies = [
  "image",
  "imageproc",
  "mini-moka 0.11.0",
- "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -4657,9 +4656,9 @@ dependencies = [
 
 [[package]]
 name = "typesize"
-version = "0.1.13"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e29e4cac0f1acdbbe7b4deb46876a04246dc6abf60b6f2587bef8ae327cd134c"
+checksum = "7da66c62c5b7017a2787e77373c03e6a5aafde77a73bff1ff96e91cd2e128179"
 dependencies = [
  "chrono",
  "mini-moka 0.10.3",

@@ -8,7 +8,7 @@ mod utils;
 
 use anyhow::{Context as _, Result as AResult};
 use config::{
-    settings::{AIConfig, APIConfig, MainConfig, PostgresConfig},
+    settings::{APIConfig, FabseserverConfig, MainConfig, PostgresConfig},
     types::HTTP_CLIENT,
 };
 use core::client::bot_start;
@@ -40,7 +40,8 @@ async fn main() -> AResult<()> {
 
     let bot_config: MainConfig = Value::try_into(config_toml["Main"].clone())?;
     let postgres_config: PostgresConfig = Value::try_into(config_toml["PostgreSQL-Info"].clone())?;
-    let ai_config: AIConfig = Value::try_into(config_toml["AI-Info"].clone())?;
+    let fabseserver_config: FabseserverConfig =
+        Value::try_into(config_toml["Fabseserver"].clone())?;
     let api_config: APIConfig = Value::try_into(config_toml["API-Info"].clone())?;
 
     let log_level = match bot_config.log_level.to_lowercase().as_str() {
@@ -79,7 +80,7 @@ async fn main() -> AResult<()> {
         periodic_task(&uptime_task_url).await;
     });
 
-    bot_start(bot_config, postgres_config, ai_config, api_config).await?;
+    bot_start(bot_config, postgres_config, fabseserver_config, api_config).await?;
 
     Ok(())
 }

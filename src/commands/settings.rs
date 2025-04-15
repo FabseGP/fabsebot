@@ -98,6 +98,7 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
         query!(
             "UPDATE user_settings
             SET chatbot_role = NULL,
+                chatbot_internet_search = NULL,
                 chatbot_temperature = NULL,
                 chatbot_top_p = NULL,
                 chatbot_top_k = NULL,
@@ -249,6 +250,7 @@ pub async fn set_chatbot_options(
     #[description = "The role the bot should take; if not set, then default role"] role: Option<
         String,
     >,
+    #[description = "Enable bot to search online every message sent"] internet_search: Option<bool>,
     #[description = "Higher values produce more random results; 0 - 5 (1.1 default)"]
     temperature: Option<f32>,
     #[description = "Higher values = more creative, but less predictable; 0 - 1 (0.9 default)"]
@@ -281,20 +283,22 @@ pub async fn set_chatbot_options(
         let user_id_i64 = i64::from(ctx.author().id);
         query!(
             "INSERT INTO user_settings 
-            (guild_id, user_id, chatbot_role, chatbot_temperature, chatbot_top_p, chatbot_top_k, chatbot_repetition_penalty, chatbot_frequency_penalty, chatbot_presence_penalty)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (guild_id, user_id, chatbot_role, chatbot_internet_search, chatbot_temperature, chatbot_top_p, chatbot_top_k, chatbot_repetition_penalty, chatbot_frequency_penalty, chatbot_presence_penalty)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT(guild_id, user_id)
             DO UPDATE SET
                 chatbot_role = $3,
-                chatbot_temperature = $4,
-                chatbot_top_p = $5,
-                chatbot_top_k = $6,
-                chatbot_repetition_penalty = $7,
-                chatbot_frequency_penalty = $8,
-                chatbot_presence_penalty = $9",
+                chatbot_internet_search = $4,
+                chatbot_temperature = $5,
+                chatbot_top_p = $6,
+                chatbot_top_k = $7,
+                chatbot_repetition_penalty = $8,
+                chatbot_frequency_penalty = $9,
+                chatbot_presence_penalty = $10",
             guild_id_i64,
             user_id_i64,
             role,
+            internet_search,
             temperature,
             top_p,
             top_k,
@@ -316,6 +320,7 @@ pub async fn set_chatbot_options(
         let mut modified_settings = current_settings.as_ref().clone();
         if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
             user_settings.chatbot_role = role;
+            user_settings.chatbot_internet_search = internet_search;
             user_settings.chatbot_temperature = temperature;
             user_settings.chatbot_top_p = top_p;
             user_settings.chatbot_top_k = top_k;
@@ -329,6 +334,7 @@ pub async fn set_chatbot_options(
                     guild_id: guild_id_i64,
                     user_id: user_id_i64,
                     chatbot_role: role,
+                    chatbot_internet_search: internet_search,
                     chatbot_temperature: temperature,
                     chatbot_top_p: top_p,
                     chatbot_top_k: top_k,

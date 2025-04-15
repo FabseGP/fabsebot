@@ -25,27 +25,25 @@ pub struct PostgresConfig {
 }
 
 #[derive(Deserialize)]
-pub struct AIConfig {
-    pub token: String,
-    pub token_fallback: String,
-    pub token_huggingface: String,
+pub struct FabseserverConfig {
     pub translate: String,
-    pub image_desc: String,
-    pub image_desc_fallback: String,
-    pub image_gen: String,
-    pub image_gen_fallback: String,
-    pub text_gen: String,
-    pub text_gen_fallback: String,
-    pub text_gen_local: String,
-    pub text_gen_local_model: String,
-    pub tts: String,
-    pub tts_fallback: String,
     pub search: String,
+    pub llm_host_text: String,
+    pub llm_host_tts: String,
+    pub llm_host_stt: String,
+    pub text_gen_model: String,
+    pub image_to_text_model: String,
+    pub text_to_speech_model: String,
+    pub speech_to_text_model: String,
 }
 
 #[derive(Deserialize)]
 pub struct APIConfig {
     pub tenor_token: String,
+    pub cloudflare_token: String,
+    pub cloudflare_token_fallback: String,
+    pub cloudflare_image_gen: String,
+    pub cloudflare_image_gen_fallback: String,
 }
 
 #[derive(Default, Clone)]
@@ -69,6 +67,7 @@ pub struct UserSettings {
     pub user_id: i64,
     pub message_count: i32,
     pub chatbot_role: Option<String>,
+    pub chatbot_internet_search: Option<bool>,
     pub chatbot_temperature: Option<f32>,
     pub chatbot_top_p: Option<f32>,
     pub chatbot_top_k: Option<i32>,

@@ -4,7 +4,7 @@ rustflags = ["-Ctarget-cpu=native", "-Clink-arg=-fuse-ld=wild"]
 
 [build]
 rustc-wrapper = "sccache"
-rustflags = ["-Ctarget-cpu=native", "-Clink-arg=-fuse-ld=wild", "-Z", "threads=8"]
+rustflags = ["-Z", "threads=8"]
 
 [unstable]
 gc = true
