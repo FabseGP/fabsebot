@@ -113,6 +113,7 @@ pub async fn bot_start(
                 misc::leaderboard(),
                 misc::ohitsyou(),
                 misc::quote(),
+                misc::register_commands(),
                 misc::slow_mode(),
                 misc::word_count(),
                 music::text_to_voice(),

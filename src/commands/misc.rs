@@ -674,10 +674,11 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 #[poise::command(prefix_command, owners_only)]
-async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
+pub async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
     let commands = &ctx.framework().options().commands;
     register_globally(ctx.http(), commands).await?;
-    ctx.say("Successfully registered slash commands!").await?;
+    ctx.say("Successfully registered nucle- I mean, slash commands!")
+        .await?;
     Ok(())
 }
 
