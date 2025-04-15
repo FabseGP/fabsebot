@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+### 🚀 Features
+
+- Refactored llm/tts models used
+
 ### 💼 Other
 
 - Only deletes message if run as prefix-command
