@@ -1,12 +1,16 @@
 use crate::{
     commands::music::get_configured_handler,
-    config::types::{AIChatContext, AIChatMessage, AIChatStatic, Error, HTTP_CLIENT, UTILS_CONFIG},
+    config::types::{
+        AIChatContext, AIChatMessage, AIChatStatic, AIModelDefaults, GEMMA_DEFAULTS, HTTP_CLIENT,
+        LLAMA_DEFAULTS, QWEN_DEFAULTS, UTILS_CONFIG,
+    },
     utils::helpers::discord_message_link,
 };
 
+use anyhow::Result as AResult;
 use bytes::Bytes;
 use poise::serenity_prelude::{
-    self as serenity, GenericChannelId, GuildId, Http, Message, MessageId, Timestamp,
+    Context as SContext, GenericChannelId, GuildId, Http, Message, MessageId, Timestamp,
 };
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -16,8 +20,28 @@ use tokio::sync::Mutex;
 use urlencoding::encode;
 use winnow::Parser;
 
+fn get_model_config(
+    model_name: &str,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static AIModelDefaults,
+) {
+    let model_name_lower = model_name.to_lowercase();
+    if model_name_lower.starts_with("gemma") {
+        ("<start_of_turn>{}", "<end_of_turn>", "\n", &GEMMA_DEFAULTS)
+    } else if model_name_lower.starts_with("llama") {
+        ("[INST]{}", "[/INST]", "\n", &LLAMA_DEFAULTS)
+    } else if model_name_lower.starts_with("qwen") {
+        ("<|im_start|>{}", "<|im_end|>", "\n", &QWEN_DEFAULTS)
+    } else {
+        ("<start_of_turn>{}", "<end_of_turn>", "\n", &GEMMA_DEFAULTS)
+    }
+}
+
 pub async fn ai_chatbot(
-    ctx: &serenity::Context,
+    ctx: &SContext,
     message: &Message,
     chatbot_role: String,
     chatbot_internet_search: Option<bool>,
@@ -30,7 +54,7 @@ pub async fn ai_chatbot(
     guild_id: GuildId,
     conversations: &Arc<Mutex<AIChatContext>>,
     voice_handle: Option<Arc<Mutex<Call>>>,
-) -> Result<(), Error> {
+) -> AResult<()> {
     if message.content.eq_ignore_ascii_case("clear") {
         {
             let mut convo_lock = conversations.lock().await;
@@ -46,6 +70,11 @@ pub async fn ai_chatbot(
             .start_typing(Arc::<Http>::clone(&ctx.http));
         let author_name = message.author.name.as_str();
         let author_id_u64 = message.author.id.get();
+        let utils_config = UTILS_CONFIG
+            .get()
+            .expect("UTILS_CONFIG must be set during initialization");
+        let (start_tag, end_tag, separator, model_defaults) =
+            get_model_config(&utils_config.fabseserver.text_gen_model);
         {
             let (static_set, known_user, same_bot_role) = {
                 let convo_lock = conversations.lock().await;
@@ -85,8 +114,7 @@ pub async fn ai_chatbot(
                     ));
                 }
                 if !same_bot_role {
-                    let mut convo_lock = conversations.lock().await;
-                    convo_lock.static_info.chatbot_role = chatbot_role;
+                    conversations.lock().await.static_info.chatbot_role = chatbot_role;
                 }
             } else {
                 {
@@ -224,12 +252,10 @@ pub async fn ai_chatbot(
             for attachment in &message.attachments {
                 if let Some(content_type) = attachment.content_type.as_deref()
                     && content_type.starts_with("image")
-                {
-                    if let Some(desc) =
+                    && let Some(desc) =
                         ai_image_desc(&attachment.download().await?, Some(&message.content)).await
-                    {
-                        write!(system_content, "\n{desc}")?;
-                    }
+                {
+                    write!(system_content, "\n{desc}")?;
                 }
             }
         }
@@ -248,31 +274,24 @@ pub async fn ai_chatbot(
                         .message(&ctx.http, MessageId::new(link.message_id))
                         .await,
                 );
-                match ref_msg {
-                    Ok(linked_message) => {
-                        let link_author = linked_message.author.display_name();
-                        let link_content = linked_message.content;
-                        write!(
-                            system_content,
-                            "\n{author_name} linked to a message sent in: {guild_name}, sent by: {link_author} and had this content: {link_content}"
-                        )?;
-                    }
-                    Err(_) => {
-                        write!(
-                            system_content,
-                            "\n{author_name} linked to a message in non-accessible guild"
-                        )?;
-                    }
+                if let Ok(linked_message) = ref_msg {
+                    let link_author = linked_message.author.display_name();
+                    let link_content = linked_message.content;
+                    write!(
+                        system_content,
+                        "\n{author_name} linked to a message sent in: {guild_name}, sent by: {link_author} and had this content: {link_content}"
+                    )?;
+                } else {
+                    write!(
+                        system_content,
+                        "\n{author_name} linked to a message in non-accessible guild"
+                    )?;
                 }
             }
         }
         let internet_search_opt = if let Some(internet_search) = chatbot_internet_search
             && internet_search
-        {
-            let utils_config = UTILS_CONFIG
-                .get()
-                .expect("UTILS_CONFIG must be set during initialization");
-            if let Ok(resp) = HTTP_CLIENT
+            && let Ok(resp) = HTTP_CLIENT
                 .get(format!(
                     "{}/search?q={}&categories=general",
                     utils_config.fabseserver.search,
@@ -280,25 +299,22 @@ pub async fn ai_chatbot(
                 ))
                 .send()
                 .await
-                && let Ok(resp_text) = resp.text().await
-            {
-                let parsed_page = Html::parse_document(&resp_text);
-                let snippet_selector = Selector::parse("article.result-default p.content")
-                    .expect("Failed to parse search results");
-                Some(
-                    parsed_page
-                        .select(&snippet_selector)
-                        .fold(String::with_capacity(2048), |mut acc, element| {
-                            element.text().for_each(|text| acc.push_str(text));
-                            acc.push(' ');
-                            acc
-                        })
-                        .trim_end()
-                        .to_string(),
-                )
-            } else {
-                None
-            }
+            && let Ok(resp_text) = resp.text().await
+        {
+            let parsed_page = Html::parse_document(&resp_text);
+            let snippet_selector = Selector::parse("article.result-default p.content")
+                .expect("Failed to parse search results");
+            Some(
+                parsed_page
+                    .select(&snippet_selector)
+                    .fold(String::with_capacity(2048), |mut acc, element| {
+                        element.text().for_each(|text| acc.push_str(text));
+                        acc.push(' ');
+                        acc
+                    })
+                    .trim_end()
+                    .to_string(),
+            )
         } else {
             None
         };
@@ -314,25 +330,27 @@ pub async fn ai_chatbot(
                     system_content.push_str("\nCurrent users in the conversation");
                     let mut is_first = true;
                     let mut seen_users: HashSet<&str, _> = HashSet::new();
-                    for message in &convo_history.messages {
-                        if message.role.is_user() {
-                            if let Some(user) = message.content.split(':').next().map(str::trim) {
-                                if seen_users.insert(user) {
-                                    if !is_first {
-                                        system_content.push('\n');
-                                    }
-                                    system_content.push_str(user);
-                                    is_first = false;
-                                }
+                    for message in convo_history.messages.iter().filter(|m| m.role.is_user()) {
+                        if let Some(user) = message.content.split(':').next().map(str::trim)
+                            && seen_users.insert(user)
+                        {
+                            if !is_first {
+                                system_content.push('\n');
                             }
+                            system_content.push_str(user);
+                            is_first = false;
                         }
                     }
                 }
                 let bot_context = format!(
-                    "{}{}{}Currently the date and time in UTC-timezone is{}\nScraping DuckDuckGo for the user's message gives this: {}\n{}",
+                    "{}{}{}\nCurrently the date and time in UTC-timezone is{}\nScraping the internet for the user's message gives this: {}\n{}",
                     convo_history.static_info.chatbot_role,
                     convo_history.static_info.guild_desc,
-                    convo_history.static_info.users.get(&author_id_u64).unwrap(),
+                    convo_history
+                        .static_info
+                        .users
+                        .get(&author_id_u64)
+                        .map_or_else(|| "Nothing is known about this user", |user| user),
                     Timestamp::now(),
                     internet_search_opt.map_or_else(
                         || "Nothing scraped from the internet".to_string(),
@@ -352,14 +370,27 @@ pub async fn ai_chatbot(
                 }
                 convo_history.static_info.is_set = true;
                 convo_history.messages.push(AIChatMessage::user(format!(
-                    "User: {author_name}: {content_safe}"
+                    "{start_tag}user{separator}User:{author_name}:{content_safe}{end_tag}{separator}"
                 )));
                 convo_history.messages.clone()
             };
-            ai_response(&convo_copy).await
+            ai_response(
+                &convo_copy,
+                chatbot_temperature.unwrap_or(model_defaults.temperature),
+                chatbot_top_p.unwrap_or(model_defaults.top_p),
+                chatbot_frequency_penalty.unwrap_or(model_defaults.frequency_penalty),
+                chatbot_presence_penalty.unwrap_or(model_defaults.presence_penalty),
+            )
+            .await
         };
 
-        if let Some(response) = response_opt {
+        if let Some(mut response) = response_opt {
+            if response.starts_with(start_tag) {
+                response = response.trim_start_matches(start_tag).to_string();
+            }
+            if response.ends_with(end_tag) {
+                response = response.trim_end_matches(end_tag).to_string();
+            }
             if response.len() >= 2000 {
                 let mut start = 0;
                 while start < response.len() {
@@ -374,16 +405,21 @@ pub async fn ai_chatbot(
             } else {
                 message.reply(&ctx.http, response.as_str()).await?;
             }
-            if let Some(handler_lock) = voice_handle {
-                if let Some(bytes) = ai_voice(&response).await {
-                    get_configured_handler(&handler_lock)
-                        .await
-                        .enqueue_input(Input::from(bytes))
-                        .await;
-                }
+            if let Some(handler_lock) = voice_handle
+                && let Some(bytes) = ai_voice(&response).await
+            {
+                get_configured_handler(&handler_lock)
+                    .await
+                    .enqueue_input(Input::from(bytes))
+                    .await;
             }
-            let mut convo_lock = conversations.lock().await;
-            convo_lock.messages.push(AIChatMessage::assistant(response));
+            conversations
+                .lock()
+                .await
+                .messages
+                .push(AIChatMessage::model(format!(
+                    "{start_tag}model{separator}{response}{end_tag}{separator}"
+                )));
         } else {
             let error_msg = "Sorry, I had to forget our convo, too boring!";
             {
@@ -413,17 +449,17 @@ struct ImageDesc<'a> {
     image: &'a [u8],
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct AIReponse {
     choices: Vec<AIText>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct AIText {
     message: AIMessage,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct AIMessage {
     content: String,
 }
@@ -498,15 +534,29 @@ pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> Option
 struct ChatRequest<'a> {
     messages: &'a [AIChatMessage],
     model: &'a str,
+    temperature: f32,
+    top_p: f32,
+    frequency_penalty: f32,
+    presence_penalty: f32,
 }
 
-pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
+pub async fn ai_response(
+    messages: &[AIChatMessage],
+    temperature: f32,
+    top_p: f32,
+    frequency_penalty: f32,
+    presence_penalty: f32,
+) -> Option<String> {
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
     let request = ChatRequest {
-        messages: content,
         model: &utils_config.fabseserver.text_gen_model,
+        messages,
+        temperature,
+        top_p,
+        frequency_penalty,
+        presence_penalty,
     };
     let resp = HTTP_CLIENT
         .post(&utils_config.fabseserver.llm_host_text)
@@ -515,10 +565,14 @@ pub async fn ai_response(content: &[AIChatMessage]) -> Option<String> {
         .await
         .ok()?;
 
-    resp.json::<AIReponse>()
-        .await
-        .ok()
-        .map(|output| output.choices[0].message.content.clone())
+    resp.json::<AIReponse>().await.ok().and_then(|output| {
+        let response_content = output.choices[0].message.content.clone();
+        if response_content.trim().is_empty() {
+            None
+        } else {
+            Some(response_content)
+        }
+    })
 }
 
 #[derive(Serialize)]

@@ -57,7 +57,7 @@ pub async fn user_misuse(
     message: String,
 ) -> Result<(), Error> {
     if ctx.guild_id().is_some() {
-        match webhook_find(
+        if let Some(webhook) = webhook_find(
             ctx.serenity_context(),
             ctx.guild_id(),
             ctx.channel_id(),
@@ -65,41 +65,39 @@ pub async fn user_misuse(
         )
         .await
         {
-            Ok(webhook) => {
-                ctx.send(
-                    CreateReply::default()
-                        .content("you're going to hell")
-                        .ephemeral(true),
+            ctx.send(
+                CreateReply::default()
+                    .content("you're going to hell")
+                    .ephemeral(true),
+            )
+            .await?;
+            let avatar_url = member.avatar_url().unwrap_or_else(|| {
+                member.user.avatar_url().unwrap_or_else(|| {
+                    member
+                        .user
+                        .avatar_url()
+                        .unwrap_or_else(|| member.user.default_avatar_url())
+                })
+            });
+            webhook
+                .execute(
+                    ctx.http(),
+                    false,
+                    ExecuteWebhook::default()
+                        .username(member.display_name())
+                        .avatar_url(avatar_url)
+                        .content(message),
                 )
                 .await?;
-                let avatar_url = member.avatar_url().unwrap_or_else(|| {
-                    member.user.avatar_url().unwrap_or_else(|| {
-                        member
-                            .user
-                            .avatar_url()
-                            .unwrap_or_else(|| member.user.default_avatar_url())
-                    })
-                });
-                webhook
-                    .execute(
-                        ctx.http(),
-                        false,
-                        ExecuteWebhook::default()
-                            .username(member.display_name())
-                            .avatar_url(avatar_url)
-                            .content(message),
-                    )
-                    .await?;
-            }
-            _ => {
-                ctx.send(
-                    CreateReply::default()
-                        .content("no misuse for now")
-                        .ephemeral(true),
-                )
-                .await?;
-            }
+        } else {
+            ctx.send(
+                CreateReply::default()
+                    .content("no misuse for now")
+                    .ephemeral(true),
+            )
+            .await?;
         }
     }
+
     Ok(())
 }

@@ -83,33 +83,31 @@ pub async fn anony_poll(
         interaction
             .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
             .await?;
-        if voted_users.insert(interaction.user.id) {
-            if let Some(index) = interaction
+        if voted_users.insert(interaction.user.id)
+            && let Some(index) = interaction
                 .data
                 .custom_id
                 .split('_')
                 .nth(1)
                 .and_then(|s| s.parse::<usize>().ok())
-            {
-                if index < options_count {
-                    vote_counts[index] += 1;
+            && index < options_count
+        {
+            vote_counts[index] += 1;
 
-                    let new_embed = CreateEmbed::default()
-                        .title(&title)
-                        .colour(COLOUR_RED)
-                        .fields(
-                            options_list
-                                .iter()
-                                .zip(vote_counts.iter())
-                                .map(|(&option, &count)| (option, count.to_string(), false)),
-                        );
-                    final_embed = new_embed.clone();
+            let new_embed = CreateEmbed::default()
+                .title(&title)
+                .colour(COLOUR_RED)
+                .fields(
+                    options_list
+                        .iter()
+                        .zip(vote_counts.iter())
+                        .map(|(&option, &count)| (option, count.to_string(), false)),
+                );
+            final_embed = new_embed.clone();
 
-                    let mut msg = interaction.message;
-                    msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
-                        .await?;
-                }
-            }
+            let mut msg = interaction.message;
+            msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
+                .await?;
         } else {
             ctx.send(
                 CreateReply::default()
@@ -383,23 +381,20 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     let utils_config = UTILS_CONFIG
         .get()
         .expect("UTILS_CONFIG must be set during initialization");
-    match ai_response_simple(
+    if let Some(resp) = ai_response_simple(
         "you're a tsundere",
         "generate a one-line love-hate greeting",
         &utils_config.fabseserver.text_gen_model,
     )
     .await
     {
-        Some(resp) => {
-            ctx.reply(resp).await?;
-        }
-        None => {
-            ctx.reply(
-                "Ugh, fine. It's nice to see you again, I suppose... 
+        ctx.reply(resp).await?;
+    } else {
+        ctx.reply(
+            "Ugh, fine. It's nice to see you again, I suppose... 
                 for now, don't get any ideas thinking this means I actually like you or anything",
-            )
-            .await?;
-        }
+        )
+        .await?;
     }
     Ok(())
 }

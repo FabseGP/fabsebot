@@ -97,35 +97,36 @@ impl VoiceReceiveHandler {
 impl VoiceEventHandler for VoiceReceiveHandler {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
         if let EventContext::VoiceTick(tick) = ctx {
-            for data in tick.speaking.values() {
-                if let Some(audio) = &data.decoded_voice {
-                    let mut buffer = BytesMut::with_capacity(audio.len() * 2);
-                    for sample in audio {
-                        buffer.put(sample.to_le_bytes().as_ref());
-                    }
-                    let buffer = buffer.freeze();
-                    let guild_global_music: Vec<_> = self
-                        .guild_data
-                        .lock()
-                        .await
-                        .iter()
-                        .filter(|entry| {
-                            let settings = &entry.value().settings;
-                            entry.key() != &self.guild_id && settings.global_music
-                        })
-                        .map(|entry| entry.value().settings.guild_id)
-                        .collect();
-                    for guild_id in guild_global_music {
-                        let current_guild_id = GuildId::new(
-                            u64::try_from(guild_id).expect("guild id out of bounds for u64"),
-                        );
-                        if let Some(global_handler_lock) = self.music_manager.get(current_guild_id)
-                        {
-                            get_configured_handler(&global_handler_lock)
-                                .await
-                                .enqueue_input(Input::from(buffer.clone()))
-                                .await;
-                        }
+            for audio in tick
+                .speaking
+                .values()
+                .filter_map(|data| data.decoded_voice.as_ref())
+            {
+                let mut buffer = BytesMut::with_capacity(audio.len() * 2);
+                for sample in audio {
+                    buffer.put(sample.to_le_bytes().as_ref());
+                }
+                let buffer = buffer.freeze();
+                let guild_global_music: Vec<_> = self
+                    .guild_data
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|entry| {
+                        let settings = &entry.value().settings;
+                        entry.key() != &self.guild_id && settings.global_music
+                    })
+                    .map(|entry| entry.value().settings.guild_id)
+                    .collect();
+                for guild_id in guild_global_music {
+                    let current_guild_id = GuildId::new(
+                        u64::try_from(guild_id).expect("guild id out of bounds for u64"),
+                    );
+                    if let Some(global_handler_lock) = self.music_manager.get(current_guild_id) {
+                        get_configured_handler(&global_handler_lock)
+                            .await
+                            .enqueue_input(Input::from(buffer.clone()))
+                            .await;
                     }
                 }
             }
@@ -144,17 +145,14 @@ pub async fn text_to_voice(
 ) -> Result<(), Error> {
     if let (Some(handler_lock), Some(_)) = voice_check(&ctx).await {
         ctx.defer().await?;
-        match ai_voice(&prompt).await {
-            Some(bytes) => {
-                get_configured_handler(&handler_lock)
-                    .await
-                    .enqueue_input(Input::from(bytes))
-                    .await;
-                ctx.reply("here we go").await?;
-            }
-            _ => {
-                ctx.reply("I don't wanna speak now").await?;
-            }
+        if let Some(bytes) = ai_voice(&prompt).await {
+            get_configured_handler(&handler_lock)
+                .await
+                .enqueue_input(Input::from(bytes))
+                .await;
+            ctx.reply("here we go").await?;
+        } else {
+            ctx.reply("I don't wanna speak now").await?;
         }
     }
     Ok(())
@@ -169,39 +167,32 @@ pub async fn add_playlist(
     playlist_id: String,
 ) -> Result<(), Error> {
     if let (Some(handler_lock), Some(_)) = voice_check(&ctx).await {
-        match HTTP_CLIENT
+        if let Ok(request) = HTTP_CLIENT
             .get(format!("https://api.deezer.com/playlist/{playlist_id}"))
             .send()
             .await
         {
-            Ok(request) => {
-                ctx.defer().await?;
-                match request
-                    .json::<DeezerResponse>()
-                    .await
-                    .ok()
-                    .filter(|output| !output.tracks.data.is_empty())
-                {
-                    Some(payload) => {
-                        for track in payload.tracks.data {
-                            let search = format!("{} {}", track.title, track.artist.name);
-                            let src =
-                                Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), search));
-                            get_configured_handler(&handler_lock)
-                                .await
-                                .enqueue_input(src)
-                                .await;
-                        }
-                        ctx.reply("Added playlist to queue").await?;
-                    }
-                    None => {
-                        ctx.reply("Deezer refused to serve your request").await?;
-                    }
+            ctx.defer().await?;
+            if let Some(payload) = request
+                .json::<DeezerResponse>()
+                .await
+                .ok()
+                .filter(|output| !output.tracks.data.is_empty())
+            {
+                for track in payload.tracks.data {
+                    let search = format!("{} {}", track.title, track.artist.name);
+                    let src = Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), search));
+                    get_configured_handler(&handler_lock)
+                        .await
+                        .enqueue_input(src)
+                        .await;
                 }
+                ctx.reply("Added playlist to queue").await?;
+            } else {
+                ctx.reply("Deezer refused to serve your request").await?;
             }
-            _ => {
-                ctx.reply("Invalid playlist-id for Deezer playlist").await?;
-            }
+        } else {
+            ctx.reply("Invalid playlist-id for Deezer playlist").await?;
         }
     }
     Ok(())
@@ -331,44 +322,42 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
                 .get(&ctx.author().id)
                 .and_then(|voice_state| voice_state.channel_id)
         });
-        let reply = match channel_id {
-            Some(channel_id) => match ctx.data().music_manager.join(guild_id, channel_id).await {
-                Ok(handler_lock) => {
-                    query!(
-                        "INSERT INTO guild_settings (guild_id, global_call)
+        let reply = if let Some(channel_id) = channel_id
+            && let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
+        {
+            query!(
+                "INSERT INTO guild_settings (guild_id, global_call)
                         VALUES ($1, TRUE)
                         ON CONFLICT(guild_id)
                         DO UPDATE SET
                             global_call = TRUE",
-                        i64::from(guild_id),
-                    )
-                    .execute(&mut *ctx.data().db.acquire().await?)
-                    .await?;
-                    {
-                        let ctx_data = ctx.data();
-                        let guild_settings_lock = ctx_data.guild_data.lock().await;
-                        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-                        let mut modified_settings = current_settings_opt
-                            .get_or_insert_default()
-                            .as_ref()
-                            .clone();
-                        modified_settings.settings.global_call = true;
-                        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-                    }
-                    handler_lock.lock().await.add_global_event(
-                        CoreEvent::VoiceTick.into(),
-                        VoiceReceiveHandler::new(
-                            guild_id,
-                            ctx.data().music_manager.clone(),
-                            ctx.data().guild_data.clone(),
-                        ),
-                    );
+                i64::from(guild_id),
+            )
+            .execute(&mut *ctx.data().db.acquire().await?)
+            .await?;
+            {
+                let ctx_data = ctx.data();
+                let guild_settings_lock = ctx_data.guild_data.lock().await;
+                let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+                let mut modified_settings = current_settings_opt
+                    .get_or_insert_default()
+                    .as_ref()
+                    .clone();
+                modified_settings.settings.global_call = true;
+                guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+            }
+            handler_lock.lock().await.add_global_event(
+                CoreEvent::VoiceTick.into(),
+                VoiceReceiveHandler::new(
+                    guild_id,
+                    ctx.data().music_manager.clone(),
+                    ctx.data().guild_data.clone(),
+                ),
+            );
 
-                    "I've joined the party"
-                }
-                _ => "I don't wanna join",
-            },
-            None => "I don't wanna join",
+            "I've joined the party"
+        } else {
+            "I don't wanna join"
         };
         ctx.reply(reply).await?;
     }
@@ -386,21 +375,17 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
                 .get(&ctx.author().id)
                 .and_then(|voice_state| voice_state.channel_id)
         });
-        let reply = match channel_id {
-            Some(channel_id) => {
-                if ctx
-                    .data()
-                    .music_manager
-                    .join(guild_id, channel_id)
-                    .await
-                    .is_ok()
-                {
-                    "I've joined the party"
-                } else {
-                    "I don't wanna join"
-                }
-            }
-            None => "I don't wanna join",
+        let reply = if let Some(channel_id) = channel_id
+            && ctx
+                .data()
+                .music_manager
+                .join(guild_id, channel_id)
+                .await
+                .is_ok()
+        {
+            "I've joined the party"
+        } else {
+            "I don't wanna join"
         };
         ctx.reply(reply).await?;
     }
@@ -411,35 +396,34 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        match &ctx.data().music_manager.remove(guild_id).await {
-            Ok(()) => {
-                ctx.reply("Left voice channel, don't forget me").await?;
-                query!(
-                    "INSERT INTO guild_settings (guild_id, global_music, global_call)
+        if ctx.data().music_manager.remove(guild_id).await.is_ok() {
+            ctx.reply("Left voice channel, don't forget me").await?;
+            query!(
+                "INSERT INTO guild_settings (guild_id, global_music, global_call)
                     VALUES ($1, FALSE, FALSE)
                     ON CONFLICT(guild_id)
                     DO UPDATE SET
                         global_music = FALSE,
                         global_call = FALSE",
-                    i64::from(guild_id),
-                )
-                .execute(&mut *ctx.data().db.acquire().await?)
-                .await?;
-                let ctx_data = ctx.data();
-                let guild_settings_lock = ctx_data.guild_data.lock().await;
-                let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-                let mut modified_settings = current_settings_opt
-                    .get_or_insert_default()
-                    .as_ref()
-                    .clone();
-                modified_settings.settings.global_music = false;
-                modified_settings.settings.global_call = false;
-                guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-            }
-            Err(_) => {
-                ctx.reply("Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first")
-                    .await?;
-            }
+                i64::from(guild_id),
+            )
+            .execute(&mut *ctx.data().db.acquire().await?)
+            .await?;
+            let ctx_data = ctx.data();
+            let guild_settings_lock = ctx_data.guild_data.lock().await;
+            let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+            let mut modified_settings = current_settings_opt
+                .get_or_insert_default()
+                .as_ref()
+                .clone();
+            modified_settings.settings.global_music = false;
+            modified_settings.settings.global_call = false;
+            guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+        } else {
+            ctx.reply(
+                "Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
+            )
+            .await?;
         }
     }
     Ok(())
@@ -460,23 +444,23 @@ pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
                 let ctx_data = ctx.data();
                 let guild_data_lock = ctx_data.guild_data.lock().await;
                 for guild in guild_data_lock.iter() {
-                    let (current_track_opt, global_channel) = if guild.settings.guild_id
-                        == guild_id_i64
-                    {
-                        (
-                            get_configured_handler(&handler_lock)
-                                .await
-                                .queue()
-                                .current(),
-                            None,
-                        )
-                    } else if guild.settings.global_music {
-                        let current_guild_id = GuildId::new(
-                            u64::try_from(guild.settings.guild_id)
-                                .expect("guild id out of bounds for u64"),
-                        );
-                        match ctx.data().music_manager.get(current_guild_id) {
-                            Some(global_handler_lock) => {
+                    let (current_track_opt, global_channel) =
+                        if guild.settings.guild_id == guild_id_i64 {
+                            (
+                                get_configured_handler(&handler_lock)
+                                    .await
+                                    .queue()
+                                    .current(),
+                                None,
+                            )
+                        } else if guild.settings.global_music {
+                            let current_guild_id = GuildId::new(
+                                u64::try_from(guild.settings.guild_id)
+                                    .expect("guild id out of bounds for u64"),
+                            );
+                            if let Some(global_handler_lock) =
+                                ctx.data().music_manager.get(current_guild_id)
+                            {
                                 let current_channel = get_configured_handler(&global_handler_lock)
                                     .await
                                     .current_channel();
@@ -495,50 +479,43 @@ pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
                                         .current(),
                                     channel_opt,
                                 )
+                            } else {
+                                (None, None)
                             }
-                            None => (None, None),
+                        } else {
+                            (None, None)
+                        };
+                    if let Some(current_track) = current_track_opt {
+                        if let Ok(track_info) = current_track.get_info().await {
+                            let response = match track_info.playing {
+                                PlayMode::Pause => match current_track.play() {
+                                    Ok(()) => "Resumed playback",
+                                    Err(_) => "Failed to continue playback",
+                                },
+                                PlayMode::Play => match current_track.pause() {
+                                    Ok(()) => "Paused playback",
+                                    Err(_) => "Failed to pause playback",
+                                },
+                                _ => {
+                                    ctx.reply("No playable track found").await?;
+                                    return Ok(());
+                                }
+                            };
+                            if let Some(channel) = global_channel {
+                                channel
+                                    .send_message(
+                                        ctx.http(),
+                                        CreateMessage::default().content(response),
+                                    )
+                                    .await?;
+                            } else {
+                                ctx.reply(response).await?;
+                            }
+                        } else {
+                            ctx.reply("Failed to get current track information").await?;
                         }
                     } else {
-                        (None, None)
-                    };
-                    match current_track_opt {
-                        Some(current_track) => match current_track.get_info().await {
-                            Ok(track_info) => {
-                                let response = match track_info.playing {
-                                    PlayMode::Pause => match current_track.play() {
-                                        Ok(()) => "Resumed playback",
-                                        Err(_) => "Failed to continue playback",
-                                    },
-                                    PlayMode::Play => match current_track.pause() {
-                                        Ok(()) => "Paused playback",
-                                        Err(_) => "Failed to pause playback",
-                                    },
-                                    _ => {
-                                        ctx.reply("No playable track found").await?;
-                                        return Ok(());
-                                    }
-                                };
-                                match global_channel {
-                                    Some(channel) => {
-                                        channel
-                                            .send_message(
-                                                ctx.http(),
-                                                CreateMessage::default().content(response),
-                                            )
-                                            .await?;
-                                    }
-                                    _ => {
-                                        ctx.reply(response).await?;
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                ctx.reply("Failed to get current track information").await?;
-                            }
-                        },
-                        _ => {
-                            ctx.reply("Bruh, nothing is playing!").await?;
-                        }
+                        ctx.reply("Bruh, nothing is playing!").await?;
                     }
                 }
             }
@@ -569,103 +546,90 @@ pub async fn play_song(
         } else {
             YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
         };
-        match Input::from(src.clone()).aux_metadata().await {
-            Ok(m) => {
-                let queue_len = {
-                    let mut handler = get_configured_handler(&handler_lock).await;
-                    handler.enqueue_input(Input::from(src.clone())).await;
-                    handler.queue().len() - 1
-                };
-                let artist = &m.artist;
-                let thumbnail = &m.thumbnail;
-                let title = &m.title;
-                let source_url = &m.source_url;
-                let duration = &m.duration;
-                let mut e = CreateEmbed::default().colour(COLOUR_RED).field(
-                    "Added by:",
-                    ctx.author().display_name(),
-                    false,
-                );
-                if let Some(artist) = artist {
-                    e = e.field("Artist:", artist, true);
-                }
-                if let Some(url) = source_url {
-                    e = e.url(url);
-                }
-                if let Some(duration) = duration {
-                    e = e.field("Duration:", format!("{}s", duration.as_secs()), true);
-                }
-                if let Some(title) = title {
-                    match source_url {
-                        Some(u) => {
-                            e = e.description(
-                                MessageBuilder::default()
-                                    .push_named_link_safe(title.as_str(), u.as_str())
-                                    .build(),
-                            );
-                        }
-                        None => {
-                            e = e.description(
-                                MessageBuilder::default().push_safe(title.as_str()).build(),
-                            );
-                        }
-                    }
-                }
-                if let Some(url) = thumbnail {
-                    e = e.image(url);
-                }
-                e = e.field("Position:", format!("{queue_len}"), true);
-                ctx.send(CreateReply::default().reply(true).embed(e.clone()))
-                    .await?;
-                let guild_global_music: Vec<_> = ctx
-                    .data()
-                    .guild_data
-                    .lock()
-                    .await
-                    .iter()
-                    .filter(|entry| {
-                        let settings = &entry.value().settings;
-                        entry.key() != &guild_id && settings.global_music
-                    })
-                    .map(|entry| entry.value().settings.guild_id)
-                    .collect();
-                for guild_id in guild_global_music {
-                    let current_guild_id = GuildId::new(
-                        u64::try_from(guild_id).expect("guild id out of bounds for u64"),
+        if let Ok(m) = Input::from(src.clone()).aux_metadata().await {
+            let queue_len = {
+                let mut handler = get_configured_handler(&handler_lock).await;
+                handler.enqueue_input(Input::from(src.clone())).await;
+                handler.queue().len() - 1
+            };
+            let artist = &m.artist;
+            let thumbnail = &m.thumbnail;
+            let title = &m.title;
+            let source_url = &m.source_url;
+            let duration = &m.duration;
+            let mut e = CreateEmbed::default().colour(COLOUR_RED).field(
+                "Added by:",
+                ctx.author().display_name(),
+                false,
+            );
+            if let Some(artist) = artist {
+                e = e.field("Artist:", artist, true);
+            }
+            if let Some(url) = source_url {
+                e = e.url(url);
+            }
+            if let Some(duration) = duration {
+                e = e.field("Duration:", format!("{}s", duration.as_secs()), true);
+            }
+            if let Some(title) = title {
+                if let Some(u) = source_url {
+                    e = e.description(
+                        MessageBuilder::default()
+                            .push_named_link_safe(title.as_str(), u.as_str())
+                            .build(),
                     );
-                    match ctx.data().music_manager.get(current_guild_id) {
-                        Some(global_handler_lock) => {
-                            let current_channel_opt = {
-                                let mut handler =
-                                    get_configured_handler(&global_handler_lock).await;
-                                handler.enqueue_input(Input::from(src.clone())).await;
-                                handler.current_channel()
-                            };
-                            if let Some(id) = current_channel_opt {
-                                if let Ok(channel) = ctx
-                                    .http()
-                                    .get_channel(GenericChannelId::from(id.get()))
-                                    .await
-                                {
-                                    if let Some(guild_channel) = channel.guild() {
-                                        guild_channel
-                                            .send_message(
-                                                ctx.http(),
-                                                CreateMessage::default().embed(e.clone()),
-                                            )
-                                            .await?;
-                                    }
-                                }
+                } else {
+                    e = e.description(MessageBuilder::default().push_safe(title.as_str()).build());
+                }
+            }
+            if let Some(url) = thumbnail {
+                e = e.image(url);
+            }
+            e = e.field("Position:", format!("{queue_len}"), true);
+            ctx.send(CreateReply::default().reply(true).embed(e.clone()))
+                .await?;
+            let guild_global_music: Vec<_> = ctx
+                .data()
+                .guild_data
+                .lock()
+                .await
+                .iter()
+                .filter(|entry| {
+                    let settings = &entry.value().settings;
+                    entry.key() != &guild_id && settings.global_music
+                })
+                .map(|entry| entry.value().settings.guild_id)
+                .collect();
+            for guild_id in guild_global_music {
+                let current_guild_id =
+                    GuildId::new(u64::try_from(guild_id).expect("guild id out of bounds for u64"));
+                if let Some(global_handler_lock) = ctx.data().music_manager.get(current_guild_id) {
+                    let current_channel_opt = {
+                        let mut handler = get_configured_handler(&global_handler_lock).await;
+                        handler.enqueue_input(Input::from(src.clone())).await;
+                        handler.current_channel()
+                    };
+                    if let Some(id) = current_channel_opt {
+                        if let Ok(channel) = ctx
+                            .http()
+                            .get_channel(GenericChannelId::from(id.get()))
+                            .await
+                        {
+                            if let Some(guild_channel) = channel.guild() {
+                                guild_channel
+                                    .send_message(
+                                        ctx.http(),
+                                        CreateMessage::default().embed(e.clone()),
+                                    )
+                                    .await?;
                             }
                         }
-                        None => todo!(),
                     }
                 }
             }
-            Err(_) => {
-                ctx.reply("Like you, nothing is known about this song")
-                    .await?;
-            }
+        } else {
+            ctx.reply("Like you, nothing is known about this song")
+                .await?;
         }
     }
     Ok(())
@@ -696,14 +660,11 @@ pub async fn seek_song(
                     let new_position = u64::try_from(current_secs + seconds_value).unwrap_or(0);
                     let seek = Duration::from_secs(new_position);
                     if !seek.is_zero() {
-                        match current_playback.seek_async(seek).await {
-                            Ok(_) => {
-                                ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
-                                    .await?;
-                            }
-                            Err(_) => {
-                                ctx.reply("Failed to seek song backwards").await?;
-                            }
+                        if current_playback.seek_async(seek).await.is_ok() {
+                            ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
+                                .await?;
+                        } else {
+                            ctx.reply("Failed to seek song backwards").await?;
                         }
                     } else {
                         ctx.reply(
@@ -714,15 +675,12 @@ pub async fn seek_song(
                 } else {
                     let seconds_to_add = u64::try_from(seconds_value).unwrap_or(0);
                     let seek = current_position + Duration::from_secs(seconds_to_add);
-                    match current_playback.seek_async(seek).await {
-                        Ok(_) => {
-                            ctx.reply(format!("Seeked {seconds_value}s forward"))
+                    if current_playback.seek_async(seek).await.is_ok() {
+                        ctx.reply(format!("Seeked {seconds_value}s forward"))
+                            .await?;
+                    } else {
+                        ctx.reply("Bruh, you seeked more forward than the length of the song! I'm bailing out")
                                 .await?;
-                        }
-                        Err(_) => {
-                            ctx.reply("Bruh, you seeked more forward than the length of the song! I'm bailing out")
-                                .await?;
-                        }
                     }
                 }
             }
@@ -775,14 +733,13 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
                     handler.current_channel()
                 };
 
-                if let Some(id) = channel_id {
-                    if let Ok(channel) = ctx
+                if let Some(id) = channel_id
+                    && let Ok(channel) = ctx
                         .http()
                         .get_channel(GenericChannelId::from(id.get()))
                         .await
-                    {
-                        channel.id().say(ctx.http(), &content).await?;
-                    }
+                {
+                    channel.id().say(ctx.http(), &content).await?;
                 }
             }
         }
@@ -832,14 +789,13 @@ pub async fn stop_song(ctx: SContext<'_>) -> Result<(), Error> {
                     queue.stop();
                     handler.current_channel()
                 };
-                if let Some(id) = channel_id {
-                    if let Ok(channel) = ctx
+                if let Some(id) = channel_id
+                    && let Ok(channel) = ctx
                         .http()
                         .get_channel(GenericChannelId::from(id.get()))
                         .await
-                    {
-                        channel.id().say(ctx.http(), content).await?;
-                    }
+                {
+                    channel.id().say(ctx.http(), content).await?;
                 }
             }
         }

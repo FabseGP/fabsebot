@@ -2,6 +2,7 @@ use crate::config::settings::{
     APIConfig, EmojiReactions, FabseserverConfig, GuildSettings, MainConfig, UserSettings,
     WordReactions, WordTracking,
 };
+use anyhow::Error as AError;
 use fastrand::Rng;
 use mini_moka::sync::Cache;
 use poise::{
@@ -24,6 +25,17 @@ pub type WebhookMap = Cache<GenericChannelId, Webhook>;
 pub type GuildDataMap = Cache<GuildId, Arc<GuildData>>;
 type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 
+#[derive(Clone)]
+pub struct AIModelDefaults {
+    pub temperature: f32,
+    pub top_k: i32,
+    pub min_p: f32,
+    pub top_p: f32,
+    pub repetition_penalty: f32,
+    pub frequency_penalty: f32,
+    pub presence_penalty: f32,
+}
+
 #[derive(Default)]
 pub struct AIChatContext {
     pub messages: Vec<AIChatMessage>,
@@ -45,6 +57,7 @@ pub enum Role {
     System,
     User,
     Assistant,
+    Model,
 }
 
 impl Role {
@@ -54,6 +67,10 @@ impl Role {
 
     pub const fn is_user(&self) -> bool {
         matches!(self, Self::User)
+    }
+
+    pub const fn is_model(&self) -> bool {
+        matches!(self, Self::Model)
     }
 }
 
@@ -79,6 +96,10 @@ impl AIChatMessage {
     pub const fn assistant(content: String) -> Self {
         Self::new(Role::Assistant, content)
     }
+
+    pub const fn model(content: String) -> Self {
+        Self::new(Role::Model, content)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -99,7 +120,7 @@ pub struct Data {
     pub user_settings: Arc<Mutex<UserSettingsMap>>,
 }
 
-pub type Error = anyhow::Error;
+pub type Error = AError;
 pub type SContext<'a> = PContext<'a, Data, Error>;
 
 pub struct UtilsConfig {
@@ -111,3 +132,33 @@ pub struct UtilsConfig {
 pub static UTILS_CONFIG: OnceLock<Arc<UtilsConfig>> = OnceLock::new();
 pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
 pub static RNG: LazyLock<Mutex<Rng>> = LazyLock::new(|| Mutex::new(Rng::new()));
+
+pub static GEMMA_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {
+    temperature: 1.0,
+    top_k: 64,
+    min_p: 0.01,
+    top_p: 0.95,
+    repetition_penalty: 1.0,
+    frequency_penalty: 0.0,
+    presence_penalty: 0.0,
+});
+
+pub static LLAMA_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {
+    temperature: 0.7,
+    top_k: 40,
+    min_p: 0.05,
+    top_p: 0.9,
+    repetition_penalty: 1.1,
+    frequency_penalty: 0.0,
+    presence_penalty: 0.0,
+});
+
+pub static QWEN_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {
+    temperature: 0.6,
+    top_k: 40,
+    min_p: 0.01,
+    top_p: 0.9,
+    repetition_penalty: 1.1,
+    frequency_penalty: 0.0,
+    presence_penalty: 0.0,
+});

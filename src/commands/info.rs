@@ -9,62 +9,81 @@ use std::string::ToString;
 /// Get server information
 #[poise::command(prefix_command, slash_command)]
 pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
-    let opt_embed = match ctx.guild() {
-        Some(guild) => {
-            let size = if guild.large() { "Large" } else { "Not large" }.to_owned();
-            let guild_id = guild.id;
-            let thumbnail = match &guild.banner {
-                Some(banner) => banner.to_string(),
-                None => guild.icon.as_ref().map_or(
-                    "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned(),
-                    |icon_hash| {
-                        format!("https://cdn.discordapp.com/icons/{guild_id}/{icon_hash}.png")
-                    },
+    let (
+        guild_id,
+        guild_name,
+        thumbnail,
+        guild_description,
+        guild_member_count,
+        guild_boosters,
+        guild_owner_id,
+        guild_created_at,
+        guild_size,
+        guild_emojis,
+        guild_stickers,
+        guild_roles,
+        guild_channels,
+    ) = {
+        if let Some(guild) = ctx.guild() {
+            let id = guild.id;
+            (
+                id.to_string(),
+                guild.name.to_string(),
+                guild
+                    .banner
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .or_else(|| {
+                        guild
+                            .icon
+                            .as_ref()
+                            .map(|i| format!("https://cdn.discordapp.com/icons/{id}/{i}.png"))
+                    })
+                    .unwrap_or_else(|| "https://...".to_owned()),
+                guild
+                    .description
+                    .as_ref()
+                    .map_or_else(|| "Unknown description".to_owned(), ToString::to_string),
+                format!(
+                    "{}/{}",
+                    guild.member_count,
+                    guild.max_members.unwrap_or_default()
                 ),
-            };
-            let guild_description = guild
-                .description
-                .as_ref()
-                .map_or_else(|| "Unknown description".to_owned(), ToString::to_string);
-            let guild_member_count = format!(
-                "{}/{}",
-                guild.member_count,
-                guild.max_members.unwrap_or_default()
-            );
-            Some(
-                CreateEmbed::default()
-                    .title(guild.name.to_string())
-                    .description(guild_description)
-                    .thumbnail(thumbnail)
-                    .fields(vec![
-                        ("Guild ID:", guild_id.to_string(), true),
-                        (
-                            "Guild boosters:",
-                            guild
-                                .premium_subscription_count
-                                .unwrap_or_default()
-                                .to_string(),
-                            false,
-                        ),
-                        ("Owner id:", guild.owner_id.to_string(), true),
-                        ("Creation date:", guild.id.created_at().to_string(), false),
-                        ("Emoji count:", guild.emojis.len().to_string(), true),
-                        ("Sticker count:", guild.stickers.len().to_string(), false),
-                        ("Members count:", guild_member_count, true),
-                        ("Role count:", guild.roles.len().to_string(), false),
-                        ("Channels:", guild.channels.len().to_string(), true),
-                        ("Server size:", size, true),
-                    ]),
+                guild
+                    .premium_subscription_count
+                    .unwrap_or_default()
+                    .to_string(),
+                guild.owner_id.to_string(),
+                id.created_at().to_string(),
+                if guild.large() { "Large" } else { "Not large" }.to_owned(),
+                guild.emojis.len().to_string(),
+                guild.stickers.len().to_string(),
+                guild.roles.len().to_string(),
+                guild.channels.len().to_string(),
             )
+        } else {
+            ctx.reply("Discord refuse to share the info").await?;
+            return Ok(());
         }
-        None => None,
     };
-    if let Some(embed) = opt_embed {
-        ctx.send(CreateReply::default().reply(true).embed(embed))
-            .await?;
-    } else {
-        ctx.reply("Discord refuse to share the info").await?;
-    }
+    let embed = CreateEmbed::default()
+        .title(guild_name)
+        .description(guild_description)
+        .thumbnail(thumbnail)
+        .fields(vec![
+            ("Guild ID", guild_id, true),
+            ("Guild boosters:", guild_boosters, false),
+            ("Owner id:", guild_owner_id, true),
+            ("Creation date:", guild_created_at, false),
+            ("Emoji count:", guild_emojis, true),
+            ("Sticker count:", guild_stickers, false),
+            ("Members count:", guild_member_count, true),
+            ("Role count:", guild_roles, false),
+            ("Channels:", guild_channels, true),
+            ("Server size:", guild_size, true),
+        ]);
+    ctx.send(CreateReply::default().reply(true).embed(embed))
+        .await?;
     Ok(())
 }
 

@@ -1,6 +1,10 @@
 use crate::{
     config::{
-        constants::{COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE},
+        constants::{
+            COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE,
+            FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FLOPPAGANDA_GIF,
+            VILBOT_NAME, VILBOT_PFP,
+        },
         settings::WordTracking,
         types::{Data, Error, RNG, UTILS_CONFIG},
     },
@@ -13,7 +17,7 @@ use crate::{
 
 use anyhow::Context as _;
 use poise::serenity_prelude::{
-    self as serenity, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
+    Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
     CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
     GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
@@ -27,14 +31,17 @@ use tokio::task::spawn;
 use tracing::warn;
 use winnow::Parser;
 
-pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> Result<(), Error> {
-    let data: Arc<Data> = ctx.data();
+pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(), Error> {
     if new_message.author.bot() {
         return Ok(());
     }
+    let data: Arc<Data> = ctx.data();
     if new_message.mentions_user_id(ctx.cache.current_user().id)
         && new_message.referenced_message.is_none()
     {
+        let utils_config = UTILS_CONFIG
+            .get()
+            .expect("UTILS_CONFIG must be set during initialization");
         new_message
             .channel_id
             .send_message(
@@ -42,14 +49,8 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                 CreateMessage::default()
                     .embed(
                         CreateEmbed::default()
-                            .title(
-                                &UTILS_CONFIG
-                                    .get()
-                                    .expect("UTILS_CONFIG must be set during initialization")
-                                    .bot
-                                    .ping_message,
-                            )
-                            .image("https://media.tenor.com/HNshDeQoEKsAAAAd/psyduck-hit-smash.gif")
+                            .title(&utils_config.bot.ping_message)
+                            .image(&utils_config.bot.ping_payload)
                             .colour(COLOUR_BLUE),
                     )
                     .reference_message(new_message)
@@ -65,7 +66,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
             .send_message(
                 &ctx.http,
                 CreateMessage::default()
-                    .content("https://i.imgur.com/Pys97pb.png")
+                    .content(FLOPPAGANDA_GIF)
                     .reference_message(new_message)
                     .allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
             )
@@ -82,7 +83,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
             };
             let count = content.matches("kurukuru_seseren").count();
             let response = emoji_string.repeat(count);
-            if let Ok(webhook) = webhook_find(
+            if let Some(webhook) = webhook_find(
                 ctx,
                 new_message.guild_id,
                 new_message.channel_id,
@@ -95,8 +96,8 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                         &ctx.http,
                         false,
                         ExecuteWebhook::default()
-                            .username("vilbot")
-                            .avatar_url("https://i.postimg.cc/44t5vzWB/IMG-0014.png")
+                            .username(VILBOT_NAME)
+                            .avatar_url(VILBOT_PFP)
                             .content(&response),
                     )
                     .await?;
@@ -115,7 +116,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
             new_message.react(&ctx.http, reaction).await?;
         }
         if content == "fabse" || content == "fabseman" {
-            if let Ok(webhook) = webhook_find(
+            if let Some(webhook) = webhook_find(
                 ctx,
                 new_message.guild_id,
                 new_message.channel_id,
@@ -124,15 +125,15 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
             .await
             {
                 webhook
-                .execute(
-                    &ctx.http,
-                    false,
-                    ExecuteWebhook::default()
-                        .username("yotsuba")
-                        .avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png")
-                        .content("# such magnificence"),
-                )
-                .await?;
+                    .execute(
+                        &ctx.http,
+                        false,
+                        ExecuteWebhook::default()
+                            .username(FABSEMAN_WEBHOOK_NAME)
+                            .avatar_url(FABSEMAN_WEBHOOK_PFP)
+                            .content(FABSEMAN_WEBHOOK_CONTENT),
+                    )
+                    .await?;
             }
         }
     }
@@ -305,8 +306,8 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                     if let Ok(channel) = dead_chat_channel
                         .to_channel(&ctx.http, new_message.guild_id)
                         .await
-                        && let Some(guild_channel) = channel.clone().guild()
-                        && let Some(message_id) = guild_channel.base.last_message_id
+                        && let Some(Some(message_id)) =
+                            channel.clone().guild().map(|gc| gc.base.last_message_id)
                     {
                         let last_message_time = channel
                             .id()
@@ -444,7 +445,7 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                                     u64::try_from(entry.value().settings.guild_id)
                                         .expect("guild id out of bounds for u64"),
                                 ),
-                                entry.value().settings.global_chat_channel.unwrap(),
+                                entry.value().settings.global_chat_channel,
                             )
                         })
                         .collect();
@@ -465,15 +466,21 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                             data.global_chats.insert(guild_id, Arc::new(new_history));
                         }
                     }
-                    for (guild_id, guild_channel_id) in &guild_global_chats {
+                    for (guild_id, guild_channel_id) in
+                        guild_global_chats
+                            .iter()
+                            .filter_map(|(guild_id, guild_channel_id)| {
+                                guild_channel_id.map(|channel_id| (*guild_id, channel_id))
+                            })
+                    {
                         let channel_id_type = GenericChannelId::new(
-                            u64::try_from(*guild_channel_id)
+                            u64::try_from(guild_channel_id)
                                 .expect("channel id out of bounds for u64"),
                         );
                         if let Ok(chat_channel) =
-                            channel_id_type.to_channel(&ctx.http, Some(*guild_id)).await
+                            channel_id_type.to_channel(&ctx.http, Some(guild_id)).await
                         {
-                            match webhook_find(
+                            if let Some(webhook) = webhook_find(
                                 ctx,
                                 new_message.guild_id,
                                 chat_channel.id(),
@@ -481,80 +488,57 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                             )
                             .await
                             {
-                                Ok(webhook) => {
-                                    let content = if new_message.content.is_empty() {
-                                        ""
-                                    } else {
-                                        new_message.content.as_str()
-                                    };
-                                    let mut message = ExecuteWebhook::default()
-                                        .username(new_message.author.display_name())
-                                        .avatar_url(new_message.author.avatar_url().unwrap_or_else(
-                                            || {
-                                                new_message
-                                                    .author
-                                                    .static_avatar_url()
-                                                    .unwrap_or_else(|| {
-                                                        new_message.author.default_avatar_url()
-                                                    })
-                                            },
-                                        ))
-                                        .content(content);
-                                    if !new_message.attachments.is_empty() {
-                                        for attachment in &new_message.attachments {
-                                            if attachment.dimensions().is_some() {
-                                                message = message.add_file(
-                                                    CreateAttachment::url(
-                                                        &ctx.http,
-                                                        attachment.url.as_str(),
-                                                        attachment.filename.to_string(),
-                                                    )
-                                                    .await?,
-                                                );
-                                            }
-                                        }
-                                    }
-                                    if let Some(replied_message) = &new_message.referenced_message {
-                                        let mut embed = CreateEmbed::default()
-                                            .description(replied_message.content.as_str())
-                                            .author(
-                                                CreateEmbedAuthor::new(
-                                                    replied_message.author.display_name(),
-                                                )
-                                                .icon_url(
-                                                    replied_message
-                                                        .author
-                                                        .avatar_url()
-                                                        .unwrap_or_else(|| {
-                                                            replied_message
-                                                                .author
-                                                                .default_avatar_url()
-                                                        }),
-                                                ),
+                                let content = if new_message.content.is_empty() {
+                                    ""
+                                } else {
+                                    new_message.content.as_str()
+                                };
+                                let mut message = ExecuteWebhook::default()
+                                    .username(new_message.author.display_name())
+                                    .avatar_url(new_message.author.avatar_url().unwrap_or_else(
+                                        || {
+                                            new_message.author.static_avatar_url().unwrap_or_else(
+                                                || new_message.author.default_avatar_url(),
                                             )
-                                            .timestamp(new_message.timestamp);
-                                        if let Some(attachment) =
-                                            replied_message.attachments.first()
-                                        {
-                                            embed = embed.image(attachment.url.as_str());
-                                        }
-                                        message = message.embed(embed);
-                                    }
-                                    if webhook.execute(&ctx.http, false, message).await.is_err() {
-                                        chat_channel
-                                            .id()
-                                            .say(
+                                        },
+                                    ))
+                                    .content(content);
+                                if !new_message.attachments.is_empty() {
+                                    for attachment in new_message
+                                        .attachments
+                                        .iter()
+                                        .filter(|a| a.dimensions().is_some())
+                                    {
+                                        message = message.add_file(
+                                            CreateAttachment::url(
                                                 &ctx.http,
-                                                format!(
-                                                    "{} sent this: {}",
-                                                    new_message.author.display_name(),
-                                                    new_message.content.as_str()
-                                                ),
+                                                attachment.url.as_str(),
+                                                attachment.filename.to_string(),
                                             )
-                                            .await?;
+                                            .await?,
+                                        );
                                     }
                                 }
-                                _ => {
+                                if let Some(replied_message) = &new_message.referenced_message {
+                                    let mut embed = CreateEmbed::default()
+                                        .description(replied_message.content.as_str())
+                                        .author(
+                                            CreateEmbedAuthor::new(
+                                                replied_message.author.display_name(),
+                                            )
+                                            .icon_url(
+                                                replied_message.author.avatar_url().unwrap_or_else(
+                                                    || replied_message.author.default_avatar_url(),
+                                                ),
+                                            ),
+                                        )
+                                        .timestamp(new_message.timestamp);
+                                    if let Some(attachment) = replied_message.attachments.first() {
+                                        embed = embed.image(attachment.url.as_str());
+                                    }
+                                    message = message.embed(embed);
+                                }
+                                if webhook.execute(&ctx.http, false, message).await.is_err() {
                                     chat_channel
                                         .id()
                                         .say(
@@ -567,6 +551,18 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                                         )
                                         .await?;
                                 }
+                            } else {
+                                chat_channel
+                                    .id()
+                                    .say(
+                                        &ctx.http,
+                                        format!(
+                                            "{} sent this: {}",
+                                            new_message.author.display_name(),
+                                            new_message.content.as_str()
+                                        ),
+                                    )
+                                    .await?;
                             }
                         }
                     }
@@ -574,22 +570,24 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                 {
                     let mut word_tracking_updates: HashSet<WordTracking> =
                         guild_data.word_tracking.clone();
-                    for record in &guild_data.word_tracking {
-                        if content.contains(&record.word) {
-                            query!(
-                                "UPDATE guild_word_tracking 
+                    for record in guild_data
+                        .word_tracking
+                        .iter()
+                        .filter(|r| content.contains(&r.word))
+                    {
+                        query!(
+                            "UPDATE guild_word_tracking 
                                  SET count = count + 1 
                                  WHERE guild_id = $1
                                  AND word = $2",
-                                guild_id_i64,
-                                record.word
-                            )
-                            .execute(&mut *tx)
-                            .await?;
-                            if let Some(mut updated_record) = word_tracking_updates.take(record) {
-                                updated_record.count += 1;
-                                word_tracking_updates.insert(updated_record);
-                            }
+                            guild_id_i64,
+                            record.word
+                        )
+                        .execute(&mut *tx)
+                        .await?;
+                        if let Some(mut updated_record) = word_tracking_updates.take(record) {
+                            updated_record.count += 1;
+                            word_tracking_updates.insert(updated_record);
                         }
                     }
                     let guild_data_lock = data.guild_data.lock().await;
@@ -601,61 +599,63 @@ pub async fn handle_message(ctx: &serenity::Context, new_message: &Message) -> R
                     modified_settings.word_tracking = word_tracking_updates;
                     guild_data_lock.insert(guild_id, Arc::new(modified_settings));
                 }
-                for record in &guild_data.word_reactions {
-                    if content.contains(&record.word) {
-                        let message = {
-                            let base = CreateMessage::default()
-                                .reference_message(new_message)
-                                .allowed_mentions(
-                                    CreateAllowedMentions::default().replied_user(false),
-                                );
-                            match &record.media {
-                                Some(media) if !media.is_empty() => {
-                                    if let Some(gif_query) = media.strip_prefix("!gif") {
-                                        let urls = get_gifs(gif_query).await;
-                                        let mut embed = CreateEmbed::default()
-                                            .title(&record.content)
-                                            .colour(COLOUR_YELLOW);
-                                        let index = RNG.lock().await.usize(..urls.len());
-                                        if let Some(url) = urls.get(index).cloned() {
-                                            embed = embed.image(url);
-                                        }
-                                        base.embed(embed)
-                                    } else {
-                                        base.embed(
-                                            CreateEmbed::default()
-                                                .title(&record.content)
-                                                .colour(COLOUR_YELLOW)
-                                                .image(media),
-                                        )
+                for record in guild_data
+                    .word_reactions
+                    .iter()
+                    .filter(|r| content.contains(&r.word))
+                {
+                    let message = {
+                        let base = CreateMessage::default()
+                            .reference_message(new_message)
+                            .allowed_mentions(CreateAllowedMentions::default().replied_user(false));
+                        match &record.media {
+                            Some(media) if !media.is_empty() => {
+                                if let Some(gif_query) = media.strip_prefix("!gif") {
+                                    let urls = get_gifs(gif_query).await;
+                                    let mut embed = CreateEmbed::default()
+                                        .title(&record.content)
+                                        .colour(COLOUR_YELLOW);
+                                    let index = RNG.lock().await.usize(..urls.len());
+                                    if let Some(url) = urls.get(index).cloned() {
+                                        embed = embed.image(url);
                                     }
+                                    base.embed(embed)
+                                } else {
+                                    base.embed(
+                                        CreateEmbed::default()
+                                            .title(&record.content)
+                                            .colour(COLOUR_YELLOW)
+                                            .image(media),
+                                    )
                                 }
-                                _ => base.content(&record.content),
                             }
-                        };
-                        new_message
-                            .channel_id
-                            .send_message(&ctx.http, message)
-                            .await?;
-                    }
+                            _ => base.content(&record.content),
+                        }
+                    };
+                    new_message
+                        .channel_id
+                        .send_message(&ctx.http, message)
+                        .await?;
                 }
-                for record in &guild_data.emoji_reactions {
-                    if content.contains(&record.content_reaction) {
-                        let emoji_id_typed = EmojiId::new(
-                            u64::try_from(record.emoji_id).expect("emoji id out of bounds for u64"),
-                        );
-                        let emoji = if record.guild_emoji {
-                            guild_id.emoji(&ctx.http, emoji_id_typed).await?
-                        } else {
-                            ctx.get_application_emoji(emoji_id_typed).await?
-                        };
-                        let reaction = ReactionType::Custom {
-                            animated: emoji.animated(),
-                            id: emoji.id,
-                            name: Some(emoji.name),
-                        };
-                        new_message.react(&ctx.http, reaction).await?;
-                    }
+                for record in guild_data
+                    .emoji_reactions
+                    .iter()
+                    .filter(|r| content.contains(&r.content_reaction))
+                {
+                    let emoji_id_typed = EmojiId::new(
+                        u64::try_from(record.emoji_id).expect("emoji id out of bounds for u64"),
+                    );
+                    let emoji = if record.guild_emoji {
+                        guild_id.emoji(&ctx.http, emoji_id_typed).await?
+                    } else {
+                        ctx.get_application_emoji(emoji_id_typed).await?
+                    };
+                    let reaction = ReactionType::Custom {
+                        animated: emoji.animated(),
+                        id: emoji.id,
+                        name: Some(emoji.name),
+                    };
+                    new_message.react(&ctx.http, reaction).await?;
                 }
             }
         }

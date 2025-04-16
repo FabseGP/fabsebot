@@ -18,17 +18,17 @@ use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use std::{fs::read_to_string, time::Duration};
 use tokio::{spawn, time::interval};
 use toml::{Table, Value};
-use tracing::Level;
+use tracing::{Level, warn};
 use tracing_opentelemetry::layer;
 use tracing_subscriber::{
     Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _,
 };
 
-async fn periodic_task(url: &String) {
+async fn periodic_task(url: &String) -> AResult<()> {
     let mut interval = interval(Duration::from_secs(60));
     loop {
         interval.tick().await;
-        let _ = HTTP_CLIENT.get(url).send().await;
+        HTTP_CLIENT.get(url).send().await?;
     }
 }
 
@@ -44,7 +44,7 @@ async fn main() -> AResult<()> {
         Value::try_into(config_toml["Fabseserver"].clone())?;
     let api_config: APIConfig = Value::try_into(config_toml["API-Info"].clone())?;
 
-    let log_level = match bot_config.log_level.to_lowercase().as_str() {
+    let log_level = match bot_config.log_level.as_str() {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
         "warn" => Level::WARN,
@@ -52,13 +52,13 @@ async fn main() -> AResult<()> {
         _ => Level::INFO,
     };
 
-    let new_exporter = SpanExporter::builder()
-        .with_tonic()
-        .with_endpoint(&bot_config.jaeger)
-        .build()?;
-
     let provider = SdkTracerProvider::builder()
-        .with_batch_exporter(new_exporter)
+        .with_batch_exporter(
+            SpanExporter::builder()
+                .with_tonic()
+                .with_endpoint(&bot_config.jaeger)
+                .build()?,
+        )
         .with_resource(
             Resource::builder()
                 .with_attribute(KeyValue::new("service.name", bot_config.username.clone()))
@@ -77,7 +77,9 @@ async fn main() -> AResult<()> {
     let uptime_task_url = bot_config.uptime_url.clone();
 
     spawn(async move {
-        periodic_task(&uptime_task_url).await;
+        if let Err(e) = periodic_task(&uptime_task_url).await {
+            warn!("Failed to report uptime: {e}");
+        }
     });
 
     bot_start(bot_config, postgres_config, fabseserver_config, api_config).await?;

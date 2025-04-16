@@ -11,6 +11,7 @@ pub struct MainConfig {
     pub banner: String,
     pub activity: String,
     pub ping_message: String,
+    pub ping_payload: String,
     pub uptime_url: String,
 }
 

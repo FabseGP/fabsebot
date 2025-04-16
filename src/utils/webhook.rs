@@ -1,21 +1,21 @@
-use crate::config::types::{Error, HTTP_CLIENT, WebhookMap};
+use crate::config::types::{HTTP_CLIENT, WebhookMap};
 
-use anyhow::anyhow;
+use anyhow::Result as AResult;
 use poise::serenity_prelude::{
-    self as serenity, ExecuteWebhook, GenericChannelId, GuildId, Message, Webhook,
+    Channel, Context as SContext, ExecuteWebhook, GenericChannelId, GuildId, Message, Webhook,
     builder::CreateAttachment,
 };
 use serde::Serialize;
 use std::sync::Arc;
+use tracing::warn;
 
 pub async fn spoiler_message(
-    ctx: &serenity::Context,
+    ctx: &SContext,
     message: &Message,
     data: Arc<WebhookMap>,
-) -> Result<(), Error> {
+) -> AResult<()> {
     if let Some(avatar_url) = message.author.avatar_url() {
-        let webhook_try = webhook_find(ctx, message.guild_id, message.channel_id, data).await;
-        if let Ok(webhook) = webhook_try {
+        if let Some(webhook) = webhook_find(ctx, message.guild_id, message.channel_id, data).await {
             let username = message.author.display_name();
             let mut is_first = true;
             for attachment in &message.attachments {
@@ -71,43 +71,48 @@ struct WebhookInfo {
 }
 
 pub async fn webhook_find(
-    ctx: &serenity::Context,
+    ctx: &SContext,
     guild_id: Option<GuildId>,
     channel_id: GenericChannelId,
     cached_webhooks: Arc<WebhookMap>,
-) -> Result<Webhook, Error> {
+) -> Option<Webhook> {
     if let Some(webhook) = cached_webhooks.get(&channel_id) {
-        return Ok(webhook);
-    }
-    if let Ok(channel) = channel_id.to_channel(&ctx.http, guild_id).await
-        && let Some(guild_channel) = channel.guild()
+        Some(webhook)
+    } else if let Ok(Some(guild_channel)) = channel_id
+        .to_channel(&ctx.http, guild_id)
+        .await
+        .map(Channel::guild)
     {
         let existing_webhooks_get = guild_channel.id.webhooks(&ctx.http).await;
-        match existing_webhooks_get {
-            Ok(existing_webhooks) => {
-                if existing_webhooks.len() >= 15 {
-                    ctx.http
-                        .delete_webhook(existing_webhooks.first().unwrap().id, None)
-                        .await?;
+        if let Ok(existing_webhooks) = existing_webhooks_get {
+            if existing_webhooks.len() >= 15 {
+                if let Err(e) = ctx
+                    .http
+                    .delete_webhook(existing_webhooks.first().unwrap().id, None)
+                    .await
+                {
+                    warn!("Failed to delete webhook: {e}");
                 }
-                let webhook_info = WebhookInfo {
-                    name: "fabsebot",
-                    avatar: "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png",
-                };
-                (ctx.http
-                    .create_webhook(guild_channel.id, &webhook_info, None)
-                    .await)
-                    .map_or_else(
-                        |_| Err(anyhow!("")),
-                        |webhook| {
-                            cached_webhooks.insert(channel_id, webhook.clone());
-                            Ok(webhook)
-                        },
-                    )
             }
-            Err(_) => Err(anyhow!("")),
+            let webhook_info = WebhookInfo {
+                name: "fabsebot",
+                avatar: "http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png",
+            };
+            ctx.http
+                .create_webhook(guild_channel.id, &webhook_info, None)
+                .await
+                .ok()
+                .map_or_else(
+                    || None,
+                    |webhook| {
+                        cached_webhooks.insert(channel_id, webhook.clone());
+                        Some(webhook)
+                    },
+                )
+        } else {
+            None
         }
     } else {
-        Err(anyhow!(""))
+        None
     }
 }

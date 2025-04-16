@@ -421,16 +421,91 @@ pub async fn set_emoji_react(
                 .cloned(),
             _ => None,
         };
-        match emoji_opt {
-            Some(emoji) => {
-                let emoji_id_i64 = i64::from(emoji.id);
-                query!(
+        if let Some(emoji) = emoji_opt {
+            let emoji_id_i64 = i64::from(emoji.id);
+            query!(
                     "INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, content_reaction)
                     VALUES ($1, $2, TRUE, $3)
                     ON CONFLICT(guild_id, emoji_id)
                     DO UPDATE SET
                         emoji_id = $2,
                         guild_emoji = TRUE,
+                        content_reaction = $3",
+                    guild_id_i64,
+                    emoji_id_i64,
+                    content,
+                )
+                .execute(&mut *ctx.data().db.acquire().await?)
+                .await?;
+            ctx.send(
+                CreateReply::default()
+                    .content(format!(
+                        "Every time {content} is sent, {} will be reacted with... probably",
+                        emoji.name
+                    ))
+                    .ephemeral(true),
+            )
+            .await?;
+            let ctx_data = ctx.data();
+            let guild_settings_lock = ctx_data.guild_data.lock().await;
+            let mut current_settings_opt = guild_settings_lock.get(&guild_id);
+            let mut modified_settings = current_settings_opt
+                .get_or_insert_default()
+                .as_ref()
+                .clone();
+            modified_settings.emoji_reactions.insert(EmojiReactions {
+                guild_id: guild_id_i64,
+                emoji_id: emoji_id_i64,
+                guild_emoji: true,
+                content_reaction: content,
+            });
+            guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+        } else if let Some(emoji_media) = media {
+            let content_type_opt = if emoji_media.starts_with("https") {
+                ctx.defer().await?;
+                let response = HTTP_CLIENT.head(&emoji_media).send().await?;
+                let content_type = response
+                    .headers()
+                    .get("content-type")
+                    .and_then(|ct| ct.to_str().ok())
+                    .unwrap_or("image/png")
+                    .to_string();
+                if content_type.starts_with("image/") || content_type == "application/gif" {
+                    Some(content_type)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(content_type) = content_type_opt {
+                let image_bytes = HTTP_CLIENT.get(&emoji_media).send().await?.bytes().await?;
+                let base64_str = general_purpose::STANDARD.encode(&image_bytes);
+                let image_data = format!("data:{};base64,{}", &content_type, base64_str);
+                let params = CreateApplicationEmoji {
+                    name: &emoji_name,
+                    image: &image_data,
+                };
+                let emoji = match ctx.http().create_application_emoji(&params).await {
+                    Ok(result) => result,
+                    Err(e) => {
+                        ctx.send(
+                            CreateReply::default()
+                                .content(format!("No can do, Discord gave this error: {e}"))
+                                .ephemeral(true),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                };
+                let emoji_id_i64 = i64::from(emoji.id);
+                query!(
+                    "INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, content_reaction)
+                    VALUES ($1, $2, FALSE, $3)
+                    ON CONFLICT(guild_id, emoji_id)
+                    DO UPDATE SET
+                        emoji_id = $2,
+                        guild_emoji = FALSE,
                         content_reaction = $3",
                     guild_id_i64,
                     emoji_id_i64,
@@ -457,106 +532,25 @@ pub async fn set_emoji_react(
                 modified_settings.emoji_reactions.insert(EmojiReactions {
                     guild_id: guild_id_i64,
                     emoji_id: emoji_id_i64,
-                    guild_emoji: true,
+                    guild_emoji: false,
                     content_reaction: content,
                 });
                 guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+            } else {
+                ctx.send(
+                    CreateReply::default()
+                        .content("Bruh, invalid media was given!")
+                        .ephemeral(true),
+                )
+                .await?;
             }
-            _ => {
-                if let Some(emoji_media) = media {
-                    let content_type_opt = if emoji_media.starts_with("https") {
-                        ctx.defer().await?;
-                        let response = HTTP_CLIENT.head(&emoji_media).send().await?;
-                        let content_type = response
-                            .headers()
-                            .get("content-type")
-                            .and_then(|ct| ct.to_str().ok())
-                            .unwrap_or("image/png")
-                            .to_string();
-                        if content_type.starts_with("image/") || content_type == "application/gif" {
-                            Some(content_type)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    if let Some(content_type) = content_type_opt {
-                        let image_bytes =
-                            HTTP_CLIENT.get(&emoji_media).send().await?.bytes().await?;
-                        let base64_str = general_purpose::STANDARD.encode(&image_bytes);
-                        let image_data = format!("data:{};base64,{}", &content_type, base64_str);
-                        let params = CreateApplicationEmoji {
-                            name: &emoji_name,
-                            image: &image_data,
-                        };
-                        let emoji = match ctx.http().create_application_emoji(&params).await {
-                            Ok(result) => result,
-                            Err(e) => {
-                                ctx.send(
-                                    CreateReply::default()
-                                        .content(format!("No can do, Discord gave this error: {e}"))
-                                        .ephemeral(true),
-                                )
-                                .await?;
-                                return Ok(());
-                            }
-                        };
-                        let emoji_id_i64 = i64::from(emoji.id);
-                        query!(
-                            "INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, content_reaction)
-                            VALUES ($1, $2, FALSE, $3)
-                            ON CONFLICT(guild_id, emoji_id)
-                            DO UPDATE SET
-                                emoji_id = $2,
-                                guild_emoji = FALSE,
-                                content_reaction = $3",
-                            guild_id_i64,
-                            emoji_id_i64,
-                            content,
-                        )
-                        .execute(&mut *ctx.data().db.acquire().await?)
-                        .await?;
-                        ctx.send(
-                            CreateReply::default()
-                                .content(format!(
-                                    "Every time {content} is sent, {} will be reacted with... probably",
-                                    emoji.name
-                                ))
-                                .ephemeral(true),
-                        )
-                        .await?;
-                        let ctx_data = ctx.data();
-                        let guild_settings_lock = ctx_data.guild_data.lock().await;
-                        let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-                        let mut modified_settings = current_settings_opt
-                            .get_or_insert_default()
-                            .as_ref()
-                            .clone();
-                        modified_settings.emoji_reactions.insert(EmojiReactions {
-                            guild_id: guild_id_i64,
-                            emoji_id: emoji_id_i64,
-                            guild_emoji: false,
-                            content_reaction: content,
-                        });
-                        guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-                    } else {
-                        ctx.send(
-                            CreateReply::default()
-                                .content("Bruh, invalid media was given!")
-                                .ephemeral(true),
-                        )
-                        .await?;
-                    }
-                } else {
-                    ctx.send(
-                        CreateReply::default()
-                            .content("Bruh, the emoji doesn't exist + no media was given!")
-                            .ephemeral(true),
-                    )
-                    .await?;
-                }
-            }
+        } else {
+            ctx.send(
+                CreateReply::default()
+                    .content("Bruh, the emoji doesn't exist + no media was given!")
+                    .ephemeral(true),
+            )
+            .await?;
         }
     }
     Ok(())

@@ -1,5 +1,8 @@
 use crate::config::{
-    constants::{DISCORD_CHANNEL_PREFIX, FALLBACK_GIF, FALLBACK_WAIFU},
+    constants::{
+        DISCORD_CHANNEL_CANARY_PREFIX, DISCORD_CHANNEL_DEFAULT_PREFIX, DISCORD_CHANNEL_PTB_PREFIX,
+        FALLBACK_GIF, FALLBACK_WAIFU,
+    },
     types::{HTTP_CLIENT, UTILS_CONFIG},
 };
 
@@ -45,16 +48,15 @@ pub async fn get_gifs(input: &str) -> Vec<Cow<'static, str>> {
                 .tenor_token,
         )
     };
-    match HTTP_CLIENT.get(request_url).send().await {
-        Ok(response) => match response.json::<GifResponse>().await {
-            Ok(urls) => urls
-                .results
-                .into_iter()
-                .filter_map(|result| result.media_formats.gif.map(|media| Cow::Owned(media.url)))
-                .collect(),
-            Err(_) => vec![Cow::Borrowed(FALLBACK_GIF)],
-        },
-        Err(_) => vec![Cow::Borrowed(FALLBACK_GIF)],
+    if let Ok(response) = HTTP_CLIENT.get(request_url).send().await
+        && let Ok(urls) = response.json::<GifResponse>().await
+    {
+        urls.results
+            .into_iter()
+            .filter_map(|result| result.media_formats.gif.map(|media| Cow::Owned(media.url)))
+            .collect()
+    } else {
+        vec![Cow::Borrowed(FALLBACK_GIF)]
     }
 }
 
@@ -68,17 +70,18 @@ struct WaifuImage {
 }
 
 pub async fn get_waifu() -> Cow<'static, str> {
-    match HTTP_CLIENT
+    if let Ok(response) = HTTP_CLIENT
         .get("https://api.waifu.im/search?height=>=2000&is_nsfw=false")
         .send()
         .await
     {
-        Ok(response) => response
+        response
             .json::<WaifuResponse>()
             .await
             .map(|resp| Cow::Owned(resp.images[0].url.clone()))
-            .unwrap_or(Cow::Borrowed(FALLBACK_WAIFU)),
-        Err(_) => Cow::Borrowed(FALLBACK_WAIFU),
+            .unwrap_or(Cow::Borrowed(FALLBACK_WAIFU))
+    } else {
+        Cow::Borrowed(FALLBACK_WAIFU)
     }
 }
 
@@ -104,8 +107,15 @@ fn emoji_name(input: &mut &str) -> ModalResult<String> {
 }
 
 pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink> {
+    let channel_prefix = if input.starts_with(DISCORD_CHANNEL_DEFAULT_PREFIX) {
+        DISCORD_CHANNEL_DEFAULT_PREFIX
+    } else if input.starts_with(DISCORD_CHANNEL_PTB_PREFIX) {
+        DISCORD_CHANNEL_PTB_PREFIX
+    } else {
+        DISCORD_CHANNEL_CANARY_PREFIX
+    };
     let (guild_id, (channel_id, message_id)) = preceded(
-        DISCORD_CHANNEL_PREFIX,
+        channel_prefix,
         separated_pair(discord_id, '/', separated_pair(discord_id, '/', discord_id)),
     )
     .parse_next(input)?;

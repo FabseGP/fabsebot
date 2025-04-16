@@ -4,9 +4,7 @@ use crate::config::{
 };
 
 use anyhow::Context;
-use poise::{
-    serenity_prelude::{Context as SContext, GuildId, Ready, UserId},
-};
+use poise::serenity_prelude::{Context as SContext, GuildId, Ready, UserId};
 use sqlx::query_as;
 use std::{
     collections::{HashMap, HashSet},

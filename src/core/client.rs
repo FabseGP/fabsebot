@@ -56,6 +56,7 @@ pub async fn bot_start(
         .is_err()
     {
         error!("Failed to set utils config");
+        panic!();
     }
     let pool_options = PgConnectOptions::new()
         .host(&postgres_config.host)
