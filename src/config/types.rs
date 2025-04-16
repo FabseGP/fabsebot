@@ -25,7 +25,6 @@ pub type WebhookMap = Cache<GenericChannelId, Webhook>;
 pub type GuildDataMap = Cache<GuildId, Arc<GuildData>>;
 type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 
-#[derive(Clone)]
 pub struct AIModelDefaults {
     pub temperature: f32,
     pub top_k: i32,
@@ -67,10 +66,6 @@ impl Role {
 
     pub const fn is_user(&self) -> bool {
         matches!(self, Self::User)
-    }
-
-    pub const fn is_model(&self) -> bool {
-        matches!(self, Self::Model)
     }
 }
 

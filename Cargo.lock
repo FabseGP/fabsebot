@@ -954,6 +954,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "poise",
+ "rayon",
  "reqwest",
  "scraper",
  "serde",

@@ -122,7 +122,7 @@ pub async fn ai_chatbot(
                     convo_lock.static_info.chatbot_role = chatbot_role;
                     if let Some(guild) = message.guild(&ctx.cache) {
                         convo_lock.static_info.guild_desc = format!(
-                            "\nThe guild you're currently talking in is named {} with this description {}, have {} members and have {} channels with these names {}. {}",
+                            "\nThe guild you're currently talking in is named {} with this description {}, have {} members and have {} channels with these names {}, current channel name is {}. {}",
                             guild.name,
                             guild
                                 .description
@@ -136,6 +136,9 @@ pub async fn ai_chatbot(
                                 .map(|c| c.base.name.as_str())
                                 .intersperse(", ")
                                 .collect::<String>(),
+                            guild
+                                .channel(message.channel_id)
+                                .map_or("unknown", |channel| channel.base().name.as_str()),
                             if message.author.id == guild.owner_id {
                                 "You're also talking to this guild's owner"
                             } else {
