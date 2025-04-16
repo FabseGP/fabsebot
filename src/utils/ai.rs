@@ -134,6 +134,7 @@ pub async fn ai_chatbot(
                                 .channels
                                 .iter()
                                 .map(|c| c.base.name.as_str())
+                                .intersperse(", ")
                                 .collect::<String>(),
                             if message.author.id == guild.owner_id {
                                 "You're also talking to this guild's owner"
