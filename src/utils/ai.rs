@@ -374,7 +374,7 @@ pub async fn ai_chatbot(
                 }
                 convo_history.static_info.is_set = true;
                 convo_history.messages.push(AIChatMessage::user(format!(
-                    "{start_tag}user{separator}User:{author_name}:{content_safe}{end_tag}{separator}"
+                    "User: {author_name}: {content_safe}"
                 )));
                 convo_history.messages.clone()
             };
@@ -421,9 +421,7 @@ pub async fn ai_chatbot(
                 .lock()
                 .await
                 .messages
-                .push(AIChatMessage::model(format!(
-                    "{start_tag}model{separator}{response}{end_tag}{separator}"
-                )));
+                .push(AIChatMessage::assistant(response));
         } else {
             let error_msg = "Sorry, I had to forget our convo, too boring!";
             {
