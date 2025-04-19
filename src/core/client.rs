@@ -107,6 +107,7 @@ pub async fn bot_start(
                 info::server_info(),
                 misc::anony_poll(),
                 misc::birthday(),
+                misc::debug(),
                 misc::end_pgo(),
                 misc::global_chat_end(),
                 misc::global_chat_start(),

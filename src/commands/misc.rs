@@ -1,7 +1,7 @@
 use crate::{
     config::{
         constants::{COLOUR_RED, FONTS},
-        types::{Error, HTTP_CLIENT, SContext, UTILS_CONFIG},
+        types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
     },
     utils::{ai::ai_response_simple, image::quote_image},
 };
@@ -22,6 +22,7 @@ use poise::{
 };
 use sqlx::query;
 use std::{sync::Arc, time::Duration};
+use systemstat::{Platform, saturating_sub_bytes};
 use tokio::{
     task,
     time::{sleep, timeout},
@@ -159,9 +160,73 @@ pub async fn birthday(
     Ok(())
 }
 
+/// Debugging fabsebot's host
+#[poise::command(prefix_command, slash_command)]
+pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
+    let mut embed = CreateEmbed::default().title("Debug");
+    let latency = if let Ok(shard_runner) = ctx.serenity_context().runner_info.lock()
+        && let Some(latency) = shard_runner.latency
+    {
+        latency.as_millis()
+    } else {
+        0
+    };
+    embed = embed.field("Shard ping:", format!("{latency}ms"), true);
+    embed = embed.field(
+        "Shard id:",
+        ctx.serenity_context().shard_id.to_string(),
+        true,
+    );
+    embed = embed.field("", "", false);
+    let cpu_load = SYSTEM_STATS.cpu_load_aggregate();
+    sleep(Duration::from_secs(1)).await;
+    if let Ok(cpu_load) = cpu_load.and_then(|f| f.done()) {
+        embed = embed.field("System load:", format!("{}%", cpu_load.system), true);
+    }
+    if let Ok(avg_lod) = SYSTEM_STATS.load_average() {
+        embed = embed.field(
+            "Average system load (15m):",
+            avg_lod.fifteen.to_string(),
+            true,
+        );
+    }
+    embed = embed.field("", "", false);
+    if let Ok((mem, swap)) = SYSTEM_STATS.memory_and_swap() {
+        embed = embed.field(
+            "System memory:",
+            format!(
+                "{} / {} used",
+                saturating_sub_bytes(mem.total, mem.free),
+                mem.total
+            ),
+            true,
+        );
+        embed = embed.field(
+            "System swap:",
+            format!(
+                "{} / {} used",
+                saturating_sub_bytes(swap.total, swap.free),
+                swap.total
+            ),
+            true,
+        );
+    }
+    embed = embed.field("", "", false);
+    if let Ok(temp) = SYSTEM_STATS.cpu_temp() {
+        embed = embed.field("System temperature:", format!("{temp} ℃"), true);
+    }
+    if let Ok(uptime) = SYSTEM_STATS.uptime() {
+        embed = embed.field("System uptime:", format!("{}ms", uptime.as_millis()), true);
+    }
+
+    ctx.send(CreateReply::default().embed(embed)).await?;
+    Ok(())
+}
+
 /// Ignore this command
 #[poise::command(prefix_command, owners_only)]
-pub async fn end_pgo(_: SContext<'_>) -> Result<(), Error> {
+pub async fn end_pgo(ctx: SContext<'_>) -> Result<(), Error> {
+    ctx.serenity_context().shutdown_all();
     panic!("pgo-profiling ended");
 
     #[expect(unreachable_code)]

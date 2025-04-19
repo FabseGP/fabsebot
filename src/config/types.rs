@@ -17,6 +17,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, LazyLock, OnceLock},
 };
+use systemstat::{Platform, System};
 use tokio::sync::Mutex;
 
 pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
@@ -127,6 +128,7 @@ pub struct UtilsConfig {
 pub static UTILS_CONFIG: OnceLock<Arc<UtilsConfig>> = OnceLock::new();
 pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
 pub static RNG: LazyLock<Mutex<Rng>> = LazyLock::new(|| Mutex::new(Rng::new()));
+pub static SYSTEM_STATS: LazyLock<Arc<System>> = LazyLock::new(|| Arc::new(System::new()));
 
 pub static GEMMA_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {
     temperature: 1.0,
