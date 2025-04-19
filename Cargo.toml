@@ -21,7 +21,7 @@ rayon = "*"
 reqwest = { version = "*", default-features = false, features = ["json", "rustls-tls"] }
 scraper = "*"
 serde = "*"
-serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "rustls_backend", "temp_cache", "voice"] }
+serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "rustls_backend", "voice"] }
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
 sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio", "tls-rustls"] }
 symphonia = { version = "*", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }

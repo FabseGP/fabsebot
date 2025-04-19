@@ -108,9 +108,10 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> Result<(), 
             user_settings_lock.insert(guild_id, Arc::new(map));
         }
     }
-    let user_count = match ctx.http.get_current_application_info().await {
-        Ok(info) => info.approximate_user_install_count.unwrap_or(0),
-        Err(_) => 0,
+    let user_count = if let Ok(info) = ctx.http.get_current_application_info().await {
+        info.approximate_user_install_count.unwrap_or(0)
+    } else {
+        0
     };
     info!(
         "Logged in as {} in {} server(s) and installed for {user_count} user(s)",

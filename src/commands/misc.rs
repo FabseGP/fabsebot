@@ -399,8 +399,8 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-pub struct ImageInfo {
-    avatar_image: Vec<u8>,
+struct ImageInfo {
+    avatar_image: Arc<Vec<u8>>,
     author_name: String,
     content: String,
     current: Vec<u8>,
@@ -414,7 +414,7 @@ pub struct ImageInfo {
 }
 
 impl ImageInfo {
-    pub fn new(avatar_image: &[u8], author_name: String, content: String) -> Self {
+    fn new(avatar_image: &[u8], author_name: String, content: String) -> Self {
         let content_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
         let author_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
         let (image, is_gif) = quote_image(
@@ -430,7 +430,7 @@ impl ImageInfo {
             false,
         );
         Self {
-            avatar_image: avatar_image.to_vec(),
+            avatar_image: Arc::new(avatar_image.to_vec()),
             author_name,
             content,
             current: image,
@@ -444,32 +444,32 @@ impl ImageInfo {
         }
     }
 
-    pub async fn toggle_bw(&mut self) {
+    async fn toggle_bw(&mut self) {
         self.is_bw = !self.is_bw;
         self.image_gen().await;
     }
 
-    pub async fn toggle_reverse(&mut self) {
+    async fn toggle_reverse(&mut self) {
         self.is_reverse = !self.is_reverse;
         self.image_gen().await;
     }
 
-    pub async fn toggle_light(&mut self) {
+    async fn toggle_light(&mut self) {
         self.is_light = !self.is_light;
         self.image_gen().await;
     }
 
-    pub async fn toggle_gradient(&mut self) {
+    async fn toggle_gradient(&mut self) {
         self.is_gradient = !self.is_gradient;
         self.image_gen().await;
     }
 
-    pub async fn new_font(&mut self, new_font: FontArc) {
+    async fn new_font(&mut self, new_font: FontArc) {
         self.content_font = new_font;
         self.image_gen().await;
     }
 
-    pub async fn image_gen(&mut self) {
+    async fn image_gen(&mut self) {
         let avatar_image = self.avatar_image.clone();
         let author_name = self.author_name.clone();
         let content = self.content.clone();

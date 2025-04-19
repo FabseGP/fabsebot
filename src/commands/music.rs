@@ -13,7 +13,7 @@ use poise::{
     CreateReply, async_trait,
     serenity_prelude::{
         Channel, CreateEmbed, CreateMessage, EmbedMessageBuilding as _, GenericChannelId, GuildId,
-        MessageBuilder,
+        MessageBuilder, MessageId,
     },
 };
 use serde::Deserialize;
@@ -73,14 +73,14 @@ pub async fn get_configured_handler(handler_lock: &Arc<Mutex<Call>>) -> MutexGua
     handler
 }
 
-pub struct VoiceReceiveHandler {
+struct VoiceReceiveHandler {
     guild_id: GuildId,
     music_manager: Arc<Songbird>,
     guild_data: Arc<Mutex<GuildDataMap>>,
 }
 
 impl VoiceReceiveHandler {
-    pub const fn new(
+    const fn new(
         guild_id: GuildId,
         music_manager: Arc<Songbird>,
         guild_data: Arc<Mutex<GuildDataMap>>,
@@ -137,15 +137,20 @@ impl VoiceEventHandler for VoiceReceiveHandler {
 
 /// Text to voice, duh
 #[poise::command(prefix_command, slash_command)]
-pub async fn text_to_voice(
-    ctx: SContext<'_>,
-    #[description = "Text to convert to voice"]
-    #[rest]
-    prompt: String,
-) -> Result<(), Error> {
+pub async fn text_to_voice(ctx: SContext<'_>) -> Result<(), Error> {
     if let (Some(handler_lock), Some(_)) = voice_check(&ctx).await {
         ctx.defer().await?;
-        if let Some(bytes) = ai_voice(&prompt).await {
+        let msg = ctx
+            .channel_id()
+            .message(&ctx.http(), MessageId::new(ctx.id()))
+            .await?;
+
+        let Some(ref reply) = msg.referenced_message.map(|r| r.content) else {
+            ctx.reply("Bruh, reply to a message").await?;
+            return Ok(());
+        };
+
+        if let Some(bytes) = ai_voice(reply).await {
             get_configured_handler(&handler_lock)
                 .await
                 .enqueue_input(Input::from(bytes))

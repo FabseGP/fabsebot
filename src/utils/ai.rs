@@ -605,7 +605,7 @@ pub async fn ai_voice(prompt: &str) -> Option<Bytes> {
         response_format: "wav",
         return_timestamps: false,
         stream: false,
-        speed: 1.25,
+        speed: 1.1,
         normalization_options: NormalizationOptions {
             unit_normalization: true,
         },

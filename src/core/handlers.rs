@@ -5,13 +5,13 @@ use crate::{
         message_delete::handle_message_delete, message_sent::handle_message,
     },
 };
-use anyhow::Result;
+use anyhow::Result as AResult;
 use poise::{FrameworkError, PartialContext, serenity_prelude::FullEvent};
 use serenity::prelude::{Context, EventHandler as SEventHandler};
 use std::borrow::Cow;
-use tracing::error;
+use tracing::{error, warn};
 
-pub async fn on_error(error: FrameworkError<'_, Data, Error>) -> Result<()> {
+pub async fn on_error(error: FrameworkError<'_, Data, Error>) -> AResult<()> {
     match error {
         FrameworkError::Command { error, ctx, .. } => {
             error!("Error in command `{}`: {:?}", ctx.command().name, error);
@@ -26,22 +26,23 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) -> Result<()> {
 
 pub async fn dynamic_prefix(
     ctx: PartialContext<'_, Data, Error>,
-) -> anyhow::Result<Option<Cow<'static, str>>> {
-    let prefix = match ctx.guild_id {
-        Some(id) => {
-            let ctx_data = ctx.framework.user_data();
-            let guild_data = ctx_data.guild_data.lock().await;
-            guild_data
-                .get(&id)
-                .map_or(Cow::Borrowed("!"), |guild_data| {
-                    guild_data
-                        .settings
-                        .prefix
-                        .clone()
-                        .map_or(Cow::Borrowed("!"), Cow::Owned)
-                })
-        }
-        None => Cow::Borrowed("!"),
+) -> AResult<Option<Cow<'static, str>>> {
+    let prefix = if let Some(id) = ctx.guild_id {
+        ctx.framework
+            .user_data()
+            .guild_data
+            .lock()
+            .await
+            .get(&id)
+            .map_or(Cow::Borrowed("!"), |guild_data| {
+                guild_data
+                    .settings
+                    .prefix
+                    .clone()
+                    .map_or(Cow::Borrowed("!"), Cow::Owned)
+            })
+    } else {
+        Cow::Borrowed("!")
     };
 
     Ok(Some(prefix))
@@ -55,17 +56,17 @@ impl SEventHandler for EventHandler {
         match event {
             FullEvent::Ready { data_about_bot, .. } => {
                 if let Err(error) = handle_ready(ctx, data_about_bot).await {
-                    println!("Error handling connection to Discord: {error}");
+                    warn!("Error handling connection to Discord: {error}");
                 }
             }
             FullEvent::Message { new_message, .. } => {
                 if let Err(error) = handle_message(ctx, new_message).await {
-                    println!("Error handling sent message: {error}");
+                    warn!("Error handling sent message: {error}");
                 }
             }
             FullEvent::GuildCreate { guild, is_new, .. } => {
                 if let Err(error) = handle_guild_create(ctx.data(), guild, is_new.as_ref()).await {
-                    println!("Error handling newly created guild: {error}");
+                    warn!("Error handling newly created guild: {error}");
                 }
             }
             FullEvent::MessageDelete {
@@ -77,7 +78,7 @@ impl SEventHandler for EventHandler {
                 if let Err(error) =
                     handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id).await
                 {
-                    println!("Error handling deleted message: {error}");
+                    warn!("Error handling deleted message: {error}");
                 }
             }
             _ => {}
