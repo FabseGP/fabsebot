@@ -1,5 +1,3 @@
-use std::io::Cursor;
-
 use crate::config::constants::{DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, QUOTE_HEIGHT, QUOTE_WIDTH};
 
 use ab_glyph::{FontArc, PxScale};
@@ -12,6 +10,7 @@ use image::{
     load_from_memory,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
+use std::io::Cursor;
 use textwrap::wrap;
 
 const MIN_CONTENT_FONT_SIZE: f32 = 40.0;

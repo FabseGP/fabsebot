@@ -32,7 +32,6 @@ pub async fn reset_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
         ctx.send(
             CreateReply::default()
                 .content("Server settings resetted... probably")
-                .reply(true)
                 .ephemeral(true),
         )
         .await?;
@@ -90,7 +89,6 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
         ctx.send(
             CreateReply::default()
-                .reply(true)
                 .content("User settings resetted... probably")
                 .ephemeral(true),
         )
@@ -165,17 +163,19 @@ pub async fn set_afk(
             .unwrap_or("Didn't renew life subscription");
         let user_name = ctx.author().display_name();
         ctx.send(
-            CreateReply::default().embed(
-                CreateEmbed::default()
-                    .title(format!("{user_name} killed!"))
-                    .description(format!("Reason: {embed_reason}"))
-                    .thumbnail(ctx.author().avatar_url().unwrap_or_else(|| {
-                        ctx.author()
-                            .static_avatar_url()
-                            .unwrap_or_else(|| ctx.author().default_avatar_url())
-                    }))
-                    .color(COLOUR_RED),
-            ),
+            CreateReply::default()
+                .embed(
+                    CreateEmbed::default()
+                        .title(format!("{user_name} killed!"))
+                        .description(format!("Reason: {embed_reason}"))
+                        .thumbnail(ctx.author().avatar_url().unwrap_or_else(|| {
+                            ctx.author()
+                                .static_avatar_url()
+                                .unwrap_or_else(|| ctx.author().default_avatar_url())
+                        }))
+                        .color(COLOUR_RED),
+                )
+                .reply(true),
         )
         .await?;
         let ctx_data = ctx.data();
@@ -582,7 +582,6 @@ pub async fn set_prefix(
         .await?;
         ctx.send(
             CreateReply::default()
-                .reply(true)
                 .content(format!(
                     "{characters} set as the prefix for commands... probably"
                 ))

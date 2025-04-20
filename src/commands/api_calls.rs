@@ -173,7 +173,8 @@ pub async fn ai_text(
             };
             embed = embed.field(field_name, current_chunk, false);
         }
-        ctx.send(CreateReply::default().embed(embed)).await?;
+        ctx.send(CreateReply::default().embed(embed).reply(true))
+            .await?;
     } else {
         ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
             .await?;

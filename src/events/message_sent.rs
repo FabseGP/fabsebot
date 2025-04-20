@@ -459,7 +459,7 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
                             data.global_chats
                                 .insert(guild_id, Arc::new(global_chats_history_clone));
                         } else {
-                            let mut new_history = HashMap::new();
+                            let mut new_history = HashMap::with_capacity(guild_global_chats.len());
                             for (target_guild_id, _) in &guild_global_chats {
                                 new_history.insert(*target_guild_id, new_message.id);
                             }

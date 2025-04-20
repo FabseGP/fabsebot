@@ -374,7 +374,8 @@ pub async fn ai_chatbot(
                 }
                 convo_history.static_info.is_set = true;
                 convo_history.messages.push(AIChatMessage::user(format!(
-                    "User: {author_name}: {content_safe}"
+                    "Message sent at: {} by user: {author_name}: {content_safe}",
+                    message.timestamp
                 )));
                 convo_history.messages.clone()
             };

@@ -36,7 +36,9 @@ pub async fn rps(
     choice: String,
 ) -> Result<(), Error> {
     if let Some(guild_id) = ctx.guild_id() {
-        if !user.user.bot() {
+        if user.user.bot() {
+            ctx.reply("**Invalid target, get some friends**").await?;
+        } else {
             let valid_choices = ["rock", "paper", "scissors"];
             let author_choice = choice.to_lowercase();
             if !valid_choices.contains(&author_choice.as_str()) {
@@ -135,8 +137,6 @@ pub async fn rps(
                 )
                 .await?;
             }
-        } else {
-            ctx.reply("**Invalid target, get some friends**").await?;
         }
     }
 

@@ -664,18 +664,16 @@ pub async fn seek_song(
                 if seconds_value.is_negative() {
                     let new_position = u64::try_from(current_secs + seconds_value).unwrap_or(0);
                     let seek = Duration::from_secs(new_position);
-                    if !seek.is_zero() {
-                        if current_playback.seek_async(seek).await.is_ok() {
-                            ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
-                                .await?;
-                        } else {
-                            ctx.reply("Failed to seek song backwards").await?;
-                        }
-                    } else {
+                    if seek.is_zero() {
                         ctx.reply(
                             "Bruh, wanting to seek more seconds back than what have been played",
                         )
                         .await?;
+                    } else if current_playback.seek_async(seek).await.is_ok() {
+                        ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
+                            .await?;
+                    } else {
+                        ctx.reply("Failed to seek song backwards").await?;
                     }
                 } else {
                     let seconds_to_add = u64::try_from(seconds_value).unwrap_or(0);

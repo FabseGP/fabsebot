@@ -65,7 +65,12 @@ pub async fn anony_poll(
     let action_row = [CreateActionRow::buttons(&buttons)];
 
     let message = ctx
-        .send(CreateReply::default().embed(embed).components(&action_row))
+        .send(
+            CreateReply::default()
+                .embed(embed)
+                .components(&action_row)
+                .reply(true),
+        )
         .await?;
 
     let mut vote_counts = vec![0; options_count];
@@ -121,7 +126,10 @@ pub async fn anony_poll(
     message
         .edit(
             ctx,
-            CreateReply::default().embed(final_embed).components(&[]),
+            CreateReply::default()
+                .embed(final_embed)
+                .components(&[])
+                .reply(true),
         )
         .await?;
 
@@ -219,7 +227,8 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
         embed = embed.field("System uptime:", format!("{}ms", uptime.as_millis()), true);
     }
 
-    ctx.send(CreateReply::default().embed(embed)).await?;
+    ctx.send(CreateReply::default().embed(embed).reply(true))
+        .await?;
     Ok(())
 }
 
@@ -393,13 +402,17 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             .await
             .get(&guild_id)
             .map_or_else(Vec::new, |user_settings| {
-                user_settings
-                    .iter()
-                    .map(|entry| UserCount {
+                let capacity = user_settings.len();
+                let mut result = Vec::with_capacity(capacity);
+
+                for entry in user_settings.iter() {
+                    result.push(UserCount {
                         id: entry.1.user_id,
                         count: entry.1.message_count,
-                    })
-                    .collect::<Vec<_>>()
+                    });
+                }
+
+                result
             });
 
         users.sort_by(|a, b| b.count.cmp(&a.count));
@@ -790,14 +803,17 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
             .await
             .get(&guild_id)
             .map_or_else(Vec::new, |guild_data| {
-                guild_data
-                    .word_tracking
-                    .iter()
-                    .map(|entry| WordCount {
+                let capacity = guild_data.word_tracking.len();
+                let mut result = Vec::with_capacity(capacity);
+
+                for entry in &guild_data.word_tracking {
+                    result.push(WordCount {
                         word: entry.word.clone(),
                         count: entry.count,
-                    })
-                    .collect::<Vec<_>>()
+                    });
+                }
+
+                result
             });
 
         words.sort_by(|a, b| b.count.cmp(&a.count));
