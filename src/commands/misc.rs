@@ -9,6 +9,7 @@ use crate::{
 use ab_glyph::FontArc;
 use anyhow::Context;
 use dashmap::DashSet;
+use image::{ImageBuffer, Rgba};
 use poise::{
     CreateReply,
     builtins::register_globally,
@@ -20,11 +21,12 @@ use poise::{
         MessageId, UserId, nonmax::NonMaxU16,
     },
 };
+use rayon::spawn;
 use sqlx::query;
 use std::{sync::Arc, time::Duration};
 use systemstat::{Platform, saturating_sub_bytes};
 use tokio::{
-    task,
+    sync::oneshot,
     time::{sleep, timeout},
 };
 
@@ -172,8 +174,11 @@ pub async fn birthday(
 #[poise::command(prefix_command, slash_command)]
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
     let mut embed = CreateEmbed::default().title("Debug");
-    let latency = if let Ok(shard_runner) = ctx.serenity_context().runner_info.lock()
-        && let Some(latency) = shard_runner.latency
+    let latency = if let Some(shard_runner) = ctx
+        .serenity_context()
+        .runners
+        .get(&ctx.serenity_context().shard_id)
+        && let Some(latency) = shard_runner.0.latency
     {
         latency.as_millis()
     } else {
@@ -478,11 +483,12 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 struct ImageInfo {
-    avatar_image: Arc<Vec<u8>>,
+    avatar_image: Option<Arc<Vec<u8>>>,
+    avatar_resized: Option<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
     author_name: String,
     content: String,
     current: Vec<u8>,
-    is_gif: bool,
+    is_animated: bool,
     is_bw: bool,
     is_reverse: bool,
     is_light: bool,
@@ -492,27 +498,51 @@ struct ImageInfo {
 }
 
 impl ImageInfo {
-    fn new(avatar_image: &[u8], author_name: String, content: String) -> Self {
+    async fn new(
+        avatar_image: &[u8],
+        author_name: String,
+        content: String,
+        is_animated: bool,
+    ) -> Self {
         let content_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
         let author_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
-        let (image, is_gif) = quote_image(
-            avatar_image,
-            &author_name,
-            &content,
-            &author_font,
-            &content_font,
-            None,
-            false,
-            false,
-            false,
-            false,
-        );
+        let (tx, rx) = oneshot::channel();
+
+        let avatar_image_clone = avatar_image.to_vec();
+        let author_name_clone = author_name.clone();
+        let content_clone = content.clone();
+        let content_font_clone = content_font.clone();
+        let author_font_clone = author_font.clone();
+
+        spawn(move || {
+            let result = quote_image(
+                Some(&avatar_image_clone),
+                None,
+                &author_name_clone,
+                &content_clone,
+                &author_font_clone,
+                &content_font_clone,
+                None,
+                false,
+                false,
+                false,
+                false,
+                is_animated,
+            );
+            tx.send(result).expect("Sender failed to send");
+        });
+        let (image, avatar_resized) = rx.await.expect("Rayon task for quote_image panicked");
         Self {
-            avatar_image: Arc::new(avatar_image.to_vec()),
+            avatar_image: if avatar_resized.is_some() {
+                None
+            } else {
+                Some(Arc::new(avatar_image.to_vec()))
+            },
+            avatar_resized: avatar_resized.map(Arc::new),
             author_name,
             content,
             current: image,
-            is_gif,
+            is_animated,
             is_bw: false,
             is_reverse: false,
             is_light: false,
@@ -549,6 +579,7 @@ impl ImageInfo {
 
     async fn image_gen(&mut self) {
         let avatar_image = self.avatar_image.clone();
+        let avatar_resized = self.avatar_resized.clone();
         let author_name = self.author_name.clone();
         let content = self.content.clone();
         let author_font = self.author_font.clone();
@@ -557,9 +588,15 @@ impl ImageInfo {
         let is_light = self.is_light;
         let is_bw = self.is_bw;
         let is_gradient = self.is_gradient;
-        let (new_image, is_gif) = task::spawn_blocking(move || {
-            quote_image(
-                &avatar_image,
+        let is_animated = self.is_animated;
+
+        let (tx, rx) = oneshot::channel();
+
+        spawn(move || {
+            let avatar_bytes = avatar_image.as_ref().map(|arc_vec| &arc_vec[..]);
+            let (image, _) = quote_image(
+                avatar_bytes,
+                avatar_resized.as_deref().cloned(),
                 &author_name,
                 &content,
                 &author_font,
@@ -569,13 +606,11 @@ impl ImageInfo {
                 is_light,
                 is_bw,
                 is_gradient,
-            )
-        })
-        .await
-        .expect("blocking task quote_image panicked");
-
-        self.current = new_image;
-        self.is_gif = is_gif;
+                is_animated,
+            );
+            tx.send(image).expect("Sender failed to send");
+        });
+        self.current = rx.await.expect("Rayon task for quote_image panicked");
     }
 }
 
@@ -596,7 +631,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
         ctx.defer().await?;
 
         let mut image_handle = {
-            let (avatar_image, author_name) = if reply.webhook_id.is_some() {
+            let (avatar_image, is_animated, author_name) = if reply.webhook_id.is_some() {
                 let avatar_url = reply.author.avatar_url().unwrap_or_else(|| {
                     reply
                         .author
@@ -605,28 +640,38 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 });
                 (
                     HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
+                    avatar_url.contains(".gif"),
                     format!("- {}", reply.author.name),
                 )
             } else {
                 let member = guild_id.member(&ctx.http(), reply.author.id).await?;
                 let avatar_url = member.avatar_url().unwrap_or_else(|| {
-                    member
-                        .user
-                        .static_avatar_url()
-                        .unwrap_or_else(|| member.user.default_avatar_url())
+                    reply.author.avatar_url().unwrap_or_else(|| {
+                        member
+                            .user
+                            .static_avatar_url()
+                            .unwrap_or_else(|| member.user.default_avatar_url())
+                    })
                 });
                 (
                     HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
+                    avatar_url.contains(".gif"),
                     format!("- {}", member.user.name),
                 )
             };
 
-            ImageInfo::new(&avatar_image, author_name, reply.content.to_string())
+            ImageInfo::new(
+                &avatar_image,
+                author_name,
+                reply.content.to_string(),
+                is_animated,
+            )
+            .await
         };
         let message_url = reply.link();
         let attachment = CreateAttachment::bytes(
             image_handle.current.clone(),
-            if image_handle.is_gif {
+            if image_handle.is_animated {
                 "quote.gif"
             } else {
                 "quote.webp"
@@ -727,7 +772,14 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 image_handle.toggle_gradient().await;
             }
             let mut msg = interaction.message;
-            final_attachment = CreateAttachment::bytes(image_handle.current.clone(), "quote.webp");
+            final_attachment = CreateAttachment::bytes(
+                image_handle.current.clone(),
+                if image_handle.is_animated {
+                    "quote.gif"
+                } else {
+                    "quote.webp"
+                },
+            );
             msg.edit(
                 ctx.http(),
                 EditMessage::default().new_attachment(final_attachment.clone()),

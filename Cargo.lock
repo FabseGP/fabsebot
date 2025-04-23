@@ -875,11 +875,10 @@ checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
 name = "extract_map"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a9e980337a2c3c8ae96aa6470326be4e848f6276737c6c0f82e73a26f2376fc"
+checksum = "aaf88a1437e65012d2e1b085692899aa2231b011109f2dac8c92885e04bfcb8b"
 dependencies = [
- "gat-lending-iterator",
  "hashbrown 0.15.2",
  "serde",
 ]
@@ -1096,12 +1095,6 @@ checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 dependencies = [
  "byteorder",
 ]
-
-[[package]]
-name = "gat-lending-iterator"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9af1174056216fca07a0c9585aed69d46aefb1107721ea30c379660329443c7"
 
 [[package]]
 name = "generator"
@@ -2227,7 +2220,7 @@ dependencies = [
  "futures-util",
  "opentelemetry",
  "percent-encoding",
- "rand 0.9.0",
+ "rand 0.9.1",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
@@ -2430,7 +2423,7 @@ dependencies = [
 [[package]]
 name = "poise"
 version = "0.6.1"
-source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#a1edcc09085be800a8593602910d2a09eaf986dc"
+source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#248647a906e318d463f11cf0624e01ef893d2233"
 dependencies = [
  "async-trait",
  "derivative",
@@ -2448,7 +2441,7 @@ dependencies = [
 [[package]]
 name = "poise_macros"
 version = "0.6.1"
-source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#a1edcc09085be800a8593602910d2a09eaf986dc"
+source = "git+https://github.com/serenity-rs/poise?branch=serenity-next#248647a906e318d463f11cf0624e01ef893d2233"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -2609,7 +2602,7 @@ checksum = "b820744eb4dc9b57a3398183639c511b5a26d2ed702cedd3febaa1393caa22cc"
 dependencies = [
  "bytes",
  "getrandom 0.3.2",
- "rand 0.9.0",
+ "rand 0.9.1",
  "ring",
  "rustc-hash",
  "rustls",
@@ -2663,13 +2656,12 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
+checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.3",
- "zerocopy",
 ]
 
 [[package]]
@@ -2990,9 +2982,9 @@ dependencies = [
 
 [[package]]
 name = "rustfft"
-version = "6.2.0"
+version = "6.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43806561bc506d0c5d160643ad742e3161049ac01027b5e6d7524091fd401d86"
+checksum = "f266ff9b0cfc79de11fd5af76a2bc672fe3ace10c96fa06456740fa70cb1ed49"
 dependencies = [
  "num-complex",
  "num-integer",
@@ -3296,7 +3288,7 @@ dependencies = [
 [[package]]
 name = "serenity"
 version = "0.12.4"
-source = "git+https://github.com/serenity-rs/serenity?branch=next#5209741e7a963b7111af6ee92f7abf2c6fc8b708"
+source = "git+https://github.com/serenity-rs/serenity?branch=next#f4699c7095dc2e8eae11c2948f9747a2b184a4af"
 dependencies = [
  "aformat",
  "arrayvec",
@@ -3411,9 +3403,9 @@ dependencies = [
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.4.2"
+version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9e9e0b4211b72e7b8b6e85c807d36c212bdb33ea8587f7569562a84df5465b1"
+checksum = "9203b8055f63a2a00e2f593bb0510367fe707d7ff1e5c872de2f537b339e5410"
 dependencies = [
  "libc",
 ]
@@ -3518,7 +3510,7 @@ dependencies = [
  "nonmax",
  "parking_lot",
  "pin-project",
- "rand 0.9.0",
+ "rand 0.9.1",
  "reqwest",
  "ringbuf",
  "rubato",
@@ -4227,9 +4219,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-websockets"
-version = "0.11.3"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbc46f9dc832c663a5db08513162001a29ac820913275d58943f942c2bc1c435"
+checksum = "9fcaf159b4e7a376b05b5bfd77bfd38f3324f5fce751b4213bfc7eaa47affb4e"
 dependencies = [
  "base64",
  "bytes",
@@ -4488,7 +4480,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
- "rand 0.9.0",
+ "rand 0.9.1",
  "rustls",
  "rustls-pki-types",
  "sha1",

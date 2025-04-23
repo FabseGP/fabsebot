@@ -2,7 +2,7 @@ use crate::config::constants::{DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, QUOTE_HEIGHT, 
 
 use ab_glyph::{FontArc, PxScale};
 use image::{
-    AnimationDecoder, Frame,
+    AnimationDecoder, Frame, GenericImage, ImageBuffer,
     ImageFormat::WebP,
     Rgba, RgbaImage,
     codecs::gif::{GifDecoder, GifEncoder, Repeat::Infinite},
@@ -277,7 +277,8 @@ fn apply_text_layout(
 }
 
 pub fn quote_image(
-    avatar_bytes: &[u8],
+    avatar_bytes: Option<&[u8]>,
+    avatar_resized: Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
     author_name: &str,
     quoted_content: &str,
     author_font: &FontArc,
@@ -287,30 +288,16 @@ pub fn quote_image(
     is_light: bool,
     is_colour: bool,
     is_gradient: bool,
-) -> (Vec<u8>, bool) {
+    is_animated: bool,
+) -> (Vec<u8>, Option<ImageBuffer<Rgba<u8>, Vec<u8>>>) {
     let avatar_position = if is_reverse {
         i64::from(QUOTE_WIDTH - QUOTE_HEIGHT)
     } else {
         0
     };
 
-    let decoder = GifDecoder::new(Cursor::new(avatar_bytes));
-
-    if decoder.is_err() {
-        let (mut img, text_colour) = get_base_image(theme, is_light);
-        let mut avatar_image = resize(
-            &load_from_memory(avatar_bytes).unwrap().to_rgba8(),
-            QUOTE_HEIGHT,
-            QUOTE_HEIGHT,
-            FilterType::CatmullRom,
-        );
-        if !is_colour {
-            convert_to_bw(&mut avatar_image);
-        }
-        if is_gradient {
-            apply_gradient_to_avatar(&mut avatar_image, is_reverse);
-        }
-        overlay(&mut img, &avatar_image, avatar_position, 0);
+    if is_animated && let Some(avatar_bytes) = avatar_bytes {
+        let (mut text_template, text_colour) = get_base_image(theme, is_light);
         let text_layout = prepare_text_layout(
             quoted_content,
             author_name,
@@ -319,14 +306,79 @@ pub fn quote_image(
             is_reverse,
             text_colour,
         );
-        apply_text_layout(&mut img, &text_layout, content_font, author_font);
 
-        let mut output = Vec::with_capacity(img.len());
-        img.write_to(&mut Cursor::new(&mut output), WebP).unwrap();
-        return (output, false);
+        let mut frames = GifDecoder::new(Cursor::new(avatar_bytes))
+            .unwrap()
+            .into_frames();
+
+        let mut output = Vec::with_capacity(text_template.len() * 3);
+
+        apply_text_layout(&mut text_template, &text_layout, content_font, author_font);
+
+        let mut quote_frame = text_template.clone();
+        let mut avatar_frame;
+
+        {
+            let mut gif_encoder = GifEncoder::new_with_speed(&mut output, 10);
+            gif_encoder.set_repeat(Infinite).unwrap();
+
+            let mut count = 0;
+
+            while let Some(Ok(frame)) = frames.next() {
+                avatar_frame = resize(
+                    frame.buffer(),
+                    QUOTE_HEIGHT,
+                    QUOTE_HEIGHT,
+                    FilterType::Nearest,
+                );
+
+                if !is_colour {
+                    convert_to_bw(&mut avatar_frame);
+                }
+                if is_gradient {
+                    apply_gradient_to_avatar(&mut avatar_frame, is_reverse);
+                }
+
+                quote_frame.copy_from(&text_template, 0, 0).unwrap();
+                overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
+
+                gif_encoder
+                    .encode_frame(Frame::from_parts(quote_frame.clone(), 0, 0, frame.delay()))
+                    .unwrap();
+
+                count += 1;
+
+                if count > 30 {
+                    break;
+                }
+            }
+        }
+
+        return (output, None);
     }
 
-    let (base_image, text_colour) = get_base_image(theme, is_light);
+    let (mut img, text_colour) = get_base_image(theme, is_light);
+
+    let mut avatar_image = avatar_resized.map_or_else(
+        || {
+            resize(
+                &load_from_memory(avatar_bytes.unwrap()).unwrap().to_rgba8(),
+                QUOTE_HEIGHT,
+                QUOTE_HEIGHT,
+                FilterType::Triangle,
+            )
+        },
+        |avatar_resized| avatar_resized,
+    );
+
+    if !is_colour {
+        convert_to_bw(&mut avatar_image);
+    }
+    if is_gradient {
+        apply_gradient_to_avatar(&mut avatar_image, is_reverse);
+    }
+
+    overlay(&mut img, &avatar_image, avatar_position, 0);
     let text_layout = prepare_text_layout(
         quoted_content,
         author_name,
@@ -335,42 +387,19 @@ pub fn quote_image(
         is_reverse,
         text_colour,
     );
+    apply_text_layout(&mut img, &text_layout, content_font, author_font);
 
-    let frames = decoder.unwrap().into_frames().collect_frames().unwrap();
+    let mut output = Vec::with_capacity(img.len());
+    img.write_to(&mut Cursor::new(&mut output), WebP).unwrap();
 
-    let mut output = Vec::with_capacity(base_image.len() * 2 * frames.len());
-
-    {
-        let mut gif_encoder = GifEncoder::new(&mut output);
-        gif_encoder.set_repeat(Infinite).unwrap();
-
-        for frame in frames {
-            let mut quote_frame = base_image.clone();
-
-            let mut avatar_frame = resize(
-                frame.buffer(),
-                QUOTE_HEIGHT,
-                QUOTE_HEIGHT,
-                FilterType::CatmullRom,
-            );
-
-            if !is_colour {
-                convert_to_bw(&mut avatar_frame);
-            }
-            if is_gradient {
-                apply_gradient_to_avatar(&mut avatar_frame, is_reverse);
-            }
-
-            overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
-            apply_text_layout(&mut quote_frame, &text_layout, content_font, author_font);
-
-            gif_encoder
-                .encode_frame(Frame::from_parts(quote_frame, 0, 0, frame.delay()))
-                .unwrap();
-        }
-    }
-
-    (output, true)
+    (
+        output,
+        if avatar_bytes.is_none() {
+            Some(avatar_image)
+        } else {
+            None
+        },
+    )
 }
 
 pub fn convert_to_bw(image: &mut RgbaImage) {

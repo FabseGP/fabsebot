@@ -11,11 +11,10 @@ use mini_moka::sync::Cache;
 use poise::{
     Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions,
     serenity_prelude::{
-        ActivityData, Client, CreateAttachment, EditProfile, GatewayIntents, OnlineStatus::Online,
-        Token, cache::Settings,
+        ActivityData, Client, CreateAllowedMentions, CreateAttachment, EditProfile, GatewayIntents,
+        OnlineStatus::Online, Token, cache::Settings,
     },
 };
-use serenity::all::CreateAllowedMentions;
 use songbird::{Config, Songbird, driver::DecodeMode::Decode};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use std::{str::FromStr, sync::Arc};
@@ -192,19 +191,23 @@ pub async fn bot_start(
                 .edit_profile(
                     &EditProfile::default()
                         .avatar(
-                            &CreateAttachment::url(
+                            CreateAttachment::url(
                                 &client.http,
                                 &bot_config.avatar,
                                 "bot_avatar.gif",
                             )
+                            .await?
+                            .encode()
                             .await?,
                         )
                         .banner(
-                            &CreateAttachment::url(
+                            CreateAttachment::url(
                                 &client.http,
                                 &bot_config.banner,
                                 "bot_banner.gif",
                             )
+                            .await?
+                            .encode()
                             .await?,
                         )
                         .username(&bot_config.username),
