@@ -23,6 +23,10 @@ const FONT_SIZE_DECREMENT: f32 = 2.0;
 const WRAP_LENGTH_DECREMENT: usize = 5;
 const LINE_SPACING: u32 = 10;
 
+const R_WEIGHT: u32 = 77;
+const G_WEIGHT: u32 = 150;
+const B_WEIGHT: u32 = 29;
+
 struct FontMetrics {
     line_height: u32,
     scale: PxScale,
@@ -50,10 +54,6 @@ pub struct TextLayout {
 }
 
 fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontArc) -> String {
-    if text.len() <= ELLIPSIS.len() {
-        return text.to_string();
-    }
-
     let mut end = text.len() - ELLIPSIS.len();
     let mut truncated = format!("{}{}", &text[..end], ELLIPSIS);
 
@@ -173,14 +173,15 @@ fn prepare_text_layout(
             ((max_content_height / content_metrics.line_height) as usize).min(MAX_LINES);
 
         for (i, line) in wrapped_lines.iter().take(max_possible_lines).enumerate() {
-            let mut line_str = line.to_string();
-
-            if text_size(content_metrics.scale, content_font, &line_str).0 > max_content_width
-                || (i == max_possible_lines - 1 && wrapped_lines.len() > max_possible_lines)
+            let line_str = if (text_size(content_metrics.scale, content_font, line).0
+                > max_content_width
+                || (i == max_possible_lines - 1 && wrapped_lines.len() > max_possible_lines))
+                && line.len() > ELLIPSIS.len()
             {
-                line_str =
-                    truncate_text(&line_str, max_content_width, &content_metrics, content_font);
-            }
+                truncate_text(line, max_content_width, &content_metrics, content_font)
+            } else {
+                line.to_string()
+            };
 
             final_lines.push(line_str);
         }
@@ -440,10 +441,6 @@ pub fn quote_image(
 }
 
 pub fn convert_to_bw(image: &mut RgbaImage) {
-    const R_WEIGHT: u32 = 77;
-    const G_WEIGHT: u32 = 150;
-    const B_WEIGHT: u32 = 29;
-
     for pixel in image.pixels_mut() {
         let gray = u8::try_from(
             (u32::from(pixel[0]) * R_WEIGHT
