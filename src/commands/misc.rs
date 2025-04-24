@@ -3,7 +3,10 @@ use crate::{
         constants::{COLOUR_RED, FONTS},
         types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
     },
-    utils::{ai::ai_response_simple, image::quote_image},
+    utils::{
+        ai::ai_response_simple,
+        image::{TextLayout, quote_image},
+    },
 };
 
 use ab_glyph::FontArc;
@@ -495,6 +498,7 @@ struct ImageInfo {
     is_gradient: bool,
     content_font: FontArc,
     author_font: FontArc,
+    text_layout: Option<TextLayout>,
 }
 
 impl ImageInfo {
@@ -523,6 +527,7 @@ impl ImageInfo {
                 &author_font_clone,
                 &content_font_clone,
                 None,
+                None,
                 false,
                 false,
                 false,
@@ -531,7 +536,8 @@ impl ImageInfo {
             );
             tx.send(result).expect("Sender failed to send");
         });
-        let (image, avatar_resized) = rx.await.expect("Rayon task for quote_image panicked");
+        let (image, text_layout, avatar_resized) =
+            rx.await.expect("Rayon task for quote_image panicked");
         Self {
             avatar_image: if avatar_resized.is_some() {
                 None
@@ -549,6 +555,7 @@ impl ImageInfo {
             is_gradient: false,
             author_font,
             content_font,
+            text_layout,
         }
     }
 
@@ -584,6 +591,7 @@ impl ImageInfo {
         let content = self.content.clone();
         let author_font = self.author_font.clone();
         let content_font = self.content_font.clone();
+        let text_layout = self.text_layout.clone();
         let is_reverse = self.is_reverse;
         let is_light = self.is_light;
         let is_bw = self.is_bw;
@@ -594,7 +602,7 @@ impl ImageInfo {
 
         spawn(move || {
             let avatar_bytes = avatar_image.as_ref().map(|arc_vec| &arc_vec[..]);
-            let (image, _) = quote_image(
+            let (image, _, _) = quote_image(
                 avatar_bytes,
                 avatar_resized.as_deref().cloned(),
                 &author_name,
@@ -602,6 +610,7 @@ impl ImageInfo {
                 &author_font,
                 &content_font,
                 None,
+                text_layout.as_ref(),
                 is_reverse,
                 is_light,
                 is_bw,

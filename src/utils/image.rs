@@ -40,12 +40,13 @@ impl FontMetrics {
     }
 }
 
-struct TextLayout {
+#[derive(Clone, Debug)]
+pub struct TextLayout {
     content_lines: Vec<(String, i32, i32)>,
-    author_position: (String, i32, i32),
+    content_lines_reverse: Vec<(String, i32, i32)>,
+    author_position: (String, i32, i32, i32),
     content_scale: PxScale,
     author_scale: PxScale,
-    text_colour: Rgba<u8>,
 }
 
 fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontArc) -> String {
@@ -88,7 +89,7 @@ fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) {
     }
 }
 
-fn get_base_image(theme: Option<String>, is_light: bool) -> (RgbaImage, Rgba<u8>) {
+fn get_base_image(theme: Option<&str>, is_light: bool) -> (RgbaImage, Rgba<u8>) {
     theme.map_or_else(
         || {
             if is_light {
@@ -133,41 +134,38 @@ fn prepare_text_layout(
     author_name: &str,
     content_font: &FontArc,
     author_font: &FontArc,
-    is_reverse: bool,
-    text_colour: Rgba<u8>,
 ) -> TextLayout {
     let max_content_width = QUOTE_WIDTH - QUOTE_HEIGHT - 64;
     let max_content_height = QUOTE_HEIGHT - 64;
-    let text_offset = if is_reverse { 0 } else { QUOTE_HEIGHT / 2 };
 
     let mut content_metrics = FontMetrics::new(content_font, PxScale::from(MAX_CONTENT_FONT_SIZE));
     let author_metrics = FontMetrics::new(author_font, PxScale::from(AUTHOR_FONT_SIZE));
 
     let mut wrapped_length = DEFAULT_WRAP_LENGTH;
     let mut final_lines = Vec::with_capacity(MAX_LINES);
-    let mut line_positions = Vec::with_capacity(MAX_LINES);
+    let (mut line_positions, mut line_positions_reverse) =
+        (Vec::with_capacity(MAX_LINES), Vec::with_capacity(MAX_LINES));
 
     loop {
         let wrapped_lines = wrap(quoted_content, wrapped_length);
 
-        if let Some(first_line) = wrapped_lines.first() {
-            if text_size(content_metrics.scale, content_font, first_line).0 > max_content_width {
-                if content_metrics.scale.x == MIN_CONTENT_FONT_SIZE {
-                    wrapped_length = wrapped_length.saturating_sub(WRAP_LENGTH_DECREMENT);
-                    if wrapped_length < 20 {
-                        break;
-                    }
-                } else {
-                    content_metrics.recalculate(
-                        content_font,
-                        PxScale::from(
-                            (content_metrics.scale.x - FONT_SIZE_DECREMENT)
-                                .max(MIN_CONTENT_FONT_SIZE),
-                        ),
-                    );
+        if let Some(first_line) = wrapped_lines.first()
+            && text_size(content_metrics.scale, content_font, first_line).0 > max_content_width
+        {
+            if content_metrics.scale.x == MIN_CONTENT_FONT_SIZE {
+                wrapped_length = wrapped_length.saturating_sub(WRAP_LENGTH_DECREMENT);
+                if wrapped_length < 20 {
+                    break;
                 }
-                continue;
+            } else {
+                content_metrics.recalculate(
+                    content_font,
+                    PxScale::from(
+                        (content_metrics.scale.x - FONT_SIZE_DECREMENT).max(MIN_CONTENT_FONT_SIZE),
+                    ),
+                );
             }
+            continue;
         }
 
         final_lines.clear();
@@ -215,22 +213,22 @@ fn prepare_text_layout(
 
     for line in final_lines {
         let line_width = text_size(content_metrics.scale, content_font, &line).0;
-        let line_x = if is_reverse {
-            i32::try_from((QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2).unwrap()
-        } else {
-            i32::try_from(QUOTE_HEIGHT + (QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2).unwrap()
-        };
+        let (line_x, line_x_reverse) = (
+            i32::try_from(QUOTE_HEIGHT + (QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2).unwrap(),
+            i32::try_from((QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2).unwrap(),
+        );
 
-        line_positions.push((line, line_x, current_y));
+        line_positions.push((line.clone(), line_x, current_y));
+        line_positions_reverse.push((line, line_x_reverse, current_y));
         current_y += i32::try_from(content_metrics.line_height + LINE_SPACING).unwrap();
     }
 
     let author_name_width = text_size(author_metrics.scale, author_font, author_name).0;
-    let author_x = if is_reverse {
-        i32::try_from((QUOTE_WIDTH - QUOTE_HEIGHT - author_name_width) / 2).unwrap()
-    } else {
-        i32::try_from(((QUOTE_WIDTH - author_name_width) / 2) + text_offset).unwrap()
-    };
+    let (author_x, author_x_reverse) = (
+        i32::try_from(((QUOTE_WIDTH - author_name_width) / 2) + (QUOTE_HEIGHT / 2)).unwrap(),
+        i32::try_from((QUOTE_WIDTH - QUOTE_HEIGHT - author_name_width) / 2).unwrap(),
+    );
+
     let author_y = if line_positions.len() == 1 {
         i32::try_from(quoted_content_y + total_text_height + LINE_SPACING * 3).unwrap()
     } else {
@@ -239,23 +237,34 @@ fn prepare_text_layout(
 
     TextLayout {
         content_lines: line_positions,
-        author_position: (author_name.to_string(), author_x, author_y),
+        content_lines_reverse: line_positions_reverse,
+        author_position: (
+            author_name.to_string(),
+            author_x,
+            author_x_reverse,
+            author_y,
+        ),
         content_scale: content_metrics.scale,
         author_scale: author_metrics.scale,
-        text_colour,
     }
 }
 
 fn apply_text_layout(
     img: &mut RgbaImage,
     layout: &TextLayout,
+    text_colour: Rgba<u8>,
     content_font: &FontArc,
     author_font: &FontArc,
+    is_reverse: bool,
 ) {
-    for (line, x, y) in &layout.content_lines {
+    for (line, x, y) in if is_reverse {
+        &layout.content_lines_reverse
+    } else {
+        &layout.content_lines
+    } {
         draw_text_mut(
             img,
-            layout.text_colour,
+            text_colour,
             *x,
             *y,
             layout.content_scale,
@@ -264,10 +273,18 @@ fn apply_text_layout(
         );
     }
 
-    let (author_text, x, y) = &layout.author_position;
+    let (author_text, x, y) = &(
+        &layout.author_position.0,
+        if is_reverse {
+            layout.author_position.2
+        } else {
+            layout.author_position.1
+        },
+        layout.author_position.3,
+    );
     draw_text_mut(
         img,
-        layout.text_colour,
+        text_colour,
         *x,
         *y,
         layout.author_scale,
@@ -283,39 +300,49 @@ pub fn quote_image(
     quoted_content: &str,
     author_font: &FontArc,
     content_font: &FontArc,
-    theme: Option<String>,
+    theme: Option<&str>,
+    text: Option<&TextLayout>,
     is_reverse: bool,
     is_light: bool,
     is_colour: bool,
     is_gradient: bool,
     is_animated: bool,
-) -> (Vec<u8>, Option<ImageBuffer<Rgba<u8>, Vec<u8>>>) {
+) -> (
+    Vec<u8>,
+    Option<TextLayout>,
+    Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
+) {
     let avatar_position = if is_reverse {
         i64::from(QUOTE_WIDTH - QUOTE_HEIGHT)
     } else {
         0
     };
 
-    if is_animated && let Some(avatar_bytes) = avatar_bytes {
-        let (mut text_template, text_colour) = get_base_image(theme, is_light);
-        let text_layout = prepare_text_layout(
-            quoted_content,
-            author_name,
-            content_font,
-            author_font,
-            is_reverse,
-            text_colour,
-        );
+    let (mut img, text_colour) = get_base_image(theme, is_light);
 
+    let text_layout = if let Some(text_layout) = text {
+        text_layout
+    } else {
+        &prepare_text_layout(quoted_content, author_name, content_font, author_font)
+    };
+
+    if is_animated && let Some(avatar_bytes) = avatar_bytes {
         let mut frames = GifDecoder::new(Cursor::new(avatar_bytes))
             .unwrap()
             .into_frames();
 
-        let mut output = Vec::with_capacity(text_template.len() * 3);
+        let mut output = Vec::with_capacity(img.len() * 2);
 
-        apply_text_layout(&mut text_template, &text_layout, content_font, author_font);
+        apply_text_layout(
+            &mut img,
+            text_layout,
+            text_colour,
+            content_font,
+            author_font,
+            is_reverse,
+        );
 
-        let mut quote_frame = text_template.clone();
+        let mut quote_frame = img.clone();
         let mut avatar_frame;
 
         {
@@ -339,7 +366,7 @@ pub fn quote_image(
                     apply_gradient_to_avatar(&mut avatar_frame, is_reverse);
                 }
 
-                quote_frame.copy_from(&text_template, 0, 0).unwrap();
+                quote_frame.copy_from(&img, 0, 0).unwrap();
                 overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
 
                 gif_encoder
@@ -354,10 +381,16 @@ pub fn quote_image(
             }
         }
 
-        return (output, None);
+        return (
+            output,
+            if text.is_none() {
+                Some(text_layout.clone())
+            } else {
+                None
+            },
+            None,
+        );
     }
-
-    let (mut img, text_colour) = get_base_image(theme, is_light);
 
     let mut avatar_image = avatar_resized.map_or_else(
         || {
@@ -379,21 +412,25 @@ pub fn quote_image(
     }
 
     overlay(&mut img, &avatar_image, avatar_position, 0);
-    let text_layout = prepare_text_layout(
-        quoted_content,
-        author_name,
+    apply_text_layout(
+        &mut img,
+        text_layout,
+        text_colour,
         content_font,
         author_font,
         is_reverse,
-        text_colour,
     );
-    apply_text_layout(&mut img, &text_layout, content_font, author_font);
 
     let mut output = Vec::with_capacity(img.len());
     img.write_to(&mut Cursor::new(&mut output), WebP).unwrap();
 
     (
         output,
+        if text.is_none() {
+            Some(text_layout.clone())
+        } else {
+            None
+        },
         if avatar_bytes.is_none() {
             Some(avatar_image)
         } else {
