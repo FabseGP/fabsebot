@@ -146,14 +146,26 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
             .await
             .context("Failed to acquire savepoint")?;
         {
-            let mut modified_settings = data
-                .user_settings
-                .lock()
-                .await
-                .get(&guild_id)
-                .unwrap_or_default()
-                .as_ref()
-                .clone();
+            let mut modified_settings = {
+                let user_settings = data.user_settings.lock().await;
+                if !user_settings.contains_key(&guild_id) {
+                    query!(
+                        "INSERT INTO guilds (guild_id)
+                        VALUES ($1)
+                        ON CONFLICT (guild_id)
+                        DO NOTHING",
+                        guild_id_i64
+                    )
+                    .execute(&mut *tx)
+                    .await?;
+                }
+                user_settings
+                    .get(&guild_id)
+                    .unwrap_or_default()
+                    .as_ref()
+                    .clone()
+            };
+
             for target in modified_settings.iter_mut().map(|t| t.1) {
                 let user_id = UserId::new(
                     u64::try_from(target.user_id).expect("user id out of bounds for u64"),
@@ -185,7 +197,7 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
                                 .await?;
                         }
                         query!(
-                        "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
+                            "UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL WHERE guild_id = $1 AND user_id = $2",
                             guild_id_i64,
                             target.user_id,
                         )
