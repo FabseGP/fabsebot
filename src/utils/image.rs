@@ -308,6 +308,7 @@ pub fn quote_image(
     is_colour: bool,
     is_gradient: bool,
     is_animated: bool,
+    new_font: bool,
 ) -> (
     Vec<u8>,
     Option<TextLayout>,
@@ -321,7 +322,9 @@ pub fn quote_image(
 
     let (mut img, text_colour) = get_base_image(theme, is_light);
 
-    let text_layout = if let Some(text_layout) = text {
+    let text_layout = if let Some(text_layout) = text
+        && !new_font
+    {
         text_layout
     } else {
         &prepare_text_layout(quoted_content, author_name, content_font, author_font)
@@ -384,7 +387,7 @@ pub fn quote_image(
 
         return (
             output,
-            if text.is_none() {
+            if text.is_none() || new_font {
                 Some(text_layout.clone())
             } else {
                 None
@@ -427,7 +430,7 @@ pub fn quote_image(
 
     (
         output,
-        if text.is_none() {
+        if text.is_none() || new_font {
             Some(text_layout.clone())
         } else {
             None

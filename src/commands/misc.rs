@@ -496,8 +496,10 @@ struct ImageInfo {
     is_reverse: bool,
     is_light: bool,
     is_gradient: bool,
+    new_font: bool,
     content_font: FontArc,
     author_font: FontArc,
+    current_font_name: String,
     text_layout: Option<TextLayout>,
 }
 
@@ -510,6 +512,7 @@ impl ImageInfo {
     ) -> Self {
         let content_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
         let author_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
+        let current_font_name = FONTS[0].0.to_string();
         let (tx, rx) = oneshot::channel();
 
         let avatar_image_clone = avatar_image.to_vec();
@@ -533,6 +536,7 @@ impl ImageInfo {
                 false,
                 false,
                 is_animated,
+                false,
             );
             tx.send(result).expect("Sender failed to send");
         });
@@ -553,8 +557,10 @@ impl ImageInfo {
             is_reverse: false,
             is_light: false,
             is_gradient: false,
+            new_font: false,
             author_font,
             content_font,
+            current_font_name,
             text_layout,
         }
     }
@@ -579,8 +585,10 @@ impl ImageInfo {
         self.image_gen().await;
     }
 
-    async fn new_font(&mut self, new_font: FontArc) {
+    async fn new_font(&mut self, font_name: &str, new_font: FontArc) {
         self.content_font = new_font;
+        self.current_font_name = font_name.to_string();
+        self.new_font = true;
         self.image_gen().await;
     }
 
@@ -597,12 +605,13 @@ impl ImageInfo {
         let is_bw = self.is_bw;
         let is_gradient = self.is_gradient;
         let is_animated = self.is_animated;
+        let new_font = self.new_font;
 
         let (tx, rx) = oneshot::channel();
 
         spawn(move || {
             let avatar_bytes = avatar_image.as_ref().map(|arc_vec| &arc_vec[..]);
-            let (image, _, _) = quote_image(
+            let (image, text_layout, _) = quote_image(
                 avatar_bytes,
                 avatar_resized.as_deref().cloned(),
                 &author_name,
@@ -616,10 +625,17 @@ impl ImageInfo {
                 is_bw,
                 is_gradient,
                 is_animated,
+                new_font,
             );
-            tx.send(image).expect("Sender failed to send");
+            tx.send((image, text_layout))
+                .expect("Sender failed to send");
         });
-        self.current = rx.await.expect("Rayon task for quote_image panicked");
+        let (image, text_layout) = rx.await.expect("Rayon task for quote_image panicked");
+        if new_font {
+            self.new_font = false;
+            self.text_layout = text_layout;
+        }
+        self.current = image;
     }
 }
 
@@ -767,9 +783,10 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 
             if let Some(font_choice) = menu_choice
                 && let Some(font) = FONTS.iter().find(|font| font.0 == font_choice)
+                && font.0 != image_handle.current_font_name
             {
                 image_handle
-                    .new_font(FontArc::try_from_slice(font.1).unwrap())
+                    .new_font(font.0, FontArc::try_from_slice(font.1).unwrap())
                     .await;
             } else if interaction.data.custom_id.ends_with("bw") {
                 image_handle.toggle_bw().await;
