@@ -8,7 +8,7 @@ ab_glyph = "*"
 anyhow = "*"
 base64 = "*"
 bytes = "*"
-dashmap = { version = "*", features = ["inline"] }
+dashmap = { version = "*" }
 fastrand = "*"
 image = { version = "*", default-features = false, features = ["gif", "rayon", "webp"] }
 imageproc = { version = "*", default-features = false, features = ["rayon"] }
@@ -18,10 +18,10 @@ opentelemetry-otlp = { version = "*", default-features = false, features = ["grp
 opentelemetry_sdk = { version = "*", default-features = false, features = ["rt-tokio", "trace"] }
 poise = { git = "https://github.com/serenity-rs/poise", branch = "serenity-next" }
 rayon = "*"
-reqwest = { version = "*", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "*", default-features = false, features = ["rustls-tls"] }
 scraper = "*"
 serde = "*"
-serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "rustls_backend", "voice"] }
+serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
 songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
 sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio", "tls-rustls"] }
 symphonia = { version = "*", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }
