@@ -236,11 +236,12 @@ fn prepare_text_layout(
         let line_width = text_size(content_metrics.scale, content_font, &line).0;
         let (line_x, line_x_reverse) = (
             i32::try_from(
-                QUOTE_HEIGHT
-                    .saturating_add(QUOTE_WIDTH)
-                    .saturating_sub(QUOTE_HEIGHT)
-                    .saturating_sub(line_width)
+                QUOTE_HEIGHT.saturating_add(
+                    (QUOTE_WIDTH
+                        .saturating_sub(QUOTE_HEIGHT)
+                        .saturating_sub(line_width))
                     .saturating_div(2),
+                ),
             )?,
             i32::try_from(
                 QUOTE_WIDTH
