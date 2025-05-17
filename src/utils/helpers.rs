@@ -13,6 +13,7 @@ use winnow::{
     ModalResult, Parser as _,
     ascii::digit1,
     combinator::{delimited, preceded, separated_pair},
+    error::{ContextError, ErrMode},
     token::take_till,
 };
 
@@ -106,13 +107,19 @@ fn emoji_name(input: &mut &str) -> ModalResult<String> {
 }
 
 pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink> {
-    let channel_prefix = if input.starts_with(DISCORD_CHANNEL_DEFAULT_PREFIX) {
+    let channel_prefix = if let Some(index) = input.find(DISCORD_CHANNEL_DEFAULT_PREFIX) {
+        *input = &input[index..];
         DISCORD_CHANNEL_DEFAULT_PREFIX
-    } else if input.starts_with(DISCORD_CHANNEL_PTB_PREFIX) {
+    } else if let Some(index) = input.find(DISCORD_CHANNEL_CANARY_PREFIX) {
+        *input = &input[index..];
+        DISCORD_CHANNEL_DEFAULT_PREFIX
+    } else if let Some(index) = input.find(DISCORD_CHANNEL_PTB_PREFIX) {
+        *input = &input[index..];
         DISCORD_CHANNEL_PTB_PREFIX
     } else {
-        DISCORD_CHANNEL_CANARY_PREFIX
+        return Err(ErrMode::Cut(ContextError::new()));
     };
+
     let (guild_id, (channel_id, message_id)) = preceded(
         channel_prefix,
         separated_pair(discord_id, '/', separated_pair(discord_id, '/', discord_id)),
