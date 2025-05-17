@@ -22,6 +22,7 @@ use poise::{
 };
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
+use tracing::warn;
 use urlencoding::encode;
 
 struct State {
@@ -75,55 +76,49 @@ pub async fn ai_image(
     let request = ImageRequest {
         prompt: format!("{prompt} {rand_num}"),
     };
-    let utils_config = UTILS_CONFIG
-        .get()
-        .expect("UTILS_CONFIG must be set during initialization");
-    let resp = HTTP_CLIENT
-        .post(&utils_config.api.cloudflare_image_gen)
-        .bearer_auth(&utils_config.api.cloudflare_token)
-        .json(&request)
-        .send()
-        .await?;
-
-    if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
-        && resp_parsed.success
-    {
-        ctx.send(
-            CreateReply::default()
-                .reply(true)
-                .attachment(CreateAttachment::bytes(
-                    general_purpose::STANDARD
-                        .decode(resp_parsed.result.image)
-                        .unwrap(),
-                    "output.png",
-                )),
-        )
-        .await?;
-    } else {
-        let resp = HTTP_CLIENT
-            .post(&utils_config.api.cloudflare_image_gen_fallback)
-            .bearer_auth(&utils_config.api.cloudflare_token_fallback)
+    if let Some(utils_config) = UTILS_CONFIG.get() {
+        let mut resp = HTTP_CLIENT
+            .post(&utils_config.api.cloudflare_image_gen)
+            .bearer_auth(&utils_config.api.cloudflare_token)
             .json(&request)
             .send()
             .await?;
+
         if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
             && resp_parsed.success
+            && let Ok(img_dec) = general_purpose::STANDARD.decode(resp_parsed.result.image)
         {
             ctx.send(
                 CreateReply::default()
                     .reply(true)
-                    .attachment(CreateAttachment::bytes(
-                        general_purpose::STANDARD
-                            .decode(resp_parsed.result.image)
-                            .unwrap(),
-                        "output.png",
-                    )),
+                    .attachment(CreateAttachment::bytes(img_dec, "output.png")),
             )
             .await?;
         } else {
-            ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
+            resp = HTTP_CLIENT
+                .post(&utils_config.api.cloudflare_image_gen_fallback)
+                .bearer_auth(&utils_config.api.cloudflare_token_fallback)
+                .json(&request)
+                .send()
                 .await?;
+            if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
+                && resp_parsed.success
+                && let Ok(img_dec) = general_purpose::STANDARD.decode(resp_parsed.result.image)
+            {
+                ctx.send(
+                    CreateReply::default()
+                        .reply(true)
+                        .attachment(CreateAttachment::bytes(img_dec, "output.png")),
+                )
+                .await?;
+            } else {
+                ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
+                    .await?;
+            }
         }
+    } else {
+        ctx.reply("User err- I mean, system error. Please standby")
+            .await?;
     }
 
     Ok(())
@@ -142,41 +137,43 @@ pub async fn ai_text(
     prompt: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;
-    let utils_config = UTILS_CONFIG
-        .get()
-        .expect("UTILS_CONFIG must be set during initialization");
-    if let Some(resp) =
-        ai_response_simple(&role, &prompt, &utils_config.fabseserver.text_gen_model).await
-        && !resp.is_empty()
-    {
-        let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
-        let mut current_chunk = String::with_capacity(1024);
-        let mut chunk_index = 0;
-        for ch in resp.chars() {
-            if current_chunk.len() >= 1024 {
+    if let Some(utils_config) = UTILS_CONFIG.get() {
+        if let Some(resp) =
+            ai_response_simple(&role, &prompt, &utils_config.fabseserver.text_gen_model).await
+            && !resp.is_empty()
+        {
+            let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
+            let mut current_chunk = String::with_capacity(1024);
+            let mut chunk_index: u32 = 0;
+            for ch in resp.chars() {
+                if current_chunk.len() >= 1024 {
+                    let field_name = if chunk_index == 0 {
+                        "Response:".to_owned()
+                    } else {
+                        format!("Response (cont. {}):", chunk_index.saturating_add(1))
+                    };
+                    embed = embed.field(field_name, current_chunk, false);
+                    current_chunk = String::with_capacity(1024);
+                    chunk_index = chunk_index.saturating_add(1);
+                }
+                current_chunk.push(ch);
+            }
+            if !current_chunk.is_empty() {
                 let field_name = if chunk_index == 0 {
                     "Response:".to_owned()
                 } else {
-                    format!("Response (cont. {}):", chunk_index + 1)
+                    format!("Response (cont. {}):", chunk_index.saturating_add(1))
                 };
                 embed = embed.field(field_name, current_chunk, false);
-                current_chunk = String::with_capacity(1024);
-                chunk_index += 1;
             }
-            current_chunk.push(ch);
+            ctx.send(CreateReply::default().embed(embed).reply(true))
+                .await?;
+        } else {
+            ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
+                .await?;
         }
-        if !current_chunk.is_empty() {
-            let field_name = if chunk_index == 0 {
-                "Response:".to_owned()
-            } else {
-                format!("Response (cont. {}):", chunk_index + 1)
-            };
-            embed = embed.field(field_name, current_chunk, false);
-        }
-        ctx.send(CreateReply::default().embed(embed).reply(true))
-            .await?;
     } else {
-        ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
+        ctx.reply("User err- I mean, system error. Please standby")
             .await?;
     }
 
@@ -267,53 +264,56 @@ pub async fn anime(
     };
     if let Ok(resp) = HTTP_CLIENT.get(request_url).send().await {
         if let Ok(data) = resp.json::<AniMangaResponse<AnimeSpecific>>().await
-            && !data.data.is_empty()
+            && let Some(first_entry) = data.data.first()
         {
             let empty = String::new();
-            let japanese_title = data.data[0]
+            let mut japanese_title = first_entry
                 .titles
                 .iter()
                 .find(|t| t.title_type == "Japanese")
                 .map_or("No japanese title available", |t| t.title.as_str());
             let mut embed = CreateEmbed::default()
                 .title(japanese_title)
-                .thumbnail(&data.data[0].images.webp.image_url)
-                .url(&data.data[0].url)
+                .image(&first_entry.images.webp.image_url)
+                .url(&first_entry.url)
                 .colour(COLOUR_ORANGE);
-            if let Some(synopsis) = &data.data[0].synopsis {
+
+            if let Some(synopsis) = &first_entry.synopsis {
                 embed = embed.description(format!("*{synopsis}*"));
             }
-            embed = embed.field("Format", &data.data[0].anime_type, true);
-            embed = embed.field("Status", &data.data[0].status, true);
-            if let Some(english_title) = data.data[0]
+
+            embed = embed.field("Format", &first_entry.anime_type, true);
+            embed = embed.field("Status", &first_entry.status, true);
+
+            if let Some(english_title) = first_entry
                 .titles
                 .iter()
                 .find(|t| t.title_type == "English")
-                .map(|t| &t.title)
+                .map(|t| t.title.as_str())
             {
                 embed = embed.field("English title", english_title, true);
             }
             embed = embed.field("", &empty, false);
-            if let Some(score) = &data.data[0].score {
+            if let Some(score) = first_entry.score {
                 embed = embed.field("Score", score.to_string(), true);
             }
-            if let Some(popularity) = &data.data[0].popularity {
+            if let Some(popularity) = first_entry.popularity {
                 embed = embed.field("Popularity", popularity.to_string(), true);
             }
-            if let Some(favorites) = &data.data[0].favorites {
+            if let Some(favorites) = first_entry.favorites {
                 embed = embed.field("Favorites", favorites.to_string(), true);
             }
             embed = embed.field("", &empty, false);
-            if let Some(episodes) = &data.data[0].specific.episodes {
+            if let Some(episodes) = first_entry.specific.episodes {
                 embed = embed.field("Episodes", episodes.to_string(), true);
             }
-            if let Some(duration) = &data.data[0].specific.duration {
+            if let Some(duration) = &first_entry.specific.duration {
                 embed = embed.field("Duration", duration, true);
             }
-            if let Some(aired) = &data.data[0].specific.aired.aired_string {
+            if let Some(aired) = &first_entry.specific.aired.aired_string {
                 embed = embed.field("Aired", aired, true);
             }
-            let genres_string = &data.data[0]
+            let genres_string = &first_entry
                 .genres
                 .iter()
                 .map(|genre| genre.name.as_str())
@@ -359,69 +359,76 @@ pub async fn anime(
                         .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                         .await?;
 
-                    if interaction.data.custom_id.ends_with('n') && state.index < state.len - 1 {
-                        state.index += 1;
+                    if interaction.data.custom_id.ends_with('n')
+                        && state.index < state.len.saturating_sub(1)
+                    {
+                        state.index = state.index.saturating_add(1);
                     } else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-                        state.index -= 1;
+                        state.index = state.index.saturating_sub(1);
                     }
 
-                    let japanese_title = data.data[state.index]
+                    let Some(current_entry) = data.data.get(state.index) else {
+                        warn!("Invalid anime index: {}", state.index);
+                        continue;
+                    };
+
+                    japanese_title = current_entry
                         .titles
                         .iter()
                         .find(|t| t.title_type == "Japanese")
                         .map_or("No japanese title available", |t| t.title.as_str());
-                    let mut new_embed = CreateEmbed::default()
+                    embed = CreateEmbed::default()
                         .title(japanese_title)
-                        .thumbnail(&data.data[state.index].images.webp.image_url)
-                        .url(&data.data[state.index].url)
+                        .thumbnail(&current_entry.images.webp.image_url)
+                        .url(&current_entry.url)
                         .colour(COLOUR_ORANGE);
 
-                    if let Some(synopsis) = &data.data[state.index].synopsis {
-                        new_embed = new_embed.description(format!("*{synopsis}*"));
+                    if let Some(synopsis) = &current_entry.synopsis {
+                        embed = embed.description(format!("*{synopsis}*"));
                     }
-                    new_embed = new_embed.field("Format", &data.data[state.index].anime_type, true);
-                    new_embed = new_embed.field("Status", &data.data[state.index].status, true);
-                    if let Some(english_title) = data.data[state.index]
+                    embed = embed.field("Format", &current_entry.anime_type, true);
+                    embed = embed.field("Status", &current_entry.status, true);
+                    if let Some(english_title) = current_entry
                         .titles
                         .iter()
                         .find(|t| t.title_type == "English")
                         .map(|t| &t.title)
                     {
-                        new_embed = new_embed.field("English title", english_title, true);
+                        embed = embed.field("English title", english_title, true);
                     }
-                    new_embed = new_embed.field("", &empty, false);
-                    if let Some(score) = &data.data[state.index].score {
-                        new_embed = new_embed.field("Score", score.to_string(), true);
+                    embed = embed.field("", &empty, false);
+                    if let Some(score) = current_entry.score {
+                        embed = embed.field("Score", score.to_string(), true);
                     }
-                    if let Some(popularity) = &data.data[state.index].popularity {
-                        new_embed = new_embed.field("Popularity", popularity.to_string(), true);
+                    if let Some(popularity) = current_entry.popularity {
+                        embed = embed.field("Popularity", popularity.to_string(), true);
                     }
-                    if let Some(favorites) = &data.data[state.index].favorites {
-                        new_embed = new_embed.field("Favorites", favorites.to_string(), true);
+                    if let Some(favorites) = current_entry.favorites {
+                        embed = embed.field("Favorites", favorites.to_string(), true);
                     }
-                    new_embed = new_embed.field("", &empty, false);
-                    if let Some(episodes) = &data.data[state.index].specific.episodes {
-                        new_embed = new_embed.field("Episodes", episodes.to_string(), true);
+                    embed = embed.field("", &empty, false);
+                    if let Some(episodes) = current_entry.specific.episodes {
+                        embed = embed.field("Episodes", episodes.to_string(), true);
                     }
-                    if let Some(duration) = &data.data[state.index].specific.duration {
-                        new_embed = new_embed.field("Duration", duration, true);
+                    if let Some(duration) = &current_entry.specific.duration {
+                        embed = embed.field("Duration", duration, true);
                     }
-                    if let Some(aired) = &data.data[state.index].specific.aired.aired_string {
-                        new_embed = new_embed.field("Aired", aired, true);
+                    if let Some(aired) = &current_entry.specific.aired.aired_string {
+                        embed = embed.field("Aired", aired, true);
                     }
-                    let genres_string = data.data[state.index]
+                    let genres_string = current_entry
                         .genres
                         .iter()
                         .map(|genre| genre.name.as_str())
                         .intersperse(" - ")
                         .collect::<String>();
-                    new_embed = new_embed.field("Genres", genres_string, false);
-                    final_embed = new_embed.clone();
+                    embed = embed.field("Genres", genres_string, false);
+                    final_embed = embed.clone();
 
                     let new_components = {
                         if state.index == 0 {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                        } else if state.index == len - 1 {
+                        } else if state.index == len.saturating_sub(1) {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
                         } else {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
@@ -433,7 +440,7 @@ pub async fn anime(
                     msg.edit(
                         ctx.http(),
                         EditMessage::default()
-                            .embed(new_embed)
+                            .embed(embed)
                             .components(&new_components),
                     )
                     .await?;
@@ -613,10 +620,12 @@ pub async fn gif(
 ) -> Result<(), Error> {
     ctx.defer().await?;
     let urls = get_gifs(&input).await;
-    let embed = CreateEmbed::default()
+    let mut embed = CreateEmbed::default()
         .title(input.as_str())
-        .image(urls[0].clone())
         .colour(COLOUR_ORANGE);
+    if let Some(image_url) = urls.first() {
+        embed = embed.image(image_url.clone());
+    }
     let len = urls.len();
     if ctx.guild_id().is_some() && len > 1 {
         let mut state = State::new(ctx.id(), len);
@@ -655,22 +664,26 @@ pub async fn gif(
                 .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                 .await?;
 
-            if interaction.data.custom_id.ends_with('n') && state.index < state.len - 1 {
-                state.index += 1;
+            if interaction.data.custom_id.ends_with('n')
+                && state.index < state.len.saturating_sub(1)
+            {
+                state.index = state.index.saturating_add(1);
             } else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-                state.index -= 1;
+                state.index = state.index.saturating_sub(1);
             }
 
-            let new_embed = CreateEmbed::default()
+            embed = CreateEmbed::default()
                 .title(input.as_str())
-                .image(urls[state.index].clone())
                 .colour(COLOUR_ORANGE);
-            final_embed = new_embed.clone();
+            if let Some(image_url) = urls.get(state.index) {
+                embed = embed.image(image_url.clone());
+            }
+            final_embed = embed.clone();
 
             let new_components = {
                 if state.index == 0 {
                     [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                } else if state.index == len - 1 {
+                } else if state.index == len.saturating_sub(1) {
                     [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
                 } else {
                     [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
@@ -682,7 +695,7 @@ pub async fn gif(
             msg.edit(
                 ctx.http(),
                 EditMessage::default()
-                    .embed(new_embed)
+                    .embed(embed)
                     .components(&new_components),
             )
             .await?;
@@ -763,25 +776,25 @@ pub async fn manga(
     };
     if let Ok(resp) = HTTP_CLIENT.get(request_url).send().await {
         if let Ok(data) = resp.json::<AniMangaResponse<MangaSpecific>>().await
-            && !data.data.is_empty()
+            && let Some(first_entry) = data.data.first()
         {
             let empty = String::new();
-            let japanese_title = data.data[0]
+            let mut japanese_title = first_entry
                 .titles
                 .iter()
                 .find(|t| t.title_type == "Japanese")
                 .map_or("No japanese title available", |t| t.title.as_str());
             let mut embed = CreateEmbed::default()
                 .title(japanese_title)
-                .thumbnail(&data.data[0].images.webp.image_url)
-                .url(&data.data[0].url)
+                .thumbnail(&first_entry.images.webp.image_url)
+                .url(&first_entry.url)
                 .colour(COLOUR_ORANGE);
-            if let Some(synopsis) = &data.data[0].synopsis {
+            if let Some(synopsis) = &first_entry.synopsis {
                 embed = embed.description(format!("*{synopsis}*"));
             }
-            embed = embed.field("Format", &data.data[0].anime_type, true);
-            embed = embed.field("Status", &data.data[0].status, true);
-            if let Some(english_title) = data.data[0]
+            embed = embed.field("Format", &first_entry.anime_type, true);
+            embed = embed.field("Status", &first_entry.status, true);
+            if let Some(english_title) = first_entry
                 .titles
                 .iter()
                 .find(|t| t.title_type == "English")
@@ -790,26 +803,26 @@ pub async fn manga(
                 embed = embed.field("English title", english_title, true);
             }
             embed = embed.field("", &empty, false);
-            if let Some(score) = &data.data[0].score {
+            if let Some(score) = first_entry.score {
                 embed = embed.field("Score", score.to_string(), true);
             }
-            if let Some(popularity) = &data.data[0].popularity {
+            if let Some(popularity) = first_entry.popularity {
                 embed = embed.field("Popularity", popularity.to_string(), true);
             }
-            if let Some(favorites) = &data.data[0].favorites {
+            if let Some(favorites) = first_entry.favorites {
                 embed = embed.field("Favorites", favorites.to_string(), true);
             }
             embed = embed.field("", &empty, false);
-            if let Some(chapters) = &data.data[0].specific.chapters {
+            if let Some(chapters) = first_entry.specific.chapters {
                 embed = embed.field("Chapters", chapters.to_string(), true);
             }
-            if let Some(volumes) = &data.data[0].specific.volumes {
+            if let Some(volumes) = first_entry.specific.volumes {
                 embed = embed.field("Volumes", volumes.to_string(), true);
             }
-            if let Some(published) = &data.data[0].specific.published.aired_string {
+            if let Some(published) = &first_entry.specific.published.aired_string {
                 embed = embed.field("Published", published, true);
             }
-            let genres_string = &data.data[0]
+            let genres_string = &first_entry
                 .genres
                 .iter()
                 .map(|genre| genre.name.as_str())
@@ -855,70 +868,76 @@ pub async fn manga(
                         .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                         .await?;
 
-                    if interaction.data.custom_id.ends_with('n') && state.index < state.len - 1 {
-                        state.index += 1;
+                    if interaction.data.custom_id.ends_with('n')
+                        && state.index < state.len.saturating_sub(1)
+                    {
+                        state.index = state.index.saturating_add(1);
                     } else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-                        state.index -= 1;
+                        state.index = state.index.saturating_sub(1);
                     }
 
-                    let japanese_title = data.data[state.index]
+                    let Some(current_entry) = data.data.get(state.index) else {
+                        warn!("Invalid manga index: {}", state.index);
+                        continue;
+                    };
+
+                    japanese_title = current_entry
                         .titles
                         .iter()
                         .find(|t| t.title_type == "Japanese")
                         .map_or("No japanese title available", |t| t.title.as_str());
-                    let mut new_embed = CreateEmbed::default()
+                    embed = CreateEmbed::default()
                         .title(japanese_title)
-                        .thumbnail(&data.data[state.index].images.webp.image_url)
-                        .url(&data.data[state.index].url)
+                        .thumbnail(&current_entry.images.webp.image_url)
+                        .url(&current_entry.url)
                         .colour(COLOUR_ORANGE);
 
-                    if let Some(synopsis) = &data.data[state.index].synopsis {
-                        new_embed = new_embed.description(format!("*{synopsis}*"));
+                    if let Some(synopsis) = &current_entry.synopsis {
+                        embed = embed.description(format!("*{synopsis}*"));
                     }
-                    new_embed = new_embed.field("Format", &data.data[state.index].anime_type, true);
-                    new_embed = new_embed.field("Status", &data.data[state.index].status, true);
-                    if let Some(english_title) = data.data[state.index]
+                    embed = embed.field("Format", &current_entry.anime_type, true);
+                    embed = embed.field("Status", &current_entry.status, true);
+                    if let Some(english_title) = current_entry
                         .titles
                         .iter()
                         .find(|t| t.title_type == "English")
                         .map(|t| &t.title)
                     {
-                        new_embed = new_embed.field("English title", english_title, true);
+                        embed = embed.field("English title", english_title, true);
                     }
-                    new_embed = new_embed.field("", &empty, false);
-                    if let Some(score) = &data.data[state.index].score {
-                        new_embed = new_embed.field("Score", score.to_string(), true);
+                    embed = embed.field("", &empty, false);
+                    if let Some(score) = current_entry.score {
+                        embed = embed.field("Score", score.to_string(), true);
                     }
-                    if let Some(popularity) = &data.data[state.index].popularity {
-                        new_embed = new_embed.field("Popularity", popularity.to_string(), true);
+                    if let Some(popularity) = current_entry.popularity {
+                        embed = embed.field("Popularity", popularity.to_string(), true);
                     }
-                    if let Some(favorites) = &data.data[state.index].favorites {
-                        new_embed = new_embed.field("Favorites", favorites.to_string(), true);
+                    if let Some(favorites) = current_entry.favorites {
+                        embed = embed.field("Favorites", favorites.to_string(), true);
                     }
-                    new_embed = new_embed.field("", &empty, false);
-                    if let Some(chapters) = &data.data[state.index].specific.chapters {
-                        new_embed = new_embed.field("Chapters", chapters.to_string(), true);
+                    embed = embed.field("", &empty, false);
+                    if let Some(chapters) = current_entry.specific.chapters {
+                        embed = embed.field("Chapters", chapters.to_string(), true);
                     }
-                    if let Some(volumes) = &data.data[state.index].specific.volumes {
-                        new_embed = new_embed.field("Volumes", volumes.to_string(), true);
+                    if let Some(volumes) = current_entry.specific.volumes {
+                        embed = embed.field("Volumes", volumes.to_string(), true);
                     }
-                    if let Some(published) = &data.data[state.index].specific.published.aired_string
-                    {
-                        new_embed = new_embed.field("Published", published, true);
+                    if let Some(published) = &current_entry.specific.published.aired_string {
+                        embed = embed.field("Published", published, true);
                     }
-                    let genres_string = data.data[state.index]
+                    let genres_string = current_entry
                         .genres
                         .iter()
                         .map(|genre| genre.name.as_str())
                         .intersperse(" - ")
                         .collect::<String>();
-                    new_embed = new_embed.field("Genres", genres_string, false);
-                    final_embed = new_embed.clone();
+                    embed = embed.field("Genres", genres_string, false);
+                    final_embed = embed.clone();
 
                     let new_components = {
                         if state.index == 0 {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                        } else if state.index == len - 1 {
+                        } else if state.index == len.saturating_sub(1) {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
                         } else {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
@@ -930,7 +949,7 @@ pub async fn manga(
                     msg.edit(
                         ctx.http(),
                         EditMessage::default()
-                            .embed(new_embed)
+                            .embed(embed)
                             .components(&new_components),
                     )
                     .await?;
@@ -1044,22 +1063,22 @@ pub async fn roast(
 
         let messages_string = {
             let mut result = String::new();
-            let mut result_count = 0;
-            let mut missing_match_count = 0;
+            let mut result_count: u32 = 0;
+            let mut missing_match_count: u32 = 0;
 
             while let Some(message_result) = messages.next().await {
                 if let Ok(message) = message_result {
                     if message.author.id == member.user.id {
-                        let index = result_count + 1;
+                        let index = result_count.saturating_add(1);
                         if result_count > 0 {
                             result.push(',');
                         }
                         result.push_str(&index.to_string());
                         result.push(':');
                         result.push_str(&message.content);
-                        result_count += 1;
+                        result_count = result_count.saturating_add(1);
                     } else {
-                        missing_match_count += 1;
+                        missing_match_count = missing_match_count.saturating_add(1);
                     }
                 } else {
                     break;
@@ -1076,43 +1095,46 @@ pub async fn roast(
             "name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles},acc_create:{account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:{messages_string}"
         );
         let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy shown. the prompt will contain information of your target";
-        let utils_config = UTILS_CONFIG
-            .get()
-            .expect("UTILS_CONFIG must be set during initialization");
-        if let Some(resp) =
-            ai_response_simple(role, &description, &utils_config.fabseserver.text_gen_model).await
-            && !resp.is_empty()
-        {
-            let mut embed = CreateEmbed::default()
-                .title(format!("Roasting {name}"))
-                .colour(COLOUR_RED);
-            let mut current_chunk = String::with_capacity(1024);
-            let mut chunk_index = 0;
-            for ch in resp.chars() {
-                if current_chunk.len() >= 1024 {
+        if let Some(utils_config) = UTILS_CONFIG.get() {
+            if let Some(resp) =
+                ai_response_simple(role, &description, &utils_config.fabseserver.text_gen_model)
+                    .await
+                && !resp.is_empty()
+            {
+                let mut embed = CreateEmbed::default()
+                    .title(format!("Roasting {name}"))
+                    .colour(COLOUR_RED);
+                let mut current_chunk = String::with_capacity(1024);
+                let mut chunk_index: u32 = 0;
+                for ch in resp.chars() {
+                    if current_chunk.len() >= 1024 {
+                        let field_name = if chunk_index == 0 {
+                            "Response:".to_owned()
+                        } else {
+                            format!("Response (cont. {}):", chunk_index.saturating_add(1))
+                        };
+                        embed = embed.field(field_name, current_chunk, false);
+                        current_chunk = String::with_capacity(1024);
+                        chunk_index = chunk_index.saturating_add(1);
+                    }
+                    current_chunk.push(ch);
+                }
+                if !current_chunk.is_empty() {
                     let field_name = if chunk_index == 0 {
                         "Response:".to_owned()
                     } else {
-                        format!("Response (cont. {}):", chunk_index + 1)
+                        format!("Response (cont. {}):", chunk_index.saturating_add(1))
                     };
                     embed = embed.field(field_name, current_chunk, false);
-                    current_chunk = String::with_capacity(1024);
-                    chunk_index += 1;
                 }
-                current_chunk.push(ch);
+                ctx.send(CreateReply::default().reply(true).embed(embed))
+                    .await?;
+            } else {
+                ctx.reply(format!("{name}'s life is already roasted"))
+                    .await?;
             }
-            if !current_chunk.is_empty() {
-                let field_name = if chunk_index == 0 {
-                    "Response:".to_owned()
-                } else {
-                    format!("Response (cont. {}):", chunk_index + 1)
-                };
-                embed = embed.field(field_name, current_chunk, false);
-            }
-            ctx.send(CreateReply::default().reply(true).embed(embed))
-                .await?;
         } else {
-            ctx.reply(format!("{name}'s life is already roasted"))
+            ctx.reply("User err- I mean, system error. Please standby")
                 .await?;
         }
     }
@@ -1183,126 +1205,133 @@ pub async fn translate(
         target: &target_lang,
         alternatives: 3,
     };
-    if let Ok(response) = HTTP_CLIENT
-        .post(
-            &UTILS_CONFIG
-                .get()
-                .expect("UTILS_CONFIG must be set during initialization")
-                .fabseserver
-                .translate,
-        )
-        .json(&request)
-        .send()
-        .await
-        && let Ok(data) = response.json::<FabseTranslate>().await
-        && !data.translated_text.is_empty()
-    {
-        let embed = CreateEmbed::default()
-            .title(format!(
-                "Translation from {} to {target_lang} with {}% confidence",
-                data.detected_language.language, data.detected_language.confidence
-            ))
-            .colour(COLOUR_GREEN)
-            .field("Original:", &content, false)
-            .field("Translation:", &data.translated_text, false);
-        let len = data.alternatives.len();
-        if ctx.guild_id().is_some() && len > 1 {
-            let mut state = State::new(ctx.id(), len);
-            let mut final_embed = embed.clone();
-            let buttons = [
-                CreateButton::new(&state.prev_id)
-                    .style(ButtonStyle::Primary)
-                    .label("⬅️"),
-                CreateButton::new(&state.next_id)
-                    .style(ButtonStyle::Primary)
-                    .label("➡️"),
-            ];
-            let action_row = [CreateActionRow::buttons(&buttons[1..])];
+    if let Some(translate_server) = UTILS_CONFIG.get().map(|u| u.fabseserver.translate.as_str()) {
+        if let Ok(response) = HTTP_CLIENT
+            .post(translate_server)
+            .json(&request)
+            .send()
+            .await
+            && let Ok(data) = response.json::<FabseTranslate>().await
+            && !data.translated_text.is_empty()
+        {
+            let mut embed = CreateEmbed::default()
+                .title(format!(
+                    "Translation from {} to {target_lang} with {}% confidence",
+                    data.detected_language.language, data.detected_language.confidence
+                ))
+                .colour(COLOUR_GREEN)
+                .field("Original:", &content, false)
+                .field("Translation:", &data.translated_text, false);
+            let len = data.alternatives.len();
+            if ctx.guild_id().is_some() && len > 1 {
+                let mut state = State::new(ctx.id(), len);
+                let mut final_embed = embed.clone();
+                let buttons = [
+                    CreateButton::new(&state.prev_id)
+                        .style(ButtonStyle::Primary)
+                        .label("⬅️"),
+                    CreateButton::new(&state.next_id)
+                        .style(ButtonStyle::Primary)
+                        .label("➡️"),
+                ];
+                let action_row = [CreateActionRow::buttons(&buttons[1..])];
 
-            let message = ctx
-                .send(
-                    CreateReply::default()
-                        .reply(true)
-                        .embed(embed)
-                        .components(&action_row),
-                )
-                .await?;
-
-            let ctx_id_copy = ctx.id();
-            while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
-                .timeout(Duration::from_secs(60))
-                .filter(move |interaction| {
-                    interaction
-                        .data
-                        .custom_id
-                        .starts_with(ctx_id_copy.to_string().as_str())
-                })
-                .await
-            {
-                interaction
-                    .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                let message = ctx
+                    .send(
+                        CreateReply::default()
+                            .reply(true)
+                            .embed(embed)
+                            .components(&action_row),
+                    )
                     .await?;
 
-                if interaction.data.custom_id.ends_with('n') && state.index < state.len - 1 {
-                    state.index += 1;
-                } else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-                    state.index -= 1;
-                }
+                let ctx_id_copy = ctx.id();
+                while let Some(interaction) =
+                    ComponentInteractionCollector::new(ctx.serenity_context())
+                        .timeout(Duration::from_secs(60))
+                        .filter(move |interaction| {
+                            interaction
+                                .data
+                                .custom_id
+                                .starts_with(ctx_id_copy.to_string().as_str())
+                        })
+                        .await
+                {
+                    interaction
+                        .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+                        .await?;
 
-                let new_embed = CreateEmbed::default()
-                    .title(format!(
-                        "Translation from {} to {target_lang} with {}% confidence",
-                        data.detected_language.language, data.detected_language.confidence
-                    ))
-                    .colour(COLOUR_GREEN)
-                    .field("Original:", &content, false)
-                    .field(
-                        "Translation:",
-                        if state.index == 0 {
-                            &data.translated_text
-                        } else {
-                            &data.alternatives[state.index - 1]
-                        },
-                        false,
-                    );
-                final_embed = new_embed.clone();
-
-                let new_components = {
-                    if state.index == 0 {
-                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                    } else if state.index == len - 1 {
-                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
-                    } else {
-                        [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+                    if interaction.data.custom_id.ends_with('n')
+                        && state.index < state.len.saturating_sub(1)
+                    {
+                        state.index = state.index.saturating_add(1);
+                    } else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
+                        state.index = state.index.saturating_sub(1);
                     }
-                };
 
-                let mut msg = interaction.message;
+                    embed = CreateEmbed::default()
+                        .title(format!(
+                            "Translation from {} to {target_lang} with {}% confidence",
+                            data.detected_language.language, data.detected_language.confidence
+                        ))
+                        .colour(COLOUR_GREEN)
+                        .field("Original:", &content, false)
+                        .field(
+                            "Translation:",
+                            if state.index == 0 {
+                                &data.translated_text
+                            } else if let Some(alternative) =
+                                data.alternatives.get(state.index.saturating_sub(1))
+                            {
+                                alternative
+                            } else {
+                                "rip"
+                            },
+                            false,
+                        );
+                    final_embed = embed.clone();
 
-                msg.edit(
-                    ctx.http(),
-                    EditMessage::default()
-                        .embed(new_embed)
-                        .components(&new_components),
-                )
-                .await?;
+                    let new_components = {
+                        if state.index == 0 {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+                        } else if state.index == len.saturating_sub(1) {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+                        } else {
+                            [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+                        }
+                    };
+
+                    let mut msg = interaction.message;
+
+                    msg.edit(
+                        ctx.http(),
+                        EditMessage::default()
+                            .embed(embed)
+                            .components(&new_components),
+                    )
+                    .await?;
+                }
+                message
+                    .edit(
+                        ctx,
+                        CreateReply::default()
+                            .reply(true)
+                            .embed(final_embed)
+                            .components(&[]),
+                    )
+                    .await?;
+            } else {
+                ctx.send(CreateReply::default().reply(true).embed(embed))
+                    .await?;
             }
-            message
-                .edit(
-                    ctx,
-                    CreateReply::default()
-                        .reply(true)
-                        .embed(final_embed)
-                        .components(&[]),
-                )
-                .await?;
         } else {
-            ctx.send(CreateReply::default().reply(true).embed(embed))
-                .await?;
+            ctx.reply("Too dangerous to translate").await?;
         }
     } else {
-        ctx.reply("Too dangerous to translate").await?;
+        ctx.reply("User err- I mean, system error. Please standby")
+            .await?;
     }
+
     Ok(())
 }
 
@@ -1337,23 +1366,24 @@ pub async fn urban(
     };
     if let Ok(response) = HTTP_CLIENT.get(request_url).send().await
         && let Ok(data) = response.json::<UrbanResponse>().await
-        && !data.list.is_empty()
+        && let Some(first_entry) = data.list.first()
     {
-        let mut embed = CreateEmbed::default()
-            .title(&data.list[0].word)
-            .colour(COLOUR_YELLOW);
+        let mut embed = CreateEmbed::default().colour(COLOUR_YELLOW);
+        if let Some(title) = data.list.first().map(|d| d.word.as_str()) {
+            embed = embed.title(title);
+        }
         let mut current_chunk = String::with_capacity(1024);
-        let mut chunk_index = 0;
-        for ch in data.list[0].definition.replace(['[', ']'], "").chars() {
+        let mut chunk_index: u32 = 0;
+        for ch in first_entry.definition.replace(['[', ']'], "").chars() {
             if current_chunk.len() >= 1024 {
                 let field_name = if chunk_index == 0 {
                     "Definition:".to_owned()
                 } else {
-                    format!("Response (cont. {}):", chunk_index + 1)
+                    format!("Response (cont. {}):", chunk_index.saturating_add(1))
                 };
                 embed = embed.field(field_name, current_chunk, false);
                 current_chunk = String::with_capacity(1024);
-                chunk_index += 1;
+                chunk_index = chunk_index.saturating_add(1);
             }
             current_chunk.push(ch);
         }
@@ -1361,14 +1391,14 @@ pub async fn urban(
             let field_name = if chunk_index == 0 {
                 "Definition:".to_owned()
             } else {
-                format!("Response (cont. {}):", chunk_index + 1)
+                format!("Response (cont. {}):", chunk_index.saturating_add(1))
             };
             embed = embed.field(field_name, current_chunk, false);
         }
 
         embed = embed.field(
-            "Example:".to_owned(),
-            data.list[0].example.replace(['[', ']'], ""),
+            "Example:",
+            first_entry.example.replace(['[', ']'], ""),
             false,
         );
 
@@ -1410,31 +1440,34 @@ pub async fn urban(
                     .create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
                     .await?;
 
-                if interaction.data.custom_id.ends_with('n') && state.index < state.len - 1 {
-                    state.index += 1;
+                if interaction.data.custom_id.ends_with('n')
+                    && state.index < state.len.saturating_sub(1)
+                {
+                    state.index = state.index.saturating_add(1);
                 } else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-                    state.index -= 1;
+                    state.index = state.index.saturating_sub(1);
                 }
 
-                let mut new_embed = CreateEmbed::default()
-                    .title(&data.list[state.index].word)
+                let Some(current_entry) = data.list.get(state.index) else {
+                    warn!("Invalid urban dictionary index: {}", state.index);
+                    continue;
+                };
+
+                embed = CreateEmbed::default()
+                    .title(&current_entry.word)
                     .colour(COLOUR_YELLOW);
                 let mut current_chunk = String::with_capacity(1024);
-                let mut chunk_index = 0;
-                for ch in data.list[state.index]
-                    .definition
-                    .replace(['[', ']'], "")
-                    .chars()
-                {
+                chunk_index = 0;
+                for ch in current_entry.definition.replace(['[', ']'], "").chars() {
                     if current_chunk.len() >= 1024 {
                         let field_name = if chunk_index == 0 {
                             "Definition:".to_owned()
                         } else {
-                            format!("Response (cont. {}):", chunk_index + 1)
+                            format!("Response (cont. {}):", chunk_index.saturating_add(1))
                         };
-                        new_embed = new_embed.field(field_name, current_chunk, false);
+                        embed = embed.field(field_name, current_chunk, false);
                         current_chunk = String::with_capacity(1024);
-                        chunk_index += 1;
+                        chunk_index = chunk_index.saturating_add(1);
                     }
                     current_chunk.push(ch);
                 }
@@ -1442,22 +1475,22 @@ pub async fn urban(
                     let field_name = if chunk_index == 0 {
                         "Definition:".to_owned()
                     } else {
-                        format!("Response (cont. {}):", chunk_index + 1)
+                        format!("Response (cont. {}):", chunk_index.saturating_add(1))
                     };
-                    new_embed = new_embed.field(field_name, current_chunk, false);
+                    embed = embed.field(field_name, current_chunk, false);
                 }
 
-                new_embed = new_embed.field(
-                    "Example:".to_owned(),
-                    data.list[state.index].example.replace(['[', ']'], ""),
+                embed = embed.field(
+                    "Example:",
+                    current_entry.example.replace(['[', ']'], ""),
                     false,
                 );
-                final_embed = new_embed.clone();
+                final_embed = embed.clone();
 
                 let new_components = {
                     if state.index == 0 {
                         [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
-                    } else if state.index == len - 1 {
+                    } else if state.index == len.saturating_sub(1) {
                         [CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
                     } else {
                         [CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
@@ -1469,7 +1502,7 @@ pub async fn urban(
                 msg.edit(
                     ctx.http(),
                     EditMessage::default()
-                        .embed(new_embed)
+                        .embed(embed)
                         .components(&new_components),
                 )
                 .await?;

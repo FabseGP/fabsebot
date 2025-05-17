@@ -13,6 +13,7 @@ use poise::{
 };
 use std::{string::ToString, time::Duration};
 
+#[expect(clippy::unused_async)]
 async fn autocomplete_choice<'a>(
     _ctx: SContext<'_>,
     partial: &'a str,
@@ -64,7 +65,7 @@ pub async fn rps(
                     .label("✂️"),
             ];
 
-            let embed = CreateEmbed::default()
+            let mut embed = CreateEmbed::default()
                 .title("Rock paper scissors...")
                 .colour(COLOUR_ORANGE)
                 .description("Make a choice within 60s...");
@@ -126,14 +127,14 @@ pub async fn rps(
 
                 let mut msg = interaction.message;
 
-                let new_embed = CreateEmbed::default()
+                embed = CreateEmbed::default()
                     .title(&response)
                     .colour(COLOUR_ORANGE)
                     .description("Still no luck getting a life");
 
                 msg.edit(
                     ctx.http(),
-                    EditMessage::default().embed(new_embed).components(vec![]),
+                    EditMessage::default().embed(embed).components(vec![]),
                 )
                 .await?;
             }

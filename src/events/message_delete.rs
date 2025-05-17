@@ -44,7 +44,7 @@ pub async fn handle_message_delete(
                     (
                         guild.owner_id,
                         member.user.id,
-                        member.display_name().to_string(),
+                        member.display_name().to_owned(),
                         user_perms.administrator() || user_perms.moderate_members(),
                     )
                 } else {

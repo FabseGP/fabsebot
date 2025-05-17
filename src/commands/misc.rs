@@ -10,7 +10,7 @@ use crate::{
 };
 
 use ab_glyph::FontArc;
-use anyhow::Context;
+use anyhow::Context as _;
 use dashmap::DashSet;
 use image::{ImageBuffer, Rgba};
 use poise::{
@@ -26,12 +26,13 @@ use poise::{
 };
 use rayon::spawn;
 use sqlx::query;
-use std::{sync::Arc, time::Duration};
-use systemstat::{Platform, saturating_sub_bytes};
+use std::{process, sync::Arc, time::Duration};
+use systemstat::{Platform as _, saturating_sub_bytes};
 use tokio::{
     sync::oneshot,
     time::{sleep, timeout},
 };
+use tracing::warn;
 
 /// When you want to find the imposter
 #[poise::command(slash_command)]
@@ -53,7 +54,7 @@ pub async fn anony_poll(
         return Ok(());
     }
 
-    let embed = CreateEmbed::default()
+    let mut embed = CreateEmbed::default()
         .title(title.as_str())
         .colour(COLOUR_RED)
         .fields(options_list.iter().map(|&option| (option, "0", false)));
@@ -64,7 +65,7 @@ pub async fn anony_poll(
         .map(|index| {
             CreateButton::new(format!("{ctx_id_copy}_{index}"))
                 .style(ButtonStyle::Primary)
-                .label((index + 1).to_string())
+                .label((index.saturating_add(1)).to_string())
         })
         .collect();
     let action_row = [CreateActionRow::buttons(&buttons)];
@@ -82,7 +83,7 @@ pub async fn anony_poll(
     let voted_users = DashSet::new();
 
     while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
-        .timeout(Duration::from_secs(duration * 60))
+        .timeout(Duration::from_secs(duration.saturating_mul(60)))
         .filter(move |interaction| {
             interaction
                 .data
@@ -102,10 +103,11 @@ pub async fn anony_poll(
                 .nth(1)
                 .and_then(|s| s.parse::<usize>().ok())
             && index < options_count
+            && let Some(vote_index) = vote_counts.get_mut(index)
         {
-            vote_counts[index] += 1;
+            *vote_index = i32::saturating_add(*vote_index, 1);
 
-            let new_embed = CreateEmbed::default()
+            embed = CreateEmbed::default()
                 .title(&title)
                 .colour(COLOUR_RED)
                 .fields(
@@ -114,10 +116,10 @@ pub async fn anony_poll(
                         .zip(vote_counts.iter())
                         .map(|(&option, &count)| (option, count.to_string(), false)),
                 );
-            final_embed = new_embed.clone();
+            final_embed = embed.clone();
 
             let mut msg = interaction.message;
-            msg.edit(ctx.http(), EditMessage::default().embed(new_embed))
+            msg.edit(ctx.http(), EditMessage::default().embed(embed))
                 .await?;
         } else {
             ctx.send(
@@ -242,9 +244,10 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 
 /// Ignore this command
 #[poise::command(prefix_command, owners_only)]
+#[expect(clippy::unused_async)]
 pub async fn end_pgo(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.serenity_context().shutdown_all();
-    panic!("pgo-profiling ended");
+    process::exit(1);
 
     #[expect(unreachable_code)]
     Ok(())
@@ -432,20 +435,18 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
             .colour(COLOUR_RED);
 
         for (index, user) in users.iter().enumerate() {
-            if let Ok(target) = guild_id
-                .member(
-                    &ctx.http(),
-                    UserId::new(u64::try_from(user.id).expect("user id out of bounds for u64")),
-                )
-                .await
-            {
-                let rank = index + 1;
-                let user_name = target.display_name();
-                embed = embed.field(
-                    format!("#{rank} {user_name}"),
-                    user.count.to_string(),
-                    false,
-                );
+            if let Ok(user_id_u64) = u64::try_from(user.id) {
+                if let Ok(target) = guild_id.member(&ctx.http(), UserId::new(user_id_u64)).await {
+                    let rank = index.saturating_add(1);
+                    let user_name = target.display_name();
+                    embed = embed.field(
+                        format!("#{rank} {user_name}"),
+                        user.count.to_string(),
+                        false,
+                    );
+                }
+            } else {
+                warn!("Failed to convert user id to u64");
             }
         }
 
@@ -464,23 +465,25 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
     ctx.defer().await?;
-    let utils_config = UTILS_CONFIG
-        .get()
-        .expect("UTILS_CONFIG must be set during initialization");
-    if let Some(resp) = ai_response_simple(
-        "you're a tsundere",
-        "generate a one-line love-hate greeting",
-        &utils_config.fabseserver.text_gen_model,
-    )
-    .await
-    {
-        ctx.reply(resp).await?;
-    } else {
-        ctx.reply(
-            "Ugh, fine. It's nice to see you again, I suppose... 
-                for now, don't get any ideas thinking this means I actually like you or anything",
+    if let Some(utils_config) = UTILS_CONFIG.get() {
+        if let Some(resp) = ai_response_simple(
+            "you're a tsundere",
+            "generate a one-line love-hate greeting",
+            &utils_config.fabseserver.text_gen_model,
         )
-        .await?;
+        .await
+        {
+            ctx.reply(resp).await?;
+        } else {
+            ctx.reply(
+                "Ugh, fine. It's nice to see you again, I suppose... 
+                for now, don't get any ideas thinking this means I actually like you or anything",
+            )
+            .await?;
+        }
+    } else {
+        ctx.reply("User err- I mean, system error. Please standby")
+            .await?;
     }
     Ok(())
 }
@@ -509,10 +512,20 @@ impl ImageInfo {
         author_name: String,
         content: String,
         is_animated: bool,
-    ) -> Self {
-        let content_font = FontArc::try_from_slice(FONTS[0].1).unwrap();
-        let author_font = FontArc::try_from_slice(FONTS[1].1).unwrap();
-        let current_font_name = FONTS[0].0.to_string();
+    ) -> Result<Self, Error> {
+        let (content_font_data, author_font_data) = FONTS
+            .first()
+            .and_then(|content| FONTS.get(1).map(|author| (&content.1, &author.1)))
+            .context("Missing default fonts in FONTS array")?;
+        let content_font =
+            FontArc::try_from_slice(content_font_data).context("Failed to load content font")?;
+        let author_font =
+            FontArc::try_from_slice(author_font_data).context("Failed to load author font")?;
+
+        let current_font_name = FONTS
+            .first()
+            .map(|(name, _)| (*name).to_owned())
+            .context("No fonts available in FONTS array")?;
         let (tx, rx) = oneshot::channel();
 
         let avatar_image_clone = avatar_image.to_vec();
@@ -538,61 +551,80 @@ impl ImageInfo {
                 is_animated,
                 false,
             );
-            tx.send(result).expect("Sender failed to send");
+            if let Err(err) = tx.send(result) {
+                warn!("Sender failed to send result: {:?}", err);
+            }
         });
-        let (image, text_layout, avatar_resized) =
-            rx.await.expect("Rayon task for quote_image panicked");
-        Self {
-            avatar_image: if avatar_resized.is_some() {
-                None
-            } else {
-                Some(Arc::new(avatar_image.to_vec()))
-            },
-            avatar_resized: avatar_resized.map(Arc::new),
-            author_name,
-            content,
-            current: image,
-            is_animated,
-            is_bw: false,
-            is_reverse: false,
-            is_light: false,
-            is_gradient: false,
-            new_font: false,
-            author_font,
-            content_font,
-            current_font_name,
-            text_layout,
+        match rx.await.context("Rayon task for quote image panicked")? {
+            Ok(img_gen) => {
+                let (image, text_layout, avatar_resized) = img_gen;
+                Ok(Self {
+                    avatar_image: if avatar_resized.is_some() {
+                        None
+                    } else {
+                        Some(Arc::new(avatar_image.to_vec()))
+                    },
+                    avatar_resized: avatar_resized.map(Arc::new),
+                    author_name,
+                    content,
+                    current: image,
+                    is_animated,
+                    is_bw: false,
+                    is_reverse: false,
+                    is_light: false,
+                    is_gradient: false,
+                    new_font: false,
+                    author_font,
+                    content_font,
+                    current_font_name,
+                    text_layout,
+                })
+            }
+            Err(err) => {
+                warn!("Failed to generate quote image: {:?}", err);
+                Err(err)
+            }
         }
     }
 
-    async fn toggle_bw(&mut self) {
+    async fn toggle_bw(&mut self) -> Result<(), Error> {
         self.is_bw = !self.is_bw;
-        self.image_gen().await;
+        self.image_gen().await?;
+
+        Ok(())
     }
 
-    async fn toggle_reverse(&mut self) {
+    async fn toggle_reverse(&mut self) -> Result<(), Error> {
         self.is_reverse = !self.is_reverse;
-        self.image_gen().await;
+        self.image_gen().await?;
+
+        Ok(())
     }
 
-    async fn toggle_light(&mut self) {
+    async fn toggle_light(&mut self) -> Result<(), Error> {
         self.is_light = !self.is_light;
-        self.image_gen().await;
+        self.image_gen().await?;
+
+        Ok(())
     }
 
-    async fn toggle_gradient(&mut self) {
+    async fn toggle_gradient(&mut self) -> Result<(), Error> {
         self.is_gradient = !self.is_gradient;
-        self.image_gen().await;
+        self.image_gen().await?;
+
+        Ok(())
     }
 
-    async fn new_font(&mut self, font_name: &str, new_font: FontArc) {
+    async fn new_font(&mut self, font_name: &str, new_font: FontArc) -> Result<(), Error> {
         self.content_font = new_font;
-        self.current_font_name = font_name.to_string();
+        font_name.clone_into(&mut self.current_font_name);
         self.new_font = true;
-        self.image_gen().await;
+        self.image_gen().await?;
+
+        Ok(())
     }
 
-    async fn image_gen(&mut self) {
+    async fn image_gen(&mut self) -> Result<(), Error> {
         let avatar_image = self.avatar_image.clone();
         let avatar_resized = self.avatar_resized.clone();
         let author_name = self.author_name.clone();
@@ -611,7 +643,7 @@ impl ImageInfo {
 
         spawn(move || {
             let avatar_bytes = avatar_image.as_ref().map(|arc_vec| &arc_vec[..]);
-            let (image, text_layout, _) = quote_image(
+            let result = quote_image(
                 avatar_bytes,
                 avatar_resized.as_deref().cloned(),
                 &author_name,
@@ -627,15 +659,26 @@ impl ImageInfo {
                 is_animated,
                 new_font,
             );
-            tx.send((image, text_layout))
-                .expect("Sender failed to send");
+
+            if let Err(err) = tx.send(result) {
+                warn!("Sender failed to send result: {:?}", err);
+            }
         });
-        let (image, text_layout) = rx.await.expect("Rayon task for quote_image panicked");
-        if new_font {
-            self.new_font = false;
-            self.text_layout = text_layout;
+        match rx.await.context("Rayon task for quote image panicked")? {
+            Ok(img_gen) => {
+                let (image, text_layout, _) = img_gen;
+                if new_font {
+                    self.new_font = false;
+                    self.text_layout = text_layout;
+                }
+                self.current = image;
+                Ok(())
+            }
+            Err(err) => {
+                warn!("Failed to generate quote image: {:?}", err);
+                Err(err)
+            }
         }
-        self.current = image;
     }
 }
 
@@ -691,7 +734,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 reply.content.to_string(),
                 is_animated,
             )
-            .await
+            .await?
         };
         let message_url = reply.link();
         let attachment = CreateAttachment::bytes(
@@ -748,17 +791,19 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
         if let Some(guild_data) = ctx.data().guild_data.lock().await.get(&guild_id)
             && let Some(channel) = guild_data.settings.quotes_channel
         {
-            let quote_channel = GenericChannelId::new(
-                u64::try_from(channel).expect("channel id out of bounds for u64"),
-            );
-            quote_channel
-                .send_message(
-                    ctx.http(),
-                    CreateMessage::default()
-                        .add_file(attachment.clone())
-                        .content(&message_url),
-                )
-                .await?;
+            if let Ok(channel_u64) = u64::try_from(channel) {
+                let quote_channel = GenericChannelId::new(channel_u64);
+                quote_channel
+                    .send_message(
+                        ctx.http(),
+                        CreateMessage::default()
+                            .add_file(attachment.clone())
+                            .content(&message_url),
+                    )
+                    .await?;
+            } else {
+                warn!("Failed to convert quotes channel id to u64");
+            }
         }
         let ctx_id_copy = ctx.id();
         let mut final_attachment = attachment.clone();
@@ -777,25 +822,24 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
                 .await?;
 
             let menu_choice = match &interaction.data.kind {
-                ComponentInteractionDataKind::StringSelect { values } => Some(&values[0]),
+                ComponentInteractionDataKind::StringSelect { values } => values.first(),
                 _ => None,
             };
 
             if let Some(font_choice) = menu_choice
                 && let Some(font) = FONTS.iter().find(|font| font.0 == font_choice)
                 && font.0 != image_handle.current_font_name
+                && let Ok(new_font) = FontArc::try_from_slice(font.1)
             {
-                image_handle
-                    .new_font(font.0, FontArc::try_from_slice(font.1).unwrap())
-                    .await;
+                image_handle.new_font(font.0, new_font).await?;
             } else if interaction.data.custom_id.ends_with("bw") {
-                image_handle.toggle_bw().await;
+                image_handle.toggle_bw().await?;
             } else if interaction.data.custom_id.ends_with("reverse") {
-                image_handle.toggle_reverse().await;
+                image_handle.toggle_reverse().await?;
             } else if interaction.data.custom_id.ends_with("light") {
-                image_handle.toggle_light().await;
+                image_handle.toggle_light().await?;
             } else if interaction.data.custom_id.ends_with("gradient") {
-                image_handle.toggle_gradient().await;
+                image_handle.toggle_gradient().await?;
             }
             let mut msg = interaction.message;
             final_attachment = CreateAttachment::bytes(
@@ -902,7 +946,7 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
             .thumbnail(thumbnail)
             .colour(COLOUR_RED);
         for (index, word) in words.iter().enumerate() {
-            let rank = index + 1;
+            let rank = index.saturating_add(1);
             embed = embed.field(
                 format!("#{rank} {}", word.word),
                 word.count.to_string(),

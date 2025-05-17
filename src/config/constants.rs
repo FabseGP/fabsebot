@@ -1,11 +1,11 @@
 use image::RgbaImage;
 use std::sync::OnceLock;
 
-pub const COLOUR_BLUE: u32 = 0x00B0F4;
-pub const COLOUR_GREEN: u32 = 0x33D17A;
-pub const COLOUR_ORANGE: u32 = 0xFA6300;
-pub const COLOUR_RED: u32 = 0xED333B;
-pub const COLOUR_YELLOW: u32 = 0xF8E45C;
+pub const COLOUR_BLUE: u32 = 0x0000_B0F4;
+pub const COLOUR_GREEN: u32 = 0x0033_D17A;
+pub const COLOUR_ORANGE: u32 = 0x00FA_6300;
+pub const COLOUR_RED: u32 = 0x00ED_333B;
+pub const COLOUR_YELLOW: u32 = 0x00F8_E45C;
 
 pub const DEFAULT_BOT_ROLE: &str =
     "You're fabsebot, a crude, uncensored and confident Discord AI chatbot created by fabseman.

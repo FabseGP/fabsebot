@@ -6,8 +6,8 @@ use crate::{
     utils::ai::ai_voice,
 };
 
-use anyhow::Context as AContext;
-use bytes::{BufMut, BytesMut};
+use anyhow::Context as _;
+use bytes::{BufMut as _, BytesMut};
 use core::time::Duration;
 use poise::{
     CreateReply, async_trait,
@@ -30,6 +30,7 @@ use tokio::{
     sync::{Mutex, MutexGuard},
     time::{sleep, timeout},
 };
+use tracing::warn;
 
 #[derive(Deserialize)]
 struct DeezerResponse {
@@ -58,8 +59,9 @@ async fn voice_check(ctx: &SContext<'_>) -> (Option<Arc<Mutex<Call>>>, Option<Gu
             if let Some(handler_lock) = ctx.data().music_manager.get(guild_id) {
                 (Some(handler_lock), Some(guild_id))
             } else {
-                ctx.reply("Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel first")
-                  .await.ok();
+                if let Err(err) = ctx.reply("Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel first").await {
+                    warn!("Failed to notify user that the bot is not in a voice channel: {:?}", err);
+                }
                 (None, None)
             }
         }
@@ -102,7 +104,7 @@ impl VoiceEventHandler for VoiceReceiveHandler {
                 .values()
                 .filter_map(|data| data.decoded_voice.as_ref())
             {
-                let mut buffer = BytesMut::with_capacity(audio.len() * 2);
+                let mut buffer = BytesMut::with_capacity(audio.len().saturating_mul(2));
                 for sample in audio {
                     buffer.put(sample.to_le_bytes().as_ref());
                 }
@@ -119,14 +121,17 @@ impl VoiceEventHandler for VoiceReceiveHandler {
                     .map(|entry| entry.value().settings.guild_id)
                     .collect();
                 for guild_id in guild_global_music {
-                    let current_guild_id = GuildId::new(
-                        u64::try_from(guild_id).expect("guild id out of bounds for u64"),
-                    );
-                    if let Some(global_handler_lock) = self.music_manager.get(current_guild_id) {
-                        get_configured_handler(&global_handler_lock)
-                            .await
-                            .enqueue_input(Input::from(buffer.clone()))
-                            .await;
+                    if let Ok(guild_id_u64) = u64::try_from(guild_id) {
+                        let current_guild_id = GuildId::new(guild_id_u64);
+                        if let Some(global_handler_lock) = self.music_manager.get(current_guild_id)
+                        {
+                            get_configured_handler(&global_handler_lock)
+                                .await
+                                .enqueue_input(Input::from(buffer.clone()))
+                                .await;
+                        }
+                    } else {
+                        warn!("Failed to convert guild id to u64");
                     }
                 }
             }
@@ -449,20 +454,19 @@ pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
                 let ctx_data = ctx.data();
                 let guild_data_lock = ctx_data.guild_data.lock().await;
                 for guild in guild_data_lock.iter() {
-                    let (current_track_opt, global_channel) =
-                        if guild.settings.guild_id == guild_id_i64 {
-                            (
-                                get_configured_handler(&handler_lock)
-                                    .await
-                                    .queue()
-                                    .current(),
-                                None,
-                            )
-                        } else if guild.settings.global_music {
-                            let current_guild_id = GuildId::new(
-                                u64::try_from(guild.settings.guild_id)
-                                    .expect("guild id out of bounds for u64"),
-                            );
+                    let (current_track_opt, global_channel) = if guild.settings.guild_id
+                        == guild_id_i64
+                    {
+                        (
+                            get_configured_handler(&handler_lock)
+                                .await
+                                .queue()
+                                .current(),
+                            None,
+                        )
+                    } else if guild.settings.global_music {
+                        if let Ok(guild_id_u64) = u64::try_from(guild.settings.guild_id) {
+                            let current_guild_id = GuildId::new(guild_id_u64);
                             if let Some(global_handler_lock) =
                                 ctx.data().music_manager.get(current_guild_id)
                             {
@@ -488,8 +492,12 @@ pub async fn pause_continue_song(ctx: SContext<'_>) -> Result<(), Error> {
                                 (None, None)
                             }
                         } else {
+                            warn!("Failed to convert guild id to u64");
                             (None, None)
-                        };
+                        }
+                    } else {
+                        (None, None)
+                    };
                     if let Some(current_track) = current_track_opt {
                         if let Ok(track_info) = current_track.get_info().await {
                             let response = match track_info.playing {
@@ -555,7 +563,7 @@ pub async fn play_song(
             let queue_len = {
                 let mut handler = get_configured_handler(&handler_lock).await;
                 handler.enqueue_input(Input::from(src.clone())).await;
-                handler.queue().len() - 1
+                handler.queue().len().saturating_sub(1)
             };
             let artist = &m.artist;
             let thumbnail = &m.thumbnail;
@@ -606,30 +614,30 @@ pub async fn play_song(
                 .map(|entry| entry.value().settings.guild_id)
                 .collect();
             for guild_id in guild_global_music {
-                let current_guild_id =
-                    GuildId::new(u64::try_from(guild_id).expect("guild id out of bounds for u64"));
-                if let Some(global_handler_lock) = ctx.data().music_manager.get(current_guild_id) {
-                    let current_channel_opt = {
-                        let mut handler = get_configured_handler(&global_handler_lock).await;
-                        handler.enqueue_input(Input::from(src.clone())).await;
-                        handler.current_channel()
-                    };
-                    if let Some(id) = current_channel_opt {
-                        if let Ok(channel) = ctx
-                            .http()
-                            .get_channel(GenericChannelId::from(id.get()))
-                            .await
+                if let Ok(guild_id_u64) = u64::try_from(guild_id) {
+                    let current_guild_id = GuildId::new(guild_id_u64);
+                    if let Some(global_handler_lock) =
+                        ctx.data().music_manager.get(current_guild_id)
+                    {
+                        let current_channel_opt = {
+                            let mut handler = get_configured_handler(&global_handler_lock).await;
+                            handler.enqueue_input(Input::from(src.clone())).await;
+                            handler.current_channel()
+                        };
+                        if let Some(id) = current_channel_opt
+                            && let Ok(channel) = ctx
+                                .http()
+                                .get_channel(GenericChannelId::from(id.get()))
+                                .await
+                            && let Some(guild_channel) = channel.guild()
                         {
-                            if let Some(guild_channel) = channel.guild() {
-                                guild_channel
-                                    .send_message(
-                                        ctx.http(),
-                                        CreateMessage::default().embed(e.clone()),
-                                    )
-                                    .await?;
-                            }
+                            guild_channel
+                                .send_message(ctx.http(), CreateMessage::default().embed(e.clone()))
+                                .await?;
                         }
                     }
+                } else {
+                    warn!("Failed to convert guild id to u64");
                 }
             }
         } else {
@@ -652,39 +660,38 @@ pub async fn seek_song(
             .await
             .queue()
             .current();
-        if let Some(current_playback) = current_playback_opt {
-            if let Ok(current_playback_info) = current_playback.get_info().await {
-                let current_position = current_playback_info.position;
-                let Ok(seconds_value) = seconds.parse::<i64>() else {
-                    ctx.reply("Bruh, provide a valid number with a sign (e.g. '+20' or '-20')!")
+        if let Some(current_playback) = current_playback_opt
+            && let Ok(current_playback_info) = current_playback.get_info().await
+        {
+            let current_position = current_playback_info.position;
+            let Ok(seconds_value) = seconds.parse::<i64>() else {
+                ctx.reply("Bruh, provide a valid number with a sign (e.g. '+20' or '-20')!")
+                    .await?;
+                return Ok(());
+            };
+            let current_secs = i64::try_from(current_position.as_secs()).unwrap_or(0);
+            if seconds_value.is_negative() {
+                let new_position =
+                    u64::try_from(current_secs.saturating_add(seconds_value)).unwrap_or(0);
+                let seek = Duration::from_secs(new_position);
+                if seek.is_zero() {
+                    ctx.reply("Bruh, wanting to seek more seconds back than what have been played")
                         .await?;
-                    return Ok(());
-                };
-                let current_secs = i64::try_from(current_position.as_secs()).unwrap_or(0);
-                if seconds_value.is_negative() {
-                    let new_position = u64::try_from(current_secs + seconds_value).unwrap_or(0);
-                    let seek = Duration::from_secs(new_position);
-                    if seek.is_zero() {
-                        ctx.reply(
-                            "Bruh, wanting to seek more seconds back than what have been played",
-                        )
+                } else if current_playback.seek_async(seek).await.is_ok() {
+                    ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
                         .await?;
-                    } else if current_playback.seek_async(seek).await.is_ok() {
-                        ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
-                            .await?;
-                    } else {
-                        ctx.reply("Failed to seek song backwards").await?;
-                    }
                 } else {
-                    let seconds_to_add = u64::try_from(seconds_value).unwrap_or(0);
-                    let seek = current_position + Duration::from_secs(seconds_to_add);
-                    if current_playback.seek_async(seek).await.is_ok() {
-                        ctx.reply(format!("Seeked {seconds_value}s forward"))
-                            .await?;
-                    } else {
-                        ctx.reply("Bruh, you seeked more forward than the length of the song! I'm bailing out")
+                    ctx.reply("Failed to seek song backwards").await?;
+                }
+            } else {
+                let seconds_to_add = u64::try_from(seconds_value).unwrap_or(0);
+                let seek = current_position.saturating_add(Duration::from_secs(seconds_to_add));
+                if current_playback.seek_async(seek).await.is_ok() {
+                    ctx.reply(format!("Seeked {seconds_value}s forward"))
+                        .await?;
+                } else {
+                    ctx.reply("Bruh, you seeked more forward than the length of the song! I'm bailing out")
                                 .await?;
-                    }
                 }
             }
         }
@@ -708,7 +715,7 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
         let content = format!(
             "Song skipped by {}. {} left in queue",
             ctx.author().display_name(),
-            queue_len - 2
+            queue_len.saturating_sub(2)
         );
         ctx.reply(&content).await?;
         let guild_global_music: Vec<_> = ctx
@@ -724,26 +731,29 @@ pub async fn skip_song(ctx: SContext<'_>) -> Result<(), Error> {
             .map(|entry| entry.value().settings.guild_id)
             .collect();
         for guild_id in guild_global_music {
-            let current_guild_id =
-                GuildId::new(u64::try_from(guild_id).expect("guild id out of bounds for u64"));
-            if let Some(global_handler_lock) = ctx.data().music_manager.get(current_guild_id) {
-                let channel_id = {
-                    let handler = get_configured_handler(&global_handler_lock).await;
-                    let queue = handler.queue();
-                    if queue.skip().is_err() {
-                        continue;
-                    }
-                    handler.current_channel()
-                };
+            if let Ok(guild_id_u64) = u64::try_from(guild_id) {
+                let current_guild_id = GuildId::new(guild_id_u64);
+                if let Some(global_handler_lock) = ctx.data().music_manager.get(current_guild_id) {
+                    let channel_id = {
+                        let handler = get_configured_handler(&global_handler_lock).await;
+                        let queue = handler.queue();
+                        if queue.skip().is_err() {
+                            continue;
+                        }
+                        handler.current_channel()
+                    };
 
-                if let Some(id) = channel_id
-                    && let Ok(channel) = ctx
-                        .http()
-                        .get_channel(GenericChannelId::from(id.get()))
-                        .await
-                {
-                    channel.id().say(ctx.http(), &content).await?;
+                    if let Some(id) = channel_id
+                        && let Ok(channel) = ctx
+                            .http()
+                            .get_channel(GenericChannelId::from(id.get()))
+                            .await
+                    {
+                        channel.id().say(ctx.http(), &content).await?;
+                    }
                 }
+            } else {
+                warn!("Failed to convert guild id to u64");
             }
         }
     }
@@ -783,23 +793,26 @@ pub async fn stop_song(ctx: SContext<'_>) -> Result<(), Error> {
             .map(|entry| entry.value().settings.guild_id)
             .collect();
         for guild_id in guild_global_music {
-            let current_guild_id =
-                GuildId::new(u64::try_from(guild_id).expect("guild id out of bounds for u64"));
-            if let Some(global_handler_lock) = ctx.data().music_manager.get(current_guild_id) {
-                let channel_id = {
-                    let handler = get_configured_handler(&global_handler_lock).await;
-                    let queue = handler.queue();
-                    queue.stop();
-                    handler.current_channel()
-                };
-                if let Some(id) = channel_id
-                    && let Ok(channel) = ctx
-                        .http()
-                        .get_channel(GenericChannelId::from(id.get()))
-                        .await
-                {
-                    channel.id().say(ctx.http(), content).await?;
+            if let Ok(guild_id_u64) = u64::try_from(guild_id) {
+                let current_guild_id = GuildId::new(guild_id_u64);
+                if let Some(global_handler_lock) = ctx.data().music_manager.get(current_guild_id) {
+                    let channel_id = {
+                        let handler = get_configured_handler(&global_handler_lock).await;
+                        let queue = handler.queue();
+                        queue.stop();
+                        handler.current_channel()
+                    };
+                    if let Some(id) = channel_id
+                        && let Ok(channel) = ctx
+                            .http()
+                            .get_channel(GenericChannelId::from(id.get()))
+                            .await
+                    {
+                        channel.id().say(ctx.http(), content).await?;
+                    }
                 }
+            } else {
+                warn!("Failed to convert guild id to u64");
             }
         }
     }

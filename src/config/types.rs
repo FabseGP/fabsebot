@@ -17,7 +17,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, LazyLock, OnceLock},
 };
-use systemstat::{Platform, System};
+use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
 
 pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;

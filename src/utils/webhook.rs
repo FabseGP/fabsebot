@@ -18,9 +18,9 @@ pub async fn spoiler_message(
         if let Some(webhook) = webhook_find(ctx, message.guild_id, message.channel_id, data).await {
             let username = message.author.display_name();
             let mut is_first = true;
-            for attachment in &message.attachments {
+            for payload in &message.attachments {
                 let download = HTTP_CLIENT
-                    .get(attachment.url.as_str())
+                    .get(payload.url.as_str())
                     .send()
                     .await?
                     .bytes()
@@ -29,7 +29,7 @@ pub async fn spoiler_message(
                 let Ok(download_bytes) = download else {
                     continue;
                 };
-                let attachment_name = &attachment.filename;
+                let attachment_name = &payload.filename;
                 let attachment =
                     CreateAttachment::bytes(download_bytes, format!("SPOILER_{attachment_name}"));
                 if is_first {
@@ -85,14 +85,11 @@ pub async fn webhook_find(
     {
         let existing_webhooks_get = guild_channel.id.webhooks(&ctx.http).await;
         if let Ok(existing_webhooks) = existing_webhooks_get {
-            if existing_webhooks.len() >= 15 {
-                if let Err(e) = ctx
-                    .http
-                    .delete_webhook(existing_webhooks.first().unwrap().id, None)
-                    .await
-                {
-                    warn!("Failed to delete webhook: {e}");
-                }
+            if existing_webhooks.len() >= 15
+                && let Some(first_webhook) = existing_webhooks.first()
+                && let Err(e) = ctx.http.delete_webhook(first_webhook.id, None).await
+            {
+                warn!("Failed to delete webhook: {e}");
             }
             let webhook_info = WebhookInfo {
                 name: "fabsebot",

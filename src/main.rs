@@ -1,4 +1,4 @@
-#![feature(let_chains, iter_intersperse)]
+#![feature(let_chains, iter_intersperse, float_algebraic)]
 
 mod commands;
 mod config;
@@ -21,7 +21,7 @@ use toml::{Table, Value};
 use tracing::{Level, warn};
 use tracing_opentelemetry::layer;
 use tracing_subscriber::{
-    Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt as _,
+    Registry, filter::LevelFilter, fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _,
 };
 
 async fn periodic_task(url: &String) -> AResult<()> {

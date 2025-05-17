@@ -6,7 +6,7 @@ use crate::{
     },
     core::handlers::{EventHandler, dynamic_prefix, on_error},
 };
-use anyhow::Context;
+use anyhow::Context as _;
 use mini_moka::sync::Cache;
 use poise::{
     Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions,
@@ -17,7 +17,7 @@ use poise::{
 };
 use songbird::{Config, Songbird, driver::DecodeMode::Decode};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr as _, sync::Arc};
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
@@ -55,7 +55,6 @@ pub async fn bot_start(
         .is_err()
     {
         error!("Failed to set utils config");
-        panic!();
     }
     let pool_options = PgConnectOptions::new()
         .host(&postgres_config.host)

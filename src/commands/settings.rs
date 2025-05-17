@@ -4,8 +4,8 @@ use crate::config::{
     types::{Error, GuildData, HTTP_CLIENT, SContext},
 };
 
-use anyhow::Context;
-use base64::{Engine, engine::general_purpose};
+use anyhow::Context as _;
+use base64::{Engine as _, engine::general_purpose};
 use poise::{
     CreateReply,
     serenity_prelude::{Channel, CreateEmbed},
@@ -470,11 +470,8 @@ pub async fn set_emoji_react(
                     .and_then(|ct| ct.to_str().ok())
                     .unwrap_or("image/png")
                     .to_string();
-                if content_type.starts_with("image/") || content_type == "application/gif" {
-                    Some(content_type)
-                } else {
-                    None
-                }
+                (content_type.starts_with("image/") || content_type == "application/gif")
+                    .then_some(content_type)
             } else {
                 None
             };
