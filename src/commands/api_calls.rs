@@ -152,8 +152,8 @@ pub async fn ai_text(
                     } else {
                         format!("Response (cont. {}):", chunk_index.saturating_add(1))
                     };
-                    embed = embed.field(field_name, current_chunk, false);
-                    current_chunk = String::with_capacity(1024);
+                    embed = embed.field(field_name, current_chunk.clone(), false);
+                    current_chunk.clear();
                     chunk_index = chunk_index.saturating_add(1);
                 }
                 current_chunk.push(ch);
@@ -313,7 +313,7 @@ pub async fn anime(
             if let Some(aired) = &first_entry.specific.aired.aired_string {
                 embed = embed.field("Aired", aired, true);
             }
-            let genres_string = &first_entry
+            let mut genres_string = first_entry
                 .genres
                 .iter()
                 .map(|genre| genre.name.as_str())
@@ -416,7 +416,7 @@ pub async fn anime(
                     if let Some(aired) = &current_entry.specific.aired.aired_string {
                         embed = embed.field("Aired", aired, true);
                     }
-                    let genres_string = current_entry
+                    genres_string = current_entry
                         .genres
                         .iter()
                         .map(|genre| genre.name.as_str())
@@ -822,7 +822,7 @@ pub async fn manga(
             if let Some(published) = &first_entry.specific.published.aired_string {
                 embed = embed.field("Published", published, true);
             }
-            let genres_string = &first_entry
+            let mut genres_string = first_entry
                 .genres
                 .iter()
                 .map(|genre| genre.name.as_str())
@@ -925,7 +925,7 @@ pub async fn manga(
                     if let Some(published) = &current_entry.specific.published.aired_string {
                         embed = embed.field("Published", published, true);
                     }
-                    let genres_string = current_entry
+                    genres_string = current_entry
                         .genres
                         .iter()
                         .map(|genre| genre.name.as_str())
@@ -1113,8 +1113,8 @@ pub async fn roast(
                         } else {
                             format!("Response (cont. {}):", chunk_index.saturating_add(1))
                         };
-                        embed = embed.field(field_name, current_chunk, false);
-                        current_chunk = String::with_capacity(1024);
+                        embed = embed.field(field_name, current_chunk.clone(), false);
+                        current_chunk.clear();
                         chunk_index = chunk_index.saturating_add(1);
                     }
                     current_chunk.push(ch);
@@ -1379,10 +1379,10 @@ pub async fn urban(
                 let field_name = if chunk_index == 0 {
                     "Definition:".to_owned()
                 } else {
-                    format!("Response (cont. {}):", chunk_index.saturating_add(1))
+                    format!("Definition (cont. {}):", chunk_index.saturating_add(1))
                 };
-                embed = embed.field(field_name, current_chunk, false);
-                current_chunk = String::with_capacity(1024);
+                embed = embed.field(field_name, current_chunk.clone(), false);
+                current_chunk.clear();
                 chunk_index = chunk_index.saturating_add(1);
             }
             current_chunk.push(ch);
@@ -1391,16 +1391,36 @@ pub async fn urban(
             let field_name = if chunk_index == 0 {
                 "Definition:".to_owned()
             } else {
-                format!("Response (cont. {}):", chunk_index.saturating_add(1))
+                format!("Definition (cont. {}):", chunk_index.saturating_add(1))
             };
-            embed = embed.field(field_name, current_chunk, false);
+            embed = embed.field(field_name, current_chunk.clone(), false);
         }
+        current_chunk.clear();
+        chunk_index = 0;
 
-        embed = embed.field(
-            "Example:",
-            first_entry.example.replace(['[', ']'], ""),
-            false,
-        );
+        for ch in first_entry.example.replace(['[', ']'], "").chars() {
+            if current_chunk.len() >= 1024 {
+                let field_name = if chunk_index == 0 {
+                    "Example:".to_owned()
+                } else {
+                    format!("Example (cont. {}):", chunk_index.saturating_add(1))
+                };
+                embed = embed.field(field_name, current_chunk.clone(), false);
+                current_chunk.clear();
+                chunk_index = chunk_index.saturating_add(1);
+            }
+            current_chunk.push(ch);
+        }
+        if !current_chunk.is_empty() {
+            let field_name = if chunk_index == 0 {
+                "Example:".to_owned()
+            } else {
+                format!("Example (cont. {}):", chunk_index.saturating_add(1))
+            };
+            embed = embed.field(field_name, current_chunk.clone(), false);
+        }
+        current_chunk.clear();
+        chunk_index = 0;
 
         let len = data.list.len();
         if ctx.guild_id().is_some() && len > 1 {
@@ -1456,17 +1476,15 @@ pub async fn urban(
                 embed = CreateEmbed::default()
                     .title(&current_entry.word)
                     .colour(COLOUR_YELLOW);
-                let mut current_chunk = String::with_capacity(1024);
-                chunk_index = 0;
                 for ch in current_entry.definition.replace(['[', ']'], "").chars() {
                     if current_chunk.len() >= 1024 {
                         let field_name = if chunk_index == 0 {
                             "Definition:".to_owned()
                         } else {
-                            format!("Response (cont. {}):", chunk_index.saturating_add(1))
+                            format!("Definition (cont. {}):", chunk_index.saturating_add(1))
                         };
-                        embed = embed.field(field_name, current_chunk, false);
-                        current_chunk = String::with_capacity(1024);
+                        embed = embed.field(field_name, current_chunk.clone(), false);
+                        current_chunk.clear();
                         chunk_index = chunk_index.saturating_add(1);
                     }
                     current_chunk.push(ch);
@@ -1475,16 +1493,37 @@ pub async fn urban(
                     let field_name = if chunk_index == 0 {
                         "Definition:".to_owned()
                     } else {
-                        format!("Response (cont. {}):", chunk_index.saturating_add(1))
+                        format!("Definition (cont. {}):", chunk_index.saturating_add(1))
                     };
-                    embed = embed.field(field_name, current_chunk, false);
+                    embed = embed.field(field_name, current_chunk.clone(), false);
                 }
+                current_chunk.clear();
+                chunk_index = 0;
 
-                embed = embed.field(
-                    "Example:",
-                    current_entry.example.replace(['[', ']'], ""),
-                    false,
-                );
+                for ch in current_entry.example.replace(['[', ']'], "").chars() {
+                    if current_chunk.len() >= 1024 {
+                        let field_name = if chunk_index == 0 {
+                            "Example:".to_owned()
+                        } else {
+                            format!("Example (cont. {}):", chunk_index.saturating_add(1))
+                        };
+                        embed = embed.field(field_name, current_chunk.clone(), false);
+                        current_chunk.clear();
+                        chunk_index = chunk_index.saturating_add(1);
+                    }
+                    current_chunk.push(ch);
+                }
+                if !current_chunk.is_empty() {
+                    let field_name = if chunk_index == 0 {
+                        "Example:".to_owned()
+                    } else {
+                        format!("Example (cont. {}):", chunk_index.saturating_add(1))
+                    };
+                    embed = embed.field(field_name, current_chunk.clone(), false);
+                }
+                current_chunk.clear();
+                chunk_index = 0;
+
                 final_embed = embed.clone();
 
                 let new_components = {
