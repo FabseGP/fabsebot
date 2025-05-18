@@ -1,0 +1,9 @@
+imports_granularity = "Crate"
+reorder_impl_items = true
+group_imports = "StdExternalCrate"
+format_strings = true
+condense_wildcard_suffixes = true
+format_code_in_doc_comments = true
+hard_tabs = true
+normalize_doc_attributes = true
+wrap_comments = true
