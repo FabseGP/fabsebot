@@ -437,10 +437,8 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
         for (index, user) in users.iter().enumerate() {
             if let Ok(user_id_u64) = u64::try_from(user.id) {
                 if let Ok(target) = guild_id.member(&ctx.http(), UserId::new(user_id_u64)).await {
-                    let rank = index.saturating_add(1);
-                    let user_name = target.display_name();
                     embed = embed.field(
-                        format!("#{rank} {user_name}"),
+                        format!("#{} {}", index.saturating_add(1), target.display_name()),
                         user.count.to_string(),
                         false,
                     );

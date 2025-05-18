@@ -332,7 +332,7 @@ pub async fn anime(
                         .style(ButtonStyle::Primary)
                         .label("➡️"),
                 ];
-                let action_row = [CreateActionRow::buttons(&buttons[1..])];
+                let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
 
                 let message = ctx
                     .send(
@@ -425,7 +425,7 @@ pub async fn anime(
                     embed = embed.field("Genres", genres_string, false);
                     final_embed = embed.clone();
 
-                    let new_components = {
+                    action_row = {
                         if state.index == 0 {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
                         } else if state.index == len.saturating_sub(1) {
@@ -439,9 +439,7 @@ pub async fn anime(
 
                     msg.edit(
                         ctx.http(),
-                        EditMessage::default()
-                            .embed(embed)
-                            .components(&new_components),
+                        EditMessage::default().embed(embed).components(&action_row),
                     )
                     .await?;
                 }
@@ -638,7 +636,7 @@ pub async fn gif(
                 .style(ButtonStyle::Primary)
                 .label("➡️"),
         ];
-        let action_row = [CreateActionRow::buttons(&buttons[1..])];
+        let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
 
         let message = ctx
             .send(
@@ -680,7 +678,7 @@ pub async fn gif(
             }
             final_embed = embed.clone();
 
-            let new_components = {
+            action_row = {
                 if state.index == 0 {
                     [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
                 } else if state.index == len.saturating_sub(1) {
@@ -694,9 +692,7 @@ pub async fn gif(
 
             msg.edit(
                 ctx.http(),
-                EditMessage::default()
-                    .embed(embed)
-                    .components(&new_components),
+                EditMessage::default().embed(embed).components(&action_row),
             )
             .await?;
         }
@@ -841,7 +837,7 @@ pub async fn manga(
                         .style(ButtonStyle::Primary)
                         .label("➡️"),
                 ];
-                let action_row = [CreateActionRow::buttons(&buttons[1..])];
+                let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
 
                 let message = ctx
                     .send(
@@ -934,7 +930,7 @@ pub async fn manga(
                     embed = embed.field("Genres", genres_string, false);
                     final_embed = embed.clone();
 
-                    let new_components = {
+                    action_row = {
                         if state.index == 0 {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
                         } else if state.index == len.saturating_sub(1) {
@@ -948,9 +944,7 @@ pub async fn manga(
 
                     msg.edit(
                         ctx.http(),
-                        EditMessage::default()
-                            .embed(embed)
-                            .components(&new_components),
+                        EditMessage::default().embed(embed).components(&action_row),
                     )
                     .await?;
                 }
@@ -1234,7 +1228,7 @@ pub async fn translate(
                         .style(ButtonStyle::Primary)
                         .label("➡️"),
                 ];
-                let action_row = [CreateActionRow::buttons(&buttons[1..])];
+                let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
 
                 let message = ctx
                     .send(
@@ -1291,7 +1285,7 @@ pub async fn translate(
                         );
                     final_embed = embed.clone();
 
-                    let new_components = {
+                    action_row = {
                         if state.index == 0 {
                             [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
                         } else if state.index == len.saturating_sub(1) {
@@ -1305,9 +1299,7 @@ pub async fn translate(
 
                     msg.edit(
                         ctx.http(),
-                        EditMessage::default()
-                            .embed(embed)
-                            .components(&new_components),
+                        EditMessage::default().embed(embed).components(&action_row),
                     )
                     .await?;
                 }
@@ -1434,7 +1426,7 @@ pub async fn urban(
                     .style(ButtonStyle::Primary)
                     .label("➡️"),
             ];
-            let action_row = [CreateActionRow::buttons(&buttons[1..])];
+            let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
 
             let message = ctx
                 .send(
@@ -1526,7 +1518,7 @@ pub async fn urban(
 
                 final_embed = embed.clone();
 
-                let new_components = {
+                action_row = {
                     if state.index == 0 {
                         [CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
                     } else if state.index == len.saturating_sub(1) {
@@ -1540,9 +1532,7 @@ pub async fn urban(
 
                 msg.edit(
                     ctx.http(),
-                    EditMessage::default()
-                        .embed(embed)
-                        .components(&new_components),
+                    EditMessage::default().embed(embed).components(&action_row),
                 )
                 .await?;
             }
