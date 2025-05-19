@@ -179,10 +179,15 @@ pub async fn bot_start(
 		.await;
 	match client {
 		Ok(mut client) => {
+			let shutdown_trigger = client.shard_manager.get_shutdown_trigger();
 			spawn(async move {
 				wait_until_shutdown().await;
 				warn!("Recieved control C and shutting down...");
-				// IMPLEMENT SHUTTING DOWN ALL SHARDS
+				if shutdown_trigger() {
+					warn!("Successfully triggered shutdown for all shards");
+				} else {
+					warn!("Failed to trigger shutdown, shards may have already stopped");
+				}
 			});
 			if let Err(e) = client.start_autosharded().await {
 				warn!("Client error: {:?}", e);
