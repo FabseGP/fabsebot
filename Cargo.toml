@@ -27,6 +27,7 @@ sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "main", default-f
 symphonia = { version = "*", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }
 systemstat = "*"
 textwrap = "*"
+thiserror = "*"
 tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
 toml = "*"
 tracing = "*"

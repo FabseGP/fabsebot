@@ -900,6 +900,7 @@ dependencies = [
  "symphonia",
  "systemstat",
  "textwrap",
+ "thiserror 1.0.69",
  "tokio",
  "toml",
  "tracing",
