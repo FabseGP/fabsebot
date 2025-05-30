@@ -551,7 +551,7 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 														CreateAttachment::url(
 															&ctx.http,
 															attachment.url.as_str(),
-															attachment.filename.to_string(),
+															attachment.filename.clone(),
 														)
 														.await?,
 													);

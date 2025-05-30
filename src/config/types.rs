@@ -12,6 +12,7 @@ use poise::{
 };
 use reqwest::Client;
 use serde::Serialize;
+use serenity::all::ShardManager;
 use songbird::Songbird;
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
@@ -161,3 +162,9 @@ pub static QWEN_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDe
 	frequency_penalty: 0.0,
 	presence_penalty: 0.0,
 });
+
+pub static CLIENT_DATA: OnceLock<Arc<ClientData>> = OnceLock::new();
+
+pub struct ClientData {
+	pub shard_manager: ShardManager,
+}

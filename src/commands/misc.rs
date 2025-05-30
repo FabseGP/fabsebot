@@ -12,7 +12,7 @@ use poise::{
 		CreateAllowedMentions, CreateAttachment, CreateButton, CreateEmbed,
 		CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
 		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, Member,
-		MessageId, UserId, nonmax::NonMaxU16,
+		MessageId, ShardRunnerMessage, UserId, nonmax::NonMaxU16,
 	},
 };
 use rayon::spawn;
@@ -27,7 +27,7 @@ use tracing::warn;
 use crate::{
 	config::{
 		constants::{COLOUR_RED, FONTS},
-		types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
+		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
 	},
 	utils::{
 		ai::ai_response_simple,
@@ -238,8 +238,69 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 		embed = embed.field("System uptime:", format!("{}ms", uptime.as_millis()), true);
 	}
 
-	ctx.send(CreateReply::default().embed(embed).reply(true))
-		.await?;
+	let button = [CreateButton::new(format!("{}_shard_restart", ctx.id()))
+		.style(ButtonStyle::Primary)
+		.label("Restart shard")];
+
+	ctx.send(
+		CreateReply::default()
+			.embed(embed.clone())
+			.reply(true)
+			.components(&[CreateActionRow::Buttons(Cow::Borrowed(&button))]),
+	)
+	.await?;
+
+	let ctx_id_copy = ctx.id();
+	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
+		.timeout(Duration::from_secs(60))
+		.filter(move |interaction| {
+			interaction
+				.data
+				.custom_id
+				.starts_with(ctx_id_copy.to_string().as_str())
+		})
+		.await
+	{
+		let mut msg = interaction.message;
+		if let Some(runner) = ctx
+			.serenity_context()
+			.runners
+			.get(&ctx.serenity_context().shard_id)
+			.map(|entry| entry.1.clone())
+		{
+			if let Err(err) = runner.unbounded_send(ShardRunnerMessage::Restart) {
+				warn!("Failed to queue restart of shard: {:?}", err);
+				msg.edit(
+					ctx.http(),
+					EditMessage::default()
+						.embed(embed)
+						.components(vec![])
+						.content("Rip, failed to restart shard!"),
+				)
+				.await?;
+			} else {
+				msg.edit(
+					ctx.http(),
+					EditMessage::default()
+						.embed(embed)
+						.components(vec![])
+						.content("Woah shard restarted!"),
+				)
+				.await?;
+			}
+		} else {
+			warn!("No shard runner found in runners map");
+			msg.edit(
+				ctx.http(),
+				EditMessage::default()
+					.embed(embed)
+					.components(vec![])
+					.content("Rip, shard doesn't exist!"),
+			)
+			.await?;
+		}
+	}
+
 	Ok(())
 }
 
@@ -247,10 +308,21 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, owners_only)]
 #[expect(clippy::unused_async)]
 pub async fn end_pgo(ctx: SContext<'_>) -> Result<(), Error> {
-	ctx.serenity_context().shutdown_all();
-	process::exit(1);
+	if let Some(shutdown_trigger) = CLIENT_DATA
+		.get()
+		.map(|c| c.shard_manager.get_shutdown_trigger())
+	{
+		ctx.serenity_context().shutdown_all();
+		if shutdown_trigger() {
+			warn!("Successfully triggered shutdown for all shards");
+		} else {
+			warn!("Failed to trigger shutdown, shards may have already stopped");
+			process::exit(1);
+		}
+	} else {
+		process::exit(1);
+	}
 
-	#[expect(unreachable_code)]
 	Ok(())
 }
 

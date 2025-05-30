@@ -23,7 +23,7 @@ use crate::{
 	commands::{api_calls, funny, games, info, misc, music, settings},
 	config::{
 		settings::{APIConfig, FabseserverConfig, MainConfig, PostgresConfig},
-		types::{Data, UTILS_CONFIG, UtilsConfig},
+		types::{CLIENT_DATA, ClientData, Data, UTILS_CONFIG, UtilsConfig},
 	},
 	core::handlers::{EventHandler, dynamic_prefix, on_error},
 };
@@ -191,6 +191,12 @@ pub async fn bot_start(
 			});
 			if let Err(e) = client.start_autosharded().await {
 				warn!("Client error: {:?}", e);
+			}
+			let client_data = Arc::new(ClientData {
+				shard_manager: client.shard_manager,
+			});
+			if CLIENT_DATA.set(client_data).is_err() {
+				error!("Failed to set CLIENT_DATA");
 			}
 			client
 				.http

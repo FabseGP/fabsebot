@@ -125,6 +125,7 @@ pub async fn ai_image(
 	Ok(())
 }
 
+/// Make the ai generate text for you
 #[poise::command(
 	slash_command,
 	install_context = "Guild|User",

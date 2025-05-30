@@ -223,9 +223,9 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
 name = "av1-grain"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6678909d8c5d46a42abcf571271e15fdbc0a225e3646cf23762cd415046c78bf"
+checksum = "4f3efb2ca85bc610acfa917b5aaa36f3fcbebed5b3182d7f877b02531c4b80c8"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -358,9 +358,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.23"
+version = "1.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f4ac86a9e5bc1e2b3449ab9d7d3a6a405e3d1bb28d7b9be8614f55846ae3766"
+checksum = "16595d3be041c03b09d08d0858631facccee9221e579704070e6e9e4915d3bc7"
 dependencies = [
  "jobserver",
  "libc",
@@ -900,7 +900,7 @@ dependencies = [
  "symphonia",
  "systemstat",
  "textwrap",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "toml",
  "tracing",
@@ -1377,11 +1377,10 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.27.5"
+version = "0.27.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d191583f3da1305256f22463b9bb0471acad48a4e534a5218b9963e9c1f59b2"
+checksum = "03a01595e11bdcec50946522c32dde3fc6914743000a68b93000965f2f02406d"
 dependencies = [
- "futures-util",
  "http",
  "hyper",
  "hyper-util",
@@ -1390,7 +1389,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots 0.26.11",
+ "webpki-roots 1.0.0",
 ]
 
 [[package]]
@@ -1408,9 +1407,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "497bbc33a26fdd4af9ed9c70d63f61cf56a938375fbb32df34db9b1cd6d643f2"
+checksum = "cf9f1e950e0d9d1d3c47184416723cf29c0d1f93bd8cccf37e4beb6b44f31710"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -3022,9 +3021,9 @@ dependencies = [
 
 [[package]]
 name = "rustversion"
-version = "1.0.20"
+version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eded382c5f5f786b989652c49544c4877d9f015cc22e145a5ea8ea66c2921cd2"
+checksum = "8a0d197bd2c9dc6e53b84da9556a69ba4cdfab8619eb41a8bd1cc2027a0f6b1d"
 
 [[package]]
 name = "rusty_pool"
@@ -3245,7 +3244,7 @@ dependencies = [
 [[package]]
 name = "serenity"
 version = "0.12.4"
-source = "git+https://github.com/serenity-rs/serenity?branch=next#956f5f130af486721ca44d4ac3394677d0d5e9b5"
+source = "git+https://github.com/serenity-rs/serenity?branch=next#c0fb264b2f3bfa8d7b6cdf829a9bbbf3b481a055"
 dependencies = [
  "aformat",
  "arrayvec",
@@ -3506,8 +3505,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx"
-version = "0.8.5"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#1b94e1d07d7db5bd8b8f48564a17d40c03fff6fe"
+version = "0.8.6"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#bab1b022bd56a64f9a08b46b36b97c5cff19d77e"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -3516,8 +3515,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx-core"
-version = "0.8.5"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#1b94e1d07d7db5bd8b8f48564a17d40c03fff6fe"
+version = "0.8.6"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#bab1b022bd56a64f9a08b46b36b97c5cff19d77e"
 dependencies = [
  "base64",
  "bytes",
@@ -3551,8 +3550,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx-macros"
-version = "0.8.5"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#1b94e1d07d7db5bd8b8f48564a17d40c03fff6fe"
+version = "0.8.6"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#bab1b022bd56a64f9a08b46b36b97c5cff19d77e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3563,8 +3562,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx-macros-core"
-version = "0.8.5"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#1b94e1d07d7db5bd8b8f48564a17d40c03fff6fe"
+version = "0.8.6"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#bab1b022bd56a64f9a08b46b36b97c5cff19d77e"
 dependencies = [
  "dotenvy",
  "either",
@@ -3585,8 +3584,8 @@ dependencies = [
 
 [[package]]
 name = "sqlx-postgres"
-version = "0.8.5"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#1b94e1d07d7db5bd8b8f48564a17d40c03fff6fe"
+version = "0.8.6"
+source = "git+https://github.com/launchbadge/sqlx?branch=main#bab1b022bd56a64f9a08b46b36b97c5cff19d77e"
 dependencies = [
  "atoi",
  "base64",
@@ -4632,11 +4631,13 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
+checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
 dependencies = [
  "getrandom 0.3.3",
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -4822,9 +4823,9 @@ dependencies = [
 
 [[package]]
 name = "weezl"
-version = "0.1.8"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53a85b86a771b1c87058196170769dd264f66c0782acf1ae6cc51bfd64b39082"
+checksum = "a751b3277700db47d3e574514de2eced5e54dc8a5436a3bf7a0b248b2cee16f3"
 
 [[package]]
 name = "whoami"

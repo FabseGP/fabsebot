@@ -8,7 +8,7 @@ ab_glyph = "*"
 anyhow = "*"
 base64 = "*"
 bytes = "*"
-dashmap = { version = "*" }
+dashmap = "*"
 fastrand = "*"
 image = { version = "*", default-features = false, features = ["gif", "rayon", "webp"] }
 imageproc = { version = "*", default-features = false, features = ["rayon"] }
