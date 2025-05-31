@@ -623,11 +623,11 @@ pub async fn gif(
 	let mut embed = CreateEmbed::default()
 		.title(input.as_str())
 		.colour(COLOUR_ORANGE);
-	if let Some(image_url) = urls.first() {
-		embed = embed.image(image_url.clone());
-	}
 	let len = urls.len();
 	if ctx.guild_id().is_some() && len > 1 {
+		if let Some(image_url) = urls.first() {
+			embed = embed.image(image_url.as_ref());
+		}
 		let mut state = State::new(ctx.id(), len);
 		let mut final_embed = embed.clone();
 		let buttons = [
@@ -676,7 +676,7 @@ pub async fn gif(
 				.title(input.as_str())
 				.colour(COLOUR_ORANGE);
 			if let Some(image_url) = urls.get(state.index) {
-				embed = embed.image(image_url.clone());
+				embed = embed.image(image_url.as_ref());
 			}
 			final_embed = embed.clone();
 
@@ -708,6 +708,10 @@ pub async fn gif(
 			)
 			.await?;
 	} else {
+		let index = RNG.lock().await.usize(..len);
+		if let Some(image_url) = urls.get(index) {
+			embed = embed.image(image_url.as_ref());
+		}
 		ctx.send(CreateReply::default().reply(true).embed(embed))
 			.await?;
 	}
