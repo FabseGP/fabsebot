@@ -242,13 +242,14 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 		.style(ButtonStyle::Primary)
 		.label("Restart shard")];
 
-	ctx.send(
-		CreateReply::default()
-			.embed(embed.clone())
-			.reply(true)
-			.components(&[CreateActionRow::Buttons(Cow::Borrowed(&button))]),
-	)
-	.await?;
+	let message = ctx
+		.send(
+			CreateReply::default()
+				.embed(embed.clone())
+				.reply(true)
+				.components(&[CreateActionRow::Buttons(Cow::Borrowed(&button))]),
+		)
+		.await?;
 
 	let ctx_id_copy = ctx.id();
 	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
@@ -299,6 +300,16 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.await?;
 		}
+	} else {
+		message
+			.edit(
+				ctx,
+				CreateReply::default()
+					.reply(true)
+					.embed(embed)
+					.components(&[]),
+			)
+			.await?;
 	}
 
 	Ok(())
