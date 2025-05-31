@@ -12,7 +12,7 @@ use poise::{
 		CreateAllowedMentions, CreateAttachment, CreateButton, CreateEmbed,
 		CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
 		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, Member,
-		MessageId, ShardRunnerMessage, UserId, nonmax::NonMaxU16,
+		Message, MessageId, ShardRunnerMessage, UserId, nonmax::NonMaxU16,
 	},
 };
 use rayon::spawn;
@@ -957,6 +957,28 @@ pub async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
 	register_globally(ctx.http(), commands).await?;
 	ctx.say("Successfully registered nucle- I mean, slash commands!")
 		.await?;
+	Ok(())
+}
+
+/// When you need some help responding
+#[poise::command(context_menu_command = "Respond")]
+pub async fn respond(
+	ctx: SContext<'_>,
+	#[description = "Message"] message: Message,
+) -> Result<(), Error> {
+	ctx.defer().await?;
+	if let Some(utils_config) = UTILS_CONFIG.get()
+		&& let Some(resp) = ai_response_simple(
+			"Mock this Discord message someone posted. Just give the roast, nothing else.",
+			&message.content,
+			&utils_config.fabseserver.text_gen_model,
+		)
+		.await && !resp.is_empty()
+	{
+		ctx.say(resp).await?;
+	} else {
+		ctx.say("stfu").await?;
+	}
 	Ok(())
 }
 
