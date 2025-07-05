@@ -2,15 +2,16 @@ use core::fmt::{Display, Formatter, Result as FmtResult};
 use std::{sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose};
-use poise::{
-	CreateReply,
-	serenity_prelude::{
-		ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment,
-		CreateButton, CreateEmbed, CreateInteractionResponse, EditMessage, Member, MessageId,
-		futures::StreamExt as _,
-	},
-};
+use poise::CreateReply;
 use serde::{Deserialize, Serialize};
+use serenity::{
+	all::{
+		ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment,
+		CreateButton, CreateComponent, CreateEmbed, CreateInteractionResponse, EditMessage, Member,
+		MessageId,
+	},
+	futures::StreamExt as _,
+};
 use tracing::warn;
 use urlencoding::encode;
 
@@ -73,9 +74,8 @@ pub async fn ai_image(
 	prompt: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let rand_num = RNG.lock().await.usize(..1024);
 	let request = ImageRequest {
-		prompt: format!("{prompt} {rand_num}"),
+		prompt: format!("{prompt} {}", RNG.lock().await.usize(..1024)),
 	};
 	if let Some(utils_config) = UTILS_CONFIG.get() {
 		let mut resp = HTTP_CLIENT
@@ -334,7 +334,9 @@ pub async fn anime(
 						.style(ButtonStyle::Primary)
 						.label("➡️"),
 				];
-				let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
+				let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+					&buttons[1..],
+				))];
 
 				let message = ctx
 					.send(
@@ -427,15 +429,15 @@ pub async fn anime(
 					embed = embed.field("Genres", genres_string, false);
 					final_embed = embed.clone();
 
-					action_row = {
+					action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
 						if state.index == 0 {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+							Cow::Borrowed(&buttons[1..])
 						} else if state.index == len.saturating_sub(1) {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+							Cow::Borrowed(&buttons[..1])
 						} else {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+							Cow::Borrowed(&buttons)
 						}
-					};
+					}))];
 
 					let mut msg = interaction.message;
 
@@ -619,14 +621,12 @@ pub async fn gif(
 	input: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let urls = get_gifs(&input).await;
-	let mut embed = CreateEmbed::default()
-		.title(input.as_str())
-		.colour(COLOUR_ORANGE);
-	let len = urls.len();
+	let gifs = get_gifs(input).await;
+	let mut embed = CreateEmbed::default().colour(COLOUR_ORANGE);
+	let len = gifs.len();
 	if ctx.guild_id().is_some() && len > 1 {
-		if let Some(image_url) = urls.first() {
-			embed = embed.image(image_url.as_ref());
+		if let Some(gif) = gifs.first() {
+			embed = embed.image(gif.0.as_ref()).title(gif.1.as_ref());
 		}
 		let mut state = State::new(ctx.id(), len);
 		let mut final_embed = embed.clone();
@@ -638,7 +638,42 @@ pub async fn gif(
 				.style(ButtonStyle::Primary)
 				.label("➡️"),
 		];
-		let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
+		let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+			&buttons[1..],
+		))];
+
+		/*
+				let media_item = [CreateMediaGalleryItem::new(CreateUnfurledMediaItem::new(
+					"https://media.tenor.com/8-EJGSB4H1wAAAAi/big-floppa.gif",
+				))];
+
+				let media_gallery = CreateComponent::MediaGallery(CreateMediaGallery::new(&media_item));
+
+				let text_display = [CreateComponent::TextDisplay(CreateTextDisplay::new(
+					format!("# {input}"),
+				))];
+
+				let component_text = [CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
+					"next",
+				))];
+
+				let new_layout = [CreateComponent::Container(
+					CreateContainer::new(&text_display)
+						.add_component(media_gallery)
+						.add_component(CreateComponent::Separator(CreateSeparator::new(true)))
+						.add_component(CreateComponent::Section(CreateSection::new(
+							&component_text,
+							CreateSectionAccessory::Button(buttons[0].clone()),
+						))),
+				)];
+
+				ctx.send(
+					CreateReply::default()
+						.components(&new_layout)
+						.flags(MessageFlags::IS_COMPONENTS_V2),
+				)
+				.await?;
+		*/
 
 		let message = ctx
 			.send(
@@ -672,23 +707,21 @@ pub async fn gif(
 				state.index = state.index.saturating_sub(1);
 			}
 
-			embed = CreateEmbed::default()
-				.title(input.as_str())
-				.colour(COLOUR_ORANGE);
-			if let Some(image_url) = urls.get(state.index) {
-				embed = embed.image(image_url.as_ref());
+			embed = CreateEmbed::default().colour(COLOUR_ORANGE);
+			if let Some(gif) = gifs.get(state.index) {
+				embed = embed.image(gif.0.as_ref()).title(gif.1.as_ref());
 			}
 			final_embed = embed.clone();
 
-			action_row = {
+			action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
 				if state.index == 0 {
-					[CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+					Cow::Borrowed(&buttons[1..])
 				} else if state.index == len.saturating_sub(1) {
-					[CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+					Cow::Borrowed(&buttons[..1])
 				} else {
-					[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+					Cow::Borrowed(&buttons)
 				}
-			};
+			}))];
 
 			let mut msg = interaction.message;
 
@@ -709,8 +742,8 @@ pub async fn gif(
 			.await?;
 	} else {
 		let index = RNG.lock().await.usize(..len);
-		if let Some(image_url) = urls.get(index) {
-			embed = embed.image(image_url.as_ref());
+		if let Some(gif) = gifs.get(index) {
+			embed = embed.image(gif.0.as_ref()).title(gif.1.as_ref());
 		}
 		ctx.send(CreateReply::default().reply(true).embed(embed))
 			.await?;
@@ -843,7 +876,9 @@ pub async fn manga(
 						.style(ButtonStyle::Primary)
 						.label("➡️"),
 				];
-				let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
+				let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+					&buttons[1..],
+				))];
 
 				let message = ctx
 					.send(
@@ -936,15 +971,15 @@ pub async fn manga(
 					embed = embed.field("Genres", genres_string, false);
 					final_embed = embed.clone();
 
-					action_row = {
+					action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
 						if state.index == 0 {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+							Cow::Borrowed(&buttons[1..])
 						} else if state.index == len.saturating_sub(1) {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+							Cow::Borrowed(&buttons[..1])
 						} else {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+							Cow::Borrowed(&buttons)
 						}
-					};
+					}))];
 
 					let mut msg = interaction.message;
 
@@ -1235,7 +1270,9 @@ pub async fn translate(
 						.style(ButtonStyle::Primary)
 						.label("➡️"),
 				];
-				let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
+				let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+					&buttons[1..],
+				))];
 
 				let message = ctx
 					.send(
@@ -1292,15 +1329,15 @@ pub async fn translate(
 						);
 					final_embed = embed.clone();
 
-					action_row = {
+					action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
 						if state.index == 0 {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+							Cow::Borrowed(&buttons[1..])
 						} else if state.index == len.saturating_sub(1) {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+							Cow::Borrowed(&buttons[..1])
 						} else {
-							[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+							Cow::Borrowed(&buttons)
 						}
-					};
+					}))];
 
 					let mut msg = interaction.message;
 
@@ -1433,7 +1470,9 @@ pub async fn urban(
 					.style(ButtonStyle::Primary)
 					.label("➡️"),
 			];
-			let mut action_row = [CreateActionRow::buttons(&buttons[1..])];
+			let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+				&buttons[1..],
+			))];
 
 			let message = ctx
 				.send(
@@ -1525,15 +1564,15 @@ pub async fn urban(
 
 				final_embed = embed.clone();
 
-				action_row = {
+				action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
 					if state.index == 0 {
-						[CreateActionRow::Buttons(Cow::Borrowed(&buttons[1..]))]
+						Cow::Borrowed(&buttons[1..])
 					} else if state.index == len.saturating_sub(1) {
-						[CreateActionRow::Buttons(Cow::Borrowed(&buttons[..1]))]
+						Cow::Borrowed(&buttons[..1])
 					} else {
-						[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]
+						Cow::Borrowed(&buttons)
 					}
-				};
+				}))];
 
 				let mut msg = interaction.message;
 

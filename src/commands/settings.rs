@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use base64::{Engine as _, engine::general_purpose};
-use poise::{
-	CreateReply,
-	serenity_prelude::{Channel, CreateEmbed},
-};
+use poise::CreateReply;
 use serde::Serialize;
+use serenity::all::{Channel, CreateEmbed};
 use sqlx::query;
 
 use crate::config::{

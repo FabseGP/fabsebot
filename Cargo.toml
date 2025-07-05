@@ -16,7 +16,8 @@ mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.
 opentelemetry = "*" 
 opentelemetry-otlp = { version = "*", default-features = false, features = ["grpc-tonic", "trace"] }
 opentelemetry_sdk = { version = "*", default-features = false, features = ["rt-tokio", "trace"] }
-poise = { git = "https://github.com/serenity-rs/poise", branch = "serenity-next" }
+#poise = { git = "https://github.com/serenity-rs/poise", branch = "serenity-next" }
+poise = { git = "https://github.com/FabseGP/poise-fork", branch = "components-v2" }
 rayon = "*"
 reqwest = { version = "*", default-features = false, features = ["rustls-tls"] }
 scraper = "*"
@@ -43,7 +44,7 @@ strip = true
 panic = "abort"
 
 [profile.dev]
-strip = true
+debug = "line-tables-only"
 panic = "abort"
 
 [package.metadata.cargo-machete]

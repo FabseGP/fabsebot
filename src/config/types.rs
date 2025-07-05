@@ -6,13 +6,10 @@ use std::{
 use anyhow::Error as AError;
 use fastrand::Rng;
 use mini_moka::sync::Cache;
-use poise::{
-	Context as PContext,
-	serenity_prelude::{GenericChannelId, GuildId, MessageId, UserId, Webhook},
-};
+use poise::Context as PContext;
 use reqwest::Client;
 use serde::Serialize;
-use serenity::all::ShardManager;
+use serenity::all::{GenericChannelId, GuildId, MessageId, ShardManager, UserId, Webhook};
 use songbird::Songbird;
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};

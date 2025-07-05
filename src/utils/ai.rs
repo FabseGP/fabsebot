@@ -2,11 +2,11 @@ use std::{collections::HashSet, fmt::Write as _, sync::Arc};
 
 use anyhow::Result as AResult;
 use bytes::Bytes;
-use poise::serenity_prelude::{
-	Context as SContext, GenericChannelId, GuildId, Http, Message, MessageId, Timestamp,
-};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
+use serenity::all::{
+	Context as SContext, GenericChannelId, GuildId, Http, Message, MessageId, Timestamp,
+};
 use songbird::{Call, input::Input};
 use tokio::sync::Mutex;
 use tracing::warn;

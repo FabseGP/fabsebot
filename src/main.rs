@@ -1,4 +1,4 @@
-#![feature(let_chains, iter_intersperse, float_algebraic)]
+#![feature(iter_intersperse, float_algebraic)]
 
 mod commands;
 mod config;
@@ -19,17 +19,19 @@ use opentelemetry_otlp::{SpanExporter, WithExportConfig as _};
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
 use tokio::{spawn, time::interval};
 use toml::{Table, Value};
-use tracing::{Level, warn};
+use tracing::{Level, error};
 use tracing_opentelemetry::layer;
 use tracing_subscriber::{
 	Registry, filter::LevelFilter, fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _,
 };
 
-async fn periodic_task(url: &String) -> AResult<()> {
+async fn periodic_task(url: &String) -> ! {
 	let mut interval = interval(Duration::from_secs(60));
 	loop {
 		interval.tick().await;
-		HTTP_CLIENT.get(url).send().await?;
+		if let Err(err) = HTTP_CLIENT.get(url).send().await {
+			error!("Failed to report uptime: {:?}", &err);
+		}
 	}
 }
 
@@ -78,9 +80,7 @@ async fn main() -> AResult<()> {
 	let uptime_task_url = bot_config.uptime_url.clone();
 
 	spawn(async move {
-		if let Err(e) = periodic_task(&uptime_task_url).await {
-			warn!("Failed to report uptime: {e}");
-		}
+		periodic_task(&uptime_task_url).await;
 	});
 
 	bot_start(bot_config, postgres_config, fabseserver_config, api_config).await?;

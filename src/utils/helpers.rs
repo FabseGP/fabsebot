@@ -26,6 +26,7 @@ struct GifResponse {
 #[derive(Deserialize)]
 struct GifResult {
 	media_formats: MediaFormat,
+	content_description: String,
 }
 
 #[derive(Deserialize)]
@@ -38,11 +39,11 @@ struct GifObject {
 	url: String,
 }
 
-pub async fn get_gifs(input: &str) -> Vec<Cow<'static, str>> {
+pub async fn get_gifs(input: String) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
 	let request_url = {
-		let encoded_input = encode(input);
+		let encoded_input = encode(&input);
 		format!(
-            "https://tenor.googleapis.com/v2/search?q={encoded_input}&key={}&contentfilter=medium&limit=40",
+            "https://tenor.googleapis.com/v2/search?q={encoded_input}&key={}&contentfilter=medium&limit=40&media_filter=minimal",
             UTILS_CONFIG
                 .get()
                 .map(|u| u.api.tenor_token.as_str())
@@ -54,10 +55,17 @@ pub async fn get_gifs(input: &str) -> Vec<Cow<'static, str>> {
 	{
 		urls.results
 			.into_iter()
-			.filter_map(|result| result.media_formats.gif.map(|media| Cow::Owned(media.url)))
+			.filter_map(|result| {
+				result.media_formats.gif.map(|media| {
+					(
+						Cow::Owned(media.url),
+						Cow::Owned(result.content_description),
+					)
+				})
+			})
 			.collect()
 	} else {
-		vec![Cow::Borrowed(FALLBACK_GIF)]
+		vec![(Cow::Borrowed(FALLBACK_GIF), Cow::Owned(input))]
 	}
 }
 

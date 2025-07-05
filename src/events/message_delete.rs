@@ -1,11 +1,12 @@
-use poise::serenity_prelude::{
-	Context, CreateEmbed, CreateMessage, GenericChannelId, GuildId, MessageId, audit_log,
+use serenity::all::{
+	Context as SContext, CreateEmbed, CreateMessage, GenericChannelId, GuildId, MessageId,
+	audit_log,
 };
 
 use crate::config::types::Error;
 
 pub async fn handle_message_delete(
-	ctx: &Context,
+	ctx: &SContext,
 	channel_id: GenericChannelId,
 	guild_id_opt: Option<GuildId>,
 	deleted_message_id: MessageId,

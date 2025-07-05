@@ -1,12 +1,10 @@
 use std::{string::ToString, time::Duration};
 
-use poise::{
-	CreateReply,
-	serenity_prelude::{
-		AutocompleteChoice, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
-		CreateAutocompleteResponse, CreateButton, CreateEmbed, CreateInteractionResponse,
-		EditMessage, Member,
-	},
+use poise::CreateReply;
+use serenity::all::{
+	AutocompleteChoice, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
+	CreateAutocompleteResponse, CreateButton, CreateComponent, CreateEmbed,
+	CreateInteractionResponse, CreateSectionAccessory, EditMessage, Member,
 };
 
 use crate::config::{
@@ -71,11 +69,29 @@ pub async fn rps(
 				.colour(COLOUR_ORANGE)
 				.description("Make a choice within 60s...");
 
+			let text_display = [serenity::all::CreateSectionComponent::TextDisplay(
+				serenity::all::CreateTextDisplay::new("hello"),
+			)];
+
+			let temp = [CreateComponent::Section(serenity::all::CreateSection::new(
+				&text_display,
+				CreateSectionAccessory::Button(CreateButton::new("hello").label("W")),
+			))];
+
+			ctx.send(
+				CreateReply::default()
+					.components(&temp)
+					.flags(serenity::all::MessageFlags::IS_COMPONENTS_V2),
+			)
+			.await?;
+
 			ctx.send(
 				CreateReply::default()
 					.embed(embed)
 					.reply(true)
-					.components(&[CreateActionRow::Buttons(Cow::Borrowed(&buttons))]),
+					.components(&[CreateComponent::ActionRow(CreateActionRow::Buttons(
+						Cow::Borrowed(&buttons),
+					))]),
 			)
 			.await?;
 

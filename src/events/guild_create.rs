@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use poise::serenity_prelude::Guild;
+use serenity::all::Guild;
 use sqlx::query;
 
 use crate::config::{

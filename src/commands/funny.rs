@@ -1,7 +1,5 @@
-use poise::{
-	CreateReply,
-	serenity_prelude::{CreateMessage, ExecuteWebhook, GenericChannelId, Member, User},
-};
+use poise::CreateReply;
+use serenity::all::{CreateMessage, ExecuteWebhook, GenericChannelId, Member, User};
 
 use crate::{
 	config::types::{Error, SContext},

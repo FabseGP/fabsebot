@@ -1,9 +1,7 @@
 use std::string::ToString;
 
-use poise::{
-	CreateReply,
-	serenity_prelude::{CreateEmbed, Member},
-};
+use poise::CreateReply;
+use serenity::all::{CreateEmbed, Member};
 
 use crate::config::types::{Error, SContext};
 
@@ -67,6 +65,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 			return Ok(());
 		}
 	};
+
 	let embed = CreateEmbed::default()
 		.title(guild_name)
 		.description(guild_description)

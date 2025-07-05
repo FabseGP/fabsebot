@@ -3,14 +3,12 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use bytes::{BufMut as _, BytesMut};
-use poise::{
-	CreateReply, async_trait,
-	serenity_prelude::{
-		Channel, CreateEmbed, CreateMessage, EmbedMessageBuilding as _, GenericChannelId, GuildId,
-		MessageBuilder, MessageId,
-	},
-};
+use poise::{CreateReply, async_trait};
 use serde::Deserialize;
+use serenity::all::{
+	Channel, CreateEmbed, CreateMessage, EmbedMessageBuilding as _, GenericChannelId, GuildId,
+	MessageBuilder, MessageId,
+};
 use songbird::{
 	Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
 	Songbird,

@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::Result as AResult;
-use poise::serenity_prelude::{
-	Channel, Context as SContext, ExecuteWebhook, GenericChannelId, GuildId, Message, Webhook,
-	builder::CreateAttachment,
-};
 use serde::Serialize;
+use serenity::all::{
+	Channel, Context as SContext, CreateAttachment, ExecuteWebhook, GuildId, Message, Webhook,
+};
 use tracing::warn;
 
 use crate::config::types::{HTTP_CLIENT, WebhookMap};
@@ -74,7 +73,7 @@ struct WebhookInfo {
 pub async fn webhook_find(
 	ctx: &SContext,
 	guild_id: Option<GuildId>,
-	channel_id: GenericChannelId,
+	channel_id: serenity::all::GenericChannelId,
 	cached_webhooks: Arc<WebhookMap>,
 ) -> Option<Webhook> {
 	if let Some(webhook) = cached_webhooks.get(&channel_id) {

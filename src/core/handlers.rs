@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use anyhow::Result as AResult;
-use poise::{FrameworkError, PartialContext, serenity_prelude::FullEvent};
-use serenity::prelude::{Context, EventHandler as SEventHandler};
+use poise::{FrameworkError, PartialContext};
+use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
 use tracing::{error, warn};
 
 use crate::{
@@ -54,7 +54,7 @@ pub struct EventHandler;
 
 #[serenity::async_trait]
 impl SEventHandler for EventHandler {
-	async fn dispatch(&self, ctx: &Context, event: &FullEvent) {
+	async fn dispatch(&self, ctx: &SContext, event: &FullEvent) {
 		match event {
 			FullEvent::Ready { data_about_bot, .. } => {
 				if let Err(error) = handle_ready(ctx, data_about_bot).await {

@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Context as _;
-use poise::serenity_prelude::{Context as SContext, GuildId, Ready, UserId};
+use serenity::all::{Context as SContext, GuildId, Ready, UserId};
 use sqlx::query_as;
 use tracing::{info, warn};
 

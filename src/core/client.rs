@@ -2,11 +2,12 @@ use std::{str::FromStr as _, sync::Arc};
 
 use anyhow::{Context as _, Result as AResult};
 use mini_moka::sync::Cache;
-use poise::{
-	Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions,
-	serenity_prelude::{
-		ActivityData, Client, CreateAllowedMentions, CreateAttachment, EditProfile, GatewayIntents,
-		OnlineStatus::Online, Token, cache::Settings,
+use poise::{Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions};
+use serenity::{
+	Client,
+	all::{
+		ActivityData, CreateAllowedMentions, CreateAttachment, EditProfile, GatewayIntents,
+		OnlineStatus, Settings, Token,
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode::Decode};
@@ -175,7 +176,7 @@ pub async fn bot_start(
 		.cache_settings(cache_settings)
 		.event_handler(EventHandler)
 		.activity(activity)
-		.status(Online)
+		.status(OnlineStatus::Online)
 		.data(user_data)
 		.await;
 	match client {

@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Context as _;
-use poise::serenity_prelude::{
+use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
 	GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
@@ -262,8 +262,9 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 										Some(get_waifu().await)
 									} else if let Some(gif_query) = ping_media.strip_prefix("!gif")
 									{
-										let urls = get_gifs(gif_query).await;
-										urls.get(RNG.lock().await.usize(..urls.len())).cloned()
+										let gifs = get_gifs(gif_query.to_owned()).await;
+										gifs.get(RNG.lock().await.usize(..gifs.len()))
+											.map(|g| g.0.clone())
 									} else if !ping_media.is_empty() {
 										Some(Cow::Borrowed(ping_media.as_str()))
 									} else {
@@ -334,10 +335,10 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 							if current_time.saturating_sub(last_message_time)
 								> dead_chat_rate.saturating_mul(60)
 							{
-								let urls = get_gifs("dead chat").await;
-								let index = RNG.lock().await.usize(..urls.len());
-								if let Some(url) = urls.get(index).cloned() {
-									dead_chat_channel.say(&ctx.http, url).await?;
+								let gifs = get_gifs("dead chat".to_owned()).await;
+								let index = RNG.lock().await.usize(..gifs.len());
+								if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
+									dead_chat_channel.say(&ctx.http, gif).await?;
 								}
 							}
 						}
@@ -669,13 +670,13 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 						match &record.media {
 							Some(media) if !media.is_empty() => {
 								if let Some(gif_query) = media.strip_prefix("!gif") {
-									let urls = get_gifs(gif_query).await;
+									let gifs = get_gifs(gif_query.to_owned()).await;
 									let mut embed = CreateEmbed::default()
 										.title(&record.content)
 										.colour(COLOUR_YELLOW);
-									let index = RNG.lock().await.usize(..urls.len());
-									if let Some(url) = urls.get(index).cloned() {
-										embed = embed.image(url);
+									let index = RNG.lock().await.usize(..gifs.len());
+									if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
+										embed = embed.image(gif);
 									}
 									base.embed(embed)
 								} else {

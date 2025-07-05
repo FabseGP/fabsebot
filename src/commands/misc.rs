@@ -4,18 +4,18 @@ use ab_glyph::FontArc;
 use anyhow::Context as _;
 use dashmap::DashSet;
 use image::{ImageBuffer, Rgba};
-use poise::{
-	CreateReply,
-	builtins::register_globally,
-	serenity_prelude::{
+use poise::{CreateReply, builtins::register_globally};
+use rayon::spawn;
+use serenity::{
+	all::{
 		ButtonStyle, ComponentInteractionCollector, ComponentInteractionDataKind, CreateActionRow,
-		CreateAllowedMentions, CreateAttachment, CreateButton, CreateEmbed,
+		CreateAllowedMentions, CreateAttachment, CreateButton, CreateComponent, CreateEmbed,
 		CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
 		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, Member,
-		Message, MessageId, ShardRunnerMessage, UserId, nonmax::NonMaxU16,
+		Message, MessageId, ShardRunnerMessage, UserId,
 	},
+	nonmax::NonMaxU16,
 };
-use rayon::spawn;
 use sqlx::query;
 use systemstat::{Platform as _, saturating_sub_bytes};
 use tokio::{
@@ -69,7 +69,9 @@ pub async fn anony_poll(
 				.label((index.saturating_add(1)).to_string())
 		})
 		.collect();
-	let action_row = [CreateActionRow::buttons(&buttons)];
+	let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+		&buttons,
+	))];
 
 	let message = ctx
 		.send(
@@ -247,7 +249,9 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 			CreateReply::default()
 				.embed(embed.clone())
 				.reply(true)
-				.components(&[CreateActionRow::Buttons(Cow::Borrowed(&button))]),
+				.components(&[CreateComponent::ActionRow(CreateActionRow::Buttons(
+					Cow::Borrowed(&button),
+				))]),
 		)
 		.await?;
 
@@ -857,7 +861,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		.placeholder("Font")
 		.min_values(1)
 		.max_values(1);
-		let action_row = [CreateActionRow::buttons(&buttons)];
+		let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+			&buttons,
+		))];
 		let mut message = ctx
 			.channel_id()
 			.send_message(
