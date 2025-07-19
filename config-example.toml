@@ -1,6 +1,5 @@
 [Main]
 #log_level =
-#jaeger =
 
 [Bot]
 #token = 

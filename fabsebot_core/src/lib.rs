@@ -52,7 +52,7 @@ async fn wait_until_shutdown() {
 	);
 }
 
-async fn periodic_task(url: &str) -> ! {
+async fn periodic_ping(url: &str) -> ! {
 	let mut interval = interval(Duration::from_secs(60));
 	loop {
 		interval.tick().await;
@@ -83,7 +83,7 @@ pub async fn bot_start(
 	};
 
 	spawn(async move {
-		periodic_task(&utils_config.bot.uptime_url).await;
+		periodic_ping(&utils_config.bot.uptime_url).await;
 	});
 
 	let music_manager = Songbird::serenity();

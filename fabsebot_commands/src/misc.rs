@@ -61,13 +61,14 @@ pub async fn anony_poll(
 	let mut final_embed = embed.clone();
 
 	let ctx_id_copy = ctx.id();
-	let buttons: Vec<CreateButton> = (0..options_count)
-		.map(|index| {
+	let mut buttons = Vec::with_capacity(options_count);
+	for index in 0..options_count {
+		buttons.push(
 			CreateButton::new(format!("{ctx_id_copy}_{index}"))
 				.style(ButtonStyle::Primary)
-				.label((index.saturating_add(1)).to_string())
-		})
-		.collect();
+				.label((index.saturating_add(1)).to_string()),
+		);
+	}
 	let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
 		&buttons,
 	))];
