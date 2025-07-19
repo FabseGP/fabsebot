@@ -1,6 +1,8 @@
 [Main]
 #log_level =
-#jaeger = 
+#jaeger =
+
+[Bot]
 #token = 
 #username = 
 #avatar = 
@@ -10,7 +12,7 @@
 #ping_url = 
 #uptime_url = 
 
-[PostgreSQL-Info]
+[PostgreSQL]
 #database = 
 #password = 
 #host =
@@ -18,7 +20,7 @@
 #user = 
 #max_connections = 
 
-[Fabseserver]
+[Server]
 #translate =
 #search =
 #llm_host_text =

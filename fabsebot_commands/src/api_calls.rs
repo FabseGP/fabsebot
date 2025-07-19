@@ -2,6 +2,17 @@ use core::fmt::{Display, Formatter, Result as FmtResult};
 use std::{sync::Arc, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose};
+use fabsebot_core::{
+	config::{
+		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
+		settings::UserSettings,
+		types::{Error, HTTP_CLIENT, RNG, SContext, UTILS_CONFIG},
+	},
+	utils::{
+		ai::ai_response_simple,
+		helpers::{get_gifs, get_waifu},
+	},
+};
 use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -14,18 +25,6 @@ use serenity::{
 };
 use tracing::warn;
 use urlencoding::encode;
-
-use crate::{
-	config::{
-		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
-		settings::UserSettings,
-		types::{Error, HTTP_CLIENT, RNG, SContext, UTILS_CONFIG},
-	},
-	utils::{
-		ai::ai_response_simple,
-		helpers::{get_gifs, get_waifu},
-	},
-};
 
 struct State {
 	next_id: String,

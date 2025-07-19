@@ -1,58 +1,17 @@
 [package]
-name = "fabsebot_supremacy"
+name = "fabsebot"
 version = "0.6.0"
 edition = "2024"
 
-[dependencies]
-ab_glyph = "*"
-anyhow = "*"
-base64 = "*"
-bytes = "*"
-dashmap = "*"
-fastrand = "*"
-image = { version = "*", default-features = false, features = ["gif", "rayon", "webp"] }
-imageproc = { version = "*", default-features = false, features = ["rayon"] }
-mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
-opentelemetry = "*" 
-opentelemetry-otlp = { version = "*", default-features = false, features = ["grpc-tonic", "trace"] }
-opentelemetry_sdk = { version = "*", default-features = false, features = ["rt-tokio", "trace"] }
-#poise = { git = "https://github.com/serenity-rs/poise", branch = "serenity-next" }
-poise = { git = "https://github.com/FabseGP/poise-fork", branch = "components-v2" }
-rayon = "*"
-reqwest = { version = "*", default-features = false, features = ["rustls-tls"] }
-scraper = "*"
-serde = "*"
-serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
-songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
-sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio", "tls-rustls"] }
-symphonia = { version = "*", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }
-systemstat = "*"
-textwrap = "*"
-thiserror = "*"
-tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
-toml = "*"
-tracing = "*"
-tracing-opentelemetry = { version = "*", default-features = false }
-tracing-subscriber = "*"
-urlencoding = "*"
-winnow = { version = "*", features = ["simd"] }
-
-[profile.release]
-codegen-units = 1
-lto = "thin"
-strip = true
-panic = "abort"
-
-[profile.dev]
-debug = "line-tables-only"
-panic = "abort"
-
-[package.metadata.cargo-machete]
-ignored = [
-    "symphonia",    
+[workspace]
+members = [
+    "fabsebot_commands",
+    "fabsebot_core",
+    "fabsebot_db",
 ]
+resolver = "3"
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = "warn"
 nursery = "warn"
 pedantic = "warn"
@@ -82,3 +41,62 @@ unwrap_used = "warn"
 unwrap_in_result = "warn"
 unused_trait_names = "warn"
 unused_result_ok = "warn"
+
+[workspace.dependencies]
+ab_glyph = "*"
+anyhow = "*"
+base64 = "*"
+bytes = "*"
+dashmap = "*"
+fastrand = "*"
+image = { version = "*", default-features = false, features = ["gif", "rayon", "webp"] }
+imageproc = { version = "*", default-features = false, features = ["rayon"] }
+mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
+poise = { git = "https://github.com/FabseGP/poise-fork", branch = "components-v2" }
+rayon = "*"
+reqwest = { version = "*", default-features = false, features = ["rustls-tls"] }
+scraper = "*"
+serde = "*"
+serenity = { git = "https://github.com/serenity-rs/serenity", branch = "next", default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
+songbird = { git = "https://github.com/serenity-rs/songbird", branch = "serenity-next", features = ["builtin-queue", "receive"] }
+sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+symphonia = { version = "*", default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }
+systemstat = "*"
+textwrap = "*"
+tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
+tracing = "*"
+urlencoding = "*"
+winnow = { version = "*", features = ["simd"] }
+
+[lints]
+workspace = true
+
+[dependencies]
+fabsebot_commands = { path = "fabsebot_commands" }
+fabsebot_core = { path = "fabsebot_core" }
+fabsebot_db = { path = "fabsebot_db" }
+anyhow = { workspace = true }
+opentelemetry = "*" 
+opentelemetry-otlp = { version = "*", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = { version = "*", default-features = false, features = ["rt-tokio", "trace"] }
+serde = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+toml = "*"
+tracing = { workspace = true }
+tracing-opentelemetry = { version = "*", default-features = false }
+tracing-subscriber = "*"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true
+panic = "abort"
+
+[profile.dev]
+debug = "line-tables-only"
+panic = "abort"
+
+[package.metadata.cargo-machete]
+ignored = [
+    "symphonia",    
+]

@@ -3,7 +3,8 @@ use std::sync::Arc;
 use anyhow::Result as AResult;
 use serde::Serialize;
 use serenity::all::{
-	Channel, Context as SContext, CreateAttachment, ExecuteWebhook, GuildId, Message, Webhook,
+	Channel, Context as SContext, CreateAttachment, ExecuteWebhook, GenericChannelId, GuildId,
+	Message, Webhook,
 };
 use tracing::warn;
 
@@ -73,7 +74,7 @@ struct WebhookInfo {
 pub async fn webhook_find(
 	ctx: &SContext,
 	guild_id: Option<GuildId>,
-	channel_id: serenity::all::GenericChannelId,
+	channel_id: GenericChannelId,
 	cached_webhooks: Arc<WebhookMap>,
 ) -> Option<Webhook> {
 	if let Some(webhook) = cached_webhooks.get(&channel_id) {

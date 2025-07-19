@@ -33,15 +33,15 @@ pub const DISCORD_CHANNEL_CANARY_PREFIX: &str = "https://ptb.discord.com/channel
 pub const FONTS: &[(&str, &[u8])] = &[
 	(
 		"NotoSansJP-Regular",
-		include_bytes!("../../fonts/NotoSansJP-Regular.ttf"),
+		include_bytes!("../../../fonts/NotoSansJP-Regular.ttf"),
 	),
 	(
 		"Satoshi-LightItalic",
-		include_bytes!("../../fonts/Satoshi-LightItalic.otf"),
+		include_bytes!("../../../fonts/Satoshi-LightItalic.otf"),
 	),
 	(
 		"RampartOne-Regular",
-		include_bytes!("../../fonts/RampartOne-Regular.ttf"),
+		include_bytes!("../../../fonts/RampartOne-Regular.ttf"),
 	),
 ];
 pub const QUOTE_WIDTH: u32 = 1200;

@@ -3,16 +3,26 @@ use std::{process, sync::Arc, time::Duration};
 use ab_glyph::FontArc;
 use anyhow::Context as _;
 use dashmap::DashSet;
+use fabsebot_core::{
+	config::{
+		constants::{COLOUR_RED, FONTS},
+		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
+	},
+	utils::{
+		ai::ai_response_simple,
+		image::{TextLayout, quote_image},
+	},
+};
 use image::{ImageBuffer, Rgba};
 use poise::{CreateReply, builtins::register_globally};
 use rayon::spawn;
 use serenity::{
 	all::{
-		ButtonStyle, ComponentInteractionCollector, ComponentInteractionDataKind, CreateActionRow,
-		CreateAllowedMentions, CreateAttachment, CreateButton, CreateComponent, CreateEmbed,
-		CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
-		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, Member,
-		Message, MessageId, ShardRunnerMessage, UserId,
+		ActivityData, ButtonStyle, ComponentInteractionCollector, ComponentInteractionDataKind,
+		CreateActionRow, CreateAllowedMentions, CreateAttachment, CreateButton, CreateComponent,
+		CreateEmbed, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
+		CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId,
+		GuildChannel, Member, Message, MessageId, OnlineStatus, ShardRunnerMessage, UserId,
 	},
 	nonmax::NonMaxU16,
 };
@@ -23,17 +33,6 @@ use tokio::{
 	time::{sleep, timeout},
 };
 use tracing::warn;
-
-use crate::{
-	config::{
-		constants::{COLOUR_RED, FONTS},
-		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
-	},
-	utils::{
-		ai::ai_response_simple,
-		image::{TextLayout, quote_image},
-	},
-};
 
 /// When you want to find the imposter
 #[poise::command(slash_command)]
@@ -178,9 +177,59 @@ pub async fn birthday(
 	Ok(())
 }
 
+/// Fabsebot control
+#[poise::command(slash_command, owners_only)]
+pub async fn bot_control(
+	ctx: SContext<'_>,
+	new_activity_opt: Option<String>,
+	new_status_opt: Option<String>,
+	new_nickname_opt: Option<String>,
+) -> Result<(), Error> {
+	if let Some(new_activity) = new_activity_opt {
+		ctx.framework()
+			.serenity_context
+			.set_activity(Some(ActivityData::listening(new_activity)));
+	}
+
+	if let Some(new_status_str) = new_status_opt {
+		let new_status = match new_status_str.as_str() {
+			"invisible" => OnlineStatus::Invisible,
+			"dnd" => OnlineStatus::DoNotDisturb,
+			"idle" => OnlineStatus::Idle,
+			_ => OnlineStatus::Online,
+		};
+		ctx.framework().serenity_context.set_status(new_status);
+	}
+
+	if new_nickname_opt.is_some()
+		&& let Some(guild_id) = ctx.guild_id()
+	{
+		guild_id
+			.edit_nickname(
+				ctx.http(),
+				new_nickname_opt.as_deref(),
+				Some("Bot owner requested"),
+			)
+			.await?;
+	}
+
+	ctx.send(
+		CreateReply::default()
+			.content("Fabsebot rebranded!")
+			.ephemeral(true),
+	)
+	.await?;
+
+	Ok(())
+}
+
 /// Debugging fabsebot's host
 #[poise::command(prefix_command, slash_command)]
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
+	ctx.framework()
+		.serenity_context
+		.set_activity(Some(ActivityData::playing("pizza")));
+
 	let mut embed = CreateEmbed::default().title("Debug");
 	let latency = if let Some(shard_runner) = ctx
 		.serenity_context()
@@ -237,7 +286,7 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 		embed = embed.field("System temperature:", format!("{temp} ℃"), true);
 	}
 	if let Ok(uptime) = SYSTEM_STATS.uptime() {
-		embed = embed.field("System uptime:", format!("{}ms", uptime.as_millis()), true);
+		embed = embed.field("System uptime:", format!("{}s", uptime.as_secs()), true);
 	}
 
 	let button = [CreateButton::new(format!("{}_shard_restart", ctx.id()))

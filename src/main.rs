@@ -1,53 +1,27 @@
-#![feature(iter_intersperse, float_algebraic)]
-
-mod commands;
 mod config;
-mod core;
-mod events;
-mod utils;
 
-use core::client::bot_start;
-use std::{fs::read_to_string, time::Duration};
+use std::fs::read_to_string;
 
-use anyhow::{Context as _, Result as AResult};
-use config::{
-	settings::{APIConfig, FabseserverConfig, MainConfig, PostgresConfig},
-	types::HTTP_CLIENT,
+use anyhow::Result as AResult;
+use config::MainConfig;
+use fabsebot_commands::commands;
+use fabsebot_core::{
+	bot_start,
+	config::settings::{APIConfig, BotConfig, ServerConfig},
 };
+use fabsebot_db::{PostgresConfig, PostgresConn};
 use opentelemetry::{KeyValue, global::set_tracer_provider, trace::TracerProvider as _};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig as _};
 use opentelemetry_sdk::{Resource, trace::SdkTracerProvider};
-use tokio::{spawn, time::interval};
 use toml::{Table, Value};
-use tracing::{Level, error};
+use tracing::Level;
 use tracing_opentelemetry::layer;
 use tracing_subscriber::{
 	Registry, filter::LevelFilter, fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _,
 };
 
-async fn periodic_task(url: &String) -> ! {
-	let mut interval = interval(Duration::from_secs(60));
-	loop {
-		interval.tick().await;
-		if let Err(err) = HTTP_CLIENT.get(url).send().await {
-			error!("Failed to report uptime: {:?}", &err);
-		}
-	}
-}
-
-#[tokio::main]
-async fn main() -> AResult<()> {
-	let config_toml: Table = read_to_string("config.toml")?
-		.parse()
-		.context("config.toml not found")?;
-
-	let bot_config: MainConfig = Value::try_into(config_toml["Main"].clone())?;
-	let postgres_config: PostgresConfig = Value::try_into(config_toml["PostgreSQL-Info"].clone())?;
-	let fabseserver_config: FabseserverConfig =
-		Value::try_into(config_toml["Fabseserver"].clone())?;
-	let api_config: APIConfig = Value::try_into(config_toml["API-Info"].clone())?;
-
-	let log_level = match bot_config.log_level.as_str() {
+fn setup_tracing(jaeger: &str, bot_username: String, log_level_str: &str) -> AResult<()> {
+	let log_level = match log_level_str {
 		"trace" => Level::TRACE,
 		"debug" => Level::DEBUG,
 		"warn" => Level::WARN,
@@ -59,12 +33,12 @@ async fn main() -> AResult<()> {
 		.with_batch_exporter(
 			SpanExporter::builder()
 				.with_tonic()
-				.with_endpoint(&bot_config.jaeger)
+				.with_endpoint(jaeger)
 				.build()?,
 		)
 		.with_resource(
 			Resource::builder()
-				.with_attribute(KeyValue::new("service.name", bot_config.username.clone()))
+				.with_attribute(KeyValue::new("service.name", bot_username.clone()))
 				.build(),
 		)
 		.build();
@@ -74,16 +48,38 @@ async fn main() -> AResult<()> {
 	Registry::default()
 		.with(LevelFilter::from_level(log_level))
 		.with(fmt::layer())
-		.with(layer().with_tracer(provider.tracer(bot_config.username.clone())))
+		.with(layer().with_tracer(provider.tracer(bot_username)))
 		.init();
 
-	let uptime_task_url = bot_config.uptime_url.clone();
+	Ok(())
+}
 
-	spawn(async move {
-		periodic_task(&uptime_task_url).await;
-	});
+#[tokio::main]
+async fn main() -> AResult<()> {
+	let config_toml: Table = read_to_string("config.toml")?.parse()?;
 
-	bot_start(bot_config, postgres_config, fabseserver_config, api_config).await?;
+	let main_config: MainConfig = Value::try_into(config_toml["Main"].clone())?;
+	let bot_config: BotConfig = Value::try_into(config_toml["Bot"].clone())?;
+	let postgres_config: PostgresConfig = Value::try_into(config_toml["PostgreSQL"].clone())?;
+	let server_config: ServerConfig = Value::try_into(config_toml["Server"].clone())?;
+	let api_config: APIConfig = Value::try_into(config_toml["API-Info"].clone())?;
+
+	setup_tracing(
+		&main_config.jaeger,
+		bot_config.username.clone(),
+		&main_config.log_level,
+	)?;
+
+	let postgres_pool = PostgresConn::new(postgres_config).await;
+
+	bot_start(
+		bot_config,
+		server_config,
+		api_config,
+		postgres_pool.pool,
+		commands(),
+	)
+	.await?;
 
 	Ok(())
 }

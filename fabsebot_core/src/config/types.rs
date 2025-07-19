@@ -16,8 +16,8 @@ use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
 
 use crate::config::settings::{
-	APIConfig, EmojiReactions, FabseserverConfig, GuildSettings, MainConfig, UserSettings,
-	WordReactions, WordTracking,
+	APIConfig, BotConfig, EmojiReactions, GuildSettings, ServerConfig, UserSettings, WordReactions,
+	WordTracking,
 };
 
 pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
@@ -119,9 +119,10 @@ pub struct Data {
 pub type Error = AError;
 pub type SContext<'a> = PContext<'a, Data, Error>;
 
+#[derive(Debug)]
 pub struct UtilsConfig {
-	pub bot: MainConfig,
-	pub fabseserver: FabseserverConfig,
+	pub bot: BotConfig,
+	pub fabseserver: ServerConfig,
 	pub api: APIConfig,
 }
 

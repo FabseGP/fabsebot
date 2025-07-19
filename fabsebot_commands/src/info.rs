@@ -1,9 +1,8 @@
 use std::string::ToString;
 
+use fabsebot_core::config::types::{Error, SContext};
 use poise::CreateReply;
 use serenity::all::{CreateEmbed, Member};
-
-use crate::config::types::{Error, SContext};
 
 /// Get server information
 #[poise::command(prefix_command, slash_command)]

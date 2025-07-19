@@ -1,10 +1,8 @@
 use serde::Deserialize;
 
-#[derive(Deserialize, Clone)]
-pub struct MainConfig {
-	pub log_level: String,
+#[derive(Deserialize, Clone, Debug)]
+pub struct BotConfig {
 	pub token: String,
-	pub jaeger: String,
 	pub cache_max_messages: usize,
 	pub username: String,
 	pub avatar: String,
@@ -15,18 +13,8 @@ pub struct MainConfig {
 	pub uptime_url: String,
 }
 
-#[derive(Deserialize)]
-pub struct PostgresConfig {
-	pub host: String,
-	pub port: u16,
-	pub user: String,
-	pub database: String,
-	pub password: String,
-	pub max_connections: u32,
-}
-
-#[derive(Deserialize)]
-pub struct FabseserverConfig {
+#[derive(Deserialize, Debug)]
+pub struct ServerConfig {
 	pub translate: String,
 	pub search: String,
 	pub llm_host_text: String,
@@ -38,7 +26,7 @@ pub struct FabseserverConfig {
 	pub speech_to_text_model: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct APIConfig {
 	pub tenor_token: String,
 	pub cloudflare_token: String,

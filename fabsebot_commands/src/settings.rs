@@ -2,16 +2,15 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use base64::{Engine as _, engine::general_purpose};
-use poise::CreateReply;
-use serde::Serialize;
-use serenity::all::{Channel, CreateEmbed};
-use sqlx::query;
-
-use crate::config::{
+use fabsebot_core::config::{
 	constants::COLOUR_RED,
 	settings::{EmojiReactions, GuildSettings, UserSettings, WordReactions, WordTracking},
 	types::{Error, GuildData, HTTP_CLIENT, SContext},
 };
+use poise::CreateReply;
+use serde::Serialize;
+use serenity::all::{Channel, CreateEmbed};
+use sqlx::query;
 
 /// To reset or not to reset the server, that's the question
 #[poise::command(

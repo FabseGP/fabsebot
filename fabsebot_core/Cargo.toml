@@ -1,0 +1,33 @@
+[package]
+name = "fabsebot_core"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+ab_glyph = { workspace = true }
+anyhow = { workspace = true }
+bytes = { workspace = true }
+fastrand = { workspace = true }
+image = { workspace = true, default-features = false, features = ["gif", "rayon", "webp"] }
+imageproc = { workspace = true, default-features = false, features = ["rayon"] }
+mini-moka = { workspace = true }
+poise = { workspace = true }
+reqwest = { workspace = true, default-features = false, features = ["rustls-tls"] }
+scraper = { workspace = true }
+serde = { workspace = true }
+serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
+songbird = { workspace = true, features = ["builtin-queue", "receive"] }
+sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+symphonia = { workspace = true, default-features = false, features = ["flac", "mkv", "opt-simd-avx", "pcm", "wav"] }
+systemstat = { workspace = true }
+textwrap = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
+tracing = { workspace = true }
+urlencoding = { workspace = true }
+winnow = { workspace = true, features = ["simd"] }
+
+[package.metadata.cargo-machete]
+ignored = ["symphonia"]

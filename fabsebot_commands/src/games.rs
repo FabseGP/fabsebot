@@ -1,15 +1,15 @@
 use std::{string::ToString, time::Duration};
 
+use fabsebot_core::config::{
+	constants::COLOUR_ORANGE,
+	types::{Error, SContext},
+};
 use poise::CreateReply;
 use serenity::all::{
 	AutocompleteChoice, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
 	CreateAutocompleteResponse, CreateButton, CreateComponent, CreateEmbed,
-	CreateInteractionResponse, CreateSectionAccessory, EditMessage, Member,
-};
-
-use crate::config::{
-	constants::COLOUR_ORANGE,
-	types::{Error, SContext},
+	CreateInteractionResponse, CreateSection, CreateSectionAccessory, CreateSectionComponent,
+	CreateTextDisplay, EditMessage, Member, MessageFlags,
 };
 
 #[expect(clippy::unused_async)]
@@ -69,11 +69,11 @@ pub async fn rps(
 				.colour(COLOUR_ORANGE)
 				.description("Make a choice within 60s...");
 
-			let text_display = [serenity::all::CreateSectionComponent::TextDisplay(
-				serenity::all::CreateTextDisplay::new("hello"),
-			)];
+			let text_display = [CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
+				"hello",
+			))];
 
-			let temp = [CreateComponent::Section(serenity::all::CreateSection::new(
+			let temp = [CreateComponent::Section(CreateSection::new(
 				&text_display,
 				CreateSectionAccessory::Button(CreateButton::new("hello").label("W")),
 			))];
@@ -81,7 +81,7 @@ pub async fn rps(
 			ctx.send(
 				CreateReply::default()
 					.components(&temp)
-					.flags(serenity::all::MessageFlags::IS_COMPONENTS_V2),
+					.flags(MessageFlags::IS_COMPONENTS_V2),
 			)
 			.await?;
 

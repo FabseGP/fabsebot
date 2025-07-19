@@ -1,8 +1,15 @@
-use std::{str::FromStr as _, sync::Arc};
+#![feature(iter_intersperse, float_algebraic)]
+
+pub mod config;
+mod events;
+mod handlers;
+pub mod utils;
+
+use std::{process::exit, str::FromStr as _, sync::Arc, time::Duration};
 
 use anyhow::{Context as _, Result as AResult};
 use mini_moka::sync::Cache;
-use poise::{Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions};
+use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions};
 use serenity::{
 	Client,
 	all::{
@@ -11,22 +18,24 @@ use serenity::{
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode::Decode};
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::{Pool, Postgres};
 use tokio::{
 	select,
 	signal::unix::{SignalKind, signal},
 	spawn,
 	sync::Mutex,
+	time::interval,
 };
 use tracing::{error, warn};
 
 use crate::{
-	commands::{api_calls, funny, games, info, misc, music, settings},
 	config::{
-		settings::{APIConfig, FabseserverConfig, MainConfig, PostgresConfig},
-		types::{CLIENT_DATA, ClientData, Data, UTILS_CONFIG, UtilsConfig},
+		settings::{APIConfig, BotConfig, ServerConfig},
+		types::{
+			CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, UTILS_CONFIG, UtilsConfig,
+		},
 	},
-	core::handlers::{EventHandler, dynamic_prefix, on_error},
+	handlers::{EventHandler, dynamic_prefix, on_error},
 };
 
 async fn wait_until_shutdown() {
@@ -43,37 +52,44 @@ async fn wait_until_shutdown() {
 	);
 }
 
-pub async fn bot_start(
-	bot_config: MainConfig,
-	postgres_config: PostgresConfig,
-	fabseserver_config: FabseserverConfig,
-	api_config: APIConfig,
-) -> AResult<()> {
-	if UTILS_CONFIG
-		.set(Arc::new(UtilsConfig {
-			bot: bot_config.clone(),
-			fabseserver: fabseserver_config,
-			api: api_config,
-		}))
-		.is_err()
-	{
-		error!("Failed to set utils config");
+async fn periodic_task(url: &str) -> ! {
+	let mut interval = interval(Duration::from_secs(60));
+	loop {
+		interval.tick().await;
+		if let Err(err) = HTTP_CLIENT.get(url).send().await {
+			error!("Failed to report uptime: {:?}", &err);
+		}
 	}
-	let pool_options = PgConnectOptions::new()
-		.host(&postgres_config.host)
-		.port(postgres_config.port)
-		.username(&postgres_config.user)
-		.database(&postgres_config.database)
-		.password(&postgres_config.password);
-	let database = PgPoolOptions::default()
-		.max_connections(postgres_config.max_connections)
-		.connect_with(pool_options)
-		.await
-		.context("Failed to connect to database")?;
+}
+
+pub async fn bot_start(
+	bot_config: BotConfig,
+	server_config: ServerConfig,
+	api_config: APIConfig,
+	postgres_pool: Pool<Postgres>,
+	commands: Vec<Command<Data, SError>>,
+) -> AResult<()> {
+	if let Err(err) = UTILS_CONFIG.set(Arc::new(UtilsConfig {
+		bot: bot_config,
+		fabseserver: server_config,
+		api: api_config,
+	})) {
+		error!("Failed to set UTILS_CONFIG: {:?}", &err);
+	}
+
+	let Some(utils_config) = UTILS_CONFIG.get() else {
+		error!("UTILS_CONFIG not set");
+		exit(1);
+	};
+
+	spawn(async move {
+		periodic_task(&utils_config.bot.uptime_url).await;
+	});
+
 	let music_manager = Songbird::serenity();
 	music_manager.set_config(Config::default().use_softclip(false).decode_mode(Decode));
 	let user_data = Arc::new(Data {
-		db: database,
+		db: postgres_pool,
 		music_manager: Arc::<Songbird>::clone(&music_manager),
 		ai_chats: Arc::new(Cache::new(1000)),
 		global_chats: Arc::new(Cache::new(1000)),
@@ -82,70 +98,10 @@ pub async fn bot_start(
 		user_settings: Arc::new(Mutex::new(Cache::new(1000))),
 	});
 	let additional_prefix: &'static str =
-		Box::leak(format!("hey {}", &bot_config.username).into_boxed_str());
+		Box::leak(format!("hey {}", &utils_config.bot.username).into_boxed_str());
 	let framework = Framework::builder()
 		.options(FrameworkOptions {
-			commands: vec![
-				api_calls::anime_scene(),
-				api_calls::ai_image(),
-				api_calls::ai_text(),
-				api_calls::anime(),
-				api_calls::eightball(),
-				api_calls::gif(),
-				api_calls::joke(),
-				api_calls::manga(),
-				api_calls::memegen(),
-				api_calls::roast(),
-				api_calls::translate(),
-				api_calls::urban(),
-				api_calls::waifu(),
-				api_calls::wiki(),
-				funny::anonymous(),
-				funny::user_dm(),
-				funny::user_misuse(),
-				games::rps(),
-				info::user_info(),
-				info::server_info(),
-				misc::anony_poll(),
-				misc::birthday(),
-				misc::debug(),
-				misc::end_pgo(),
-				misc::global_chat_end(),
-				misc::global_chat_start(),
-				misc::help(),
-				misc::leaderboard(),
-				misc::ohitsyou(),
-				misc::quote(),
-				misc::register_commands(),
-				misc::respond(),
-				misc::slow_mode(),
-				misc::word_count(),
-				music::text_to_voice(),
-				music::add_playlist(),
-				music::global_music_end(),
-				music::global_music_start(),
-				music::join_voice(),
-				music::join_voice_global(),
-				music::leave_voice(),
-				music::pause_continue_song(),
-				music::play_song(),
-				music::seek_song(),
-				music::skip_song(),
-				music::stop_song(),
-				settings::reset_server_settings(),
-				settings::reset_user_settings(),
-				settings::set_afk(),
-				settings::set_chatbot_channel(),
-				settings::set_chatbot_options(),
-				settings::set_dead_chat(),
-				settings::set_emoji_react(),
-				settings::set_prefix(),
-				settings::set_quote_channel(),
-				settings::set_spoiler_channel(),
-				settings::set_user_ping(),
-				settings::set_word_react(),
-				settings::set_word_track(),
-			],
+			commands,
 			prefix_options: PrefixFrameworkOptions {
 				dynamic_prefix: Some(|ctx| Box::pin(dynamic_prefix(ctx))),
 				additional_prefixes: vec![Prefix::Literal(additional_prefix)],
@@ -168,9 +124,9 @@ pub async fn bot_start(
 		| GatewayIntents::GUILD_VOICE_STATES
 		| GatewayIntents::MESSAGE_CONTENT;
 	let mut cache_settings = Settings::default();
-	cache_settings.max_messages = bot_config.cache_max_messages;
-	let activity = ActivityData::listening(&bot_config.activity);
-	let client = Client::builder(Token::from_str(&bot_config.token)?, intents)
+	cache_settings.max_messages = utils_config.bot.cache_max_messages;
+	let activity = ActivityData::listening(&utils_config.bot.activity);
+	let client = Client::builder(Token::from_str(&utils_config.bot.token)?, intents)
 		.framework(framework)
 		.voice_manager::<Songbird>(music_manager)
 		.cache_settings(cache_settings)
@@ -207,7 +163,7 @@ pub async fn bot_start(
 						.avatar(
 							CreateAttachment::url(
 								&client.http,
-								&bot_config.avatar,
+								&utils_config.bot.avatar,
 								"bot_avatar.gif",
 							)
 							.await?
@@ -217,14 +173,14 @@ pub async fn bot_start(
 						.banner(
 							CreateAttachment::url(
 								&client.http,
-								&bot_config.banner,
+								&utils_config.bot.banner,
 								"bot_banner.gif",
 							)
 							.await?
 							.encode()
 							.await?,
 						)
-						.username(&bot_config.username),
+						.username(&utils_config.bot.username),
 				)
 				.await
 				.context("Failed to edit bot profile")?;

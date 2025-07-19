@@ -3,6 +3,13 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use bytes::{BufMut as _, BytesMut};
+use fabsebot_core::{
+	config::{
+		constants::COLOUR_RED,
+		types::{Error, GuildDataMap, HTTP_CLIENT, SContext},
+	},
+	utils::{ai::ai_voice, helpers::get_configured_handler},
+};
 use poise::{CreateReply, async_trait};
 use serde::Deserialize;
 use serenity::all::{
@@ -12,24 +19,15 @@ use serenity::all::{
 use songbird::{
 	Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
 	Songbird,
-	driver::Bitrate,
 	input::{Input, YoutubeDl},
 	tracks::PlayMode,
 };
 use sqlx::query;
 use tokio::{
-	sync::{Mutex, MutexGuard},
+	sync::Mutex,
 	time::{sleep, timeout},
 };
 use tracing::warn;
-
-use crate::{
-	config::{
-		constants::COLOUR_RED,
-		types::{Error, GuildDataMap, HTTP_CLIENT, SContext},
-	},
-	utils::ai::ai_voice,
-};
 
 #[derive(Deserialize)]
 struct DeezerResponse {
@@ -75,12 +73,6 @@ async fn voice_check(ctx: &SContext<'_>) -> (Option<Arc<Mutex<Call>>>, Option<Gu
 		}
 		None => (None, None),
 	}
-}
-
-pub async fn get_configured_handler(handler_lock: &Arc<Mutex<Call>>) -> MutexGuard<'_, Call> {
-	let mut handler = handler_lock.lock().await;
-	handler.set_bitrate(Bitrate::Max);
-	handler
 }
 
 struct VoiceReceiveHandler {

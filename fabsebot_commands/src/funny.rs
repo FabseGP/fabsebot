@@ -1,10 +1,9 @@
-use poise::CreateReply;
-use serenity::all::{CreateMessage, ExecuteWebhook, GenericChannelId, Member, User};
-
-use crate::{
+use fabsebot_core::{
 	config::types::{Error, SContext},
 	utils::webhook::webhook_find,
 };
+use poise::CreateReply;
+use serenity::all::{CreateMessage, ExecuteWebhook, GenericChannelId, Member, User};
 
 /// Send an anonymous message
 #[poise::command(slash_command)]

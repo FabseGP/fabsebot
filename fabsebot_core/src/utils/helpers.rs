@@ -1,6 +1,8 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 use serde::Deserialize;
+use songbird::{Call, driver::Bitrate};
+use tokio::sync::{Mutex, MutexGuard};
 use urlencoding::encode;
 use winnow::{
 	ModalResult, Parser as _,
@@ -17,6 +19,12 @@ use crate::config::{
 	},
 	types::{HTTP_CLIENT, UTILS_CONFIG},
 };
+
+pub async fn get_configured_handler(handler_lock: &Arc<Mutex<Call>>) -> MutexGuard<'_, Call> {
+	let mut handler = handler_lock.lock().await;
+	handler.set_bitrate(Bitrate::Max);
+	handler
+}
 
 #[derive(Deserialize)]
 struct GifResponse {

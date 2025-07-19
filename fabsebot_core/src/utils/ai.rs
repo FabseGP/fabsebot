@@ -14,12 +14,11 @@ use urlencoding::encode;
 use winnow::Parser as _;
 
 use crate::{
-	commands::music::get_configured_handler,
 	config::types::{
 		AIChatContext, AIChatMessage, AIChatStatic, AIModelDefaults, GEMMA_DEFAULTS, HTTP_CLIENT,
 		LLAMA_DEFAULTS, QWEN_DEFAULTS, UTILS_CONFIG,
 	},
-	utils::helpers::discord_message_link,
+	utils::helpers::{discord_message_link, get_configured_handler},
 };
 
 fn get_model_config(

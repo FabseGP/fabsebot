@@ -1,0 +1,13 @@
+[package]
+name = "fabsebot_db"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+tracing = { workspace = true }
+
