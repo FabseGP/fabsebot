@@ -2,6 +2,8 @@ use std::sync::OnceLock;
 
 use image::RgbaImage;
 
+pub const PING_INTERVAL_SEC: u64 = 60;
+
 pub const COLOUR_BLUE: u32 = 0x0000_B0F4;
 pub const COLOUR_GREEN: u32 = 0x0033_D17A;
 pub const COLOUR_ORANGE: u32 = 0x00FA_6300;

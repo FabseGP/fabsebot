@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 
 use anyhow::Result as AResult;
-use poise::{FrameworkError, PartialContext};
+use metrics::{counter, describe_counter};
+use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
 use tracing::{error, warn};
 
@@ -13,7 +14,11 @@ use crate::{
 	},
 };
 
-pub async fn on_error(error: FrameworkError<'_, Data, Error>) -> AResult<()> {
+pub fn initialize_counters() {
+	describe_counter!("commands_counter", "Counter for commands");
+}
+
+pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 	match error {
 		FrameworkError::Command { error, ctx, .. } => {
 			error!("Error in command `{}`: {:?}", ctx.command().name, error);
@@ -23,7 +28,19 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) -> AResult<()> {
 		}
 		_ => {}
 	}
-	Ok(())
+}
+
+pub async fn on_command(context: Context<'_, Data, Error>) {
+	let (command_name, command_type) = match &context {
+		Context::Application(ApplicationContext { command, .. }) => (command.name.clone(), "slash"),
+		Context::Prefix(PrefixContext { command, .. }) => (command.name.clone(), "prefix"),
+	};
+	counter!(
+		"commands_counter",
+		"command" => command_name,
+		"type" => command_type
+	)
+	.increment(1);
 }
 
 pub async fn dynamic_prefix(

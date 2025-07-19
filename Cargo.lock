@@ -936,6 +936,7 @@ dependencies = [
  "dashmap",
  "fabsebot_core",
  "image",
+ "metrics",
  "poise",
  "rayon",
  "serde",

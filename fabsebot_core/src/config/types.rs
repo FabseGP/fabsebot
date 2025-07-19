@@ -61,10 +61,12 @@ pub enum Role {
 }
 
 impl Role {
+	#[must_use]
 	pub const fn is_system(&self) -> bool {
 		matches!(self, Self::System)
 	}
 
+	#[must_use]
 	pub const fn is_user(&self) -> bool {
 		matches!(self, Self::User)
 	}
@@ -77,22 +79,27 @@ pub struct AIChatMessage {
 }
 
 impl AIChatMessage {
+	#[must_use]
 	pub const fn new(role: Role, content: String) -> Self {
 		Self { role, content }
 	}
 
+	#[must_use]
 	pub const fn system(content: String) -> Self {
 		Self::new(Role::System, content)
 	}
 
+	#[must_use]
 	pub const fn user(content: String) -> Self {
 		Self::new(Role::User, content)
 	}
 
+	#[must_use]
 	pub const fn assistant(content: String) -> Self {
 		Self::new(Role::Assistant, content)
 	}
 
+	#[must_use]
 	pub const fn model(content: String) -> Self {
 		Self::new(Role::Model, content)
 	}

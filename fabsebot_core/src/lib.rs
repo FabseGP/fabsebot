@@ -30,12 +30,13 @@ use tracing::{error, warn};
 
 use crate::{
 	config::{
+		constants::PING_INTERVAL_SEC,
 		settings::{APIConfig, BotConfig, ServerConfig},
 		types::{
 			CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, UTILS_CONFIG, UtilsConfig,
 		},
 	},
-	handlers::{EventHandler, dynamic_prefix, on_error},
+	handlers::{EventHandler, dynamic_prefix, initialize_counters, on_command, on_error},
 };
 
 async fn wait_until_shutdown() {
@@ -53,7 +54,7 @@ async fn wait_until_shutdown() {
 }
 
 async fn periodic_ping(url: &str) -> ! {
-	let mut interval = interval(Duration::from_secs(60));
+	let mut interval = interval(Duration::from_secs(PING_INTERVAL_SEC));
 	loop {
 		interval.tick().await;
 		if let Err(err) = HTTP_CLIENT.get(url).send().await {
@@ -86,6 +87,8 @@ pub async fn bot_start(
 		periodic_ping(&utils_config.bot.uptime_url).await;
 	});
 
+	initialize_counters();
+
 	let music_manager = Songbird::serenity();
 	music_manager.set_config(Config::default().use_softclip(false).decode_mode(Decode));
 	let user_data = Arc::new(Data {
@@ -108,13 +111,8 @@ pub async fn bot_start(
 				..Default::default()
 			},
 			allowed_mentions: Some(CreateAllowedMentions::default().replied_user(false)),
-			on_error: |error| {
-				Box::pin(async move {
-					on_error(error)
-						.await
-						.unwrap_or_else(|err| error!("on_error: {:?}", err));
-				})
-			},
+			on_error: |error| Box::pin(on_error(error)),
+			pre_command: |context| Box::pin(on_command(context)),
 			..Default::default()
 		})
 		.build();
