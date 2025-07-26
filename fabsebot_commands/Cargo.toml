@@ -24,4 +24,5 @@ sqlx = { workspace = true, default-features = false, features = ["macros", "post
 systemstat = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tracing = { workspace = true }
+uuid = { workspace = true }
 urlencoding = { workspace = true }

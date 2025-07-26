@@ -27,6 +27,7 @@ systemstat = { workspace = true }
 textwrap = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 tracing = { workspace = true }
+uuid = { workspace = true }
 urlencoding = { workspace = true }
 winnow = { workspace = true, features = ["simd"] }
 

@@ -23,7 +23,7 @@ use crate::{
 			VILBOT_NAME, VILBOT_PFP,
 		},
 		settings::WordTracking,
-		types::{Data, Error, RNG, UTILS_CONFIG},
+		types::{Data, Error, GuildData, RNG, UTILS_CONFIG},
 	},
 	utils::{
 		ai::ai_chatbot,
@@ -32,11 +32,7 @@ use crate::{
 	},
 };
 
-pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(), Error> {
-	if new_message.author.bot() {
-		return Ok(());
-	}
-	let data: Arc<Data> = ctx.data();
+async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> Result<(), Error> {
 	if new_message.mentions_user_id(ctx.cache.current_user().id)
 		&& new_message.referenced_message.is_none()
 		&& let Some(utils_config) = UTILS_CONFIG.get()
@@ -57,7 +53,15 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 			)
 			.await?;
 	}
-	let content = new_message.content.to_lowercase();
+	Ok(())
+}
+
+async fn emoji_reaction(
+	ctx: &SContext,
+	new_message: &Message,
+	content: &str,
+	data: Arc<Data>,
+) -> Result<(), Error> {
 	let app_emojis = ctx.get_application_emojis().await?;
 	if content == "floppaganda" {
 		new_message
@@ -135,6 +139,384 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 				.await?;
 		}
 	}
+
+	Ok(())
+}
+
+async fn guild_channels(
+	ctx: &SContext,
+	new_message: &Message,
+	data: Arc<Data>,
+	guild_data: Arc<GuildData>,
+	guild_id: GuildId,
+) -> Result<(), Error> {
+	if let (Some(dead_channel), Some(dead_chat_rate)) = (
+		guild_data.settings.dead_chat_channel,
+		guild_data.settings.dead_chat_rate,
+	) {
+		if let Ok(dead_channel_u64) = u64::try_from(dead_channel) {
+			let dead_chat_channel = GenericChannelId::new(dead_channel_u64);
+			if let Ok(channel) = dead_chat_channel
+				.to_channel(&ctx.http, new_message.guild_id)
+				.await && let Some(Some(message_id)) =
+				channel.clone().guild().map(|gc| gc.base.last_message_id)
+			{
+				let last_message_time = channel
+					.id()
+					.message(&ctx.http, message_id)
+					.await?
+					.timestamp
+					.timestamp();
+				let current_time = Timestamp::now().timestamp();
+				if current_time.saturating_sub(last_message_time)
+					> dead_chat_rate.saturating_mul(60)
+				{
+					let gifs = get_gifs("dead chat".to_owned()).await;
+					let index = RNG.lock().await.usize(..gifs.len());
+					if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
+						dead_chat_channel.say(&ctx.http, gif).await?;
+					}
+				}
+			}
+		} else {
+			warn!("Failed to convert dead channel id to u64");
+		}
+	}
+	if let Some(spoiler_channel) = guild_data.settings.spoiler_channel {
+		if let Ok(spoiler_channel_u64) = u64::try_from(spoiler_channel) {
+			if new_message.channel_id.get() == spoiler_channel_u64 {
+				spoiler_message(ctx, new_message, data.channel_webhooks.clone()).await?;
+			}
+		} else {
+			warn!("Failed to convert spoiler channel id to u64");
+		}
+	} else if let Some(ai_chat_channel) = guild_data.settings.ai_chat_channel {
+		if let Ok(ai_chat_channel_u64) = u64::try_from(ai_chat_channel) {
+			if new_message.channel_id.get() == ai_chat_channel_u64 {
+				let guild_ai_chats = {
+					let ai_chats_opt = data.ai_chats.get(&guild_id);
+					if let Some(ai_chat) = ai_chats_opt {
+						ai_chat
+					} else {
+						let modified_settings = ai_chats_opt.unwrap_or_default();
+						data.ai_chats.insert(guild_id, modified_settings.clone());
+						modified_settings
+					}
+				};
+				let (
+					chatbot_role,
+					chatbot_internet_search,
+					chatbot_temperature,
+					chatbot_top_p,
+					chatbot_top_k,
+					chatbot_repetition_penalty,
+					chatbot_frequency_penalty,
+					chatbot_presence_penalty,
+				) = {
+					let user_settings_opt = data.user_settings.lock().await.get(&guild_id);
+					if let Some(user_settings) = user_settings_opt {
+						user_settings
+							.get(&new_message.author.id)
+							.map(|a| {
+								(
+									a.chatbot_role.clone(),
+									a.chatbot_internet_search,
+									a.chatbot_temperature,
+									a.chatbot_top_p,
+									a.chatbot_top_k,
+									a.chatbot_repetition_penalty,
+									a.chatbot_frequency_penalty,
+									a.chatbot_presence_penalty,
+								)
+							})
+							.unwrap_or_default()
+					} else {
+						let new_settings = user_settings_opt.unwrap_or_default();
+						data.user_settings
+							.lock()
+							.await
+							.insert(guild_id, new_settings.clone());
+						new_settings
+							.get(&new_message.author.id)
+							.map(|a| {
+								(
+									a.chatbot_role.clone(),
+									a.chatbot_internet_search,
+									a.chatbot_temperature,
+									a.chatbot_top_p,
+									a.chatbot_top_k,
+									a.chatbot_repetition_penalty,
+									a.chatbot_frequency_penalty,
+									a.chatbot_presence_penalty,
+								)
+							})
+							.unwrap_or_default()
+					}
+				};
+				let ctx_clone = ctx.clone();
+				let music_manager_clone = data.music_manager.get(guild_id);
+				let new_message_clone = new_message.clone();
+				let guild_id_clone = guild_id;
+				spawn(async move {
+					if let Err(e) = ai_chatbot(
+						&ctx_clone,
+						&new_message_clone,
+						chatbot_role.map_or_else(
+							|| DEFAULT_BOT_ROLE.to_owned(),
+							|role| format!("The current user wants you to act as: {role}"),
+						),
+						chatbot_internet_search,
+						chatbot_temperature,
+						chatbot_top_p,
+						chatbot_top_k,
+						chatbot_repetition_penalty,
+						chatbot_frequency_penalty,
+						chatbot_presence_penalty,
+						guild_id_clone,
+						&guild_ai_chats,
+						music_manager_clone,
+					)
+					.await
+					{
+						warn!("AI chatbot error: {e:?}");
+					}
+				});
+			}
+		} else {
+			warn!("Failed to convert ai chat channel id to u64");
+		}
+	} else if let Some(global_chat_channel) = guild_data.settings.global_chat_channel {
+		if let Ok(global_chat_channel_u64) = u64::try_from(global_chat_channel) {
+			if new_message.channel_id.get() == global_chat_channel_u64
+				&& guild_data.settings.global_chat
+			{
+				let guild_global_chats: Vec<_> = data
+					.guild_data
+					.lock()
+					.await
+					.iter()
+					.filter(|entry| {
+						let settings = &entry.value().settings;
+						entry.key() != &guild_id
+							&& settings.global_chat_channel.is_some()
+							&& settings.global_chat
+					})
+					.filter_map(|entry| {
+						u64::try_from(entry.value().settings.guild_id).map_or(
+							None,
+							|guild_id_u64| {
+								Some((
+									GuildId::new(guild_id_u64),
+									entry.value().settings.global_chat_channel,
+								))
+							},
+						)
+					})
+					.collect();
+				{
+					if let Some(global_chats_history) = data.global_chats.get(&guild_id) {
+						let mut global_chats_history_clone = global_chats_history.as_ref().clone();
+						for (target_guild_id, _) in &guild_global_chats {
+							global_chats_history_clone.insert(*target_guild_id, new_message.id);
+						}
+						data.global_chats
+							.insert(guild_id, Arc::new(global_chats_history_clone));
+					} else {
+						let mut new_history = HashMap::with_capacity(guild_global_chats.len());
+						for (target_guild_id, _) in &guild_global_chats {
+							new_history.insert(*target_guild_id, new_message.id);
+						}
+						data.global_chats.insert(guild_id, Arc::new(new_history));
+					}
+				}
+				for (guild_id, guild_channel_id) in
+					guild_global_chats
+						.iter()
+						.filter_map(|(guild_id, guild_channel_id)| {
+							guild_channel_id.map(|channel_id| (*guild_id, channel_id))
+						}) {
+					if let Ok(guild_channel_id_u64) = u64::try_from(guild_channel_id) {
+						let channel_id_type = GenericChannelId::new(guild_channel_id_u64);
+						if let Ok(chat_channel) =
+							channel_id_type.to_channel(&ctx.http, Some(guild_id)).await
+						{
+							if let Some(webhook) = webhook_find(
+								ctx,
+								new_message.guild_id,
+								chat_channel.id(),
+								data.channel_webhooks.clone(),
+							)
+							.await
+							{
+								let content = if new_message.content.is_empty() {
+									""
+								} else {
+									new_message.content.as_str()
+								};
+								let mut message = ExecuteWebhook::default()
+									.username(new_message.author.display_name())
+									.avatar_url(new_message.author.avatar_url().unwrap_or_else(
+										|| {
+											new_message.author.static_avatar_url().unwrap_or_else(
+												|| new_message.author.default_avatar_url(),
+											)
+										},
+									))
+									.content(content);
+								if !new_message.attachments.is_empty() {
+									for attachment in new_message
+										.attachments
+										.iter()
+										.filter(|a| a.dimensions().is_some())
+									{
+										message = message.add_file(
+											CreateAttachment::url(
+												&ctx.http,
+												attachment.url.as_str(),
+												attachment.filename.clone(),
+											)
+											.await?,
+										);
+									}
+								}
+								if let Some(replied_message) = &new_message.referenced_message {
+									let mut embed = CreateEmbed::default()
+										.description(replied_message.content.as_str())
+										.author(
+											CreateEmbedAuthor::new(
+												replied_message.author.display_name(),
+											)
+											.icon_url(
+												replied_message.author.avatar_url().unwrap_or_else(
+													|| replied_message.author.default_avatar_url(),
+												),
+											),
+										)
+										.timestamp(new_message.timestamp);
+									if let Some(attachment) = replied_message.attachments.first() {
+										embed = embed.image(attachment.url.as_str());
+									}
+									message = message.embed(embed);
+								}
+								if webhook.execute(&ctx.http, false, message).await.is_err() {
+									chat_channel
+										.id()
+										.say(
+											&ctx.http,
+											format!(
+												"{} sent this: {}",
+												new_message.author.display_name(),
+												new_message.content.as_str()
+											),
+										)
+										.await?;
+								}
+							} else {
+								chat_channel
+									.id()
+									.say(
+										&ctx.http,
+										format!(
+											"{} sent this: {}",
+											new_message.author.display_name(),
+											new_message.content.as_str()
+										),
+									)
+									.await?;
+							}
+						}
+					} else {
+						warn!("Failed to convert guild channel id to u64");
+					}
+				}
+			}
+		} else {
+			warn!("Failed to convert global chat channel id to u64");
+		}
+	}
+
+	Ok(())
+}
+
+async fn message_preview(
+	ctx: &SContext,
+	new_message: &Message,
+	mut content: &str,
+) -> Result<(), Error> {
+	if let Ok(link) = discord_message_link.parse_next(&mut content) {
+		let (guild_id, channel_id, message_id) = (
+			GuildId::new(link.guild_id),
+			GenericChannelId::new(link.channel_id),
+			MessageId::new(link.message_id),
+		);
+		if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
+			&& let Some(ref_channel) = channel.clone().guild()
+		{
+			let (channel_name, ref_msg) = (
+				ref_channel.base.name.as_str(),
+				channel.id().message(&ctx.http, message_id).await?,
+			);
+			if ref_msg.poll.is_none() {
+				let embed = CreateEmbed::default()
+					.colour(COLOUR_ORANGE)
+					.description(ref_msg.content.as_str())
+					.author(
+						CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
+							ref_msg
+								.author
+								.avatar_url()
+								.unwrap_or_else(|| ref_msg.author.default_avatar_url()),
+						),
+					)
+					.footer(CreateEmbedFooter::new(channel_name))
+					.timestamp(ref_msg.timestamp);
+				let (embed, content_url) = match ref_msg.attachments.first() {
+					Some(attachment) => match attachment.content_type.as_deref() {
+						Some(content_type) => {
+							if content_type.starts_with("image") {
+								(embed.image(attachment.url.as_str()), None)
+							} else if content_type.starts_with("video") {
+								(embed, Some(attachment.url.as_str()))
+							} else {
+								(embed, None)
+							}
+						}
+						_ => (embed, None),
+					},
+					_ => (embed, None),
+				};
+				let mut preview_message = CreateMessage::default()
+					.embed(embed)
+					.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
+				if ref_msg.channel_id == new_message.channel_id {
+					preview_message = preview_message.reference_message(&ref_msg);
+				}
+				if let Some(ref_embed) = ref_msg.embeds.first() {
+					preview_message =
+						preview_message.add_embed(CreateEmbed::from(ref_embed.clone()));
+				}
+				new_message
+					.channel_id
+					.send_message(&ctx.http, preview_message)
+					.await?;
+				if let Some(url) = content_url {
+					new_message.channel_id.say(&ctx.http, url).await?;
+				}
+			}
+		}
+	}
+
+	Ok(())
+}
+
+pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(), Error> {
+	if new_message.author.bot() {
+		return Ok(());
+	}
+	let data: Arc<Data> = ctx.data();
+	check_bot_ping(ctx, new_message).await?;
+	let content = new_message.content.to_lowercase();
+	emoji_reaction(ctx, new_message, &content, data.clone()).await?;
 	if let Some(guild_id) = new_message.guild_id {
 		let guild_id_i64 = i64::from(guild_id);
 		let user_id_i64 = i64::from(new_message.author.id);
@@ -143,6 +525,7 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 			.begin()
 			.await
 			.context("Failed to acquire savepoint")?;
+
 		{
 			let mut modified_settings = {
 				let user_settings = data.user_settings.lock().await;
@@ -300,332 +683,24 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 				.lock()
 				.await
 				.insert(guild_id, Arc::new(modified_settings));
-		}
-		query!(
-			"INSERT INTO user_settings (guild_id, user_id, message_count) VALUES ($1, $2, 1)
+
+			query!(
+				"INSERT INTO user_settings (guild_id, user_id, message_count) VALUES ($1, $2, 1)
                 ON CONFLICT(guild_id, user_id) 
                 DO UPDATE SET
                     message_count = user_settings.message_count + 1",
-			guild_id_i64,
-			user_id_i64,
-		)
-		.execute(&mut *tx)
-		.await?;
+				guild_id_i64,
+				user_id_i64,
+			)
+			.execute(&mut *tx)
+			.await?;
+		}
+
 		{
 			let guild_data_opt = data.guild_data.lock().await.get(&guild_id);
 			if let Some(guild_data) = guild_data_opt {
-				if let (Some(dead_channel), Some(dead_chat_rate)) = (
-					guild_data.settings.dead_chat_channel,
-					guild_data.settings.dead_chat_rate,
-				) {
-					if let Ok(dead_channel_u64) = u64::try_from(dead_channel) {
-						let dead_chat_channel = GenericChannelId::new(dead_channel_u64);
-						if let Ok(channel) = dead_chat_channel
-							.to_channel(&ctx.http, new_message.guild_id)
-							.await && let Some(Some(message_id)) =
-							channel.clone().guild().map(|gc| gc.base.last_message_id)
-						{
-							let last_message_time = channel
-								.id()
-								.message(&ctx.http, message_id)
-								.await?
-								.timestamp
-								.timestamp();
-							let current_time = Timestamp::now().timestamp();
-							if current_time.saturating_sub(last_message_time)
-								> dead_chat_rate.saturating_mul(60)
-							{
-								let gifs = get_gifs("dead chat".to_owned()).await;
-								let index = RNG.lock().await.usize(..gifs.len());
-								if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
-									dead_chat_channel.say(&ctx.http, gif).await?;
-								}
-							}
-						}
-					} else {
-						warn!("Failed to convert dead channel id to u64");
-					}
-				}
-				if let Some(spoiler_channel) = guild_data.settings.spoiler_channel {
-					if let Ok(spoiler_channel_u64) = u64::try_from(spoiler_channel) {
-						if new_message.channel_id.get() == spoiler_channel_u64 {
-							spoiler_message(ctx, new_message, data.channel_webhooks.clone())
-								.await?;
-						}
-					} else {
-						warn!("Failed to convert spoiler channel id to u64");
-					}
-				} else if let Some(ai_chat_channel) = guild_data.settings.ai_chat_channel {
-					if let Ok(ai_chat_channel_u64) = u64::try_from(ai_chat_channel) {
-						if new_message.channel_id.get() == ai_chat_channel_u64 {
-							let guild_ai_chats = {
-								let ai_chats_opt = data.ai_chats.get(&guild_id);
-								if let Some(ai_chat) = ai_chats_opt {
-									ai_chat
-								} else {
-									let modified_settings = ai_chats_opt.unwrap_or_default();
-									data.ai_chats.insert(guild_id, modified_settings.clone());
-									modified_settings
-								}
-							};
-							let (
-								chatbot_role,
-								chatbot_internet_search,
-								chatbot_temperature,
-								chatbot_top_p,
-								chatbot_top_k,
-								chatbot_repetition_penalty,
-								chatbot_frequency_penalty,
-								chatbot_presence_penalty,
-							) = {
-								let user_settings_opt =
-									data.user_settings.lock().await.get(&guild_id);
-								if let Some(user_settings) = user_settings_opt {
-									user_settings
-										.get(&new_message.author.id)
-										.map(|a| {
-											(
-												a.chatbot_role.clone(),
-												a.chatbot_internet_search,
-												a.chatbot_temperature,
-												a.chatbot_top_p,
-												a.chatbot_top_k,
-												a.chatbot_repetition_penalty,
-												a.chatbot_frequency_penalty,
-												a.chatbot_presence_penalty,
-											)
-										})
-										.unwrap_or_default()
-								} else {
-									let new_settings = user_settings_opt.unwrap_or_default();
-									data.user_settings
-										.lock()
-										.await
-										.insert(guild_id, new_settings.clone());
-									new_settings
-										.get(&new_message.author.id)
-										.map(|a| {
-											(
-												a.chatbot_role.clone(),
-												a.chatbot_internet_search,
-												a.chatbot_temperature,
-												a.chatbot_top_p,
-												a.chatbot_top_k,
-												a.chatbot_repetition_penalty,
-												a.chatbot_frequency_penalty,
-												a.chatbot_presence_penalty,
-											)
-										})
-										.unwrap_or_default()
-								}
-							};
-							let ctx_clone = ctx.clone();
-							let music_manager_clone = data.music_manager.get(guild_id);
-							let new_message_clone = new_message.clone();
-							let guild_id_clone = guild_id;
-							spawn(async move {
-								if let Err(e) = ai_chatbot(
-									&ctx_clone,
-									&new_message_clone,
-									chatbot_role.map_or_else(
-										|| DEFAULT_BOT_ROLE.to_owned(),
-										|role| {
-											format!("The current user wants you to act as: {role}")
-										},
-									),
-									chatbot_internet_search,
-									chatbot_temperature,
-									chatbot_top_p,
-									chatbot_top_k,
-									chatbot_repetition_penalty,
-									chatbot_frequency_penalty,
-									chatbot_presence_penalty,
-									guild_id_clone,
-									&guild_ai_chats,
-									music_manager_clone,
-								)
-								.await
-								{
-									warn!("AI chatbot error: {e:?}");
-								}
-							});
-						}
-					} else {
-						warn!("Failed to convert ai chat channel id to u64");
-					}
-				} else if let Some(global_chat_channel) = guild_data.settings.global_chat_channel {
-					if let Ok(global_chat_channel_u64) = u64::try_from(global_chat_channel) {
-						if new_message.channel_id.get() == global_chat_channel_u64
-							&& guild_data.settings.global_chat
-						{
-							let guild_global_chats: Vec<_> = data
-								.guild_data
-								.lock()
-								.await
-								.iter()
-								.filter(|entry| {
-									let settings = &entry.value().settings;
-									entry.key() != &guild_id
-										&& settings.global_chat_channel.is_some()
-										&& settings.global_chat
-								})
-								.filter_map(|entry| {
-									u64::try_from(entry.value().settings.guild_id).map_or(
-										None,
-										|guild_id_u64| {
-											Some((
-												GuildId::new(guild_id_u64),
-												entry.value().settings.global_chat_channel,
-											))
-										},
-									)
-								})
-								.collect();
-							{
-								if let Some(global_chats_history) = data.global_chats.get(&guild_id)
-								{
-									let mut global_chats_history_clone =
-										global_chats_history.as_ref().clone();
-									for (target_guild_id, _) in &guild_global_chats {
-										global_chats_history_clone
-											.insert(*target_guild_id, new_message.id);
-									}
-									data.global_chats
-										.insert(guild_id, Arc::new(global_chats_history_clone));
-								} else {
-									let mut new_history =
-										HashMap::with_capacity(guild_global_chats.len());
-									for (target_guild_id, _) in &guild_global_chats {
-										new_history.insert(*target_guild_id, new_message.id);
-									}
-									data.global_chats.insert(guild_id, Arc::new(new_history));
-								}
-							}
-							for (guild_id, guild_channel_id) in guild_global_chats
-								.iter()
-								.filter_map(|(guild_id, guild_channel_id)| {
-									guild_channel_id.map(|channel_id| (*guild_id, channel_id))
-								}) {
-								if let Ok(guild_channel_id_u64) = u64::try_from(guild_channel_id) {
-									let channel_id_type =
-										GenericChannelId::new(guild_channel_id_u64);
-									if let Ok(chat_channel) =
-										channel_id_type.to_channel(&ctx.http, Some(guild_id)).await
-									{
-										if let Some(webhook) = webhook_find(
-											ctx,
-											new_message.guild_id,
-											chat_channel.id(),
-											data.channel_webhooks.clone(),
-										)
-										.await
-										{
-											let content = if new_message.content.is_empty() {
-												""
-											} else {
-												new_message.content.as_str()
-											};
-											let mut message = ExecuteWebhook::default()
-												.username(new_message.author.display_name())
-												.avatar_url(
-													new_message.author.avatar_url().unwrap_or_else(
-														|| {
-															new_message
-																.author
-																.static_avatar_url()
-																.unwrap_or_else(|| {
-																	new_message
-																		.author
-																		.default_avatar_url()
-																})
-														},
-													),
-												)
-												.content(content);
-											if !new_message.attachments.is_empty() {
-												for attachment in new_message
-													.attachments
-													.iter()
-													.filter(|a| a.dimensions().is_some())
-												{
-													message = message.add_file(
-														CreateAttachment::url(
-															&ctx.http,
-															attachment.url.as_str(),
-															attachment.filename.clone(),
-														)
-														.await?,
-													);
-												}
-											}
-											if let Some(replied_message) =
-												&new_message.referenced_message
-											{
-												let mut embed = CreateEmbed::default()
-													.description(replied_message.content.as_str())
-													.author(
-														CreateEmbedAuthor::new(
-															replied_message.author.display_name(),
-														)
-														.icon_url(
-															replied_message
-																.author
-																.avatar_url()
-																.unwrap_or_else(|| {
-																	replied_message
-																		.author
-																		.default_avatar_url()
-																}),
-														),
-													)
-													.timestamp(new_message.timestamp);
-												if let Some(attachment) =
-													replied_message.attachments.first()
-												{
-													embed = embed.image(attachment.url.as_str());
-												}
-												message = message.embed(embed);
-											}
-											if webhook
-												.execute(&ctx.http, false, message)
-												.await
-												.is_err()
-											{
-												chat_channel
-													.id()
-													.say(
-														&ctx.http,
-														format!(
-															"{} sent this: {}",
-															new_message.author.display_name(),
-															new_message.content.as_str()
-														),
-													)
-													.await?;
-											}
-										} else {
-											chat_channel
-												.id()
-												.say(
-													&ctx.http,
-													format!(
-														"{} sent this: {}",
-														new_message.author.display_name(),
-														new_message.content.as_str()
-													),
-												)
-												.await?;
-										}
-									}
-								} else {
-									warn!("Failed to convert guild channel id to u64");
-								}
-							}
-						}
-					} else {
-						warn!("Failed to convert global chat channel id to u64");
-					}
-				}
+				guild_channels(ctx, new_message, data.clone(), guild_data.clone(), guild_id)
+					.await?;
 				{
 					let mut word_tracking_updates: HashSet<WordTracking> =
 						guild_data.word_tracking.clone();
@@ -723,68 +798,7 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> Result<(),
 		tx.commit()
 			.await
 			.context("Failed to commit sql-transaction")?;
-		if let Ok(link) = discord_message_link.parse_next(&mut content.as_str()) {
-			let (guild_id, channel_id, message_id) = (
-				GuildId::new(link.guild_id),
-				GenericChannelId::new(link.channel_id),
-				MessageId::new(link.message_id),
-			);
-			if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
-				&& let Some(ref_channel) = channel.clone().guild()
-			{
-				let (channel_name, ref_msg) = (
-					ref_channel.base.name.as_str(),
-					channel.id().message(&ctx.http, message_id).await?,
-				);
-				if ref_msg.poll.is_none() {
-					let embed = CreateEmbed::default()
-						.colour(COLOUR_ORANGE)
-						.description(ref_msg.content.as_str())
-						.author(
-							CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
-								ref_msg
-									.author
-									.avatar_url()
-									.unwrap_or_else(|| ref_msg.author.default_avatar_url()),
-							),
-						)
-						.footer(CreateEmbedFooter::new(channel_name))
-						.timestamp(ref_msg.timestamp);
-					let (embed, content_url) = match ref_msg.attachments.first() {
-						Some(attachment) => match attachment.content_type.as_deref() {
-							Some(content_type) => {
-								if content_type.starts_with("image") {
-									(embed.image(attachment.url.as_str()), None)
-								} else if content_type.starts_with("video") {
-									(embed, Some(attachment.url.as_str()))
-								} else {
-									(embed, None)
-								}
-							}
-							_ => (embed, None),
-						},
-						_ => (embed, None),
-					};
-					let mut preview_message = CreateMessage::default()
-						.embed(embed)
-						.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
-					if ref_msg.channel_id == new_message.channel_id {
-						preview_message = preview_message.reference_message(&ref_msg);
-					}
-					if let Some(ref_embed) = ref_msg.embeds.first() {
-						preview_message =
-							preview_message.add_embed(CreateEmbed::from(ref_embed.clone()));
-					}
-					new_message
-						.channel_id
-						.send_message(&ctx.http, preview_message)
-						.await?;
-					if let Some(url) = content_url {
-						new_message.channel_id.say(&ctx.http, url).await?;
-					}
-				}
-			}
-		}
+		message_preview(ctx, new_message, &content).await?;
 	}
 
 	Ok(())

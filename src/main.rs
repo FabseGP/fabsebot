@@ -2,7 +2,7 @@ mod config;
 
 use std::fs::read_to_string;
 
-use anyhow::Result as AResult;
+use anyhow::{Context as _, Result as AResult};
 use config::MainConfig;
 use fabsebot_commands::commands;
 use fabsebot_core::{
@@ -12,8 +12,8 @@ use fabsebot_core::{
 use fabsebot_db::{PostgresConfig, PostgresConn};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use toml::{Table, Value};
-use tracing::{Level, error, subscriber};
-use tracing_subscriber::filter::LevelFilter;
+use tracing::{Level, subscriber::set_global_default};
+use tracing_subscriber::{filter::LevelFilter, fmt};
 
 fn setup_tracing(log_level_str: &str) -> AResult<()> {
 	let log_level = match log_level_str {
@@ -24,14 +24,15 @@ fn setup_tracing(log_level_str: &str) -> AResult<()> {
 		_ => Level::INFO,
 	};
 
-	let subscriber = tracing_subscriber::fmt()
+	let subscriber = fmt()
 		.with_max_level(LevelFilter::from_level(log_level))
 		.finish();
-	subscriber::set_global_default(subscriber)?;
 
-	if let Err(err) = PrometheusBuilder::default().install() {
-		error!("Failed to install Prometheus recorder: {:?}", &err);
-	}
+	set_global_default(subscriber).context("Failed to set global subscriber")?;
+
+	PrometheusBuilder::default()
+		.install()
+		.context("Failed to install Prometheus recorder")?;
 
 	Ok(())
 }
@@ -48,7 +49,7 @@ async fn main() -> AResult<()> {
 
 	setup_tracing(&main_config.log_level)?;
 
-	let postgres_pool = PostgresConn::new(postgres_config).await;
+	let postgres_pool = PostgresConn::new(postgres_config).await?;
 
 	bot_start(
 		bot_config,

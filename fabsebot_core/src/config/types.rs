@@ -10,10 +10,11 @@ use poise::Context as PContext;
 use reqwest::Client;
 use serde::Serialize;
 use serenity::all::{GenericChannelId, GuildId, MessageId, ShardManager, UserId, Webhook};
-use songbird::Songbird;
+use songbird::{Songbird, input::AuxMetadata};
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::config::settings::{
 	APIConfig, BotConfig, EmojiReactions, GuildSettings, ServerConfig, UserSettings, WordReactions,
@@ -116,17 +117,18 @@ pub struct GuildData {
 pub struct Data {
 	pub db: PgPool,
 	pub music_manager: Arc<Songbird>,
+	pub voice_manager: Arc<Songbird>,
 	pub ai_chats: Arc<AIChatMap>,
 	pub global_chats: Arc<GlobalChatMap>,
 	pub channel_webhooks: Arc<WebhookMap>,
 	pub guild_data: Arc<Mutex<GuildDataMap>>,
 	pub user_settings: Arc<Mutex<UserSettingsMap>>,
+	pub track_metadata: Arc<Mutex<HashMap<GuildId, HashMap<Uuid, (AuxMetadata, String)>>>>,
 }
 
 pub type Error = AError;
 pub type SContext<'a> = PContext<'a, Data, Error>;
 
-#[derive(Debug)]
 pub struct UtilsConfig {
 	pub bot: BotConfig,
 	pub fabseserver: ServerConfig,

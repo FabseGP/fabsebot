@@ -69,6 +69,7 @@ textwrap = "*"
 tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
 tracing = "*"
 urlencoding = "*"
+uuid = "*"
 winnow = { version = "*", features = ["simd"] }
 
 [lints]

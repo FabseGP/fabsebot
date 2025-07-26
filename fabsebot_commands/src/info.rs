@@ -2,7 +2,11 @@ use std::string::ToString;
 
 use fabsebot_core::config::types::{Error, SContext};
 use poise::CreateReply;
-use serenity::all::{CreateEmbed, Member};
+use serenity::all::{
+	CreateComponent, CreateContainer, CreateEmbed, CreateSection, CreateSectionAccessory,
+	CreateSectionComponent, CreateSeparator, CreateTextDisplay, CreateThumbnail,
+	CreateUnfurledMediaItem, Member, MessageFlags, PremiumType,
+};
 
 /// Get server information
 #[poise::command(prefix_command, slash_command)]
@@ -94,32 +98,73 @@ pub async fn user_info(
 	#[rest]
 	member: Member,
 ) -> Result<(), Error> {
-	let user_created = member.user.id.created_at().to_string();
-	let member_joined = member.joined_at.unwrap_or_default().to_string();
-	let user_mfa = if member.user.mfa_enabled() {
-		"MFA enabled"
-	} else {
-		"MFA disabled"
-	}
-	.to_owned();
-	let empty = String::new();
-	let embed = CreateEmbed::default()
-		.title(member.display_name())
-		.thumbnail(member.avatar_url().unwrap_or_else(|| {
-			member
-				.user
-				.avatar_url()
-				.unwrap_or_else(|| member.user.default_avatar_url())
-		}))
-		.fields(vec![
-			("Creation date:", &user_created, true),
-			("Joined date:", &member_joined, true),
-			("", &empty, false),
-			("Security:", &user_mfa, false),
-		])
-		.colour(member.user.accent_colour.unwrap_or_default());
-	ctx.send(CreateReply::default().reply(true).embed(embed))
-		.await?;
+	let username_display = [CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
+		if let Some(nick) = member.nick.as_ref() {
+			format!(
+				"# {nick} (aká {})\n ID: {}",
+				member.user.name, member.user.id
+			)
+		} else {
+			format!("# {}\n ID: {}", member.display_name(), member.user.id)
+		},
+	))];
+
+	let thumbnail_section = [CreateComponent::Section(CreateSection::new(
+		&username_display,
+		CreateSectionAccessory::Thumbnail(CreateThumbnail::new(CreateUnfurledMediaItem::new(
+			member.avatar_url().unwrap_or_else(|| {
+				member
+					.user
+					.avatar_url()
+					.unwrap_or_else(|| member.user.default_avatar_url())
+			}),
+		))),
+	))];
+
+	let separator = CreateComponent::Separator(CreateSeparator::new(true));
+
+	let premium_type = match member.user.premium_type {
+		PremiumType::NitroBasic => "Basic nitro",
+		PremiumType::Nitro => "Nitro",
+		PremiumType::NitroClassic => "Classic nitro",
+		_ => "Broke",
+	};
+
+	let roles = member
+		.roles(ctx.cache())
+		.map(|r| {
+			r.iter()
+				.map(|role| format!("<@&{}>", role.id))
+				.collect::<Vec<String>>()
+				.join(" ")
+		})
+		.unwrap_or_default();
+
+	let user_info = format!(
+		"### Creation date: {}\n### Joined date: {}\n### Roles: {}\n### Verified: {}\n### Last \
+		 time boosting server: {}\n### Nitro tier: {}",
+		&member.user.id.created_at(),
+		&member.joined_at.unwrap_or_default(),
+		&roles,
+		&member.user.verified().unwrap_or_default(),
+		&member.premium_since.unwrap_or_default(),
+		premium_type
+	);
+
+	let info_display = CreateComponent::TextDisplay(CreateTextDisplay::new(user_info));
+
+	let container = CreateContainer::new(&thumbnail_section)
+		.add_component(separator.clone())
+		.add_component(info_display)
+		.accent_colour(member.user.accent_colour.unwrap_or_default())
+		.add_component(separator);
+
+	ctx.send(
+		CreateReply::default()
+			.components(&[CreateComponent::Container(container)])
+			.flags(MessageFlags::IS_COMPONENTS_V2),
+	)
+	.await?;
 
 	Ok(())
 }

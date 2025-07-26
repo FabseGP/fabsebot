@@ -16,6 +16,7 @@ use crate::{
 
 pub fn initialize_counters() {
 	describe_counter!("commands_counter", "Counter for commands");
+	describe_counter!("errors_counter", "Error counter for commands");
 }
 
 pub async fn on_error(error: FrameworkError<'_, Data, Error>) {

@@ -8,8 +8,7 @@ use poise::CreateReply;
 use serenity::all::{
 	AutocompleteChoice, ButtonStyle, ComponentInteractionCollector, CreateActionRow,
 	CreateAutocompleteResponse, CreateButton, CreateComponent, CreateEmbed,
-	CreateInteractionResponse, CreateSection, CreateSectionAccessory, CreateSectionComponent,
-	CreateTextDisplay, EditMessage, Member, MessageFlags,
+	CreateInteractionResponse, EditMessage, Member,
 };
 
 #[expect(clippy::unused_async)]
@@ -68,22 +67,6 @@ pub async fn rps(
 				.title("Rock paper scissors...")
 				.colour(COLOUR_ORANGE)
 				.description("Make a choice within 60s...");
-
-			let text_display = [CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
-				"hello",
-			))];
-
-			let temp = [CreateComponent::Section(CreateSection::new(
-				&text_display,
-				CreateSectionAccessory::Button(CreateButton::new("hello").label("W")),
-			))];
-
-			ctx.send(
-				CreateReply::default()
-					.components(&temp)
-					.flags(MessageFlags::IS_COMPONENTS_V2),
-			)
-			.await?;
 
 			ctx.send(
 				CreateReply::default()

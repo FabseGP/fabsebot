@@ -1,11 +1,9 @@
-use std::process::exit;
-
+use anyhow::{Context as _, Result as AResult};
 use serde::Deserialize;
 use sqlx::{
 	Pool, Postgres,
 	postgres::{PgConnectOptions, PgPoolOptions},
 };
-use tracing::error;
 
 #[derive(Deserialize)]
 pub struct PostgresConfig {
@@ -22,23 +20,18 @@ pub struct PostgresConn {
 }
 
 impl PostgresConn {
-	pub async fn new(config: PostgresConfig) -> Self {
+	pub async fn new(config: PostgresConfig) -> AResult<Self> {
 		let pool_options = PgConnectOptions::new()
 			.host(&config.host)
 			.port(config.port)
 			.username(&config.user)
 			.database(&config.database)
 			.password(&config.password);
-		match PgPoolOptions::default()
+		let pool = PgPoolOptions::default()
 			.max_connections(config.max_connections)
 			.connect_with(pool_options)
 			.await
-		{
-			Ok(pool) => Self { pool },
-			Err(err) => {
-				error!("Failed to connect to database: {:?}", &err);
-				exit(1);
-			}
-		}
+			.context("Failed to connect to database")?;
+		Ok(Self { pool })
 	}
 }

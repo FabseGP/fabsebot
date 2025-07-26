@@ -947,6 +947,7 @@ dependencies = [
  "tokio",
  "tracing",
  "urlencoding",
+ "uuid",
 ]
 
 [[package]]
@@ -974,6 +975,7 @@ dependencies = [
  "tokio",
  "tracing",
  "urlencoding",
+ "uuid",
  "winnow",
 ]
 
@@ -981,9 +983,9 @@ dependencies = [
 name = "fabsebot_db"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "serde",
  "sqlx",
- "tracing",
 ]
 
 [[package]]

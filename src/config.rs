@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize)]
 pub struct MainConfig {
 	pub log_level: String,
 }
