@@ -28,6 +28,7 @@ use songbird::{
 };
 use sqlx::query;
 use tokio::{
+	process::Command,
 	spawn,
 	sync::Mutex,
 	time::{sleep, timeout},
@@ -517,13 +518,13 @@ pub async fn text_to_voice(ctx: SContext<'_>) -> Result<(), Error> {
 
 /// Play all songs in a playlist from Deezer
 #[poise::command(prefix_command, slash_command)]
-pub async fn add_playlist(
+pub async fn add_deezer_playlist(
 	ctx: SContext<'_>,
 	#[description = "ID of the playlist in mind"]
 	#[rest]
 	playlist_id: String,
 ) -> Result<(), Error> {
-	if let (Some(handler_lock), Some(_)) = voice_check(&ctx, false).await {
+	if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx, false).await {
 		if let Ok(request) = HTTP_CLIENT
 			.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
 			.send()
@@ -538,18 +539,109 @@ pub async fn add_playlist(
 			{
 				for track in payload.tracks.data {
 					let search = format!("{} {}", track.title, track.artist.name);
-					let src = Input::from(YoutubeDl::new_search(HTTP_CLIENT.clone(), search));
-					get_configured_handler(&handler_lock)
-						.await
-						.enqueue_input(src)
-						.await;
+					let src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
+					if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
+						let msg = ctx.reply("Song added to queue").await?;
+						if let Ok(msg_id) = msg.message().await.map(|m| m.id) {
+							let uuid = get_configured_handler(&handler_lock)
+								.await
+								.enqueue_input(Input::from(src.clone()))
+								.await
+								.uuid();
+
+							ctx.data()
+								.track_metadata
+								.lock()
+								.await
+								.entry(guild_id)
+								.or_insert_with(HashMap::new)
+								.insert(
+									uuid,
+									(
+										metadata.clone(),
+										ctx.author().display_name().to_string(),
+										msg_id,
+									),
+								);
+						}
+					}
 				}
-				ctx.reply("Added playlist to queue").await?;
 			} else {
 				ctx.reply("Deezer refused to serve your request").await?;
 			}
 		} else {
 			ctx.reply("Invalid playlist-id for Deezer playlist").await?;
+		}
+	}
+	Ok(())
+}
+
+/// Play all songs in a playlist from ``YouTube``
+#[poise::command(prefix_command, slash_command)]
+pub async fn add_youtube_playlist(
+	ctx: SContext<'_>,
+	#[description = "Url playlist in mind"]
+	#[rest]
+	playlist_url: String,
+) -> Result<(), Error> {
+	if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx, false).await {
+		ctx.defer().await?;
+		let yt_dlp_output = Command::new("yt-dlp")
+			.args([
+				"--flat-playlist",
+				"--print",
+				"url",
+				"--no-warnings",
+				&playlist_url,
+			])
+			.output()
+			.await?;
+
+		let urls_joined = String::from_utf8(yt_dlp_output.stdout)?;
+
+		let urls: Vec<String> = urls_joined
+			.lines()
+			.filter(|line| !line.is_empty() && line.starts_with("https://"))
+			.map(ToString::to_string)
+			.collect();
+
+		for url in urls {
+			let src = if url.starts_with("https") {
+				if url.contains("youtu") {
+					YoutubeDl::new(HTTP_CLIENT.clone(), url)
+				} else {
+					ctx.reply("Only YouTube-links are supported").await?;
+					return Ok(());
+				}
+			} else {
+				YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
+			};
+			if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
+				let msg = ctx.reply("Song added to queue").await?;
+
+				if let Ok(msg_id) = msg.message().await.map(|m| m.id) {
+					let uuid = get_configured_handler(&handler_lock)
+						.await
+						.enqueue_input(Input::from(src.clone()))
+						.await
+						.uuid();
+
+					ctx.data()
+						.track_metadata
+						.lock()
+						.await
+						.entry(guild_id)
+						.or_insert_with(HashMap::new)
+						.insert(
+							uuid,
+							(
+								metadata.clone(),
+								ctx.author().display_name().to_string(),
+								msg_id,
+							),
+						);
+				}
+			}
 		}
 	}
 	Ok(())
