@@ -601,31 +601,20 @@ pub async fn add_youtube_playlist(
 
 		let urls: Vec<String> = urls_joined
 			.lines()
-			.filter(|line| !line.is_empty() && line.starts_with("https://"))
+			.filter(|line| line.starts_with("https://"))
 			.map(ToString::to_string)
 			.collect();
 
 		for url in urls {
-			let src = if url.starts_with("https") {
-				if url.contains("youtu") {
-					YoutubeDl::new(HTTP_CLIENT.clone(), url)
-				} else {
-					ctx.reply("Only YouTube-links are supported").await?;
-					return Ok(());
-				}
-			} else {
-				YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
-			};
+			let src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
 			if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
 				let msg = ctx.reply("Song added to queue").await?;
-
 				if let Ok(msg_id) = msg.message().await.map(|m| m.id) {
 					let uuid = get_configured_handler(&handler_lock)
 						.await
 						.enqueue_input(Input::from(src.clone()))
 						.await
 						.uuid();
-
 					ctx.data()
 						.track_metadata
 						.lock()
