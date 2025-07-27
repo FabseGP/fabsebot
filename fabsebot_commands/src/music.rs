@@ -56,37 +56,16 @@ struct DeezerArtist {
 	name: String,
 }
 
-async fn voice_check(
-	ctx: &SContext<'_>,
-	global: bool,
-) -> (Option<Arc<Mutex<Call>>>, Option<GuildId>) {
-	match ctx.guild_id() {
-		Some(guild_id) => {
-			let handler_lock_opt = if global {
-				ctx.data().voice_manager.get(guild_id)
-			} else {
-				ctx.data().music_manager.get(guild_id)
-			};
-			if let Some(handler_lock) = handler_lock_opt {
-				(Some(handler_lock), Some(guild_id))
-			} else {
-				if let Err(err) = ctx
-					.reply(
-						"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a \
-						 voice channel first",
-					)
-					.await
-				{
-					warn!(
-						"Failed to notify user that the bot is not in a voice channel: {:?}",
-						err
-					);
-				}
-				(None, None)
-			}
-		}
-		None => (None, None),
-	}
+fn voice_check(ctx: &SContext<'_>, global: bool) -> Option<(Arc<Mutex<Call>>, GuildId)> {
+	let guild_id = ctx.guild_id()?;
+
+	let handler_lock = if global {
+		ctx.data().voice_manager.get(guild_id)
+	} else {
+		ctx.data().music_manager.get(guild_id)
+	}?;
+
+	Some((handler_lock, guild_id))
 }
 
 #[derive(Clone)]
@@ -407,10 +386,6 @@ impl VoiceEventHandler for PlaybackHandler {
 							}
 						});
 					}
-
-					PlayMode::End => {}
-					PlayMode::Stop => {}
-					PlayMode::Pause => {}
 					PlayMode::Errored(err) => {
 						error!("Failed to playback song: {:?}", err);
 					}
@@ -491,7 +466,7 @@ impl VoiceEventHandler for VoiceReceiveHandler {
 /// Text to voice, duh
 #[poise::command(prefix_command, slash_command)]
 pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Result<(), Error> {
-	if let (Some(handler_lock), Some(_)) = voice_check(&ctx, false).await {
+	if let Some((handler_lock, _)) = voice_check(&ctx, false) {
 		ctx.defer().await?;
 
 		let payload = if let Some(input) = input_opt {
@@ -516,6 +491,12 @@ pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Resu
 		} else {
 			ctx.reply("I don't wanna speak now").await?;
 		}
+	} else {
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
 	}
 	Ok(())
 }
@@ -563,7 +544,7 @@ pub async fn add_deezer_playlist(
 	#[rest]
 	playlist_id: String,
 ) -> Result<(), Error> {
-	if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx, false).await {
+	if let Some((handler_lock, guild_id)) = voice_check(&ctx, false) {
 		if let Ok(request) = HTTP_CLIENT
 			.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
 			.send()
@@ -587,7 +568,14 @@ pub async fn add_deezer_playlist(
 		} else {
 			ctx.reply("Invalid playlist-id for Deezer playlist").await?;
 		}
+	} else {
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
 	}
+
 	Ok(())
 }
 
@@ -599,7 +587,7 @@ pub async fn add_youtube_playlist(
 	#[rest]
 	playlist_url: String,
 ) -> Result<(), Error> {
-	if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx, false).await {
+	if let Some((handler_lock, guild_id)) = voice_check(&ctx, false) {
 		ctx.defer().await?;
 		let yt_dlp_output = Command::new("yt-dlp")
 			.args([
@@ -624,14 +612,21 @@ pub async fn add_youtube_playlist(
 			let src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
 			queue_song(src, handler_lock.clone(), guild_id, ctx).await?;
 		}
+	} else {
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
 	}
+
 	Ok(())
 }
 
 /// End global music playback across guilds
 #[poise::command(prefix_command, slash_command)]
 pub async fn global_music_end(ctx: SContext<'_>) -> Result<(), Error> {
-	if let (Some(_), Some(guild_id)) = voice_check(&ctx, true).await {
+	if let Some((_, guild_id)) = voice_check(&ctx, true) {
 		query!(
 			"INSERT INTO guild_settings (guild_id, global_music)
             VALUES ($1, FALSE)
@@ -655,14 +650,21 @@ pub async fn global_music_end(ctx: SContext<'_>) -> Result<(), Error> {
 			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
 		}
 		ctx.reply("Global music playback ended...").await?;
+	} else {
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
 	}
+
 	Ok(())
 }
 
 /// Start global music playback across guilds
 #[poise::command(prefix_command, slash_command)]
 pub async fn global_music_start(ctx: SContext<'_>) -> Result<(), Error> {
-	if let (Some(_), Some(guild_id)) = voice_check(&ctx, true).await {
+	if let Some((_, guild_id)) = voice_check(&ctx, true) {
 		let guild_id_i64 = i64::from(guild_id);
 		let mut tx = ctx.data().db.begin().await?;
 		query!(
@@ -736,6 +738,12 @@ pub async fn global_music_start(ctx: SContext<'_>) -> Result<(), Error> {
 		tx.commit()
 			.await
 			.context("Failed to commit sql-transaction")?;
+	} else {
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
 	}
 
 	Ok(())
@@ -922,7 +930,7 @@ pub async fn play_song(
 	url: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx, false).await {
+	if let Some((handler_lock, guild_id)) = voice_check(&ctx, false) {
 		let src = if url.starts_with("https") {
 			if url.contains("youtu") {
 				YoutubeDl::new(HTTP_CLIENT.clone(), url)
@@ -935,9 +943,13 @@ pub async fn play_song(
 		};
 		queue_song(src.clone(), handler_lock.clone(), guild_id, ctx).await?;
 	} else {
-		ctx.reply("Like you, nothing is known about this song")
-			.await?;
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
 	}
+
 	Ok(())
 }
 
@@ -950,7 +962,7 @@ pub async fn play_song_global(
 	url: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx, false).await {
+	if let Some((handler_lock, guild_id)) = voice_check(&ctx, true) {
 		let src = if url.starts_with("https") {
 			if url.contains("youtu") {
 				YoutubeDl::new(HTTP_CLIENT.clone(), url)
@@ -997,9 +1009,13 @@ pub async fn play_song_global(
 			}
 		}
 	} else {
-		ctx.reply("Like you, nothing is known about this song")
-			.await?;
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
 	}
+
 	Ok(())
 }
 
@@ -1009,7 +1025,7 @@ pub async fn seek_song(
 	ctx: SContext<'_>,
 	#[description = "Seconds to seek, i.e. '-20' or '+20'"] seconds: String,
 ) -> Result<(), Error> {
-	if let (Some(handler_lock), Some(_)) = voice_check(&ctx, false).await {
+	if let Some((handler_lock, _)) = voice_check(&ctx, false) {
 		ctx.defer_ephemeral().await?;
 		let current_playback_opt = get_configured_handler(&handler_lock)
 			.await
@@ -1055,6 +1071,13 @@ pub async fn seek_song(
 				}
 			}
 		}
+	} else {
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
 	}
+
 	Ok(())
 }
