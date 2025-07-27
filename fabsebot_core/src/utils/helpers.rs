@@ -78,6 +78,30 @@ pub async fn get_gifs(input: String) -> Vec<(Cow<'static, str>, Cow<'static, str
 }
 
 #[derive(Deserialize)]
+struct LyricsResponse {
+	#[serde(rename(deserialize = "plainLyrics"))]
+	plain_lyrics: String,
+}
+
+pub async fn get_lyrics(artist_name: &str, track_name: &str) -> Option<String> {
+	let request_url = {
+		let encoded_artist = encode(artist_name);
+		let encoded_track = encode(track_name);
+		format!(
+			"https://lrclib.net/api/get?artist_name={encoded_artist}&track_name={encoded_track}"
+		)
+	};
+
+	if let Ok(response) = HTTP_CLIENT.get(request_url).send().await
+		&& let Ok(data) = response.json::<LyricsResponse>().await
+	{
+		Some(data.plain_lyrics)
+	} else {
+		None
+	}
+}
+
+#[derive(Deserialize)]
 struct WaifuResponse {
 	images: [WaifuImage; 1],
 }

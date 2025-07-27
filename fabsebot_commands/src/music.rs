@@ -5,10 +5,13 @@ use anyhow::{Context as _, Result as AResult};
 use bytes::{BufMut as _, BytesMut};
 use fabsebot_core::{
 	config::{
-		constants::COLOUR_RED,
+		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED},
 		types::{Data, Error, GuildDataMap, HTTP_CLIENT, SContext},
 	},
-	utils::{ai::ai_voice, helpers::get_configured_handler},
+	utils::{
+		ai::ai_voice,
+		helpers::{get_configured_handler, get_lyrics},
+	},
 };
 use poise::{CreateReply, async_trait};
 use serde::Deserialize;
@@ -153,37 +156,51 @@ impl PlaybackHandler {
 
 			let skip_disabled = queue_size == 1;
 
-			let mut buttons = [
-				CreateButton::new(format!("{}_s", msg_id))
+			let mut buttons_row1 = [
+				CreateButton::new(format!("{msg_id}_s"))
 					.style(ButtonStyle::Primary)
 					.disabled(skip_disabled)
 					.label("Skip"),
-				CreateButton::new(format!("{}_p", msg_id))
+				CreateButton::new(format!("{msg_id}_p"))
 					.style(ButtonStyle::Primary)
 					.label("Pause/Unpause"),
-				CreateButton::new(format!("{}_c", msg_id))
+				CreateButton::new(format!("{msg_id}_c"))
 					.style(ButtonStyle::Primary)
 					.label("Stop & clear queue"),
-				CreateButton::new(format!("{}_u", msg_id))
+				CreateButton::new(format!("{msg_id}_l"))
 					.style(ButtonStyle::Primary)
-					.label("Update controls"),
+					.label("Show/Hide lyrics"),
+				CreateButton::new(format!("{msg_id}_h"))
+					.style(ButtonStyle::Primary)
+					.label("Show/Hide song history"),
 			];
 
-			let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-				&buttons,
-			))];
+			let buttons_row2 = [CreateButton::new(format!("{msg_id}_u"))
+				.style(ButtonStyle::Primary)
+				.label("Update controls")];
+
+			let action_rows = [
+				CreateComponent::ActionRow(CreateActionRow::buttons(&buttons_row1)),
+				CreateComponent::ActionRow(CreateActionRow::buttons(&buttons_row2)),
+			];
 
 			self.channel_id
 				.edit_message(
 					&self.serenity_context.http,
 					msg_id,
 					EditMessage::default()
-						.embed(e)
-						.components(&action_row)
+						.embed(e.clone())
+						.components(&action_rows)
 						.content(""),
 				)
 				.await?;
 			let message_id_copy = msg_id;
+
+			let mut lyrics_shown = false;
+			let mut history_shown = false;
+
+			let mut lyrics_embed: Option<CreateEmbed> = None;
+			let mut history_embed: Option<CreateEmbed> = None;
 
 			while let Some(interaction) = ComponentInteractionCollector::new(&self.serenity_context)
 				.timeout(metadata.duration.unwrap_or(Duration::from_secs(60)))
@@ -242,17 +259,96 @@ impl PlaybackHandler {
 					.await?;
 					break;
 				} else if interaction.data.custom_id.ends_with('u') && queue.len() > 1 {
-					buttons[0] = CreateButton::new(format!("{}_s", msg_id))
+					buttons_row1[0] = CreateButton::new(format!("{msg_id}_s"))
 						.style(ButtonStyle::Primary)
 						.label("Skip");
-					let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-						&buttons,
-					))];
+					let action_rows = [
+						CreateComponent::ActionRow(CreateActionRow::buttons(&buttons_row1)),
+						CreateComponent::ActionRow(CreateActionRow::buttons(&buttons_row2)),
+					];
 					msg.edit(
 						self.serenity_context.http.clone(),
-						EditMessage::default().components(&action_row),
+						EditMessage::default().components(&action_rows),
 					)
 					.await?;
+				} else if interaction.data.custom_id.ends_with('l') {
+					if lyrics_shown {
+						lyrics_shown = false;
+						msg.edit(
+							self.serenity_context.http.clone(),
+							EditMessage::default().embed(e.clone()),
+						)
+						.await?;
+					} else {
+						let new_embed = if let Some(embed) = &lyrics_embed {
+							lyrics_shown = true;
+							embed.clone()
+						} else if let Some(artist_name) = &metadata.artist
+							&& let Some(track_name) = &metadata.title
+							&& let Some(lyrics) = get_lyrics(artist_name, track_name).await
+						{
+							lyrics_shown = true;
+							let embed = CreateEmbed::default()
+								.title("Lyrics")
+								.description(lyrics)
+								.colour(COLOUR_BLUE);
+							lyrics_embed = Some(embed.clone());
+							embed
+						} else {
+							continue;
+						};
+						msg.edit(
+							self.serenity_context.http.clone(),
+							EditMessage::default().add_embed(new_embed),
+						)
+						.await?;
+					}
+				} else if interaction.data.custom_id.ends_with('h') {
+					if history_shown {
+						history_shown = false;
+						msg.edit(
+							self.serenity_context.http.clone(),
+							EditMessage::default().embed(e.clone()),
+						)
+						.await?;
+					} else {
+						let new_embed = if let Some(embed) = &history_embed {
+							history_shown = true;
+							embed.clone()
+						} else if let Some(played_tracks) = self
+							.bot_data
+							.track_metadata
+							.lock()
+							.await
+							.get(&self.guild_id)
+						{
+							history_shown = true;
+							let mut embed = CreateEmbed::default()
+								.title("Song history")
+								.description("Current session")
+								.colour(COLOUR_GREEN);
+							for (metadata, author, _msg_id) in played_tracks.values() {
+								embed = embed.field(
+									"Song:",
+									format!(
+										"\"{}\" added by {}",
+										metadata.title.as_deref().unwrap_or_default(),
+										author
+									),
+									false,
+								);
+							}
+							history_embed = Some(embed.clone());
+							embed
+						} else {
+							continue;
+						};
+						msg.edit(
+							self.serenity_context.http.clone(),
+							EditMessage::default().add_embed(new_embed),
+						)
+						.await?;
+					}
 				}
 			}
 			self.channel_id
