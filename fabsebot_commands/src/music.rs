@@ -280,14 +280,13 @@ impl PlaybackHandler {
 						)
 						.await?;
 					} else {
+						lyrics_shown = true;
 						let new_embed = if let Some(embed) = &lyrics_embed {
-							lyrics_shown = true;
 							embed.clone()
 						} else if let Some(artist_name) = &metadata.artist
 							&& let Some(track_name) = &metadata.title
 							&& let Some(lyrics) = get_lyrics(artist_name, track_name).await
 						{
-							lyrics_shown = true;
 							let embed = CreateEmbed::default()
 								.title("Lyrics")
 								.description(lyrics)
@@ -295,7 +294,12 @@ impl PlaybackHandler {
 							lyrics_embed = Some(embed.clone());
 							embed
 						} else {
-							continue;
+							let embed = CreateEmbed::default()
+								.title("Lyrics")
+								.description("Not found :(")
+								.colour(COLOUR_BLUE);
+							lyrics_embed = Some(embed.clone());
+							embed
 						};
 						msg.edit(
 							self.serenity_context.http.clone(),
@@ -312,8 +316,8 @@ impl PlaybackHandler {
 						)
 						.await?;
 					} else {
+						history_shown = true;
 						let new_embed = if let Some(embed) = &history_embed {
-							history_shown = true;
 							embed.clone()
 						} else if let Some(played_tracks) = self
 							.bot_data
@@ -322,26 +326,26 @@ impl PlaybackHandler {
 							.await
 							.get(&self.guild_id)
 						{
-							history_shown = true;
 							let mut embed = CreateEmbed::default()
 								.title("Song history")
 								.description("Current session")
 								.colour(COLOUR_GREEN);
 							for (metadata, author, _msg_id) in played_tracks.values() {
 								embed = embed.field(
-									"Song:",
-									format!(
-										"\"{}\" added by {}",
-										metadata.title.as_deref().unwrap_or_default(),
-										author
-									),
+									metadata.title.clone().unwrap_or_default(),
+									format!("Added by {author}",),
 									false,
 								);
 							}
 							history_embed = Some(embed.clone());
 							embed
 						} else {
-							continue;
+							let embed = CreateEmbed::default()
+								.title("Song history")
+								.description("Not known :(")
+								.colour(COLOUR_GREEN);
+							history_embed = Some(embed.clone());
+							embed
 						};
 						msg.edit(
 							self.serenity_context.http.clone(),
