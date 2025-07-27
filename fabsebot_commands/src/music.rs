@@ -255,6 +255,16 @@ impl PlaybackHandler {
 					.await?;
 				}
 			}
+			self.channel_id
+				.edit_message(
+					&self.serenity_context.http,
+					msg_id,
+					EditMessage::default()
+						.suppress_embeds(true)
+						.components(&[])
+						.content("Song finished"),
+				)
+				.await?;
 		}
 
 		Ok(())
