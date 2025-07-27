@@ -84,10 +84,7 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> Result<(), 
 						.unwrap_or_default()
 						.1,
 				};
-				data.guild_data
-					.lock()
-					.await
-					.insert(guild_id, Arc::new(guild_data));
+				data.guild_data.insert(guild_id, Arc::new(guild_data));
 			} else {
 				warn!("Failed to convert guildid to u64");
 			}
@@ -111,9 +108,8 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> Result<(), 
 				warn!("Failed to convert ids to u64");
 			}
 		}
-		let user_settings_lock = data.user_settings.lock().await;
 		for (guild_id, map) in guild_maps {
-			user_settings_lock.insert(guild_id, Arc::new(map));
+			data.user_settings.insert(guild_id, Arc::new(map));
 		}
 	}
 	let user_count = if let Ok(info) = ctx.http.get_current_application_info().await {

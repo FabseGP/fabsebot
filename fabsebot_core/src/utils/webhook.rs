@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Result as AResult;
 use serde::Serialize;
 use serenity::all::{
@@ -10,26 +8,22 @@ use tracing::warn;
 
 use crate::config::types::{HTTP_CLIENT, WebhookMap};
 
-pub async fn spoiler_message(
-	ctx: &SContext,
-	message: &Message,
-	data: Arc<WebhookMap>,
-) -> AResult<()> {
+pub async fn spoiler_message(ctx: &SContext, message: &Message, data: WebhookMap) -> AResult<()> {
 	if let Some(avatar_url) = message.author.avatar_url() {
 		if let Some(webhook) = webhook_find(ctx, message.guild_id, message.channel_id, data).await {
 			let username = message.author.display_name();
 			let mut is_first = true;
 			for payload in &message.attachments {
-				let download = HTTP_CLIENT
+				let Ok(download_bytes) = HTTP_CLIENT
 					.get(payload.url.as_str())
 					.send()
 					.await?
 					.bytes()
-					.await;
-
-				let Ok(download_bytes) = download else {
+					.await
+				else {
 					continue;
 				};
+
 				let attachment_name = &payload.filename;
 				let attachment =
 					CreateAttachment::bytes(download_bytes, format!("SPOILER_{attachment_name}"));
@@ -75,7 +69,7 @@ pub async fn webhook_find(
 	ctx: &SContext,
 	guild_id: Option<GuildId>,
 	channel_id: GenericChannelId,
-	cached_webhooks: Arc<WebhookMap>,
+	cached_webhooks: WebhookMap,
 ) -> Option<Webhook> {
 	if let Some(webhook) = cached_webhooks.get(&channel_id) {
 		Some(webhook)

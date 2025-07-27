@@ -30,7 +30,7 @@ pub async fn handle_guild_create(
 			guild_id: guild_id_i64,
 			..Default::default()
 		};
-		data.guild_data.lock().await.insert(
+		data.guild_data.insert(
 			guild.id,
 			Arc::new(GuildData {
 				settings: default_settings,

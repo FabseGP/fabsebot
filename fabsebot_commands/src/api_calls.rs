@@ -641,39 +641,6 @@ pub async fn gif(
 			&buttons[1..],
 		))];
 
-		/*
-				let media_item = [CreateMediaGalleryItem::new(CreateUnfurledMediaItem::new(
-					"https://media.tenor.com/8-EJGSB4H1wAAAAi/big-floppa.gif",
-				))];
-
-				let media_gallery = CreateComponent::MediaGallery(CreateMediaGallery::new(&media_item));
-
-				let text_display = [CreateComponent::TextDisplay(CreateTextDisplay::new(
-					format!("# {input}"),
-				))];
-
-				let component_text = [CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
-					"next",
-				))];
-
-				let new_layout = [CreateComponent::Container(
-					CreateContainer::new(&text_display)
-						.add_component(media_gallery)
-						.add_component(CreateComponent::Separator(CreateSeparator::new(true)))
-						.add_component(CreateComponent::Section(CreateSection::new(
-							&component_text,
-							CreateSectionAccessory::Button(buttons[0].clone()),
-						))),
-				)];
-
-				ctx.send(
-					CreateReply::default()
-						.components(&new_layout)
-						.flags(MessageFlags::IS_COMPONENTS_V2),
-				)
-				.await?;
-		*/
-
 		let message = ctx
 			.send(
 				CreateReply::default()
@@ -1071,9 +1038,7 @@ pub async fn roast(
 		let account_date = member.user.id.created_at();
 		let join_date = member.joined_at.unwrap_or_default();
 		let message_count = {
-			let ctx_data = ctx.data();
-			let user_settings_lock = ctx_data.user_settings.lock().await;
-			let mut user_settings_opt = user_settings_lock.get(&guild_id);
+			let mut user_settings_opt = ctx.data().user_settings.get(&guild_id);
 			if let Some(settings) = user_settings_opt {
 				settings
 					.get(&member.user.id)
@@ -1089,7 +1054,9 @@ pub async fn roast(
 						..Default::default()
 					},
 				);
-				user_settings_lock.insert(guild_id, Arc::new(modified_settings.clone()));
+				ctx.data()
+					.user_settings
+					.insert(guild_id, Arc::new(modified_settings.clone()));
 				0
 			}
 		};

@@ -47,12 +47,10 @@ pub async fn on_command(context: Context<'_, Data, Error>) {
 pub async fn dynamic_prefix(
 	ctx: PartialContext<'_, Data, Error>,
 ) -> AResult<Option<Cow<'static, str>>> {
-	let prefix = if let Some(id) = ctx.guild_id {
+	let prefix = ctx.guild_id.map_or(Cow::Borrowed("!"), |id| {
 		ctx.framework
 			.user_data()
 			.guild_data
-			.lock()
-			.await
 			.get(&id)
 			.map_or(Cow::Borrowed("!"), |guild_data| {
 				guild_data
@@ -61,9 +59,7 @@ pub async fn dynamic_prefix(
 					.clone()
 					.map_or(Cow::Borrowed("!"), Cow::Owned)
 			})
-	} else {
-		Cow::Borrowed("!")
-	};
+	});
 
 	Ok(Some(prefix))
 }

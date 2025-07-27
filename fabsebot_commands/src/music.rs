@@ -1,5 +1,5 @@
 use core::time::Duration;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::{Context as _, Result as AResult};
 use bytes::{BufMut as _, BytesMut};
@@ -13,6 +13,7 @@ use fabsebot_core::{
 		helpers::{get_configured_handler, get_lyrics},
 	},
 };
+use indexmap::IndexMap;
 use poise::{CreateReply, async_trait};
 use serde::Deserialize;
 use serenity::all::{
@@ -401,14 +402,14 @@ impl VoiceEventHandler for PlaybackHandler {
 struct VoiceReceiveHandler {
 	guild_id: GuildId,
 	voice_manager: Arc<Songbird>,
-	guild_data: Arc<Mutex<GuildDataMap>>,
+	guild_data: GuildDataMap,
 }
 
 impl VoiceReceiveHandler {
 	const fn new(
 		guild_id: GuildId,
 		voice_manager: Arc<Songbird>,
-		guild_data: Arc<Mutex<GuildDataMap>>,
+		guild_data: GuildDataMap,
 	) -> Self {
 		Self {
 			guild_id,
@@ -434,8 +435,6 @@ impl VoiceEventHandler for VoiceReceiveHandler {
 				let buffer = buffer.freeze();
 				let guild_global_music: Vec<_> = self
 					.guild_data
-					.lock()
-					.await
 					.iter()
 					.filter(|entry| {
 						let settings = &entry.value().settings;
@@ -521,7 +520,7 @@ async fn queue_song(
 				.lock()
 				.await
 				.entry(guild_id)
-				.or_insert_with(HashMap::new)
+				.or_insert_with(IndexMap::new)
 				.insert(
 					uuid,
 					(
@@ -638,17 +637,17 @@ pub async fn global_music_end(ctx: SContext<'_>) -> Result<(), Error> {
 		.execute(&mut *ctx.data().db.acquire().await?)
 		.await?;
 		ctx.data().global_chats.invalidate(&guild_id);
-		{
-			let ctx_data = ctx.data();
-			let guild_settings_lock = ctx_data.guild_data.lock().await;
-			let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-			let mut modified_settings = current_settings_opt
-				.get_or_insert_default()
-				.as_ref()
-				.clone();
-			modified_settings.settings.global_music = false;
-			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-		}
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
+			.get_or_insert_default()
+			.as_ref()
+			.clone();
+		modified_settings.settings.global_music = false;
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 		ctx.reply("Global music playback ended...").await?;
 	} else {
 		ctx.reply(
@@ -678,21 +677,21 @@ pub async fn global_music_start(ctx: SContext<'_>) -> Result<(), Error> {
 		.execute(&mut *tx)
 		.await?;
 		let message = ctx.reply("Starting the party...").await?;
-		let ctx_data = ctx.data();
-		{
-			let guild_settings_lock = ctx_data.guild_data.lock().await;
-			let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-			let mut modified_settings = current_settings_opt
-				.get_or_insert_default()
-				.as_ref()
-				.clone();
-			modified_settings.settings.global_music = true;
-			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-		}
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
+			.get_or_insert_default()
+			.as_ref()
+			.clone();
+		modified_settings.settings.global_music = true;
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 		let result = timeout(Duration::from_secs(60), async {
 			loop {
 				let has_other_calls =
-					ctx_data.guild_data.lock().await.iter().any(|entry| {
+					ctx.data().guild_data.iter().any(|entry| {
 						entry.key() != &guild_id && entry.value().settings.global_music
 					});
 				if has_other_calls {
@@ -726,14 +725,17 @@ pub async fn global_music_start(ctx: SContext<'_>) -> Result<(), Error> {
 						.content("No one joined the party within 1 minute 😢"),
 				)
 				.await?;
-			let guild_settings_lock = ctx_data.guild_data.lock().await;
-			let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-			let mut modified_settings = current_settings_opt
+			let mut modified_settings = ctx
+				.data()
+				.guild_data
+				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
 				.clone();
 			modified_settings.settings.global_music = false;
-			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+			ctx.data()
+				.guild_data
+				.insert(guild_id, Arc::new(modified_settings));
 		}
 		tx.commit()
 			.await
@@ -773,17 +775,18 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.execute(&mut *ctx.data().db.acquire().await?)
 			.await?;
-			{
-				let ctx_data = ctx.data();
-				let guild_settings_lock = ctx_data.guild_data.lock().await;
-				let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-				let mut modified_settings = current_settings_opt
-					.get_or_insert_default()
-					.as_ref()
-					.clone();
-				modified_settings.settings.global_call = true;
-				guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-			}
+			let mut modified_settings = ctx
+				.data()
+				.guild_data
+				.get(&guild_id)
+				.get_or_insert_default()
+				.as_ref()
+				.clone();
+			modified_settings.settings.global_call = true;
+			ctx.data()
+				.guild_data
+				.insert(guild_id, Arc::new(modified_settings));
+
 			ctx.reply("I've joined the party").await?;
 			handler_lock.lock().await.add_global_event(
 				TrackEvent::Play.into(),
@@ -901,16 +904,18 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.execute(&mut *ctx.data().db.acquire().await?)
 			.await?;
-			let ctx_data = ctx.data();
-			let guild_settings_lock = ctx_data.guild_data.lock().await;
-			let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-			let mut modified_settings = current_settings_opt
+			let mut modified_settings = ctx
+				.data()
+				.guild_data
+				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
 				.clone();
 			modified_settings.settings.global_music = false;
 			modified_settings.settings.global_call = false;
-			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+			ctx.data()
+				.guild_data
+				.insert(guild_id, Arc::new(modified_settings));
 		} else {
 			ctx.reply(
 				"Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
@@ -976,8 +981,6 @@ pub async fn play_song_global(
 		let guild_global_music: Vec<_> = ctx
 			.data()
 			.guild_data
-			.lock()
-			.await
 			.iter()
 			.filter(|entry| {
 				let settings = &entry.value().settings;

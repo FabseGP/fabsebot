@@ -936,6 +936,7 @@ dependencies = [
  "dashmap",
  "fabsebot_core",
  "image",
+ "indexmap",
  "metrics",
  "poise",
  "rayon",
@@ -947,7 +948,6 @@ dependencies = [
  "tokio",
  "tracing",
  "urlencoding",
- "uuid",
 ]
 
 [[package]]
@@ -960,6 +960,7 @@ dependencies = [
  "fastrand",
  "image",
  "imageproc",
+ "indexmap",
  "metrics",
  "mini-moka",
  "poise",

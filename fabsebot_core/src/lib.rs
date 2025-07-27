@@ -110,11 +110,11 @@ pub async fn bot_start(
 		db: postgres_pool,
 		music_manager: Arc::<Songbird>::clone(&music_manager),
 		voice_manager: Arc::<Songbird>::clone(&voice_manager),
-		ai_chats: Arc::new(Cache::new(1000)),
-		global_chats: Arc::new(Cache::new(1000)),
-		channel_webhooks: Arc::new(Cache::new(1000)),
-		guild_data: Arc::new(Mutex::new(Cache::new(1000))),
-		user_settings: Arc::new(Mutex::new(Cache::new(1000))),
+		ai_chats: Cache::new(1000),
+		global_chats: Cache::new(1000),
+		channel_webhooks: Cache::new(1000),
+		guild_data: Cache::new(1000),
+		user_settings: Cache::new(1000),
 		track_metadata: Arc::new(Mutex::new(HashMap::default())),
 	});
 	let additional_prefix: &'static str =

@@ -67,7 +67,7 @@ pub async fn reset_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		tx.commit()
 			.await
 			.context("Failed to commit sql-transaction")?;
-		ctx.data().guild_data.lock().await.insert(
+		ctx.data().guild_data.insert(
 			guild_id,
 			Arc::new(GuildData {
 				settings: GuildSettings {
@@ -113,11 +113,11 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		)
 		.execute(&mut *ctx.data().db.acquire().await?)
 		.await?;
-		let ctx_data = ctx.data();
-		let user_settings_lock = ctx_data.user_settings.lock().await;
-		let mut guild_user_settings_opt = user_settings_lock.get(&guild_id);
-		let mut modified_settings = guild_user_settings_opt
-			.get_or_insert_default()
+		let mut modified_settings = ctx
+			.data()
+			.user_settings
+			.get(&guild_id)
+			.unwrap_or_default()
 			.as_ref()
 			.clone();
 		modified_settings.insert(
@@ -128,7 +128,9 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 				..Default::default()
 			},
 		);
-		user_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.user_settings
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
@@ -176,10 +178,13 @@ pub async fn set_afk(
 				.reply(true),
 		)
 		.await?;
-		let ctx_data = ctx.data();
-		let user_settings_lock = ctx_data.user_settings.lock().await;
-		let current_settings = user_settings_lock.get(&guild_id).unwrap_or_default();
-		let mut modified_settings = current_settings.as_ref().clone();
+		let mut modified_settings = ctx
+			.data()
+			.user_settings
+			.get(&guild_id)
+			.unwrap_or_default()
+			.as_ref()
+			.clone();
 		if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
 			user_settings.afk = true;
 			user_settings.afk_reason = reason;
@@ -195,7 +200,9 @@ pub async fn set_afk(
 				},
 			);
 		}
-		user_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.user_settings
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
@@ -228,15 +235,17 @@ pub async fn set_chatbot_channel(
 				.ephemeral(true),
 		)
 		.await?;
-		let ctx_data = ctx.data();
-		let guild_settings_lock = ctx_data.guild_data.lock().await;
-		let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-		let mut modified_settings = current_settings_opt
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
 		modified_settings.settings.ai_chat_channel = Some(channel_id_i64);
-		guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
@@ -315,10 +324,13 @@ pub async fn set_chatbot_options(
 				.ephemeral(true),
 		)
 		.await?;
-		let ctx_data = ctx.data();
-		let user_settings_lock = ctx_data.user_settings.lock().await;
-		let current_settings = user_settings_lock.get(&guild_id).unwrap_or_default();
-		let mut modified_settings = current_settings.as_ref().clone();
+		let mut modified_settings = ctx
+			.data()
+			.user_settings
+			.get(&guild_id)
+			.unwrap_or_default()
+			.as_ref()
+			.clone();
 		if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
 			user_settings.chatbot_role = role;
 			user_settings.chatbot_internet_search = internet_search;
@@ -346,7 +358,9 @@ pub async fn set_chatbot_options(
 				},
 			);
 		}
-		user_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.user_settings
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
@@ -385,16 +399,18 @@ pub async fn set_dead_chat(
 				.ephemeral(true),
 		)
 		.await?;
-		let ctx_data = ctx.data();
-		let guild_settings_lock = ctx_data.guild_data.lock().await;
-		let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-		let mut modified_settings = current_settings_opt
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
 		modified_settings.settings.dead_chat_channel = Some(channel_id_i64);
 		modified_settings.settings.dead_chat_rate = Some(occurrence);
-		guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
@@ -449,10 +465,10 @@ pub async fn set_emoji_react(
 					.ephemeral(true),
 			)
 			.await?;
-			let ctx_data = ctx.data();
-			let guild_settings_lock = ctx_data.guild_data.lock().await;
-			let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-			let mut modified_settings = current_settings_opt
+			let mut modified_settings = ctx
+				.data()
+				.guild_data
+				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
 				.clone();
@@ -462,7 +478,9 @@ pub async fn set_emoji_react(
 				guild_emoji: true,
 				content_reaction: content,
 			});
-			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+			ctx.data()
+				.guild_data
+				.insert(guild_id, Arc::new(modified_settings));
 		} else if let Some(emoji_media) = media {
 			let content_type_opt = if emoji_media.starts_with("https") {
 				ctx.defer().await?;
@@ -523,10 +541,10 @@ pub async fn set_emoji_react(
 						.ephemeral(true),
 				)
 				.await?;
-				let ctx_data = ctx.data();
-				let guild_settings_lock = ctx_data.guild_data.lock().await;
-				let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-				let mut modified_settings = current_settings_opt
+				let mut modified_settings = ctx
+					.data()
+					.guild_data
+					.get(&guild_id)
 					.get_or_insert_default()
 					.as_ref()
 					.clone();
@@ -536,7 +554,9 @@ pub async fn set_emoji_react(
 					guild_emoji: false,
 					content_reaction: content,
 				});
-				guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+				ctx.data()
+					.guild_data
+					.insert(guild_id, Arc::new(modified_settings));
 			} else {
 				ctx.send(
 					CreateReply::default()
@@ -589,15 +609,17 @@ pub async fn set_prefix(
 				.ephemeral(true),
 		)
 		.await?;
-		let ctx_data = ctx.data();
-		let guild_settings_lock = ctx_data.guild_data.lock().await;
-		let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-		let mut modified_settings = current_settings_opt
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
 		modified_settings.settings.prefix = Some(characters);
-		guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
@@ -632,15 +654,17 @@ pub async fn set_quote_channel(
 				.ephemeral(true),
 		)
 		.await?;
-		let ctx_data = ctx.data();
-		let guild_settings_lock = ctx_data.guild_data.lock().await;
-		let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-		let mut modified_settings = current_settings_opt
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
 		modified_settings.settings.quotes_channel = Some(channel_id_i64);
-		guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
@@ -675,15 +699,17 @@ pub async fn set_spoiler_channel(
 				.ephemeral(true),
 		)
 		.await?;
-		let ctx_data = ctx.data();
-		let guild_settings_lock = ctx_data.guild_data.lock().await;
-		let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-		let mut modified_settings = current_settings_opt
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
 		modified_settings.settings.spoiler_channel = Some(channel_id_i64);
-		guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
@@ -743,10 +769,13 @@ pub async fn set_user_ping(
 					.ephemeral(true),
 			)
 			.await?;
-			let ctx_data = ctx.data();
-			let user_settings_lock = ctx_data.user_settings.lock().await;
-			let current_settings = user_settings_lock.get(&guild_id).unwrap_or_default();
-			let mut modified_settings = current_settings.as_ref().clone();
+			let mut modified_settings = ctx
+				.data()
+				.user_settings
+				.get(&guild_id)
+				.unwrap_or_default()
+				.as_ref()
+				.clone();
 			if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
 				user_settings.ping_content = Some(content);
 				user_settings.ping_media = media;
@@ -762,7 +791,9 @@ pub async fn set_user_ping(
 					},
 				);
 			}
-			user_settings_lock.insert(guild_id, Arc::new(modified_settings));
+			ctx.data()
+				.user_settings
+				.insert(guild_id, Arc::new(modified_settings));
 		} else {
 			ctx.send(
 				CreateReply::default()
@@ -830,10 +861,10 @@ pub async fn set_word_react(
 					.ephemeral(true),
 			)
 			.await?;
-			let ctx_data = ctx.data();
-			let guild_settings_lock = ctx_data.guild_data.lock().await;
-			let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-			let mut modified_settings = current_settings_opt
+			let mut modified_settings = ctx
+				.data()
+				.guild_data
+				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
 				.clone();
@@ -843,7 +874,9 @@ pub async fn set_word_react(
 				content,
 				media,
 			});
-			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+			ctx.data()
+				.guild_data
+				.insert(guild_id, Arc::new(modified_settings));
 		} else {
 			ctx.send(
 				CreateReply::default()
@@ -882,10 +915,10 @@ pub async fn set_word_track(
 				.ephemeral(true),
 		)
 		.await?;
-		let ctx_data = ctx.data();
-		let guild_settings_lock = ctx_data.guild_data.lock().await;
-		let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-		let mut modified_settings = current_settings_opt
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
@@ -894,7 +927,9 @@ pub async fn set_word_track(
 			word,
 			count: 0,
 		});
-		guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }

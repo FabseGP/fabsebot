@@ -406,18 +406,18 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 		.execute(&mut *ctx.data().db.acquire().await?)
 		.await?;
 		ctx.data().global_chats.invalidate(&guild_id);
-		{
-			let ctx_data = ctx.data();
-			let guild_settings_lock = ctx_data.guild_data.lock().await;
-			let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-			let mut modified_settings = current_settings_opt
-				.get_or_insert_default()
-				.as_ref()
-				.clone();
-			modified_settings.settings.global_chat = false;
-			modified_settings.settings.global_chat_channel = None;
-			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-		}
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
+			.get_or_insert_default()
+			.as_ref()
+			.clone();
+		modified_settings.settings.global_chat = false;
+		modified_settings.settings.global_chat_channel = None;
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 		ctx.reply("Call ended...").await?;
 	}
 	Ok(())
@@ -442,22 +442,22 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		)
 		.execute(&mut *tx)
 		.await?;
-		let ctx_data = ctx.data();
-		{
-			let guild_settings_lock = ctx_data.guild_data.lock().await;
-			let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-			let mut modified_settings = current_settings_opt
-				.get_or_insert_default()
-				.as_ref()
-				.clone();
-			modified_settings.settings.global_chat = true;
-			modified_settings.settings.global_chat_channel = Some(channel_id_i64);
-			guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-		}
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
+			.get_or_insert_default()
+			.as_ref()
+			.clone();
+		modified_settings.settings.global_chat = true;
+		modified_settings.settings.global_chat_channel = Some(channel_id_i64);
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 		let message = ctx.reply("Calling...").await?;
 		let result = timeout(Duration::from_secs(60), async {
 			loop {
-				let has_other_calls = ctx_data.guild_data.lock().await.iter().any(|entry| {
+				let has_other_calls = ctx.data().guild_data.iter().any(|entry| {
 					entry.key() != &guild_id
 						&& entry.value().settings.global_chat
 						&& entry.value().settings.global_chat_channel.is_some()
@@ -486,17 +486,18 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.execute(&mut *tx)
 			.await?;
-			{
-				let guild_settings_lock = ctx_data.guild_data.lock().await;
-				let mut current_settings_opt = guild_settings_lock.get(&guild_id);
-				let mut modified_settings = current_settings_opt
-					.get_or_insert_default()
-					.as_ref()
-					.clone();
-				modified_settings.settings.global_chat = false;
-				modified_settings.settings.global_chat_channel = None;
-				guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
-			}
+			let mut modified_settings = ctx
+				.data()
+				.guild_data
+				.get(&guild_id)
+				.get_or_insert_default()
+				.as_ref()
+				.clone();
+			modified_settings.settings.global_chat = false;
+			modified_settings.settings.global_chat_channel = None;
+			ctx.data()
+				.guild_data
+				.insert(guild_id, Arc::new(modified_settings));
 			message
 				.edit(
 					ctx,
@@ -545,25 +546,23 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 		};
 		ctx.defer().await?;
 
-		let mut users = ctx
-			.data()
-			.user_settings
-			.lock()
-			.await
-			.get(&guild_id)
-			.map_or_else(Vec::new, |user_settings| {
-				let capacity = user_settings.len();
-				let mut result = Vec::with_capacity(capacity);
+		let mut users =
+			ctx.data()
+				.user_settings
+				.get(&guild_id)
+				.map_or_else(Vec::new, |user_settings| {
+					let capacity = user_settings.len();
+					let mut result = Vec::with_capacity(capacity);
 
-				for entry in user_settings.iter() {
-					result.push(UserCount {
-						id: entry.1.user_id,
-						count: entry.1.message_count,
-					});
-				}
+					for entry in user_settings.iter() {
+						result.push(UserCount {
+							id: entry.1.user_id,
+							count: entry.1.message_count,
+						});
+					}
 
-				result
-			});
+					result
+				});
 
 		users.sort_by(|a, b| b.count.cmp(&a.count));
 		users.truncate(25);
@@ -927,7 +926,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 					.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
 			)
 			.await?;
-		if let Some(guild_data) = ctx.data().guild_data.lock().await.get(&guild_id)
+		if let Some(guild_data) = ctx.data().guild_data.get(&guild_id)
 			&& let Some(channel) = guild_data.settings.quotes_channel
 		{
 			if let Ok(channel_u64) = u64::try_from(channel) {
@@ -1082,8 +1081,6 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 		let mut words = ctx
 			.data()
 			.guild_data
-			.lock()
-			.await
 			.get(&guild_id)
 			.map_or_else(Vec::new, |guild_data| {
 				let capacity = guild_data.word_tracking.len();

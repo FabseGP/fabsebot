@@ -53,6 +53,7 @@ dashmap = "*"
 fastrand = "*"
 image = { version = "*", default-features = false, features = ["gif", "rayon", "webp"] }
 imageproc = { version = "*", default-features = false, features = ["rayon"] }
+indexmap = "*"
 metrics = { version = "*" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
 poise = { git = "https://github.com/FabseGP/poise-fork", branch = "components-v2" }
