@@ -5,7 +5,7 @@ use anyhow::{Context as _, Result as AResult};
 use bytes::{BufMut as _, BytesMut};
 use fabsebot_core::{
 	config::{
-		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED},
+		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED, COLOUR_YELLOW},
 		types::{Data, Error, GuildDataMap, HTTP_CLIENT, SContext},
 	},
 	utils::{
@@ -490,25 +490,29 @@ impl VoiceEventHandler for VoiceReceiveHandler {
 
 /// Text to voice, duh
 #[poise::command(prefix_command, slash_command)]
-pub async fn text_to_voice(ctx: SContext<'_>) -> Result<(), Error> {
+pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Result<(), Error> {
 	if let (Some(handler_lock), Some(_)) = voice_check(&ctx, false).await {
 		ctx.defer().await?;
-		let msg = ctx
+
+		let payload = if let Some(input) = input_opt {
+			input
+		} else if let Ok(msg) = ctx
 			.channel_id()
 			.message(&ctx.http(), MessageId::new(ctx.id()))
-			.await?;
-
-		let Some(ref reply) = msg.referenced_message.map(|r| r.content) else {
+			.await && let Some(reply) = msg.referenced_message.map(|r| r.content)
+		{
+			reply.into_string()
+		} else {
 			ctx.reply("Bruh, reply to a message").await?;
 			return Ok(());
 		};
 
-		if let Some(bytes) = ai_voice(reply).await {
+		if let Some(bytes) = ai_voice(&payload).await {
 			get_configured_handler(&handler_lock)
 				.await
 				.enqueue_input(Input::from(bytes))
 				.await;
-			ctx.reply("here we go").await?;
+			ctx.reply("Here we go").await?;
 		} else {
 			ctx.reply("I don't wanna speak now").await?;
 		}
@@ -830,7 +834,42 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 				.await
 				.is_ok()
 		{
-			ctx.reply("I've joined the party").await?;
+			ctx.send(
+				CreateReply::default().embed(
+					CreateEmbed::default()
+						.title("I've joined the party!")
+						.description("Commands to use (supports prefix):")
+						.field(
+							"/play_song",
+							"Play a new song from a YouTube url or from a search",
+							false,
+						)
+						.field(
+							"/add_youtube_playlist",
+							"Add songs in a YouTube-playlist",
+							false,
+						)
+						.field(
+							"/add_deezer_playlist",
+							"Add songs in a Deezer-playlist",
+							false,
+						)
+						.field(
+							"/seek_song",
+							"Seek song forward (e.g. +20) or backwards (e.g. -20)",
+							false,
+						)
+						.field(
+							"/text_to_voice",
+							"Make the bot say smth either by providing an input or replying to a \
+							 message",
+							false,
+						)
+						.field("/leave_voice", "Make the bot leave the party", false)
+						.colour(COLOUR_YELLOW),
+				),
+			)
+			.await?;
 			handler_lock.lock().await.add_global_event(
 				TrackEvent::Play.into(),
 				PlaybackHandler::new(
