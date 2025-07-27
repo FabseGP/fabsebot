@@ -57,6 +57,7 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		music::join_voice_global(),
 		music::leave_voice(),
 		music::play_song(),
+		music::play_song_global(),
 		music::seek_song(),
 		music::text_to_voice(),
 		settings::reset_server_settings(),

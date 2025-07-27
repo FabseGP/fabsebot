@@ -520,6 +520,41 @@ pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Resu
 	Ok(())
 }
 
+async fn queue_song(
+	src: YoutubeDl<'static>,
+	handler_lock: Arc<Mutex<Call>>,
+	guild_id: GuildId,
+	ctx: SContext<'_>,
+) -> AResult<()> {
+	if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
+		let msg = ctx.reply("Song added to queue").await?;
+		if let Ok(msg_id) = msg.message().await.map(|m| m.id) {
+			let uuid = get_configured_handler(&handler_lock)
+				.await
+				.enqueue_input(Input::from(src.clone()))
+				.await
+				.uuid();
+
+			ctx.data()
+				.track_metadata
+				.lock()
+				.await
+				.entry(guild_id)
+				.or_insert_with(HashMap::new)
+				.insert(
+					uuid,
+					(
+						metadata.clone(),
+						ctx.author().display_name().to_owned(),
+						msg_id,
+					),
+				);
+		}
+	}
+
+	Ok(())
+}
+
 /// Play all songs in a playlist from Deezer
 #[poise::command(prefix_command, slash_command)]
 pub async fn add_deezer_playlist(
@@ -544,31 +579,7 @@ pub async fn add_deezer_playlist(
 				for track in payload.tracks.data {
 					let search = format!("{} {}", track.title, track.artist.name);
 					let src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
-					if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
-						let msg = ctx.reply("Song added to queue").await?;
-						if let Ok(msg_id) = msg.message().await.map(|m| m.id) {
-							let uuid = get_configured_handler(&handler_lock)
-								.await
-								.enqueue_input(Input::from(src.clone()))
-								.await
-								.uuid();
-
-							ctx.data()
-								.track_metadata
-								.lock()
-								.await
-								.entry(guild_id)
-								.or_insert_with(HashMap::new)
-								.insert(
-									uuid,
-									(
-										metadata.clone(),
-										ctx.author().display_name().to_string(),
-										msg_id,
-									),
-								);
-						}
-					}
+					queue_song(src, handler_lock.clone(), guild_id, ctx).await?;
 				}
 			} else {
 				ctx.reply("Deezer refused to serve your request").await?;
@@ -611,30 +622,7 @@ pub async fn add_youtube_playlist(
 
 		for url in urls {
 			let src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
-			if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
-				let msg = ctx.reply("Song added to queue").await?;
-				if let Ok(msg_id) = msg.message().await.map(|m| m.id) {
-					let uuid = get_configured_handler(&handler_lock)
-						.await
-						.enqueue_input(Input::from(src.clone()))
-						.await
-						.uuid();
-					ctx.data()
-						.track_metadata
-						.lock()
-						.await
-						.entry(guild_id)
-						.or_insert_with(HashMap::new)
-						.insert(
-							uuid,
-							(
-								metadata.clone(),
-								ctx.author().display_name().to_string(),
-								msg_id,
-							),
-						);
-				}
-			}
+			queue_song(src, handler_lock.clone(), guild_id, ctx).await?;
 		}
 	}
 	Ok(())
@@ -945,72 +933,72 @@ pub async fn play_song(
 		} else {
 			YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
 		};
-		if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
-			let msg = ctx.reply("Song added to queue").await?;
+		queue_song(src.clone(), handler_lock.clone(), guild_id, ctx).await?;
+	} else {
+		ctx.reply("Like you, nothing is known about this song")
+			.await?;
+	}
+	Ok(())
+}
 
-			if let Ok(msg_id) = msg.message().await.map(|m| m.id) {
-				let uuid = get_configured_handler(&handler_lock)
-					.await
-					.enqueue_input(Input::from(src.clone()))
-					.await
-					.uuid();
-
-				ctx.data()
-					.track_metadata
-					.lock()
-					.await
-					.entry(guild_id)
-					.or_insert_with(HashMap::new)
-					.insert(
-						uuid,
-						(
-							metadata.clone(),
-							ctx.author().display_name().to_string(),
-							msg_id,
-						),
-					);
-			}
-
-			let guild_global_music: Vec<_> = ctx
-				.data()
-				.guild_data
-				.lock()
-				.await
-				.iter()
-				.filter(|entry| {
-					let settings = &entry.value().settings;
-					entry.key() != &guild_id && settings.global_music
-				})
-				.map(|entry| entry.value().settings.guild_id)
-				.collect();
-			for guild_id in guild_global_music {
-				if let Ok(guild_id_u64) = u64::try_from(guild_id) {
-					let current_guild_id = GuildId::new(guild_id_u64);
-					if let Some(global_handler_lock) =
-						ctx.data().voice_manager.get(current_guild_id)
-					{
-						let current_channel_opt = {
-							let mut handler = get_configured_handler(&global_handler_lock).await;
-							handler.enqueue_input(Input::from(src.clone())).await;
-							handler.current_channel()
-						};
-						if let Some(id) = current_channel_opt
-							&& let Ok(channel) = ctx
-								.http()
-								.get_channel(GenericChannelId::from(id.get()))
-								.await && let Some(guild_channel) = channel.guild()
-						{
-							// FINISH ME
-						}
-					}
-				} else {
-					warn!("Failed to convert guild id to u64");
-				}
+/// Play song / add song to queue in the current voice channel (global)
+#[poise::command(prefix_command, slash_command)]
+pub async fn play_song_global(
+	ctx: SContext<'_>,
+	#[description = "YouTube link or query to search"]
+	#[rest]
+	url: String,
+) -> Result<(), Error> {
+	ctx.defer().await?;
+	if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx, false).await {
+		let src = if url.starts_with("https") {
+			if url.contains("youtu") {
+				YoutubeDl::new(HTTP_CLIENT.clone(), url)
+			} else {
+				ctx.reply("Only YouTube-links are supported").await?;
+				return Ok(());
 			}
 		} else {
-			ctx.reply("Like you, nothing is known about this song")
-				.await?;
+			YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
+		};
+		let guild_global_music: Vec<_> = ctx
+			.data()
+			.guild_data
+			.lock()
+			.await
+			.iter()
+			.filter(|entry| {
+				let settings = &entry.value().settings;
+				entry.key() != &guild_id && settings.global_music
+			})
+			.map(|entry| entry.value().settings.guild_id)
+			.collect();
+		for guild_id in guild_global_music {
+			if let Ok(guild_id_u64) = u64::try_from(guild_id) {
+				let current_guild_id = GuildId::new(guild_id_u64);
+				if let Some(global_handler_lock) = ctx.data().voice_manager.get(current_guild_id) {
+					let current_channel_opt = {
+						let mut handler = get_configured_handler(&global_handler_lock).await;
+						handler.enqueue_input(Input::from(src.clone())).await;
+						handler.current_channel()
+					};
+					if let Some(id) = current_channel_opt
+						&& let Ok(channel) = ctx
+							.http()
+							.get_channel(GenericChannelId::from(id.get()))
+							.await && let Some(guild_channel) = channel.guild()
+					{
+						queue_song(src.clone(), handler_lock.clone(), current_guild_id, ctx)
+							.await?;
+					}
+				}
+			} else {
+				warn!("Failed to convert guild id to u64");
+			}
 		}
+	} else {
+		ctx.reply("Like you, nothing is known about this song")
+			.await?;
 	}
 	Ok(())
 }
