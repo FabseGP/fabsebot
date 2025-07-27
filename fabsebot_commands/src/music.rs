@@ -302,12 +302,8 @@ impl PlaybackHandler {
 						lyrics_shown = false;
 						let new_embed = if let Some(embed) = &history_embed {
 							embed.clone()
-						} else if let Some(played_tracks) = self
-							.bot_data
-							.track_metadata
-							.lock()
-							.await
-							.get(&self.guild_id)
+						} else if let Some(played_tracks) =
+							self.bot_data.track_metadata.get(&self.guild_id)
 						{
 							let mut embed = CreateEmbed::default()
 								.title("Song history")
@@ -362,12 +358,8 @@ impl VoiceEventHandler for PlaybackHandler {
 				match &state.playing {
 					PlayMode::Play => {
 						let (metadata_clone, author_name_clone, msg_id_clone) =
-							if let Some(guild_tracks) = self
-								.bot_data
-								.track_metadata
-								.lock()
-								.await
-								.get(&self.guild_id)
+							if let Some(guild_tracks) =
+								self.bot_data.track_metadata.get(&self.guild_id)
 							{
 								if let Some(metadata) = guild_tracks.get(&handle.uuid()) {
 									(metadata.0.clone(), metadata.1.clone(), metadata.2)
@@ -517,8 +509,6 @@ async fn queue_song(
 
 			ctx.data()
 				.track_metadata
-				.lock()
-				.await
 				.entry(guild_id)
 				.or_insert_with(IndexMap::new)
 				.insert(

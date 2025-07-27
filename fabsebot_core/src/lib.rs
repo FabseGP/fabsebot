@@ -5,9 +5,10 @@ mod events;
 mod handlers;
 pub mod utils;
 
-use std::{collections::HashMap, str::FromStr as _, sync::Arc, time::Duration};
+use std::{str::FromStr as _, sync::Arc, time::Duration};
 
 use anyhow::{Context as _, Result as AResult};
+use dashmap::DashMap;
 use mini_moka::sync::Cache;
 use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions};
 use serenity::{
@@ -23,7 +24,6 @@ use tokio::{
 	select,
 	signal::unix::{SignalKind, signal},
 	spawn,
-	sync::Mutex,
 	time::interval,
 };
 use tracing::{error, warn};
@@ -108,14 +108,14 @@ pub async fn bot_start(
 
 	let user_data = Arc::new(Data {
 		db: postgres_pool,
-		music_manager: Arc::<Songbird>::clone(&music_manager),
-		voice_manager: Arc::<Songbird>::clone(&voice_manager),
+		music_manager: music_manager.clone(),
+		voice_manager: voice_manager.clone(),
 		ai_chats: Cache::new(1000),
 		global_chats: Cache::new(1000),
 		channel_webhooks: Cache::new(1000),
 		guild_data: Cache::new(1000),
 		user_settings: Cache::new(1000),
-		track_metadata: Arc::new(Mutex::new(HashMap::default())),
+		track_metadata: DashMap::default(),
 	});
 	let additional_prefix: &'static str =
 		Box::leak(format!("hey {}", &utils_config.bot.username).into_boxed_str());

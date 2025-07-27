@@ -10,6 +10,7 @@ workspace = true
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 bytes = { workspace = true }
+dashmap = { workspace = true }
 fastrand = { workspace = true }
 image = { workspace = true, default-features = false, features = ["gif", "rayon", "webp"] }
 imageproc = { workspace = true, default-features = false, features = ["rayon"] }

@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Error as AError;
+use dashmap::DashMap;
 use fastrand::Rng;
 use indexmap::IndexMap;
 use mini_moka::sync::Cache;
@@ -124,8 +125,7 @@ pub struct Data {
 	pub channel_webhooks: WebhookMap,
 	pub guild_data: GuildDataMap,
 	pub user_settings: UserSettingsMap,
-	pub track_metadata:
-		Arc<Mutex<HashMap<GuildId, IndexMap<Uuid, (AuxMetadata, String, MessageId)>>>>,
+	pub track_metadata: DashMap<GuildId, IndexMap<Uuid, (AuxMetadata, String, MessageId)>>,
 }
 
 pub type Error = AError;
