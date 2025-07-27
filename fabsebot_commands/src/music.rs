@@ -88,7 +88,6 @@ async fn voice_check(
 #[derive(Clone)]
 struct PlaybackHandler {
 	guild_id: GuildId,
-	message_id: MessageId,
 	channel_id: GenericChannelId,
 	serenity_context: SerenityContext,
 	bot_data: Arc<Data>,
@@ -97,21 +96,24 @@ struct PlaybackHandler {
 impl PlaybackHandler {
 	const fn new(
 		guild_id: GuildId,
-		message_id: MessageId,
 		channel_id: GenericChannelId,
 		serenity_context: SerenityContext,
 		bot_data: Arc<Data>,
 	) -> Self {
 		Self {
 			guild_id,
-			message_id,
 			channel_id,
 			serenity_context,
 			bot_data,
 		}
 	}
 
-	pub async fn update_info(&self, metadata: AuxMetadata, author_name: &str) -> AResult<()> {
+	pub async fn update_info(
+		&self,
+		metadata: AuxMetadata,
+		author_name: &str,
+		msg_id: MessageId,
+	) -> AResult<()> {
 		if let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id) {
 			let mut e =
 				CreateEmbed::default()
@@ -140,25 +142,31 @@ impl PlaybackHandler {
 			if let Some(url) = &metadata.thumbnail {
 				e = e.image(url);
 			}
+
+			let queue_size = get_configured_handler(&handler_lock).await.queue().len();
+
 			e = e.field(
 				"Queue size:",
-				format!(
-					"{}",
-					get_configured_handler(&handler_lock).await.queue().len()
-				),
+				format!("{}", queue_size.saturating_sub(1)),
 				true,
 			);
 
-			let buttons = [
-				CreateButton::new(format!("{}_s", self.message_id))
+			let skip_disabled = queue_size == 1;
+
+			let mut buttons = [
+				CreateButton::new(format!("{}_s", msg_id))
 					.style(ButtonStyle::Primary)
+					.disabled(skip_disabled)
 					.label("Skip"),
-				CreateButton::new(format!("{}_p", self.message_id))
+				CreateButton::new(format!("{}_p", msg_id))
 					.style(ButtonStyle::Primary)
 					.label("Pause/Unpause"),
-				CreateButton::new(format!("{}_c", self.message_id))
+				CreateButton::new(format!("{}_c", msg_id))
 					.style(ButtonStyle::Primary)
 					.label("Stop & clear queue"),
+				CreateButton::new(format!("{}_u", msg_id))
+					.style(ButtonStyle::Primary)
+					.label("Update controls"),
 			];
 
 			let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
@@ -168,11 +176,14 @@ impl PlaybackHandler {
 			self.channel_id
 				.edit_message(
 					&self.serenity_context.http,
-					self.message_id,
-					EditMessage::default().embed(e).components(&action_row),
+					msg_id,
+					EditMessage::default()
+						.embed(e)
+						.components(&action_row)
+						.content(""),
 				)
 				.await?;
-			let message_id_copy = self.message_id;
+			let message_id_copy = msg_id;
 
 			while let Some(interaction) = ComponentInteractionCollector::new(&self.serenity_context)
 				.timeout(metadata.duration.unwrap_or(Duration::from_secs(60)))
@@ -191,10 +202,20 @@ impl PlaybackHandler {
 					)
 					.await?;
 
+				let mut msg = interaction.message;
+
 				let handler = get_configured_handler(&handler_lock).await;
 				let queue = handler.queue();
 				if interaction.data.custom_id.ends_with('s') {
 					queue.skip()?;
+					msg.edit(
+						self.serenity_context.http.clone(),
+						EditMessage::default()
+							.suppress_embeds(true)
+							.content("Skipped to next song")
+							.components(&[]),
+					)
+					.await?;
 					break;
 				} else if interaction.data.custom_id.ends_with('p')
 					&& let Some(current_track) = queue.current()
@@ -211,6 +232,27 @@ impl PlaybackHandler {
 					}
 				} else if interaction.data.custom_id.ends_with('c') {
 					queue.stop();
+					msg.edit(
+						self.serenity_context.http.clone(),
+						EditMessage::default()
+							.suppress_embeds(true)
+							.content("Nothing to play")
+							.components(&[]),
+					)
+					.await?;
+					break;
+				} else if interaction.data.custom_id.ends_with('u') && queue.len() > 1 {
+					buttons[0] = CreateButton::new(format!("{}_s", msg_id))
+						.style(ButtonStyle::Primary)
+						.label("Skip");
+					let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+						&buttons,
+					))];
+					msg.edit(
+						self.serenity_context.http.clone(),
+						EditMessage::default().components(&action_row),
+					)
+					.await?;
 				}
 			}
 		}
@@ -226,25 +268,26 @@ impl VoiceEventHandler for PlaybackHandler {
 			for (state, handle) in *track_list {
 				match &state.playing {
 					PlayMode::Play => {
-						let (metadata_clone, author_name_clone) = if let Some(guild_tracks) = self
-							.bot_data
-							.track_metadata
-							.lock()
-							.await
-							.get(&self.guild_id)
-						{
-							if let Some(metadata) = guild_tracks.get(&handle.uuid()) {
-								(metadata.0.clone(), metadata.1.clone())
+						let (metadata_clone, author_name_clone, msg_id_clone) =
+							if let Some(guild_tracks) = self
+								.bot_data
+								.track_metadata
+								.lock()
+								.await
+								.get(&self.guild_id)
+							{
+								if let Some(metadata) = guild_tracks.get(&handle.uuid()) {
+									(metadata.0.clone(), metadata.1.clone(), metadata.2)
+								} else {
+									continue;
+								}
 							} else {
 								continue;
-							}
-						} else {
-							continue;
-						};
+							};
 						let handler_clone = self.clone();
 						spawn(async move {
 							if let Err(err) = handler_clone
-								.update_info(metadata_clone, &author_name_clone)
+								.update_info(metadata_clone, &author_name_clone, msg_id_clone)
 								.await
 							{
 								error!("Failed to update song info: {:?}", &err);
@@ -548,19 +591,17 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 				modified_settings.settings.global_call = true;
 				guild_settings_lock.insert(guild_id, Arc::new(modified_settings));
 			}
-			let msg = ctx.reply("I've joined the party").await?;
-			if let Ok(message_id) = msg.message().await.map(|m| m.id) {
-				handler_lock.lock().await.add_global_event(
-					TrackEvent::Play.into(),
-					PlaybackHandler::new(
-						guild_id,
-						message_id,
-						ctx.channel_id(),
-						ctx.serenity_context().clone(),
-						ctx.data(),
-					),
-				);
-			}
+			ctx.reply("I've joined the party").await?;
+			handler_lock.lock().await.add_global_event(
+				TrackEvent::Play.into(),
+				PlaybackHandler::new(
+					guild_id,
+					ctx.channel_id(),
+					ctx.serenity_context().clone(),
+					ctx.data(),
+				),
+			);
+
 			handler_lock.lock().await.add_global_event(
 				CoreEvent::VoiceTick.into(),
 				VoiceReceiveHandler::new(
@@ -596,19 +637,16 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 				.await
 				.is_ok()
 		{
-			let msg = ctx.reply("I've joined the party").await?;
-			if let Ok(message_id) = msg.message().await.map(|m| m.id) {
-				handler_lock.lock().await.add_global_event(
-					TrackEvent::Play.into(),
-					PlaybackHandler::new(
-						guild_id,
-						message_id,
-						ctx.channel_id(),
-						ctx.serenity_context().clone(),
-						ctx.data(),
-					),
-				);
-			}
+			ctx.reply("I've joined the party").await?;
+			handler_lock.lock().await.add_global_event(
+				TrackEvent::Play.into(),
+				PlaybackHandler::new(
+					guild_id,
+					ctx.channel_id(),
+					ctx.serenity_context().clone(),
+					ctx.data(),
+				),
+			);
 		} else {
 			ctx.reply("I don't wanna join").await?;
 		}
@@ -663,7 +701,7 @@ pub async fn play_song(
 	#[rest]
 	url: String,
 ) -> Result<(), Error> {
-	ctx.defer_ephemeral().await?;
+	ctx.defer().await?;
 	if let (Some(handler_lock), Some(guild_id)) = voice_check(&ctx, false).await {
 		let src = if url.starts_with("https") {
 			if url.contains("youtu") {
@@ -676,29 +714,30 @@ pub async fn play_song(
 			YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
 		};
 		if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
-			let uuid = get_configured_handler(&handler_lock)
-				.await
-				.enqueue_input(Input::from(src.clone()))
-				.await
-				.uuid();
+			let msg = ctx.reply("Song added to queue").await?;
 
-			ctx.data()
-				.track_metadata
-				.lock()
-				.await
-				.entry(guild_id)
-				.or_insert_with(HashMap::new)
-				.insert(
-					uuid,
-					(metadata.clone(), ctx.author().display_name().to_string()),
-				);
+			if let Ok(msg_id) = msg.message().await.map(|m| m.id) {
+				let uuid = get_configured_handler(&handler_lock)
+					.await
+					.enqueue_input(Input::from(src.clone()))
+					.await
+					.uuid();
 
-			ctx.send(
-				CreateReply::default()
-					.content("Song added to queue")
-					.ephemeral(true),
-			)
-			.await?;
+				ctx.data()
+					.track_metadata
+					.lock()
+					.await
+					.entry(guild_id)
+					.or_insert_with(HashMap::new)
+					.insert(
+						uuid,
+						(
+							metadata.clone(),
+							ctx.author().display_name().to_string(),
+							msg_id,
+						),
+					);
+			}
 
 			let guild_global_music: Vec<_> = ctx
 				.data()

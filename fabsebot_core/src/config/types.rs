@@ -123,7 +123,8 @@ pub struct Data {
 	pub channel_webhooks: Arc<WebhookMap>,
 	pub guild_data: Arc<Mutex<GuildDataMap>>,
 	pub user_settings: Arc<Mutex<UserSettingsMap>>,
-	pub track_metadata: Arc<Mutex<HashMap<GuildId, HashMap<Uuid, (AuxMetadata, String)>>>>,
+	pub track_metadata:
+		Arc<Mutex<HashMap<GuildId, HashMap<Uuid, (AuxMetadata, String, MessageId)>>>>,
 }
 
 pub type Error = AError;
