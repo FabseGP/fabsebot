@@ -281,6 +281,7 @@ impl PlaybackHandler {
 						.await?;
 					} else {
 						lyrics_shown = true;
+						history_shown = false;
 						let new_embed = if let Some(embed) = &lyrics_embed {
 							embed.clone()
 						} else if let Some(artist_name) = &metadata.artist
@@ -317,6 +318,7 @@ impl PlaybackHandler {
 						.await?;
 					} else {
 						history_shown = true;
+						lyrics_shown = false;
 						let new_embed = if let Some(embed) = &history_embed {
 							embed.clone()
 						} else if let Some(played_tracks) = self
