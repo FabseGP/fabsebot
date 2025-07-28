@@ -15,7 +15,7 @@ use serenity::{
 	Client,
 	all::{
 		ActivityData, CreateAllowedMentions, CreateAttachment, EditProfile, GatewayIntents,
-		OnlineStatus, Settings, Token, TransportCompression,
+		OnlineStatus, Settings, Token,
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
@@ -149,7 +149,6 @@ pub async fn bot_start(
 		.activity(activity)
 		.status(OnlineStatus::Online)
 		.data(user_data)
-		.compression(TransportCompression::Zstd)
 		.await
 		.context("Failed to create client")?;
 	let shutdown_trigger = client.shard_manager.get_shutdown_trigger();
