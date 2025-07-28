@@ -463,35 +463,32 @@ struct AIMessage {
 }
 
 pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option<String> {
-	if let Some(utils_config) = UTILS_CONFIG.get() {
-		let request = ImageDesc {
-			messages: [
-				SimpleMessage {
-					role: "system",
-					content: "Generate a detailed caption for this image",
-				},
-				SimpleMessage {
-					role: "user",
-					content: user_context.map_or("What is in this image?", |context| context),
-				},
-			],
-			model: &utils_config.fabseserver.image_to_text_model,
-			image: content,
-		};
-		let resp = HTTP_CLIENT
-			.post(&utils_config.fabseserver.llm_host_text)
-			.json(&request)
-			.send()
-			.await
-			.ok()?;
+	let utils_config = UTILS_CONFIG.get()?;
+	let request = ImageDesc {
+		messages: [
+			SimpleMessage {
+				role: "system",
+				content: "Generate a detailed caption for this image",
+			},
+			SimpleMessage {
+				role: "user",
+				content: user_context.map_or("What is in this image?", |context| context),
+			},
+		],
+		model: &utils_config.fabseserver.image_to_text_model,
+		image: content,
+	};
+	let resp = HTTP_CLIENT
+		.post(&utils_config.fabseserver.llm_host_text)
+		.json(&request)
+		.send()
+		.await
+		.ok()?;
 
-		resp.json::<AIReponse>()
-			.await
-			.ok()
-			.map(|output| output.choices.first().map(|o| o.message.content.clone()))?
-	} else {
-		None
-	}
+	resp.json::<AIReponse>()
+		.await
+		.ok()
+		.map(|output| output.choices.into_iter().next().map(|o| o.message.content))?
 }
 
 #[derive(Serialize)]
@@ -514,20 +511,17 @@ pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> Option
 		],
 		model,
 	};
-	if let Some(utils_config) = UTILS_CONFIG.get() {
-		let resp = HTTP_CLIENT
-			.post(&utils_config.fabseserver.llm_host_text)
-			.json(&request)
-			.send()
-			.await
-			.ok()?;
-		resp.json::<AIReponse>()
-			.await
-			.ok()
-			.map(|output| output.choices.first().map(|o| o.message.content.clone()))?
-	} else {
-		None
-	}
+	let utils_config = UTILS_CONFIG.get()?;
+	let resp = HTTP_CLIENT
+		.post(&utils_config.fabseserver.llm_host_text)
+		.json(&request)
+		.send()
+		.await
+		.ok()?;
+	resp.json::<AIReponse>()
+		.await
+		.ok()
+		.map(|output| output.choices.into_iter().next().map(|o| o.message.content))?
 }
 
 #[derive(Serialize)]
@@ -547,31 +541,29 @@ pub async fn ai_response(
 	frequency_penalty: f32,
 	presence_penalty: f32,
 ) -> Option<String> {
-	if let Some(utils_config) = UTILS_CONFIG.get() {
-		let request = ChatRequest {
-			model: &utils_config.fabseserver.text_gen_model,
-			messages,
-			temperature,
-			top_p,
-			frequency_penalty,
-			presence_penalty,
-		};
-		let resp = HTTP_CLIENT
-			.post(&utils_config.fabseserver.llm_host_text)
-			.json(&request)
-			.send()
-			.await
-			.ok()?;
+	let utils_config = UTILS_CONFIG.get()?;
+	let request = ChatRequest {
+		model: &utils_config.fabseserver.text_gen_model,
+		messages,
+		temperature,
+		top_p,
+		frequency_penalty,
+		presence_penalty,
+	};
+	let resp = HTTP_CLIENT
+		.post(&utils_config.fabseserver.llm_host_text)
+		.json(&request)
+		.send()
+		.await
+		.ok()?;
 
-		let output = resp.json::<AIReponse>().await.ok()?;
-		output
-			.choices
-			.first()
-			.map(|r| r.message.content.clone())
-			.filter(|response_content| !response_content.trim().is_empty())
-	} else {
-		None
-	}
+	let output = resp.json::<AIReponse>().await.ok()?;
+	output
+		.choices
+		.into_iter()
+		.next()
+		.map(|r| r.message.content)
+		.filter(|response_content| !response_content.trim().is_empty())
 }
 
 #[derive(Serialize)]
@@ -592,28 +584,25 @@ struct NormalizationOptions {
 }
 
 pub async fn ai_voice(prompt: &str) -> Option<Bytes> {
-	if let Some(utils_config) = UTILS_CONFIG.get() {
-		let request = AIVoiceRequest {
-			input: &prompt.replace('\'', ""),
-			model: &utils_config.fabseserver.text_to_speech_model,
-			voice: "af_heart",
-			response_format: "wav",
-			return_timestamps: false,
-			stream: false,
-			speed: 1.1,
-			normalization_options: NormalizationOptions {
-				unit_normalization: true,
-			},
-		};
-		let resp = HTTP_CLIENT
-			.post(&utils_config.fabseserver.llm_host_tts)
-			.json(&request)
-			.send()
-			.await
-			.ok()?;
+	let utils_config = UTILS_CONFIG.get()?;
+	let request = AIVoiceRequest {
+		input: &prompt.replace('\'', ""),
+		model: &utils_config.fabseserver.text_to_speech_model,
+		voice: "af_heart",
+		response_format: "wav",
+		return_timestamps: false,
+		stream: false,
+		speed: 1.1,
+		normalization_options: NormalizationOptions {
+			unit_normalization: true,
+		},
+	};
+	let resp = HTTP_CLIENT
+		.post(&utils_config.fabseserver.llm_host_tts)
+		.json(&request)
+		.send()
+		.await
+		.ok()?;
 
-		resp.bytes().await.ok()
-	} else {
-		None
-	}
+	resp.bytes().await.ok()
 }

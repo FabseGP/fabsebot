@@ -81,8 +81,8 @@ pub async fn webhook_find(
 		let existing_webhooks_get = guild_channel.id.webhooks(&ctx.http).await;
 		if let Ok(existing_webhooks) = existing_webhooks_get {
 			if existing_webhooks.len() >= 15
-				&& let Some(first_webhook) = existing_webhooks.first()
-				&& let Err(e) = ctx.http.delete_webhook(first_webhook.id, None).await
+				&& let Some(first_webhook_id) = existing_webhooks.first().map(|w| w.id)
+				&& let Err(e) = ctx.http.delete_webhook(first_webhook_id, None).await
 			{
 				warn!("Failed to delete webhook: {e}");
 			}

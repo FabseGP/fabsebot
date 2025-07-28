@@ -114,16 +114,13 @@ pub async fn get_waifu() -> Cow<'static, str> {
 	if let Ok(response) = HTTP_CLIENT
 		.get("https://api.waifu.im/search?height=>=2000&is_nsfw=false")
 		.send()
-		.await
+		.await && let Ok(waifu_response) = response.json::<WaifuResponse>().await
+		&& let Some(image) = waifu_response.images.into_iter().next()
 	{
-		response
-			.json::<WaifuResponse>()
-			.await
-			.map(|resp| Cow::Owned(resp.images[0].url.clone()))
-			.unwrap_or(Cow::Borrowed(FALLBACK_WAIFU))
-	} else {
-		Cow::Borrowed(FALLBACK_WAIFU)
+		return Cow::Owned(image.url);
 	}
+
+	Cow::Borrowed(FALLBACK_WAIFU)
 }
 
 pub struct DiscordMessageLink {

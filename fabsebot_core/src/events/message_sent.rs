@@ -445,10 +445,10 @@ async fn message_preview(
 			MessageId::new(link.message_id),
 		);
 		if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
-			&& let Some(ref_channel) = channel.clone().guild()
+			&& let Some(ref_channel_name) = channel.clone().guild().map(|g| g.base.name)
 		{
 			let (channel_name, ref_msg) = (
-				ref_channel.base.name.as_str(),
+				ref_channel_name,
 				channel.id().message(&ctx.http, message_id).await?,
 			);
 			if ref_msg.poll.is_none() {
@@ -486,9 +486,8 @@ async fn message_preview(
 				if ref_msg.channel_id == new_message.channel_id {
 					preview_message = preview_message.reference_message(&ref_msg);
 				}
-				if let Some(ref_embed) = ref_msg.embeds.first() {
-					preview_message =
-						preview_message.add_embed(CreateEmbed::from(ref_embed.clone()));
+				if let Some(ref_embed) = ref_msg.embeds.into_iter().next() {
+					preview_message = preview_message.add_embed(CreateEmbed::from(ref_embed));
 				}
 				new_message
 					.channel_id

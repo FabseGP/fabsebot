@@ -13,7 +13,6 @@ use fabsebot_core::{
 		helpers::{get_configured_handler, get_lyrics},
 	},
 };
-use indexmap::IndexMap;
 use poise::{CreateReply, async_trait};
 use serde::Deserialize;
 use serenity::all::{
