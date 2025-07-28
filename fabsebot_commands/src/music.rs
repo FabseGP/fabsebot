@@ -780,7 +780,7 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 
 			ctx.reply("I've joined the party").await?;
 			handler_lock.lock().await.add_global_event(
-				TrackEvent::Play.into(),
+				SongBirdEvent::Track(TrackEvent::Playable),
 				PlaybackHandler::new(
 					guild_id,
 					ctx.channel_id(),
@@ -790,7 +790,7 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			);
 
 			handler_lock.lock().await.add_global_event(
-				CoreEvent::VoiceTick.into(),
+				SongBirdEvent::Core(CoreEvent::VoiceTick),
 				VoiceReceiveHandler::new(
 					guild_id,
 					ctx.data().voice_manager.clone(),
@@ -857,7 +857,7 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.await?;
 			handler_lock.lock().await.add_global_event(
-				TrackEvent::Play.into(),
+				SongBirdEvent::Track(TrackEvent::Playable),
 				PlaybackHandler::new(
 					guild_id,
 					ctx.channel_id(),
