@@ -815,12 +815,6 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 		});
 		if let Some(channel_id) = channel_id
 			&& let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
-			&& ctx
-				.data()
-				.music_manager
-				.join(guild_id, channel_id)
-				.await
-				.is_ok()
 		{
 			ctx.send(
 				CreateReply::default().embed(
