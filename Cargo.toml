@@ -102,5 +102,6 @@ panic = "abort"
 
 [package.metadata.cargo-machete]
 ignored = [
-    "symphonia",    
+    "symphonia",
+    "tokio-metrics"  
 ]

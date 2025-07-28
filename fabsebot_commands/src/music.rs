@@ -510,7 +510,7 @@ async fn queue_song(
 			ctx.data()
 				.track_metadata
 				.entry(guild_id)
-				.or_insert_with(IndexMap::new)
+				.or_default()
 				.insert(
 					uuid,
 					(
