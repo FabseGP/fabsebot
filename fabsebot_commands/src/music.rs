@@ -751,7 +751,9 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 				.get(&ctx.author().id)
 				.and_then(|voice_state| voice_state.channel_id)
 		});
-		if let Some(channel_id) = channel_id
+		if ctx.data().voice_manager.get(guild_id).is_some() {
+			ctx.reply("Bruh, I'm already in a voice channel").await?;
+		} else if let Some(channel_id) = channel_id
 			&& let Ok(handler_lock) = ctx.data().voice_manager.join(guild_id, channel_id).await
 		{
 			query!(
@@ -813,7 +815,9 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 				.get(&ctx.author().id)
 				.and_then(|voice_state| voice_state.channel_id)
 		});
-		if let Some(channel_id) = channel_id
+		if ctx.data().music_manager.get(guild_id).is_some() {
+			ctx.reply("Bruh, I'm already in a voice channel").await?;
+		} else if let Some(channel_id) = channel_id
 			&& let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
 		{
 			ctx.send(
