@@ -235,7 +235,12 @@ impl PlaybackHandler {
 			let mut history_embed: Option<CreateEmbed> = None;
 
 			while let Some(interaction) = ComponentInteractionCollector::new(&self.serenity_context)
-				.timeout(metadata.duration.unwrap_or(Duration::from_secs(60)))
+				.timeout(
+					metadata
+						.duration
+						.unwrap_or(Duration::from_secs(1800))
+						.max(Duration::from_secs(1800)),
+				)
 				.filter(move |interaction| {
 					interaction
 						.data
