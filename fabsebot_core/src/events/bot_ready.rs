@@ -3,17 +3,17 @@ use std::{
 	sync::Arc,
 };
 
-use anyhow::Context as _;
+use anyhow::{Context as _, Result as AResult};
 use serenity::all::{Context as SContext, GuildId, Ready, UserId};
 use sqlx::query_as;
 use tracing::{info, warn};
 
 use crate::config::{
 	settings::{EmojiReactions, GuildSettings, UserSettings, WordReactions, WordTracking},
-	types::{Data, Error, GuildData},
+	types::{Data, GuildData},
 };
 
-pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> Result<(), Error> {
+pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()> {
 	let data: Arc<Data> = ctx.data();
 	let mut tx = data
 		.db

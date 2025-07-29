@@ -1,16 +1,15 @@
+use anyhow::Result as AResult;
 use serenity::all::{
 	Context as SContext, CreateEmbed, CreateMessage, GenericChannelId, GuildId, MessageId,
 	audit_log,
 };
-
-use crate::config::types::Error;
 
 pub async fn handle_message_delete(
 	ctx: &SContext,
 	channel_id: GenericChannelId,
 	guild_id_opt: Option<GuildId>,
 	deleted_message_id: MessageId,
-) -> Result<(), Error> {
+) -> AResult<()> {
 	let message_author_id = ctx
 		.cache
 		.message(channel_id, deleted_message_id)

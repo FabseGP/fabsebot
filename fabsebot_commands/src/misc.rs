@@ -687,8 +687,8 @@ impl ImageInfo {
 				is_animated,
 				false,
 			);
-			if let Err(err) = tx.send(result) {
-				warn!("Sender failed to send result: {:?}", err);
+			if tx.send(result).is_err() {
+				warn!("Sender failed to send result");
 			}
 		});
 		match rx.await.context("Rayon task for quote image panicked")? {
@@ -796,8 +796,8 @@ impl ImageInfo {
 				new_font,
 			);
 
-			if let Err(err) = tx.send(result) {
-				warn!("Sender failed to send result: {:?}", err);
+			if tx.send(result).is_err() {
+				warn!("Sender failed to send result");
 			}
 		});
 		match rx.await.context("Rayon task for quote image panicked")? {

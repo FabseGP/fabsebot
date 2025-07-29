@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use ab_glyph::{FontArc, PxScale};
-use anyhow::{Context as _, bail};
+use anyhow::{Context as _, Result as AResult, bail};
 use image::{
 	AnimationDecoder as _, Frame, GenericImage as _, ImageBuffer,
 	ImageFormat::WebP,
@@ -13,10 +13,7 @@ use image::{
 use imageproc::drawing::{draw_text_mut, text_size};
 use textwrap::wrap;
 
-use crate::config::{
-	constants::{DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, QUOTE_HEIGHT, QUOTE_WIDTH},
-	types::Error,
-};
+use crate::config::constants::{DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, QUOTE_HEIGHT, QUOTE_WIDTH};
 
 const MIN_CONTENT_FONT_SIZE: f32 = 40.0;
 const MAX_CONTENT_FONT_SIZE: f32 = 96.0;
@@ -49,7 +46,7 @@ impl FontMetrics {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TextLayout {
 	content_lines: Vec<(String, i32, i32)>,
 	content_lines_reverse: Vec<(String, i32, i32)>,
@@ -70,7 +67,7 @@ fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontA
 	truncated
 }
 
-fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) -> Result<(), Error> {
+fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) -> AResult<()> {
 	let gradient_width = avatar.width().saturating_div(2);
 	let gradient_start = if is_reverse {
 		0
@@ -149,7 +146,7 @@ fn prepare_text_layout(
 	author_name: &str,
 	content_font: &FontArc,
 	author_font: &FontArc,
-) -> Result<TextLayout, Error> {
+) -> AResult<TextLayout> {
 	let max_content_width = QUOTE_WIDTH.saturating_sub(QUOTE_HEIGHT).saturating_sub(64);
 	let max_content_height = QUOTE_HEIGHT.saturating_sub(64);
 
@@ -358,14 +355,11 @@ pub fn quote_image(
 	is_gradient: bool,
 	is_animated: bool,
 	new_font: bool,
-) -> Result<
-	(
-		Vec<u8>,
-		Option<TextLayout>,
-		Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
-	),
-	Error,
-> {
+) -> AResult<(
+	Vec<u8>,
+	Option<TextLayout>,
+	Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
+)> {
 	let avatar_position = if is_reverse {
 		i64::from(QUOTE_WIDTH.saturating_sub(QUOTE_HEIGHT))
 	} else {
@@ -492,7 +486,7 @@ pub fn quote_image(
 	))
 }
 
-pub fn convert_to_bw(image: &mut RgbaImage) -> Result<(), Error> {
+pub fn convert_to_bw(image: &mut RgbaImage) -> AResult<()> {
 	for pixel in image.pixels_mut() {
 		let gray = u8::try_from(
 			(u32::from(pixel[0])

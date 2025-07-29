@@ -1,18 +1,19 @@
 use std::{collections::HashSet, sync::Arc};
 
+use anyhow::Result as AResult;
 use serenity::all::Guild;
 use sqlx::query;
 
 use crate::config::{
 	settings::GuildSettings,
-	types::{Data, Error, GuildData},
+	types::{Data, GuildData},
 };
 
 pub async fn handle_guild_create(
 	data: Arc<Data>,
 	guild: &Guild,
 	is_new: Option<&bool>,
-) -> Result<(), Error> {
+) -> AResult<()> {
 	if let Some(new_guild) = is_new
 		&& *new_guild
 	{

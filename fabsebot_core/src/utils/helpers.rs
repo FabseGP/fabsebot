@@ -1,7 +1,10 @@
 use std::{borrow::Cow, sync::Arc};
 
+use anyhow::Result as AResult;
+use dashmap::DashMap;
 use serde::Deserialize;
-use songbird::{Call, driver::Bitrate};
+use serenity::all::{GenericChannelId, GuildId, MessageId};
+use songbird::{Call, driver::Bitrate, input::AuxMetadata, tracks::Track};
 use tokio::sync::{Mutex, MutexGuard};
 use urlencoding::encode;
 use winnow::{
@@ -17,7 +20,7 @@ use crate::config::{
 		DISCORD_CHANNEL_CANARY_PREFIX, DISCORD_CHANNEL_DEFAULT_PREFIX, DISCORD_CHANNEL_PTB_PREFIX,
 		FALLBACK_GIF, FALLBACK_WAIFU,
 	},
-	types::{HTTP_CLIENT, UTILS_CONFIG},
+	types::{Data, HTTP_CLIENT, UTILS_CONFIG},
 };
 
 pub async fn get_configured_songbird_handler(
@@ -26,6 +29,31 @@ pub async fn get_configured_songbird_handler(
 	let mut handler = handler_lock.lock().await;
 	handler.set_bitrate(Bitrate::Max);
 	handler
+}
+
+pub async fn queue_song(
+	track: Track,
+	metadata: AuxMetadata,
+	handler_lock: Arc<Mutex<Call>>,
+	guild_id: GuildId,
+	data: Arc<Data>,
+	msg_id: MessageId,
+	channel_id: GenericChannelId,
+	author_name: String,
+) -> AResult<()> {
+	let uuid = get_configured_songbird_handler(&handler_lock)
+		.await
+		.enqueue(track)
+		.await
+		.uuid();
+
+	data.track_metadata
+		.entry(uuid)
+		.or_insert_with(|| (metadata.clone(), DashMap::default()))
+		.1
+		.insert(guild_id, (author_name, msg_id, channel_id));
+
+	Ok(())
 }
 
 #[derive(Deserialize)]

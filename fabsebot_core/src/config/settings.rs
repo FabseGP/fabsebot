@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize)]
 pub struct BotConfig {
 	pub token: String,
 	pub cache_max_messages: usize,
@@ -13,7 +13,7 @@ pub struct BotConfig {
 	pub uptime_url: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct ServerConfig {
 	pub translate: String,
 	pub search: String,
@@ -26,7 +26,7 @@ pub struct ServerConfig {
 	pub speech_to_text_model: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct APIConfig {
 	pub tenor_token: String,
 	pub cloudflare_token: String,

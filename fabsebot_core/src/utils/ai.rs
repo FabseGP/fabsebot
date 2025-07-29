@@ -40,6 +40,41 @@ fn get_model_config(
 	}
 }
 
+async fn internet_search(
+	message: &Message,
+	chatbot_internet_search: Option<bool>,
+	fabseserver_search: &str,
+) -> Option<String> {
+	if let Some(internet_search) = chatbot_internet_search
+		&& internet_search
+		&& let Ok(resp) = HTTP_CLIENT
+			.get(format!(
+				"{fabseserver_search}/search?q={}&categories=general",
+				encode(&message.content)
+			))
+			.send()
+			.await
+		&& let Ok(resp_text) = resp.text().await
+	{
+		let parsed_page = Html::parse_document(&resp_text);
+		Selector::parse("article.result-default p.content").map_or(None, |snippet_selector| {
+			Some(
+				parsed_page
+					.select(&snippet_selector)
+					.fold(String::with_capacity(2048), |mut acc, element| {
+						element.text().for_each(|text| acc.push_str(text));
+						acc.push(' ');
+						acc
+					})
+					.trim_end()
+					.to_owned(),
+			)
+		})
+	} else {
+		None
+	}
+}
+
 pub async fn ai_chatbot(
 	ctx: &SContext,
 	message: &Message,
@@ -72,34 +107,13 @@ pub async fn ai_chatbot(
 			.start_typing(Arc::<Http>::clone(&ctx.http));
 		let author_name = message.author.name.as_str();
 		let author_id_u64 = message.author.id.get();
-		let internet_search_opt = if let Some(internet_search) = chatbot_internet_search
-			&& internet_search
-			&& let Ok(resp) = HTTP_CLIENT
-				.get(format!(
-					"{}/search?q={}&categories=general",
-					utils_config.fabseserver.search,
-					encode(&message.content)
-				))
-				.send()
-				.await && let Ok(resp_text) = resp.text().await
-		{
-			let parsed_page = Html::parse_document(&resp_text);
-			Selector::parse("article.result-default p.content").map_or(None, |snippet_selector| {
-				Some(
-					parsed_page
-						.select(&snippet_selector)
-						.fold(String::with_capacity(2048), |mut acc, element| {
-							element.text().for_each(|text| acc.push_str(text));
-							acc.push(' ');
-							acc
-						})
-						.trim_end()
-						.to_owned(),
-				)
-			})
-		} else {
-			None
-		};
+		let internet_search_opt = internet_search(
+			message,
+			chatbot_internet_search,
+			&utils_config.fabseserver.search,
+		)
+		.await;
+
 		let mut system_content = String::new();
 		if let Some(reply) = &message.referenced_message {
 			let ref_name = reply.author.display_name();
@@ -447,17 +461,17 @@ struct ImageDesc<'a> {
 	image: &'a [u8],
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 struct AIReponse {
 	choices: Vec<AIText>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 struct AIText {
 	message: AIMessage,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 struct AIMessage {
 	content: String,
 }
