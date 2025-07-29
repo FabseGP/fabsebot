@@ -20,7 +20,9 @@ use crate::config::{
 	types::{HTTP_CLIENT, UTILS_CONFIG},
 };
 
-pub async fn get_configured_handler(handler_lock: &Arc<Mutex<Call>>) -> MutexGuard<'_, Call> {
+pub async fn get_configured_songbird_handler(
+	handler_lock: &Arc<Mutex<Call>>,
+) -> MutexGuard<'_, Call> {
 	let mut handler = handler_lock.lock().await;
 	handler.set_bitrate(Bitrate::Max);
 	handler

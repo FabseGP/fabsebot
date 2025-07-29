@@ -17,7 +17,7 @@ use crate::{
 		AIChatContext, AIChatMessage, AIChatStatic, AIModelDefaults, GEMMA_DEFAULTS, HTTP_CLIENT,
 		LLAMA_DEFAULTS, QWEN_DEFAULTS, UTILS_CONFIG,
 	},
-	utils::helpers::{discord_message_link, get_configured_handler},
+	utils::helpers::{discord_message_link, get_configured_songbird_handler},
 };
 
 fn get_model_config(
@@ -408,7 +408,7 @@ pub async fn ai_chatbot(
 			if let Some(handler_lock) = voice_handle
 				&& let Some(bytes) = ai_voice(&response).await
 			{
-				get_configured_handler(&handler_lock)
+				get_configured_songbird_handler(&handler_lock)
 					.await
 					.enqueue_input(Input::from(bytes))
 					.await;

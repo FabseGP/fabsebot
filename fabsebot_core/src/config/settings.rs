@@ -48,6 +48,7 @@ pub struct GuildSettings {
 	pub global_chat: bool,
 	pub global_music: bool,
 	pub global_call: bool,
+	pub music_channel: Option<i64>,
 }
 
 #[derive(Default, Clone)]

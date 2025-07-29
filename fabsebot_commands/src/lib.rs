@@ -66,6 +66,7 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		settings::set_chatbot_options(),
 		settings::set_dead_chat(),
 		settings::set_emoji_react(),
+		settings::set_music_channel(),
 		settings::set_prefix(),
 		settings::set_quote_channel(),
 		settings::set_spoiler_channel(),

@@ -10,7 +10,7 @@ use fabsebot_core::{
 	},
 	utils::{
 		ai::ai_voice,
-		helpers::{get_configured_handler, get_lyrics},
+		helpers::{get_configured_songbird_handler, get_lyrics},
 	},
 };
 use poise::{CreateReply, async_trait};
@@ -54,13 +54,6 @@ struct DeezerTracks {
 #[derive(Deserialize)]
 struct DeezerArtist {
 	name: String,
-}
-
-fn voice_check(ctx: &SContext<'_>) -> Option<(Arc<Mutex<Call>>, GuildId)> {
-	let guild_id = ctx.guild_id()?;
-	let handler_lock = ctx.data().music_manager.get(guild_id)?;
-
-	Some((handler_lock, guild_id))
 }
 
 #[derive(Clone)]
@@ -185,7 +178,10 @@ impl PlaybackHandler {
 				e = e.image(url);
 			}
 
-			let queue_size = get_configured_handler(&handler_lock).await.queue().len();
+			let queue_size = get_configured_songbird_handler(&handler_lock)
+				.await
+				.queue()
+				.len();
 
 			e = e.field(
 				"Queue size:",
@@ -257,7 +253,7 @@ impl PlaybackHandler {
 
 							let mut msg = interaction.message;
 
-							let handler = get_configured_handler(&handler_lock).await;
+							let handler = get_configured_songbird_handler(&handler_lock).await;
 							let queue = handler.queue();
 							if interaction.data.custom_id.ends_with('s') {
 								for guild in &guild_tracks.1 {
@@ -266,7 +262,7 @@ impl PlaybackHandler {
 									} else if let Some(handler_lock) =
 										self.bot_data.music_manager.get(*guild.key())
 									{
-										get_configured_handler(&handler_lock).await.queue().skip()?;
+										get_configured_songbird_handler(&handler_lock).await.queue().skip()?;
 									} else {
 										continue;
 									}
@@ -282,7 +278,6 @@ impl PlaybackHandler {
 										)
 										.await?;
 								}
-								break;
 							} else if interaction.data.custom_id.ends_with('p') {
 								for guild in &guild_tracks.1 {
 									if guild.key() == &self.guild_id {
@@ -301,7 +296,7 @@ impl PlaybackHandler {
 										}
 									} else if let Some(handler_lock) =
 										self.bot_data.music_manager.get(*guild.key())
-										&& let Some(current_track) = get_configured_handler(&handler_lock)
+										&& let Some(current_track) = get_configured_songbird_handler(&handler_lock)
 											.await
 											.queue()
 											.current() && let Ok(track_info) =
@@ -325,7 +320,7 @@ impl PlaybackHandler {
 									} else if let Some(handler_lock) =
 										self.bot_data.music_manager.get(*guild.key())
 									{
-										get_configured_handler(&handler_lock).await.queue().stop();
+										get_configured_songbird_handler(&handler_lock).await.queue().stop();
 									} else {
 										continue;
 									}
@@ -484,7 +479,9 @@ impl VoiceEventHandler for PlaybackHandler {
 /// Text to voice, duh
 #[poise::command(prefix_command, slash_command)]
 pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Result<(), Error> {
-	if let Some((handler_lock, _)) = voice_check(&ctx) {
+	if let Some(guild_id) = ctx.guild_id()
+		&& let Some(handler_lock) = ctx.data().music_manager.get(guild_id)
+	{
 		ctx.defer().await?;
 
 		let payload = if let Some(input) = input_opt {
@@ -501,7 +498,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Resu
 		};
 
 		if let Some(bytes) = ai_voice(&payload).await {
-			get_configured_handler(&handler_lock)
+			get_configured_songbird_handler(&handler_lock)
 				.await
 				.enqueue_input(Input::from(bytes))
 				.await;
@@ -528,7 +525,7 @@ async fn queue_song(
 ) -> AResult<()> {
 	let reply = ctx.reply("Song added to queue").await?;
 	if let Ok(msg) = reply.message().await {
-		let uuid = get_configured_handler(&handler_lock)
+		let uuid = get_configured_songbird_handler(&handler_lock)
 			.await
 			.enqueue(track)
 			.await
@@ -559,7 +556,7 @@ async fn queue_song_global(
 	guild_id: GuildId,
 	ctx: SContext<'_>,
 ) -> AResult<()> {
-	let mut handler = get_configured_handler(&handler_lock).await;
+	let mut handler = get_configured_songbird_handler(&handler_lock).await;
 	if let Some(id) = handler.current_channel()
 		&& let Ok(channel) = ctx
 			.http()
@@ -601,7 +598,9 @@ pub async fn add_deezer_playlist(
 	#[rest]
 	playlist_id: String,
 ) -> Result<(), Error> {
-	if let Some((handler_lock, guild_id)) = voice_check(&ctx) {
+	if let Some(guild_id) = ctx.guild_id()
+		&& let Some(handler_lock) = ctx.data().music_manager.get(guild_id)
+	{
 		if let Ok(request) = HTTP_CLIENT
 			.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
 			.send()
@@ -657,7 +656,9 @@ pub async fn add_youtube_playlist(
 	#[rest]
 	playlist_url: String,
 ) -> Result<(), Error> {
-	if let Some((handler_lock, guild_id)) = voice_check(&ctx) {
+	if let Some(guild_id) = ctx.guild_id()
+		&& let Some(handler_lock) = ctx.data().music_manager.get(guild_id)
+	{
 		ctx.defer().await?;
 		let yt_dlp_output = Command::new("yt-dlp")
 			.args([
@@ -753,7 +754,10 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 				CreateReply::default().embed(
 					CreateEmbed::default()
 						.title("I've joined the party!")
-						.description("Commands to use (supports prefix):")
+						.description(
+							"NEW: Run /set_music_channel and I'll listen to your song requests \
+							 there",
+						)
 						.field(
 							"/play_song_global",
 							"Play a new song from a YouTube url or from a search",
@@ -833,7 +837,10 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 				CreateReply::default().embed(
 					CreateEmbed::default()
 						.title("I've joined the party!")
-						.description("Commands to use (supports prefix):")
+						.description(
+							"NEW: Run /set_music_channel and I'll listen to your song requests \
+							 there",
+						)
 						.field(
 							"/play_song",
 							"Play a new song from a YouTube url or from a search",
@@ -970,7 +977,9 @@ pub async fn play_song(
 	url: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Some((handler_lock, guild_id)) = voice_check(&ctx) {
+	if let Some(guild_id) = ctx.guild_id()
+		&& let Some(handler_lock) = ctx.data().music_manager.get(guild_id)
+	{
 		let src = if url.starts_with("https") {
 			if url.contains("youtu") {
 				YoutubeDl::new(HTTP_CLIENT.clone(), url)
@@ -1015,7 +1024,9 @@ pub async fn play_song_global(
 	url: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Some((handler_lock, guild_id)) = voice_check(&ctx) {
+	if let Some(guild_id) = ctx.guild_id()
+		&& let Some(handler_lock) = ctx.data().music_manager.get(guild_id)
+	{
 		let src = if url.starts_with("https") {
 			if url.contains("youtu") {
 				YoutubeDl::new(HTTP_CLIENT.clone(), url)
@@ -1088,9 +1099,11 @@ pub async fn seek_song(
 	ctx: SContext<'_>,
 	#[description = "Seconds to seek, i.e. '-20' or '+20'"] seconds: String,
 ) -> Result<(), Error> {
-	if let Some((handler_lock, _)) = voice_check(&ctx) {
+	if let Some(guild_id) = ctx.guild_id()
+		&& let Some(handler_lock) = ctx.data().music_manager.get(guild_id)
+	{
 		ctx.defer_ephemeral().await?;
-		let current_playback_opt = get_configured_handler(&handler_lock)
+		let current_playback_opt = get_configured_songbird_handler(&handler_lock)
 			.await
 			.queue()
 			.current();

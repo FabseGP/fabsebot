@@ -5,14 +5,20 @@ use std::{
 };
 
 use anyhow::Context as _;
+use dashmap::DashMap;
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
 	GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
 };
+use songbird::{
+	input::{Input, YoutubeDl},
+	tracks::Track,
+};
 use sqlx::query;
 use tokio::task::spawn;
 use tracing::warn;
+use uuid::Uuid;
 use winnow::Parser as _;
 
 use crate::{
@@ -23,11 +29,11 @@ use crate::{
 			VILBOT_NAME, VILBOT_PFP,
 		},
 		settings::WordTracking,
-		types::{Data, Error, GuildData, RNG, UTILS_CONFIG},
+		types::{Data, Error, GuildData, HTTP_CLIENT, RNG, UTILS_CONFIG},
 	},
 	utils::{
 		ai::ai_chatbot,
-		helpers::{discord_message_link, get_gifs, get_waifu},
+		helpers::{discord_message_link, get_configured_songbird_handler, get_gifs, get_waifu},
 		webhook::{spoiler_message, webhook_find},
 	},
 };
@@ -189,6 +195,63 @@ async fn guild_channels(
 			}
 		} else {
 			warn!("Failed to convert spoiler channel id to u64");
+		}
+	} else if let Some(music_channel) = guild_data.settings.music_channel
+		&& !new_message.content.starts_with('#')
+	{
+		if let Ok(music_channel_u64) = u64::try_from(music_channel) {
+			if new_message.channel_id.get() == music_channel_u64 {
+				if let Some(handler_lock) = data.music_manager.get(guild_id) {
+					let src = if new_message.content.starts_with("https") {
+						if new_message.content.contains("youtu") {
+							YoutubeDl::new(HTTP_CLIENT.clone(), new_message.content.clone())
+						} else {
+							new_message
+								.reply(&ctx.http, "Only YouTube-links are supported")
+								.await?;
+							return Ok(());
+						}
+					} else {
+						YoutubeDl::new_search(HTTP_CLIENT.clone(), new_message.content.clone())
+					};
+					let mut input = Input::from(src.clone());
+					if let Ok(metadata) = input.aux_metadata().await {
+						let track = Track::new_with_uuid(input, Uuid::new_v4());
+						let reply = new_message.reply(&ctx.http, "Song added to queue").await?;
+						let uuid = get_configured_songbird_handler(&handler_lock)
+							.await
+							.enqueue(track)
+							.await
+							.uuid();
+						data.track_metadata
+							.entry(uuid)
+							.or_insert_with(|| (metadata.clone(), DashMap::default()))
+							.1
+							.insert(
+								guild_id,
+								(
+									new_message.author.display_name().to_owned(),
+									reply.id,
+									reply.channel_id,
+								),
+							);
+					} else {
+						new_message
+							.reply(&ctx.http, "Nothing is known about this song")
+							.await?;
+					}
+				} else {
+					new_message
+						.reply(
+							&ctx.http,
+							"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a \
+							 voice channel first",
+						)
+						.await?;
+				}
+			}
+		} else {
+			warn!("Failed to convert music channel id to u64");
 		}
 	} else if let Some(ai_chat_channel) = guild_data.settings.ai_chat_channel {
 		if let Ok(ai_chat_channel_u64) = u64::try_from(ai_chat_channel) {

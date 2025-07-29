@@ -44,7 +44,8 @@ pub async fn reset_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 global_chat_channel = NULL,
                 global_chat = FALSE,
                 global_music = FALSE,
-                global_call = FALSE
+                global_call = FALSE,
+                music_channel = NULL
             WHERE guild_id = $1",
 			guild_id_i64
 		)
@@ -573,6 +574,59 @@ pub async fn set_emoji_react(
 			)
 			.await?;
 		}
+	}
+	Ok(())
+}
+
+/// Configure a channel to listen for song requests
+#[poise::command(
+	slash_command,
+	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+)]
+pub async fn set_music_channel(
+	ctx: SContext<'_>,
+	#[description = "Channel to listen for song requests"] channel: Channel,
+) -> Result<(), Error> {
+	if let Some(guild_id) = ctx.guild_id() {
+		let channel_id_i64 = i64::from(channel.id());
+		query!(
+			"INSERT INTO guild_settings (guild_id, music_channel)
+            VALUES ($1, $2)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                music_channel = $2",
+			i64::from(guild_id),
+			channel_id_i64,
+		)
+		.execute(&mut *ctx.data().db.acquire().await?)
+		.await?;
+		ctx.send(
+			CreateReply::default()
+				.content(format!(
+					"Music requests will be listened to on {channel}... probably"
+				))
+				.ephemeral(true),
+		)
+		.await?;
+		channel
+			.id()
+			.say(
+				ctx.http(),
+				"Once I'm in a voice channel with /join_voice, I'll start listen to your song \
+				 requests!\nMessages prefixed with # will be ignored",
+			)
+			.await?;
+		let mut modified_settings = ctx
+			.data()
+			.guild_data
+			.get(&guild_id)
+			.get_or_insert_default()
+			.as_ref()
+			.clone();
+		modified_settings.settings.music_channel = Some(channel_id_i64);
+		ctx.data()
+			.guild_data
+			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
 }
