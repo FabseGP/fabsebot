@@ -213,7 +213,7 @@ impl PlaybackHandler {
 		),
 		metadata: &AuxMetadata,
 		embed: &CreateEmbed<'_>,
-	) -> AResult<bool> {
+	) -> AResult<()> {
 		interaction.defer(&self.serenity_context.http).await?;
 
 		let mut msg = interaction.message;
@@ -301,7 +301,6 @@ impl PlaybackHandler {
 					)
 					.await?;
 			}
-			return Ok(true);
 		} else if interaction.data.custom_id.ends_with('l') {
 			if *lyrics_shown {
 				*lyrics_shown = false;
@@ -377,7 +376,7 @@ impl PlaybackHandler {
 			}
 		}
 
-		Ok(false)
+		Ok(())
 	}
 
 	pub async fn update_info(
@@ -429,8 +428,8 @@ impl PlaybackHandler {
 								.custom_id
 								.starts_with(message_id_copy.to_string().as_str())
 					})
-					.next() => if self
-						.handle_interaction(
+					.next() => {
+						self.handle_interaction(
 							interaction,
 							handler_lock.clone(),
 							&mut lyrics_shown,
@@ -441,10 +440,8 @@ impl PlaybackHandler {
 							&metadata,
 							&embed,
 						)
-						.await?
-						{
-							break;
-						},
+						.await?;
+					},
 					() = notifier.notified() => {
 						break;
 					},

@@ -4,7 +4,7 @@ use std::{
 	sync::Arc,
 };
 
-use anyhow::{Context as _, Result as AResult};
+use anyhow::{Context as _, Result as AResult, bail};
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
@@ -218,37 +218,54 @@ async fn music_channel(
 		if let Ok(music_channel_u64) = u64::try_from(music_channel) {
 			if new_message.channel_id.get() == music_channel_u64 {
 				if let Some(handler_lock) = data.music_manager.get(guild_id) {
-					let src = if new_message.content.starts_with("https") {
-						if new_message.content.contains("youtu") {
-							YoutubeDl::new(HTTP_CLIENT.clone(), new_message.content.clone())
+					let ctx_clone = ctx.clone();
+					let new_message_clone = new_message.clone();
+					spawn(async move {
+						let src = if new_message_clone.content.starts_with("https") {
+							if new_message_clone.content.contains("youtu") {
+								YoutubeDl::new(
+									HTTP_CLIENT.clone(),
+									new_message_clone.content.clone(),
+								)
+							} else {
+								new_message_clone
+									.reply(&ctx_clone.http, "Only YouTube-links are supported")
+									.await?;
+								return Ok(());
+							}
 						} else {
-							new_message
-								.reply(&ctx.http, "Only YouTube-links are supported")
+							YoutubeDl::new_search(
+								HTTP_CLIENT.clone(),
+								new_message_clone.content.clone(),
+							)
+						};
+						let mut input = Input::from(src.clone());
+						if let Ok(metadata) = input.aux_metadata().await {
+							let msg = new_message_clone
+								.reply(&ctx_clone.http, "Song added to queue")
 								.await?;
-							return Ok(());
+							if let Err(err) = queue_song(
+								Track::new_with_uuid(input, Uuid::new_v4()),
+								metadata.clone(),
+								handler_lock.clone(),
+								guild_id,
+								ctx_clone.data(),
+								msg.id,
+								msg.channel_id,
+								new_message_clone.author.display_name().to_owned(),
+							)
+							.await
+							{
+								bail!(err);
+							}
+						} else if let Err(err) = new_message_clone
+							.reply(&ctx_clone.http, "Nothing is known about this song")
+							.await
+						{
+							bail!(err);
 						}
-					} else {
-						YoutubeDl::new_search(HTTP_CLIENT.clone(), new_message.content.clone())
-					};
-					let mut input = Input::from(src.clone());
-					if let Ok(metadata) = input.aux_metadata().await {
-						let msg = new_message.reply(&ctx.http, "Song added to queue").await?;
-						queue_song(
-							Track::new_with_uuid(input, Uuid::new_v4()),
-							metadata.clone(),
-							handler_lock.clone(),
-							guild_id,
-							ctx.data(),
-							msg.id,
-							msg.channel_id,
-							new_message.author.display_name().to_owned(),
-						)
-						.await?;
-					} else {
-						new_message
-							.reply(&ctx.http, "Nothing is known about this song")
-							.await?;
-					}
+						Ok(())
+					});
 				} else {
 					new_message
 						.reply(
