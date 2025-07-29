@@ -447,18 +447,9 @@ impl VoiceEventHandler for PlaybackHandler {
 				{
 					let self_clone = self.clone();
 					let guild_tracks_clone = guild_tracks.clone();
-					let uuid_clone = handle.uuid();
 					spawn(async move {
 						if let Err(err) = self_clone.update_info(guild_tracks_clone).await {
 							error!("Failed to update song info: {:?}", &err);
-						}
-						if self_clone
-							.bot_data
-							.track_metadata
-							.remove(&uuid_clone)
-							.is_none()
-						{
-							warn!("Track already removed from track_metadata");
 						}
 					});
 				}
@@ -887,6 +878,9 @@ pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			ctx.data()
 				.guild_data
 				.insert(guild_id, Arc::new(modified_settings));
+			ctx.data()
+				.track_metadata
+				.retain(|_key, value| !value.1.contains_key(&guild_id));
 		} else {
 			ctx.reply(
 				"Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
@@ -903,6 +897,9 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	if let Some(guild_id) = ctx.guild_id() {
 		if ctx.data().music_manager.remove(guild_id).await.is_ok() {
 			ctx.reply("Left voice channel, don't forget me").await?;
+			ctx.data()
+				.track_metadata
+				.retain(|_key, value| !value.1.contains_key(&guild_id));
 		} else {
 			ctx.reply(
 				"Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
