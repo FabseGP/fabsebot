@@ -209,7 +209,7 @@ impl PlaybackHandler {
 		history_embed: &mut Option<CreateEmbed<'_>>,
 		guild_tracks: &(
 			AuxMetadata,
-			DashMap<GuildId, (String, MessageId, GenericChannelId)>,
+			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
 		),
 		metadata: &AuxMetadata,
 		embed: &CreateEmbed<'_>,
@@ -383,12 +383,12 @@ impl PlaybackHandler {
 		&self,
 		guild_tracks: (
 			AuxMetadata,
-			DashMap<GuildId, (String, MessageId, GenericChannelId)>,
+			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
 		),
 		notifier: Arc<Notify>,
 	) -> AResult<()> {
 		if let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id)
-			&& let Some(guild_data) = guild_tracks.1.clone().get(&self.guild_id)
+			&& let Some(mut guild_data) = guild_tracks.1.clone().get_mut(&self.guild_id)
 		{
 			let metadata = guild_tracks.0.clone();
 			let queue_size = get_configured_songbird_handler(&handler_lock)
@@ -458,6 +458,7 @@ impl PlaybackHandler {
 						.content("Song finished"),
 				)
 				.await?;
+			guild_data.3 = true;
 		}
 
 		Ok(())
@@ -472,6 +473,13 @@ impl VoiceEventHandler for PlaybackHandler {
 				if state.playing == PlayMode::Play
 					&& let Some(guild_tracks) = self.bot_data.track_metadata.get(&handle.uuid())
 				{
+					if let Some(mut guild_track) = guild_tracks.1.get_mut(&self.guild_id)
+						&& guild_track.3
+					{
+						guild_track.3 = false;
+					} else {
+						continue;
+					}
 					let self_clone = self.clone();
 					let guild_tracks_clone = guild_tracks.clone();
 					let notifier_clone = self.notifier.clone();

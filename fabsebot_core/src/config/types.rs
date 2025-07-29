@@ -127,7 +127,7 @@ pub struct Data {
 		Uuid,
 		(
 			AuxMetadata,
-			DashMap<GuildId, (String, MessageId, GenericChannelId)>,
+			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
 		),
 	>,
 }

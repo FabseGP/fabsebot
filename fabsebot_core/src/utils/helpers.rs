@@ -51,7 +51,7 @@ pub async fn queue_song(
 		.entry(uuid)
 		.or_insert_with(|| (metadata.clone(), DashMap::default()))
 		.1
-		.insert(guild_id, (author_name, msg_id, channel_id));
+		.insert(guild_id, (author_name, msg_id, channel_id, true));
 
 	Ok(())
 }
