@@ -18,10 +18,11 @@ use serde::Deserialize;
 use serenity::all::{
 	ButtonStyle, ComponentInteractionCollector, Context as SerenityContext, CreateActionRow,
 	CreateButton, CreateComponent, CreateEmbed, CreateMessage, EditMessage,
-	EmbedMessageBuilding as _, GenericChannelId, GuildId, MessageBuilder, MessageId,
+	EmbedMessageBuilding as _, GenericChannelId, GuildId, MessageBuilder, MessageId, UserId,
 };
 use songbird::{
-	Call, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler, TrackEvent,
+	Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
+	TrackEvent,
 	input::{AuxMetadata, Input, YoutubeDl},
 	tracks::{PlayMode, Track},
 };
@@ -56,6 +57,65 @@ fn voice_check(ctx: &SContext<'_>) -> Option<(Arc<Mutex<Call>>, GuildId)> {
 	let handler_lock = ctx.data().music_manager.get(guild_id)?;
 
 	Some((handler_lock, guild_id))
+}
+
+#[derive(Clone)]
+struct DriverDisconnectHandler {
+	bot_data: Arc<Data>,
+}
+
+impl DriverDisconnectHandler {
+	const fn new(bot_data: Arc<Data>) -> Self {
+		Self { bot_data }
+	}
+}
+
+#[async_trait]
+impl VoiceEventHandler for DriverDisconnectHandler {
+	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
+		if let EventContext::DriverDisconnect(disconnect_data) = ctx {
+			self.bot_data
+				.music_manager
+				.remove(disconnect_data.guild_id)
+				.await
+				.ok()?;
+		}
+		None
+	}
+}
+
+#[derive(Clone)]
+struct ClientDisconnectHandler {
+	serenity_context: SerenityContext,
+	channel_id: GenericChannelId,
+}
+
+impl ClientDisconnectHandler {
+	const fn new(serenity_context: SerenityContext, channel_id: GenericChannelId) -> Self {
+		Self {
+			serenity_context,
+			channel_id,
+		}
+	}
+}
+
+#[async_trait]
+impl VoiceEventHandler for ClientDisconnectHandler {
+	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
+		if let EventContext::ClientDisconnect(client_data) = ctx {
+			let user_id = UserId::new(client_data.user_id.0);
+			if let Ok(user) = user_id.to_user(&self.serenity_context.http).await {
+				self.channel_id
+					.send_message(
+						&self.serenity_context.http,
+						CreateMessage::default().content(format!("Bye {}", user.display_name())),
+					)
+					.await
+					.ok()?;
+			}
+		}
+		None
+	}
 }
 
 #[derive(Clone)]
@@ -191,21 +251,21 @@ impl PlaybackHandler {
 				let handler = get_configured_handler(&handler_lock).await;
 				let queue = handler.queue();
 				if interaction.data.custom_id.ends_with('s') {
-					for guild in guild_tracks.1 {
-						if guild.0 == self.guild_id {
+					for guild in &guild_tracks.1 {
+						if guild.key() == &self.guild_id {
 							queue.skip()?;
-						} else if let Some(handler_lock) = self.bot_data.music_manager.get(guild.0)
+						} else if let Some(handler_lock) =
+							self.bot_data.music_manager.get(*guild.key())
 						{
 							get_configured_handler(&handler_lock).await.queue().skip()?;
 						} else {
 							continue;
 						}
 						guild
-							.1
 							.2
 							.edit_message(
 								&self.serenity_context.http,
-								guild.1.1,
+								guild.1,
 								EditMessage::default()
 									.suppress_embeds(true)
 									.content("Skipped to next song")
@@ -214,29 +274,63 @@ impl PlaybackHandler {
 							.await?;
 					}
 					break;
-				} else if interaction.data.custom_id.ends_with('p')
-					&& let Some(current_track) = queue.current()
-					&& let Ok(track_info) = current_track.get_info().await
-				{
-					match track_info.playing {
-						PlayMode::Pause => {
-							current_track.play()?;
+				} else if interaction.data.custom_id.ends_with('p') {
+					for guild in &guild_tracks.1 {
+						if guild.key() == &self.guild_id {
+							if let Some(current_track) = queue.current()
+								&& let Ok(track_info) = current_track.get_info().await
+							{
+								match track_info.playing {
+									PlayMode::Pause => {
+										current_track.play()?;
+									}
+									PlayMode::Play => {
+										current_track.pause()?;
+									}
+									_ => {}
+								}
+							}
+						} else if let Some(handler_lock) =
+							self.bot_data.music_manager.get(*guild.key())
+							&& let Some(current_track) = get_configured_handler(&handler_lock)
+								.await
+								.queue()
+								.current() && let Ok(track_info) = current_track.get_info().await
+						{
+							match track_info.playing {
+								PlayMode::Pause => {
+									current_track.play()?;
+								}
+								PlayMode::Play => {
+									current_track.pause()?;
+								}
+								_ => {}
+							}
 						}
-						PlayMode::Play => {
-							current_track.pause()?;
-						}
-						_ => {}
 					}
 				} else if interaction.data.custom_id.ends_with('c') {
-					queue.stop();
-					msg.edit(
-						self.serenity_context.http.clone(),
-						EditMessage::default()
-							.suppress_embeds(true)
-							.content("Nothing to play")
-							.components(&[]),
-					)
-					.await?;
+					for guild in &guild_tracks.1 {
+						if guild.key() == &self.guild_id {
+							queue.stop();
+						} else if let Some(handler_lock) =
+							self.bot_data.music_manager.get(*guild.key())
+						{
+							get_configured_handler(&handler_lock).await.queue().stop();
+						} else {
+							continue;
+						}
+						guild
+							.2
+							.edit_message(
+								&self.serenity_context.http,
+								guild.1,
+								EditMessage::default()
+									.suppress_embeds(true)
+									.content("Nothing to play")
+									.components(&[]),
+							)
+							.await?;
+					}
 					break;
 				} else if interaction.data.custom_id.ends_with('u') && queue.len() > 1 {
 					buttons_row1[0] = CreateButton::new(format!("{}_s", guild_data.1))
@@ -415,34 +509,33 @@ pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Resu
 }
 
 async fn queue_song(
-	src: YoutubeDl<'static>,
+	track: Track,
+	metadata: AuxMetadata,
 	handler_lock: Arc<Mutex<Call>>,
 	guild_id: GuildId,
 	ctx: SContext<'_>,
 ) -> AResult<()> {
-	if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
-		let reply = ctx.reply("Song added to queue").await?;
-		if let Ok(msg) = reply.message().await {
-			let uuid = get_configured_handler(&handler_lock)
-				.await
-				.enqueue_input(Input::from(src.clone()))
-				.await
-				.uuid();
+	let reply = ctx.reply("Song added to queue").await?;
+	if let Ok(msg) = reply.message().await {
+		let uuid = get_configured_handler(&handler_lock)
+			.await
+			.enqueue(track)
+			.await
+			.uuid();
 
-			ctx.data()
-				.track_metadata
-				.entry(uuid)
-				.or_insert_with(|| (metadata.clone(), DashMap::default()))
-				.1
-				.insert(
-					guild_id,
-					(
-						ctx.author().display_name().to_owned(),
-						msg.id,
-						msg.channel_id,
-					),
-				);
-		}
+		ctx.data()
+			.track_metadata
+			.entry(uuid)
+			.or_insert_with(|| (metadata.clone(), DashMap::default()))
+			.1
+			.insert(
+				guild_id,
+				(
+					ctx.author().display_name().to_owned(),
+					msg.id,
+					msg.channel_id,
+				),
+			);
 	}
 
 	Ok(())
@@ -513,7 +606,20 @@ pub async fn add_deezer_playlist(
 				for track in payload.tracks.data {
 					let search = format!("{} {}", track.title, track.artist.name);
 					let src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
-					queue_song(src, handler_lock.clone(), guild_id, ctx).await?;
+					let mut input = Input::from(src.clone());
+					if let Ok(metadata) = input.aux_metadata().await {
+						let uuid = Uuid::new_v4();
+						queue_song(
+							Track::new_with_uuid(input, uuid),
+							metadata.clone(),
+							handler_lock.clone(),
+							guild_id,
+							ctx,
+						)
+						.await?;
+					} else {
+						ctx.reply("Nothing is known about this song").await?;
+					}
 				}
 			} else {
 				ctx.reply("Deezer refused to serve your request").await?;
@@ -563,7 +669,20 @@ pub async fn add_youtube_playlist(
 
 		for url in urls {
 			let src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
-			queue_song(src, handler_lock.clone(), guild_id, ctx).await?;
+			let mut input = Input::from(src.clone());
+			if let Ok(metadata) = input.aux_metadata().await {
+				let uuid = Uuid::new_v4();
+				queue_song(
+					Track::new_with_uuid(input, uuid),
+					metadata.clone(),
+					handler_lock.clone(),
+					guild_id,
+					ctx,
+				)
+				.await?;
+			} else {
+				ctx.reply("Nothing is known about this song").await?;
+			}
 		}
 	} else {
 		ctx.reply(
@@ -576,7 +695,7 @@ pub async fn add_youtube_playlist(
 	Ok(())
 }
 
-/// Join the current voice channel with global voice call
+/// Join the current voice channel with global music playback
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 	if let Some(guild_id) = ctx.guild_id() {
@@ -588,7 +707,11 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 				.and_then(|voice_state| voice_state.channel_id)
 		});
 		if ctx.data().music_manager.get(guild_id).is_some() {
-			ctx.reply("Bruh, I'm already in a voice channel").await?;
+			ctx.reply(
+				"Bruh, I'm already in a voice channel! Use /leave_voice_global to drop the \
+				 connection",
+			)
+			.await?;
 		} else if let Some(channel_id) = channel_id
 			&& let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
 		{
@@ -641,9 +764,18 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 				),
 			)
 			.await?;
-			handler_lock.lock().await.add_global_event(
+			let mut handler = handler_lock.lock().await;
+			handler.add_global_event(
 				SongBirdEvent::Track(TrackEvent::Playable),
 				PlaybackHandler::new(ctx.serenity_context().clone(), ctx.data(), guild_id),
+			);
+			handler.add_global_event(
+				SongBirdEvent::Core(CoreEvent::DriverDisconnect),
+				DriverDisconnectHandler::new(ctx.data()),
+			);
+			handler.add_global_event(
+				SongBirdEvent::Core(CoreEvent::ClientDisconnect),
+				ClientDisconnectHandler::new(ctx.serenity_context().clone(), ctx.channel_id()),
 			);
 		} else {
 			ctx.reply("I don't wanna join").await?;
@@ -664,7 +796,10 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 				.and_then(|voice_state| voice_state.channel_id)
 		});
 		if ctx.data().music_manager.get(guild_id).is_some() {
-			ctx.reply("Bruh, I'm already in a voice channel").await?;
+			ctx.reply(
+				"Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection",
+			)
+			.await?;
 		} else if let Some(channel_id) = channel_id
 			&& let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
 		{
@@ -704,9 +839,18 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 				),
 			)
 			.await?;
-			handler_lock.lock().await.add_global_event(
+			let mut handler = handler_lock.lock().await;
+			handler.add_global_event(
 				SongBirdEvent::Track(TrackEvent::Playable),
 				PlaybackHandler::new(ctx.serenity_context().clone(), ctx.data(), guild_id),
+			);
+			handler.add_global_event(
+				SongBirdEvent::Core(CoreEvent::DriverDisconnect),
+				DriverDisconnectHandler::new(ctx.data()),
+			);
+			handler.add_global_event(
+				SongBirdEvent::Core(CoreEvent::ClientDisconnect),
+				ClientDisconnectHandler::new(ctx.serenity_context().clone(), ctx.channel_id()),
 			);
 		} else {
 			ctx.reply("I don't wanna join").await?;
@@ -790,7 +934,20 @@ pub async fn play_song(
 		} else {
 			YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
 		};
-		queue_song(src, handler_lock, guild_id, ctx).await?;
+		let mut input = Input::from(src.clone());
+		if let Ok(metadata) = input.aux_metadata().await {
+			let uuid = Uuid::new_v4();
+			queue_song(
+				Track::new_with_uuid(input, uuid),
+				metadata.clone(),
+				handler_lock,
+				guild_id,
+				ctx,
+			)
+			.await?;
+		} else {
+			ctx.reply("Nothing is known about this song").await?;
+		}
 	} else {
 		ctx.reply(
 			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
@@ -811,7 +968,7 @@ pub async fn play_song_global(
 	url: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Some((..)) = voice_check(&ctx) {
+	if let Some((handler_lock, guild_id)) = voice_check(&ctx) {
 		let src = if url.starts_with("https") {
 			if url.contains("youtu") {
 				YoutubeDl::new(HTTP_CLIENT.clone(), url)
@@ -822,14 +979,28 @@ pub async fn play_song_global(
 		} else {
 			YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
 		};
-		let guild_global_music: Vec<_> = ctx
-			.data()
-			.guild_data
-			.iter()
-			.filter(|entry| entry.value().settings.global_music)
-			.map(|entry| entry.value().settings.guild_id)
-			.collect();
-		if let Ok(metadata) = Input::from(src.clone()).aux_metadata().await {
+		let mut input = Input::from(src.clone());
+		if let Ok(metadata) = input.aux_metadata().await {
+			let uuid = Uuid::new_v4();
+			queue_song(
+				Track::new_with_uuid(input, uuid),
+				metadata.clone(),
+				handler_lock,
+				guild_id,
+				ctx,
+			)
+			.await?;
+			let guild_global_music: Vec<_> = ctx
+				.data()
+				.guild_data
+				.iter()
+				.filter(|entry| {
+					let settings = &entry.value().settings;
+					entry.key() != &guild_id && settings.global_music
+				})
+				.map(|entry| entry.value().settings.guild_id)
+				.collect();
+
 			let uuid = Uuid::new_v4();
 			for guild_id_global in guild_global_music {
 				if let Ok(guild_id_u64) = u64::try_from(guild_id_global) {
@@ -850,6 +1021,8 @@ pub async fn play_song_global(
 					warn!("Failed to convert guild id to u64");
 				}
 			}
+		} else {
+			ctx.reply("Nothing is known about this song").await?;
 		}
 	} else {
 		ctx.reply(
