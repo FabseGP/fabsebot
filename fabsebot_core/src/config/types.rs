@@ -6,7 +6,6 @@ use std::{
 use anyhow::Error as AError;
 use dashmap::DashMap;
 use fastrand::Rng;
-use indexmap::IndexMap;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
@@ -119,13 +118,18 @@ pub struct GuildData {
 pub struct Data {
 	pub db: PgPool,
 	pub music_manager: Arc<Songbird>,
-	pub voice_manager: Arc<Songbird>,
 	pub ai_chats: AIChatMap,
 	pub global_chats: GlobalChatMap,
 	pub channel_webhooks: WebhookMap,
 	pub guild_data: GuildDataMap,
 	pub user_settings: UserSettingsMap,
-	pub track_metadata: DashMap<GuildId, IndexMap<Uuid, (AuxMetadata, String, MessageId)>>,
+	pub track_metadata: DashMap<
+		Uuid,
+		(
+			AuxMetadata,
+			DashMap<GuildId, (String, MessageId, GenericChannelId)>,
+		),
+	>,
 }
 
 pub type Error = AError;

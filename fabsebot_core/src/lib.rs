@@ -99,17 +99,9 @@ pub async fn bot_start(
 			.decode_mode(DecodeMode::Pass),
 	);
 
-	let voice_manager = Songbird::serenity();
-	voice_manager.set_config(
-		Config::default()
-			.use_softclip(false)
-			.decode_mode(DecodeMode::Decode),
-	);
-
 	let user_data = Arc::new(Data {
 		db: postgres_pool,
 		music_manager: music_manager.clone(),
-		voice_manager: voice_manager.clone(),
 		ai_chats: Cache::new(1000),
 		global_chats: Cache::new(1000),
 		channel_webhooks: Cache::new(1000),

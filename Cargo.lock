@@ -932,12 +932,9 @@ dependencies = [
  "ab_glyph",
  "anyhow",
  "base64",
- "bytes",
  "dashmap",
  "fabsebot_core",
  "image",
- "indexmap",
- "metrics",
  "poise",
  "rayon",
  "serde",
@@ -948,6 +945,7 @@ dependencies = [
  "tokio",
  "tracing",
  "urlencoding",
+ "uuid",
 ]
 
 [[package]]
@@ -961,7 +959,6 @@ dependencies = [
  "fastrand",
  "image",
  "imageproc",
- "indexmap",
  "metrics",
  "mini-moka",
  "poise",

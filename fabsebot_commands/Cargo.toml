@@ -11,11 +11,8 @@ fabsebot_core = { path = "../fabsebot_core" }
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 base64 = { workspace = true }
-bytes = { workspace = true }
 dashmap = { workspace = true }
 image = { workspace = true, default-features = false, features = ["gif", "rayon", "webp"] }
-indexmap = { workspace = true }
-metrics = { workspace = true }
 poise = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
@@ -26,3 +23,4 @@ systemstat = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
