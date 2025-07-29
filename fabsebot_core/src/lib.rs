@@ -104,7 +104,10 @@ pub async fn bot_start(
 		music_manager: music_manager.clone(),
 		ai_chats: Cache::new(1000),
 		global_chats: Cache::new(1000),
-		channel_webhooks: Cache::new(1000),
+		channel_webhooks: Cache::builder()
+			.max_capacity(100)
+			.time_to_idle(Duration::from_secs(3600))
+			.build(),
 		guild_data: Cache::new(1000),
 		user_settings: Cache::new(1000),
 		track_metadata: DashMap::default(),

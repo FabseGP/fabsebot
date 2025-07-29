@@ -442,26 +442,25 @@ impl VoiceEventHandler for PlaybackHandler {
 	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
 		if let EventContext::Track(track_list) = ctx {
 			for (state, handle) in *track_list {
-				match &state.playing {
-					PlayMode::Play => {
-						if let Some(guild_tracks) = self.bot_data.track_metadata.get(&handle.uuid())
-						{
-							let handler_clone = self.clone();
-							let guild_tracks_clone = guild_tracks.clone();
-							spawn(async move {
-								if let Err(err) =
-									handler_clone.update_info(guild_tracks_clone).await
-								{
-									error!("Failed to update song info: {:?}", &err);
-								}
-							});
+				if state.playing == PlayMode::Play
+					&& let Some(guild_tracks) = self.bot_data.track_metadata.get(&handle.uuid())
+				{
+					let self_clone = self.clone();
+					let guild_tracks_clone = guild_tracks.clone();
+					let uuid_clone = handle.uuid();
+					spawn(async move {
+						if let Err(err) = self_clone.update_info(guild_tracks_clone).await {
+							error!("Failed to update song info: {:?}", &err);
 						}
-					}
-
-					PlayMode::Errored(err) => {
-						error!("Failed to playback song: {:?}", err);
-					}
-					_ => {}
+						if self_clone
+							.bot_data
+							.track_metadata
+							.remove(&uuid_clone)
+							.is_none()
+						{
+							warn!("Track already removed from track_metadata");
+						}
+					});
 				}
 			}
 			return None;
