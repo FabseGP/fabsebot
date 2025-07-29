@@ -610,7 +610,32 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			ctx.data()
 				.guild_data
 				.insert(guild_id, Arc::new(modified_settings));
-			ctx.reply("I've joined the party").await?;
+			ctx.send(
+				CreateReply::default().embed(
+					CreateEmbed::default()
+						.title("I've joined the party!")
+						.description("Commands to use (supports prefix):")
+						.field(
+							"/play_song_global",
+							"Play a new song from a YouTube url or from a search",
+							false,
+						)
+						.field(
+							"/seek_song",
+							"Seek song forward (e.g. +20) or backwards (e.g. -20)",
+							false,
+						)
+						.field(
+							"/text_to_voice",
+							"Make the bot say smth either by providing an input or replying to a \
+							 message",
+							false,
+						)
+						.field("/leave_voice_global", "Make the bot leave the party", false)
+						.colour(COLOUR_YELLOW),
+				),
+			)
+			.await?;
 			handler_lock.lock().await.add_global_event(
 				SongBirdEvent::Track(TrackEvent::Playable),
 				PlaybackHandler::new(ctx.serenity_context().clone(), ctx.data(), guild_id),
