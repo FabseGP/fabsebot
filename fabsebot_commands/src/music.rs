@@ -27,7 +27,11 @@ use songbird::{
 	tracks::{PlayMode, Track},
 };
 use sqlx::query;
-use tokio::{process::Command, spawn, sync::Mutex};
+use tokio::{
+	process::Command,
+	select, spawn,
+	sync::{Mutex, Notify},
+};
 use tracing::{error, warn};
 use uuid::Uuid;
 
@@ -123,6 +127,7 @@ struct PlaybackHandler {
 	serenity_context: SerenityContext,
 	bot_data: Arc<Data>,
 	guild_id: GuildId,
+	notifier: Arc<Notify>,
 }
 
 impl PlaybackHandler {
@@ -130,11 +135,13 @@ impl PlaybackHandler {
 		serenity_context: SerenityContext,
 		bot_data: Arc<Data>,
 		guild_id: GuildId,
+		notifier: Arc<Notify>,
 	) -> Self {
 		Self {
 			serenity_context,
 			bot_data,
 			guild_id,
+			notifier,
 		}
 	}
 
@@ -144,6 +151,7 @@ impl PlaybackHandler {
 			AuxMetadata,
 			DashMap<GuildId, (String, MessageId, GenericChannelId)>,
 		),
+		notifier: Arc<Notify>,
 	) -> AResult<()> {
 		if let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id)
 			&& let Some(guild_data) = guild_tracks.1.clone().get(&self.guild_id)
@@ -234,195 +242,197 @@ impl PlaybackHandler {
 			let mut lyrics_embed: Option<CreateEmbed> = None;
 			let mut history_embed: Option<CreateEmbed> = None;
 
-			while let Some(interaction) = ComponentInteractionCollector::new(&self.serenity_context)
-				.timeout(
-					metadata
-						.duration
-						.unwrap_or(Duration::from_secs(1800))
-						.max(Duration::from_secs(1800)),
-				)
-				.filter(move |interaction| {
-					interaction
-						.data
-						.custom_id
-						.starts_with(message_id_copy.to_string().as_str())
-				})
-				.await
-			{
-				interaction.defer(&self.serenity_context.http).await?;
+			loop {
+				select! {
+					Some(interaction) = ComponentInteractionCollector::new(&self.serenity_context)
+						.timeout(Duration::from_secs(3600))
+						.filter(move |interaction| {
+							interaction
+								.data
+								.custom_id
+								.starts_with(message_id_copy.to_string().as_str())
+						})
+						.next() => {
+							interaction.defer(&self.serenity_context.http).await?;
 
-				let mut msg = interaction.message;
+							let mut msg = interaction.message;
 
-				let handler = get_configured_handler(&handler_lock).await;
-				let queue = handler.queue();
-				if interaction.data.custom_id.ends_with('s') {
-					for guild in &guild_tracks.1 {
-						if guild.key() == &self.guild_id {
-							queue.skip()?;
-						} else if let Some(handler_lock) =
-							self.bot_data.music_manager.get(*guild.key())
-						{
-							get_configured_handler(&handler_lock).await.queue().skip()?;
-						} else {
-							continue;
-						}
-						guild
-							.2
-							.edit_message(
-								&self.serenity_context.http,
-								guild.1,
-								EditMessage::default()
-									.suppress_embeds(true)
-									.content("Skipped to next song")
-									.components(&[]),
-							)
-							.await?;
-					}
-					break;
-				} else if interaction.data.custom_id.ends_with('p') {
-					for guild in &guild_tracks.1 {
-						if guild.key() == &self.guild_id {
-							if let Some(current_track) = queue.current()
-								&& let Ok(track_info) = current_track.get_info().await
-							{
-								match track_info.playing {
-									PlayMode::Pause => {
-										current_track.play()?;
+							let handler = get_configured_handler(&handler_lock).await;
+							let queue = handler.queue();
+							if interaction.data.custom_id.ends_with('s') {
+								for guild in &guild_tracks.1 {
+									if guild.key() == &self.guild_id {
+										queue.skip()?;
+									} else if let Some(handler_lock) =
+										self.bot_data.music_manager.get(*guild.key())
+									{
+										get_configured_handler(&handler_lock).await.queue().skip()?;
+									} else {
+										continue;
 									}
-									PlayMode::Play => {
-										current_track.pause()?;
+									guild
+										.2
+										.edit_message(
+											&self.serenity_context.http,
+											guild.1,
+											EditMessage::default()
+												.suppress_embeds(true)
+												.content("Skipped to next song")
+												.components(&[]),
+										)
+										.await?;
+								}
+								break;
+							} else if interaction.data.custom_id.ends_with('p') {
+								for guild in &guild_tracks.1 {
+									if guild.key() == &self.guild_id {
+										if let Some(current_track) = queue.current()
+											&& let Ok(track_info) = current_track.get_info().await
+										{
+											match track_info.playing {
+												PlayMode::Pause => {
+													current_track.play()?;
+												}
+												PlayMode::Play => {
+													current_track.pause()?;
+												}
+												_ => {}
+											}
+										}
+									} else if let Some(handler_lock) =
+										self.bot_data.music_manager.get(*guild.key())
+										&& let Some(current_track) = get_configured_handler(&handler_lock)
+											.await
+											.queue()
+											.current() && let Ok(track_info) =
+										current_track.get_info().await
+									{
+										match track_info.playing {
+											PlayMode::Pause => {
+												current_track.play()?;
+											}
+											PlayMode::Play => {
+												current_track.pause()?;
+											}
+											_ => {}
+										}
 									}
-									_ => {}
+								}
+							} else if interaction.data.custom_id.ends_with('c') {
+								for guild in &guild_tracks.1 {
+									if guild.key() == &self.guild_id {
+										queue.stop();
+									} else if let Some(handler_lock) =
+										self.bot_data.music_manager.get(*guild.key())
+									{
+										get_configured_handler(&handler_lock).await.queue().stop();
+									} else {
+										continue;
+									}
+									guild
+										.2
+										.edit_message(
+											&self.serenity_context.http,
+											guild.1,
+											EditMessage::default()
+												.suppress_embeds(true)
+												.content("Nothing to play")
+												.components(&[]),
+										)
+										.await?;
+								}
+								break;
+							} else if interaction.data.custom_id.ends_with('u') && queue.len() > 1 {
+								buttons_row1[0] = CreateButton::new(format!("{}_s", guild_data.1))
+									.style(ButtonStyle::Primary)
+									.label("Skip");
+								let action_rows = [
+									CreateComponent::ActionRow(CreateActionRow::buttons(&buttons_row1)),
+									CreateComponent::ActionRow(CreateActionRow::buttons(&buttons_row2)),
+								];
+								msg.edit(
+									self.serenity_context.http.clone(),
+									EditMessage::default().components(&action_rows),
+								)
+								.await?;
+							} else if interaction.data.custom_id.ends_with('l') {
+								if lyrics_shown {
+									lyrics_shown = false;
+									msg.edit(
+										self.serenity_context.http.clone(),
+										EditMessage::default().embed(e.clone()),
+									)
+									.await?;
+								} else {
+									lyrics_shown = true;
+									history_shown = false;
+									let new_embed = if let Some(embed) = &lyrics_embed {
+										embed.clone()
+									} else if let Some(artist_name) = &metadata.artist
+										&& let Some(track_name) = &metadata.title
+										&& let Some(lyrics) = get_lyrics(artist_name, track_name).await
+									{
+										let embed = CreateEmbed::default()
+											.title("Lyrics")
+											.description(lyrics)
+											.colour(COLOUR_BLUE);
+										lyrics_embed = Some(embed.clone());
+										embed
+									} else {
+										let embed = CreateEmbed::default()
+											.title("Lyrics")
+											.description("Not found :(")
+											.colour(COLOUR_BLUE);
+										lyrics_embed = Some(embed.clone());
+										embed
+									};
+									msg.edit(
+										self.serenity_context.http.clone(),
+										EditMessage::default().add_embed(new_embed),
+									)
+									.await?;
+								}
+							} else if interaction.data.custom_id.ends_with('h') {
+								if history_shown {
+									history_shown = false;
+									msg.edit(
+										self.serenity_context.http.clone(),
+										EditMessage::default().embed(e.clone()),
+									)
+									.await?;
+								} else {
+									history_shown = true;
+									lyrics_shown = false;
+									let new_embed = if let Some(embed) = &history_embed {
+										embed.clone()
+									} else {
+										let mut embed = CreateEmbed::default()
+											.title("Song history")
+											.description("Current session")
+											.colour(COLOUR_GREEN);
+										for track in &self.bot_data.track_metadata {
+											if let Some(guild_track) = track.1.get(&self.guild_id) {
+												embed = embed.field(
+													track.0.title.clone().unwrap_or_default(),
+													format!("Added by {}", guild_track.0),
+													false,
+												);
+											}
+										}
+										history_embed = Some(embed.clone());
+										embed
+									};
+									msg.edit(
+										self.serenity_context.http.clone(),
+										EditMessage::default().add_embed(new_embed),
+									)
+									.await?;
 								}
 							}
-						} else if let Some(handler_lock) =
-							self.bot_data.music_manager.get(*guild.key())
-							&& let Some(current_track) = get_configured_handler(&handler_lock)
-								.await
-								.queue()
-								.current() && let Ok(track_info) = current_track.get_info().await
-						{
-							match track_info.playing {
-								PlayMode::Pause => {
-									current_track.play()?;
-								}
-								PlayMode::Play => {
-									current_track.pause()?;
-								}
-								_ => {}
-							}
-						}
-					}
-				} else if interaction.data.custom_id.ends_with('c') {
-					for guild in &guild_tracks.1 {
-						if guild.key() == &self.guild_id {
-							queue.stop();
-						} else if let Some(handler_lock) =
-							self.bot_data.music_manager.get(*guild.key())
-						{
-							get_configured_handler(&handler_lock).await.queue().stop();
-						} else {
-							continue;
-						}
-						guild
-							.2
-							.edit_message(
-								&self.serenity_context.http,
-								guild.1,
-								EditMessage::default()
-									.suppress_embeds(true)
-									.content("Nothing to play")
-									.components(&[]),
-							)
-							.await?;
-					}
-					break;
-				} else if interaction.data.custom_id.ends_with('u') && queue.len() > 1 {
-					buttons_row1[0] = CreateButton::new(format!("{}_s", guild_data.1))
-						.style(ButtonStyle::Primary)
-						.label("Skip");
-					let action_rows = [
-						CreateComponent::ActionRow(CreateActionRow::buttons(&buttons_row1)),
-						CreateComponent::ActionRow(CreateActionRow::buttons(&buttons_row2)),
-					];
-					msg.edit(
-						self.serenity_context.http.clone(),
-						EditMessage::default().components(&action_rows),
-					)
-					.await?;
-				} else if interaction.data.custom_id.ends_with('l') {
-					if lyrics_shown {
-						lyrics_shown = false;
-						msg.edit(
-							self.serenity_context.http.clone(),
-							EditMessage::default().embed(e.clone()),
-						)
-						.await?;
-					} else {
-						lyrics_shown = true;
-						history_shown = false;
-						let new_embed = if let Some(embed) = &lyrics_embed {
-							embed.clone()
-						} else if let Some(artist_name) = &metadata.artist
-							&& let Some(track_name) = &metadata.title
-							&& let Some(lyrics) = get_lyrics(artist_name, track_name).await
-						{
-							let embed = CreateEmbed::default()
-								.title("Lyrics")
-								.description(lyrics)
-								.colour(COLOUR_BLUE);
-							lyrics_embed = Some(embed.clone());
-							embed
-						} else {
-							let embed = CreateEmbed::default()
-								.title("Lyrics")
-								.description("Not found :(")
-								.colour(COLOUR_BLUE);
-							lyrics_embed = Some(embed.clone());
-							embed
-						};
-						msg.edit(
-							self.serenity_context.http.clone(),
-							EditMessage::default().add_embed(new_embed),
-						)
-						.await?;
-					}
-				} else if interaction.data.custom_id.ends_with('h') {
-					if history_shown {
-						history_shown = false;
-						msg.edit(
-							self.serenity_context.http.clone(),
-							EditMessage::default().embed(e.clone()),
-						)
-						.await?;
-					} else {
-						history_shown = true;
-						lyrics_shown = false;
-						let new_embed = if let Some(embed) = &history_embed {
-							embed.clone()
-						} else {
-							let mut embed = CreateEmbed::default()
-								.title("Song history")
-								.description("Current session")
-								.colour(COLOUR_GREEN);
-							for track in &self.bot_data.track_metadata {
-								if let Some(guild_track) = track.1.get(&self.guild_id) {
-									embed = embed.field(
-										track.0.title.clone().unwrap_or_default(),
-										format!("Added by {}", guild_track.0),
-										false,
-									);
-								}
-							}
-							history_embed = Some(embed.clone());
-							embed
-						};
-						msg.edit(
-							self.serenity_context.http.clone(),
-							EditMessage::default().add_embed(new_embed),
-						)
-						.await?;
-					}
+						},
+					() = notifier.notified() => {
+						break;
+					},
 				}
 			}
 			guild_data
@@ -452,11 +462,17 @@ impl VoiceEventHandler for PlaybackHandler {
 				{
 					let self_clone = self.clone();
 					let guild_tracks_clone = guild_tracks.clone();
+					let notifier_clone = self.notifier.clone();
 					spawn(async move {
-						if let Err(err) = self_clone.update_info(guild_tracks_clone).await {
+						if let Err(err) = self_clone
+							.update_info(guild_tracks_clone, notifier_clone)
+							.await
+						{
 							error!("Failed to update song info: {:?}", &err);
 						}
 					});
+				} else if state.playing == PlayMode::End {
+					self.notifier.notify_one();
 				}
 			}
 			return None;
@@ -760,9 +776,24 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.await?;
 			let mut handler = handler_lock.lock().await;
+			let track_notify = Arc::new(Notify::new());
 			handler.add_global_event(
 				SongBirdEvent::Track(TrackEvent::Playable),
-				PlaybackHandler::new(ctx.serenity_context().clone(), ctx.data(), guild_id),
+				PlaybackHandler::new(
+					ctx.serenity_context().clone(),
+					ctx.data(),
+					guild_id,
+					track_notify.clone(),
+				),
+			);
+			handler.add_global_event(
+				SongBirdEvent::Track(TrackEvent::End),
+				PlaybackHandler::new(
+					ctx.serenity_context().clone(),
+					ctx.data(),
+					guild_id,
+					track_notify,
+				),
 			);
 			handler.add_global_event(
 				SongBirdEvent::Core(CoreEvent::DriverDisconnect),
@@ -835,9 +866,24 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.await?;
 			let mut handler = handler_lock.lock().await;
+			let track_notify = Arc::new(Notify::new());
 			handler.add_global_event(
 				SongBirdEvent::Track(TrackEvent::Playable),
-				PlaybackHandler::new(ctx.serenity_context().clone(), ctx.data(), guild_id),
+				PlaybackHandler::new(
+					ctx.serenity_context().clone(),
+					ctx.data(),
+					guild_id,
+					track_notify.clone(),
+				),
+			);
+			handler.add_global_event(
+				SongBirdEvent::Track(TrackEvent::End),
+				PlaybackHandler::new(
+					ctx.serenity_context().clone(),
+					ctx.data(),
+					guild_id,
+					track_notify,
+				),
 			);
 			handler.add_global_event(
 				SongBirdEvent::Core(CoreEvent::DriverDisconnect),
