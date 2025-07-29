@@ -192,21 +192,26 @@ impl PlaybackHandler {
 				let queue = handler.queue();
 				if interaction.data.custom_id.ends_with('s') {
 					for guild in guild_tracks.1 {
-						if let Some(handler_lock) = self.bot_data.music_manager.get(guild.0) {
+						if guild.0 == self.guild_id {
+							queue.skip()?;
+						} else if let Some(handler_lock) = self.bot_data.music_manager.get(guild.0)
+						{
 							get_configured_handler(&handler_lock).await.queue().skip()?;
-							guild
-								.1
-								.2
-								.edit_message(
-									&self.serenity_context.http,
-									guild.1.1,
-									EditMessage::default()
-										.suppress_embeds(true)
-										.content("Skipped to next song")
-										.components(&[]),
-								)
-								.await?;
+						} else {
+							continue;
 						}
+						guild
+							.1
+							.2
+							.edit_message(
+								&self.serenity_context.http,
+								guild.1.1,
+								EditMessage::default()
+									.suppress_embeds(true)
+									.content("Skipped to next song")
+									.components(&[]),
+							)
+							.await?;
 					}
 					break;
 				} else if interaction.data.custom_id.ends_with('p')
