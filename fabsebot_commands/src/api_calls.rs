@@ -347,7 +347,7 @@ pub async fn anime(
 					.await?;
 
 				let ctx_id_copy = ctx.id();
-				while let Some(interaction) =
+				let mut collector_stream =
 					ComponentInteractionCollector::new(ctx.serenity_context())
 						.timeout(Duration::from_secs(60))
 						.filter(move |interaction| {
@@ -356,8 +356,9 @@ pub async fn anime(
 								.custom_id
 								.starts_with(ctx_id_copy.to_string().as_str())
 						})
-						.await
-				{
+						.stream();
+
+				while let Some(interaction) = collector_stream.next().await {
 					interaction
 						.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 						.await?;
@@ -651,7 +652,7 @@ pub async fn gif(
 			.await?;
 
 		let ctx_id_copy = ctx.id();
-		while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
+		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 			.timeout(Duration::from_secs(60))
 			.filter(move |interaction| {
 				interaction
@@ -659,8 +660,9 @@ pub async fn gif(
 					.custom_id
 					.starts_with(ctx_id_copy.to_string().as_str())
 			})
-			.await
-		{
+			.stream();
+
+		while let Some(interaction) = collector_stream.next().await {
 			interaction
 				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 				.await?;
@@ -856,7 +858,8 @@ pub async fn manga(
 					.await?;
 
 				let ctx_id_copy = ctx.id();
-				while let Some(interaction) =
+
+				let mut collector_stream =
 					ComponentInteractionCollector::new(ctx.serenity_context())
 						.timeout(Duration::from_secs(60))
 						.filter(move |interaction| {
@@ -865,8 +868,9 @@ pub async fn manga(
 								.custom_id
 								.starts_with(ctx_id_copy.to_string().as_str())
 						})
-						.await
-				{
+						.stream();
+
+				while let Some(interaction) = collector_stream.next().await {
 					interaction
 						.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 						.await?;
@@ -1250,7 +1254,8 @@ pub async fn translate(
 					.await?;
 
 				let ctx_id_copy = ctx.id();
-				while let Some(interaction) =
+
+				let mut collector_stream =
 					ComponentInteractionCollector::new(ctx.serenity_context())
 						.timeout(Duration::from_secs(60))
 						.filter(move |interaction| {
@@ -1259,8 +1264,9 @@ pub async fn translate(
 								.custom_id
 								.starts_with(ctx_id_copy.to_string().as_str())
 						})
-						.await
-				{
+						.stream();
+
+				while let Some(interaction) = collector_stream.next().await {
 					interaction
 						.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 						.await?;
@@ -1450,16 +1456,18 @@ pub async fn urban(
 				.await?;
 
 			let ctx_id_copy = ctx.id();
-			while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
-				.timeout(Duration::from_secs(60))
+
+			let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
+				.timeout(Duration::from_secs(300))
 				.filter(move |interaction| {
 					interaction
 						.data
 						.custom_id
 						.starts_with(ctx_id_copy.to_string().as_str())
 				})
-				.await
-			{
+				.stream();
+
+			while let Some(interaction) = collector_stream.next().await {
 				interaction
 					.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 					.await?;

@@ -917,6 +917,7 @@ dependencies = [
  "fabsebot_core",
  "fabsebot_db",
  "metrics-exporter-prometheus",
+ "mimalloc",
  "serde",
  "tokio",
  "tokio-metrics",
@@ -1802,6 +1803,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf88cd67e9de251c1781dbe2f641a1a3ad66eaae831b8a2c38fbdc5ddae16d4d"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "litemap"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1973,6 +1984,15 @@ dependencies = [
  "rand 0.9.1",
  "rand_xoshiro",
  "sketches-ddsketch",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1791cbe101e95af5764f06f20f6760521f7158f69dbf9d6baf941ee1bf6bc40"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -2438,7 +2458,7 @@ dependencies = [
 [[package]]
 name = "poise"
 version = "0.6.1"
-source = "git+https://github.com/FabseGP/poise-fork?branch=components-v2#4efaae49ae23059a9c6f3c056f480a6fdbb5ad10"
+source = "git+https://github.com/FabseGP/poise-fork.git?branch=components-v2#4efaae49ae23059a9c6f3c056f480a6fdbb5ad10"
 dependencies = [
  "async-trait",
  "derivative",
@@ -2456,7 +2476,7 @@ dependencies = [
 [[package]]
 name = "poise_macros"
 version = "0.6.1"
-source = "git+https://github.com/FabseGP/poise-fork?branch=components-v2#4efaae49ae23059a9c6f3c056f480a6fdbb5ad10"
+source = "git+https://github.com/FabseGP/poise-fork.git?branch=components-v2#4efaae49ae23059a9c6f3c056f480a6fdbb5ad10"
 dependencies = [
  "darling 0.20.11",
  "proc-macro2",
@@ -3306,7 +3326,7 @@ dependencies = [
 [[package]]
 name = "serenity"
 version = "0.12.4"
-source = "git+https://github.com/serenity-rs/serenity?branch=next#e6b1758cff7bebdc7eab6af57ff8d97d3445277e"
+source = "git+https://github.com/serenity-rs/serenity.git?branch=next#e6b1758cff7bebdc7eab6af57ff8d97d3445277e"
 dependencies = [
  "aformat",
  "arrayvec",
@@ -3512,7 +3532,7 @@ dependencies = [
 [[package]]
 name = "songbird"
 version = "0.5.0"
-source = "git+https://github.com/serenity-rs/songbird?branch=serenity-next#874160875559d47743a1579f8c9dce2efa83dc25"
+source = "git+https://github.com/serenity-rs/songbird.git?branch=serenity-next#874160875559d47743a1579f8c9dce2efa83dc25"
 dependencies = [
  "aead",
  "aes-gcm",
@@ -3571,7 +3591,7 @@ dependencies = [
 [[package]]
 name = "sqlx"
 version = "0.9.0-alpha.1"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
+source = "git+https://github.com/launchbadge/sqlx.git?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -3581,7 +3601,7 @@ dependencies = [
 [[package]]
 name = "sqlx-core"
 version = "0.9.0-alpha.1"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
+source = "git+https://github.com/launchbadge/sqlx.git?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
 dependencies = [
  "base64",
  "bytes",
@@ -3613,7 +3633,7 @@ dependencies = [
 [[package]]
 name = "sqlx-macros"
 version = "0.9.0-alpha.1"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
+source = "git+https://github.com/launchbadge/sqlx.git?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3625,7 +3645,7 @@ dependencies = [
 [[package]]
 name = "sqlx-macros-core"
 version = "0.9.0-alpha.1"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
+source = "git+https://github.com/launchbadge/sqlx.git?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
 dependencies = [
  "dotenvy",
  "either",
@@ -3646,7 +3666,7 @@ dependencies = [
 [[package]]
 name = "sqlx-postgres"
 version = "0.9.0-alpha.1"
-source = "git+https://github.com/launchbadge/sqlx?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
+source = "git+https://github.com/launchbadge/sqlx.git?branch=main#24317d5eab40fbc33caf1142946e2f39caad73ea"
 dependencies = [
  "atoi",
  "base64",

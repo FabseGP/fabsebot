@@ -11,9 +11,13 @@ use fabsebot_core::{
 };
 use fabsebot_db::{PostgresConfig, PostgresConn};
 use metrics_exporter_prometheus::PrometheusBuilder;
+use mimalloc::MiMalloc;
 use toml::{Table, Value};
 use tracing::{Level, subscriber::set_global_default};
 use tracing_subscriber::{filter::LevelFilter, fmt};
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 fn setup_tracing(log_level_str: &str) -> AResult<()> {
 	let log_level = match log_level_str {

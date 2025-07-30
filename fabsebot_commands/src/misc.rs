@@ -25,6 +25,7 @@ use serenity::{
 		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, Member,
 		Message, MessageId, OnlineStatus, ShardRunnerMessage, UserId,
 	},
+	futures::StreamExt as _,
 	nonmax::NonMaxU16,
 };
 use sqlx::query;
@@ -86,7 +87,7 @@ pub async fn anony_poll(
 	let mut vote_counts = vec![0; options_count];
 	let voted_users = DashSet::new();
 
-	while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
+	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 		.timeout(Duration::from_secs(duration.saturating_mul(60)))
 		.filter(move |interaction| {
 			interaction
@@ -94,8 +95,9 @@ pub async fn anony_poll(
 				.custom_id
 				.starts_with(ctx_id_copy.to_string().as_str())
 		})
-		.await
-	{
+		.stream();
+
+	while let Some(interaction) = collector_stream.next().await {
 		interaction
 			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 			.await?;
@@ -996,11 +998,11 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		.min_values(1)
 		.max_values(1);
 
-		let mut theme_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(3);
-
-		theme_select.push(CreateSelectMenuOption::new("rainbow", "rainbow"));
-		theme_select.push(CreateSelectMenuOption::new("dark", "dark"));
-		theme_select.push(CreateSelectMenuOption::new("light", "light"));
+		let theme_select: Vec<CreateSelectMenuOption> = vec![
+			CreateSelectMenuOption::new("rainbow", "rainbow"),
+			CreateSelectMenuOption::new("dark", "dark"),
+			CreateSelectMenuOption::new("light", "light"),
+		];
 
 		let theme_menu = CreateSelectMenu::new(
 			format!("{}_theme_option", ctx.id()),
@@ -1048,7 +1050,8 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		}
 		let ctx_id_copy = ctx.id();
 		let mut final_attachment = attachment.clone();
-		while let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
+
+		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 			.timeout(Duration::from_secs(60))
 			.filter(move |interaction| {
 				interaction
@@ -1056,8 +1059,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 					.custom_id
 					.starts_with(ctx_id_copy.to_string().as_str())
 			})
-			.await
-		{
+			.stream();
+
+		while let Some(interaction) = collector_stream.next().await {
 			interaction
 				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 				.await?;

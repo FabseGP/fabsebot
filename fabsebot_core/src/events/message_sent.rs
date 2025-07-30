@@ -401,22 +401,18 @@ async fn global_chat_channel(
 				let guild_global_chats: Vec<_> = data
 					.guild_data
 					.iter()
-					.filter(|entry| {
+					.filter_map(|entry| {
 						let settings = &entry.value().settings;
-						entry.key() != &guild_id
+						if entry.key() != &guild_id
 							&& settings.global_chat_channel.is_some()
 							&& settings.global_chat
-					})
-					.filter_map(|entry| {
-						u64::try_from(entry.value().settings.guild_id).map_or(
-							None,
-							|guild_id_u64| {
-								Some((
-									GuildId::new(guild_id_u64),
-									entry.value().settings.global_chat_channel,
-								))
-							},
-						)
+						{
+							u64::try_from(settings.guild_id).ok().map(|guild_id_u64| {
+								(GuildId::new(guild_id_u64), settings.global_chat_channel)
+							})
+						} else {
+							None
+						}
 					})
 					.collect();
 				{

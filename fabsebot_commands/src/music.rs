@@ -15,10 +15,14 @@ use fabsebot_core::{
 };
 use poise::{CreateReply, async_trait};
 use serde::Deserialize;
-use serenity::all::{
-	ButtonStyle, ComponentInteraction, ComponentInteractionCollector, Context as SerenityContext,
-	CreateActionRow, CreateButton, CreateComponent, CreateEmbed, CreateMessage, EditMessage,
-	EmbedMessageBuilding as _, GenericChannelId, GuildId, MessageBuilder, MessageId, UserId,
+use serenity::{
+	all::{
+		ButtonStyle, ComponentInteraction, ComponentInteractionCollector,
+		Context as SerenityContext, CreateActionRow, CreateButton, CreateComponent, CreateEmbed,
+		CreateMessage, EditMessage, EmbedMessageBuilding as _, GenericChannelId, GuildId,
+		MessageBuilder, MessageId, UserId,
+	},
+	futures::StreamExt as _,
 };
 use songbird::{
 	Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
@@ -418,17 +422,19 @@ impl PlaybackHandler {
 			let mut lyrics_embed: Option<CreateEmbed> = None;
 			let mut history_embed: Option<CreateEmbed> = None;
 
+			let mut collector_stream = ComponentInteractionCollector::new(&self.serenity_context)
+				.timeout(Duration::from_secs(3600))
+				.filter(move |interaction| {
+					interaction
+						.data
+						.custom_id
+						.starts_with(message_id_copy.to_string().as_str())
+				})
+				.stream();
+
 			loop {
 				select! {
-					Some(interaction) = ComponentInteractionCollector::new(&self.serenity_context)
-						.timeout(Duration::from_secs(3600))
-						.filter(move |interaction| {
-							interaction
-								.data
-								.custom_id
-								.starts_with(message_id_copy.to_string().as_str())
-					})
-					.next() => {
+					Some(interaction) = collector_stream.next() => {
 						self.handle_interaction(
 							interaction,
 							handler_lock.clone(),
