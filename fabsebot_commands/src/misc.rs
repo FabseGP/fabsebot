@@ -1,11 +1,11 @@
-use std::{process, sync::Arc, time::Duration};
+use std::{fmt::Write as _, process, sync::Arc, time::Duration};
 
 use ab_glyph::FontArc;
 use anyhow::Context as _;
 use dashmap::DashSet;
 use fabsebot_core::{
 	config::{
-		constants::{COLOUR_RED, FONTS},
+		constants::{COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, FONTS},
 		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
 	},
 	utils::{
@@ -18,11 +18,12 @@ use poise::{CreateReply, builtins::register_globally};
 use rayon::spawn;
 use serenity::{
 	all::{
-		ActivityData, ButtonStyle, ComponentInteractionCollector, ComponentInteractionDataKind,
-		CreateActionRow, CreateAllowedMentions, CreateAttachment, CreateButton, CreateComponent,
-		CreateEmbed, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
-		CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId,
-		GuildChannel, Member, Message, MessageId, OnlineStatus, ShardRunnerMessage, UserId,
+		ActivityData, AutocompleteChoice, ButtonStyle, ComponentInteractionCollector,
+		ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
+		CreateAutocompleteResponse, CreateButton, CreateComponent, CreateEmbed, CreateEmbedFooter,
+		CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
+		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, Member,
+		Message, MessageId, OnlineStatus, ShardRunnerMessage, UserId,
 	},
 	nonmax::NonMaxU16,
 };
@@ -515,13 +516,87 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 
+#[expect(clippy::unused_async)]
+async fn autocomplete_command<'a>(
+	ctx: SContext<'_>,
+	partial: &'a str,
+) -> CreateAutocompleteResponse<'a> {
+	let choices: Vec<_> = ctx
+		.framework()
+		.options()
+		.commands
+		.iter()
+		.filter(move |cmd| cmd.name.starts_with(partial))
+		.take(25)
+		.map(|cmd| AutocompleteChoice::from(cmd.name.clone()))
+		.collect();
+	CreateAutocompleteResponse::default().set_choices(choices)
+}
+
 /// When you need some help
 #[poise::command(prefix_command, slash_command)]
 pub async fn help(
 	ctx: SContext<'_>,
-	#[description = "Command to get help with"] command: Option<String>,
+	#[description = "Command to get help with"]
+	#[autocomplete = "autocomplete_command"]
+	command: Option<String>,
 ) -> Result<(), Error> {
-	ctx.say("help").await?;
+	if let Some(cmd_name) = command {
+		if let Some(command) = ctx
+			.framework()
+			.options()
+			.commands
+			.iter()
+			.find(|cmd| cmd.name == cmd_name)
+		{
+			let embed = CreateEmbed::new()
+				.title(format!("Help: {}", command.name))
+				.description(
+					command
+						.description
+						.as_deref()
+						.unwrap_or("No description available"),
+				)
+				.color(COLOUR_YELLOW)
+				.field(
+					"Usage",
+					format!("`{}{}`", ctx.prefix(), command.name),
+					false,
+				);
+
+			ctx.send(CreateReply::default().embed(embed).ephemeral(true))
+				.await?;
+		} else {
+			ctx.say("Rip, you're hallucinating").await?;
+		}
+	} else {
+		let commands: String =
+			ctx.framework()
+				.options()
+				.commands
+				.iter()
+				.fold(String::new(), |mut output, cmd| {
+					let _ = writeln!(
+						output,
+						"`{}` - {}",
+						cmd.name,
+						cmd.description.as_deref().unwrap_or("No description")
+					);
+					output
+				});
+
+		let embed = CreateEmbed::new()
+			.title("Available Commands")
+			.description(commands)
+			.color(COLOUR_BLUE)
+			.footer(CreateEmbedFooter::new(
+				"Use /help <command> for detailed info",
+			));
+
+		ctx.send(CreateReply::default().embed(embed).ephemeral(true))
+			.await?;
+	}
+
 	Ok(())
 }
 
@@ -639,6 +714,7 @@ struct ImageInfo {
 	content_font: FontArc,
 	author_font: FontArc,
 	current_font_name: String,
+	theme: Option<String>,
 	text_layout: Option<TextLayout>,
 }
 
@@ -713,6 +789,7 @@ impl ImageInfo {
 					author_font,
 					content_font,
 					current_font_name,
+					theme: None,
 					text_layout,
 				})
 			}
@@ -760,6 +837,13 @@ impl ImageInfo {
 		Ok(())
 	}
 
+	async fn new_theme(&mut self, theme_name: String) -> Result<(), Error> {
+		self.theme = Some(theme_name);
+		self.image_gen().await?;
+
+		Ok(())
+	}
+
 	async fn image_gen(&mut self) -> Result<(), Error> {
 		let avatar_image = self.avatar_image.clone();
 		let avatar_resized = self.avatar_resized.clone();
@@ -774,6 +858,7 @@ impl ImageInfo {
 		let is_gradient = self.is_gradient;
 		let is_animated = self.is_animated;
 		let new_font = self.new_font;
+		let theme = self.theme.clone();
 
 		let (tx, rx) = oneshot::channel();
 
@@ -786,7 +871,7 @@ impl ImageInfo {
 				&content,
 				&author_font,
 				&content_font,
-				None,
+				theme.as_deref(),
 				text_layout.as_ref(),
 				is_reverse,
 				is_light,
@@ -910,6 +995,23 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		.placeholder("Font")
 		.min_values(1)
 		.max_values(1);
+
+		let mut theme_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(3);
+
+		theme_select.push(CreateSelectMenuOption::new("rainbow", "rainbow"));
+		theme_select.push(CreateSelectMenuOption::new("dark", "dark"));
+		theme_select.push(CreateSelectMenuOption::new("light", "light"));
+
+		let theme_menu = CreateSelectMenu::new(
+			format!("{}_theme_option", ctx.id()),
+			CreateSelectMenuKind::String {
+				options: theme_select.into(),
+			},
+		)
+		.placeholder("Theme")
+		.min_values(1)
+		.max_values(1);
+
 		let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
 			&buttons,
 		))];
@@ -923,6 +1025,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 					.content(&message_url)
 					.components(&action_row)
 					.select_menu(font_menu)
+					.select_menu(theme_menu)
 					.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
 			)
 			.await?;
@@ -959,17 +1062,23 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 				.await?;
 
-			let menu_choice = match &interaction.data.kind {
+			let menu_choice_opt = match &interaction.data.kind {
 				ComponentInteractionDataKind::StringSelect { values } => values.first(),
 				_ => None,
 			};
 
-			if let Some(font_choice) = menu_choice
-				&& let Some(font) = FONTS.iter().find(|font| font.0 == font_choice)
-				&& font.0 != image_handle.current_font_name
-				&& let Ok(new_font) = FontArc::try_from_slice(font.1)
-			{
-				image_handle.new_font(font.0, new_font).await?;
+			if let Some(menu_choice) = menu_choice_opt {
+				if let Some(font) = FONTS.iter().find(|font| font.0 == menu_choice)
+					&& font.0 != image_handle.current_font_name
+					&& let Ok(new_font) = FontArc::try_from_slice(font.1)
+				{
+					image_handle.new_font(font.0, new_font).await?;
+				} else if menu_choice == "rainbow"
+					|| menu_choice == "light"
+					|| menu_choice == "dark"
+				{
+					image_handle.new_theme(menu_choice.to_owned()).await?;
+				}
 			} else if interaction.data.custom_id.ends_with("bw") {
 				image_handle.toggle_bw().await?;
 			} else if interaction.data.custom_id.ends_with("reverse") {

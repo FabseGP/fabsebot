@@ -52,3 +52,4 @@ pub const QUOTE_HEIGHT: u32 = 630;
 
 pub static DARK_BASE_IMAGE: OnceLock<RgbaImage> = OnceLock::new();
 pub static LIGHT_BASE_IMAGE: OnceLock<RgbaImage> = OnceLock::new();
+pub static RAINBOW_BASE_THEME: OnceLock<RgbaImage> = OnceLock::new();

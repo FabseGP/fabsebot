@@ -13,7 +13,9 @@ use image::{
 use imageproc::drawing::{draw_text_mut, text_size};
 use textwrap::wrap;
 
-use crate::config::constants::{DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, QUOTE_HEIGHT, QUOTE_WIDTH};
+use crate::config::constants::{
+	DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, QUOTE_HEIGHT, QUOTE_WIDTH, RAINBOW_BASE_THEME,
+};
 
 const MIN_CONTENT_FONT_SIZE: f32 = 40.0;
 const MAX_CONTENT_FONT_SIZE: f32 = 96.0;
@@ -129,14 +131,51 @@ fn get_base_image(theme: Option<&str>, is_light: bool) -> (RgbaImage, Rgba<u8>) 
 			}
 		},
 		|theme| {
-			(
-				DARK_BASE_IMAGE
-					.get_or_init(|| {
-						RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba([0, 0, 0, 255]))
-					})
-					.clone(),
-				Rgba([255, 255, 255, 255]),
-			)
+			if theme == "rainbow" {
+				(
+					RAINBOW_BASE_THEME
+						.get_or_init(|| {
+							RgbaImage::from_pixel(
+								QUOTE_WIDTH,
+								QUOTE_HEIGHT,
+								Rgba([255, 0, 128, 128]),
+							)
+						})
+						.clone(),
+					Rgba([255, 255, 255, 255]),
+				)
+			} else if theme == "dark" {
+				(
+					DARK_BASE_IMAGE
+						.get_or_init(|| {
+							RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba([0, 0, 0, 255]))
+						})
+						.clone(),
+					Rgba([255, 255, 255, 255]),
+				)
+			} else if theme == "light" {
+				(
+					LIGHT_BASE_IMAGE
+						.get_or_init(|| {
+							RgbaImage::from_pixel(
+								QUOTE_WIDTH,
+								QUOTE_HEIGHT,
+								Rgba([255, 255, 255, 255]),
+							)
+						})
+						.clone(),
+					Rgba([0, 0, 0, 255]),
+				)
+			} else {
+				(
+					DARK_BASE_IMAGE
+						.get_or_init(|| {
+							RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba([0, 0, 0, 255]))
+						})
+						.clone(),
+					Rgba([255, 255, 255, 255]),
+				)
+			}
 		},
 	)
 }

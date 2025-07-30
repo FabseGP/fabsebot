@@ -20,23 +20,16 @@ use crate::{
 	utils::helpers::{discord_message_link, get_configured_songbird_handler},
 };
 
-fn get_model_config(
-	model_name: &str,
-) -> (
-	&'static str,
-	&'static str,
-	&'static str,
-	&'static AIModelDefaults,
-) {
+fn get_model_config(model_name: &str) -> (&'static str, &'static str, &'static AIModelDefaults) {
 	let model_name_lower = model_name.to_lowercase();
 	if model_name_lower.starts_with("gemma") {
-		("<start_of_turn>{}", "<end_of_turn>", "\n", &GEMMA_DEFAULTS)
+		("<start_of_turn>{}", "<end_of_turn>", &GEMMA_DEFAULTS)
 	} else if model_name_lower.starts_with("llama") {
-		("[INST]{}", "[/INST]", "\n", &LLAMA_DEFAULTS)
+		("[INST]{}", "[/INST]", &LLAMA_DEFAULTS)
 	} else if model_name_lower.starts_with("qwen") {
-		("<|im_start|>{}", "<|im_end|>", "\n", &QWEN_DEFAULTS)
+		("<|im_start|>{}", "<|im_end|>", &QWEN_DEFAULTS)
 	} else {
-		("<start_of_turn>{}", "<end_of_turn>", "\n", &GEMMA_DEFAULTS)
+		("<start_of_turn>{}", "<end_of_turn>", &GEMMA_DEFAULTS)
 	}
 }
 
@@ -171,7 +164,7 @@ pub async fn ai_chatbot(
 			}
 		}
 		let mut convo_lock = conversations.lock().await;
-		let (start_tag, end_tag, separator, model_defaults) =
+		let (start_tag, end_tag, model_defaults) =
 			get_model_config(&utils_config.fabseserver.text_gen_model);
 		{
 			let (static_set, known_user, same_bot_role) = (
@@ -390,6 +383,8 @@ pub async fn ai_chatbot(
 				&convo_copy,
 				chatbot_temperature.unwrap_or(model_defaults.temperature),
 				chatbot_top_p.unwrap_or(model_defaults.top_p),
+				chatbot_top_k.unwrap_or(model_defaults.top_k),
+				chatbot_repetition_penalty.unwrap_or(model_defaults.repetition_penalty),
 				chatbot_frequency_penalty.unwrap_or(model_defaults.frequency_penalty),
 				chatbot_presence_penalty.unwrap_or(model_defaults.presence_penalty),
 			)
@@ -544,6 +539,8 @@ struct ChatRequest<'a> {
 	model: &'a str,
 	temperature: f32,
 	top_p: f32,
+	top_k: i32,
+	repetition_penalty: f32,
 	frequency_penalty: f32,
 	presence_penalty: f32,
 }
@@ -552,6 +549,8 @@ pub async fn ai_response(
 	messages: &[AIChatMessage],
 	temperature: f32,
 	top_p: f32,
+	top_k: i32,
+	repetition_penalty: f32,
 	frequency_penalty: f32,
 	presence_penalty: f32,
 ) -> Option<String> {
@@ -561,6 +560,8 @@ pub async fn ai_response(
 		messages,
 		temperature,
 		top_p,
+		top_k,
+		repetition_penalty,
 		frequency_penalty,
 		presence_penalty,
 	};
