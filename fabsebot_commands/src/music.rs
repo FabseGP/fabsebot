@@ -722,8 +722,8 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 					CreateEmbed::default()
 						.title("I've joined the party!")
 						.description(
-							"NEW: Run /set_music_channel and I'll listen to your song requests \
-							 there",
+							"NEW: Set a music channel with /configure_server_settings and I'll \
+							 listen to your song requests there",
 						)
 						.field(
 							"/play_song_global",
@@ -805,7 +805,7 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 					CreateEmbed::default()
 						.title("I've joined the party!")
 						.description(
-							"NEW: Run /set_music_channel and I'll listen to your song requests \
+							"NEW: Set a music channel with /configure_server_settings and I'll \
 							 there",
 						)
 						.field(
