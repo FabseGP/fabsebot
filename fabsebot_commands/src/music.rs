@@ -727,7 +727,7 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 						)
 						.field(
 							"/play_song_global",
-							"Play a new song from a YouTube url or from a search",
+							"Queue a new song from a YouTube url or from a search",
 							false,
 						)
 						.field(
@@ -806,11 +806,11 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 						.title("I've joined the party!")
 						.description(
 							"NEW: Set a music channel with /configure_server_settings and I'll \
-							 there",
+							 listen to your song requests there",
 						)
 						.field(
 							"/play_song",
-							"Play a new song from a YouTube url or from a search",
+							"Queue a new song from a YouTube url or from a search",
 							false,
 						)
 						.field(
