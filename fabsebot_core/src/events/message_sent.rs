@@ -8,7 +8,7 @@ use anyhow::{Context as _, Result as AResult, bail};
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
-	GuildId, Message, MessageId, ReactionType, Timestamp, UserId,
+	GuildId, Message, MessageId, ReactionType, UserId,
 };
 use songbird::{
 	input::{Input, YoutubeDl},
