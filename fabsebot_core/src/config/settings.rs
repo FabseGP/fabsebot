@@ -38,8 +38,9 @@ pub struct APIConfig {
 #[derive(Default, Clone)]
 pub struct GuildSettings {
 	pub guild_id: i64,
-	pub dead_chat_rate: Option<i64>,
 	pub dead_chat_channel: Option<i64>,
+	pub dead_chat_rate: Option<i64>,
+	pub last_dead_chat: Option<i64>,
 	pub quotes_channel: Option<i64>,
 	pub spoiler_channel: Option<i64>,
 	pub prefix: Option<String>,
@@ -49,6 +50,9 @@ pub struct GuildSettings {
 	pub global_music: bool,
 	pub global_call: bool,
 	pub music_channel: Option<i64>,
+	pub waifu_channel: Option<i64>,
+	pub waifu_rate: Option<i64>,
+	pub last_waifu: Option<i64>,
 }
 
 #[derive(Default, Clone)]

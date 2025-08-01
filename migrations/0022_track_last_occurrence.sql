@@ -1,0 +1,3 @@
+ALTER TABLE guild_settings
+ADD last_dead_chat BIGINT NULL DEFAULT NULL,
+ADD last_waifu BIGINT NULL DEFAULT NULL;

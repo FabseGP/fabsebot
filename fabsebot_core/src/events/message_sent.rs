@@ -148,45 +148,6 @@ async fn emoji_reaction(
 	Ok(())
 }
 
-async fn dead_channel(
-	guild_data: Arc<GuildData>,
-	new_message: &Message,
-	ctx: &SContext,
-) -> AResult<()> {
-	if let (Some(dead_channel), Some(dead_chat_rate)) = (
-		guild_data.settings.dead_chat_channel,
-		guild_data.settings.dead_chat_rate,
-	) {
-		if let Ok(dead_channel_u64) = u64::try_from(dead_channel) {
-			let dead_chat_channel = GenericChannelId::new(dead_channel_u64);
-			if let Ok(channel) = dead_chat_channel
-				.to_channel(&ctx.http, new_message.guild_id)
-				.await && let Some(Some(message_id)) =
-				channel.guild().map(|gc| gc.base.last_message_id)
-			{
-				let last_message_time = dead_chat_channel
-					.message(&ctx.http, message_id)
-					.await?
-					.timestamp
-					.timestamp();
-				let current_time = Timestamp::now().timestamp();
-				if current_time.saturating_sub(last_message_time)
-					> dead_chat_rate.saturating_mul(60)
-				{
-					let gifs = get_gifs("dead chat".to_owned()).await;
-					let index = RNG.lock().await.usize(..gifs.len());
-					if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
-						dead_chat_channel.say(&ctx.http, gif).await?;
-					}
-				}
-			}
-		} else {
-			warn!("Failed to convert dead channel id to u64");
-		}
-	}
-	Ok(())
-}
-
 async fn spoiler_channel(
 	ctx: &SContext,
 	new_message: &Message,
@@ -779,7 +740,6 @@ async fn db_queries(
 
 	let guild_data_opt = data.guild_data.get(&guild_id);
 	if let Some(guild_data) = guild_data_opt {
-		dead_channel(guild_data.clone(), new_message, ctx).await?;
 		spoiler_channel(ctx, new_message, data.clone(), guild_data.clone()).await?;
 		music_channel(ctx, new_message, data.clone(), guild_data.clone(), guild_id).await?;
 		ai_chat_channel(ctx, new_message, &data, &guild_data, guild_id);

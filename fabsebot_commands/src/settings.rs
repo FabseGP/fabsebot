@@ -1,11 +1,17 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+	sync::Arc,
+	time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Context as _;
 use base64::{Engine as _, engine::general_purpose};
-use fabsebot_core::config::{
-	constants::COLOUR_RED,
-	settings::{EmojiReactions, GuildSettings, UserSettings, WordReactions, WordTracking},
-	types::{Error, GuildData, HTTP_CLIENT, SContext},
+use fabsebot_core::{
+	config::{
+		constants::COLOUR_RED,
+		settings::{EmojiReactions, GuildSettings, UserSettings, WordReactions, WordTracking},
+		types::{Error, GuildData, HTTP_CLIENT, RNG, SContext},
+	},
+	utils::helpers::{get_gifs, get_waifu},
 };
 use poise::CreateReply;
 use serde::Serialize;
@@ -18,6 +24,7 @@ use serenity::{
 	futures::StreamExt as _,
 };
 use sqlx::query;
+use tracing::warn;
 
 async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(guild_id);
@@ -39,7 +46,8 @@ async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(
                 global_chat = FALSE,
                 global_music = FALSE,
                 global_call = FALSE,
-                music_channel = NULL
+                music_channel = NULL,
+                waifu_channel = NULL
             WHERE guild_id = $1",
 		guild_id_i64
 	)
@@ -81,6 +89,7 @@ async fn configure_channels(
 	spoiler_channel_opt: Option<Channel>,
 	quote_channel_opt: Option<Channel>,
 	chatbot_channel_opt: Option<Channel>,
+	waifu_channel_opt: Option<(Channel, i64)>,
 	dead_chat_gifs_opt: Option<(Channel, i64)>,
 	ctx: SContext<'_>,
 	guild_id: GuildId,
@@ -93,6 +102,17 @@ async fn configure_channels(
 		.as_ref()
 		.clone();
 	let guild_id_i64 = i64::from(guild_id);
+	let system_time = if let Ok(system_time) = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.map(|t| t.as_secs())
+		&& let Ok(now_timestamp_i64) = i64::try_from(system_time)
+	{
+		now_timestamp_i64
+	} else {
+		warn!("Failed to get system time");
+		return Ok(());
+	};
+
 	if let Some(music_channel) = music_channel_opt {
 		let music_channel_id_i64 = i64::from(music_channel.id());
 		set_music_channel(ctx, music_channel, guild_id_i64, music_channel_id_i64).await?;
@@ -103,15 +123,30 @@ async fn configure_channels(
 		set_spoiler_channel(ctx, spoiler_channel, guild_id_i64, spoiler_channel_id_i64).await?;
 		modified_settings.settings.spoiler_channel = Some(spoiler_channel_id_i64);
 	}
-	if let Some(spoiler_channel) = quote_channel_opt {
-		let quote_channel_id_i64 = i64::from(spoiler_channel.id());
-		set_quote_channel(ctx, spoiler_channel, guild_id_i64, quote_channel_id_i64).await?;
+	if let Some(quote_channel) = quote_channel_opt {
+		let quote_channel_id_i64 = i64::from(quote_channel.id());
+		set_quote_channel(ctx, quote_channel, guild_id_i64, quote_channel_id_i64).await?;
 		modified_settings.settings.quotes_channel = Some(quote_channel_id_i64);
 	}
-	if let Some(spoiler_channel) = chatbot_channel_opt {
-		let chatbot_channel_id_i64 = i64::from(spoiler_channel.id());
-		set_chatbot_channel(ctx, spoiler_channel, guild_id_i64, chatbot_channel_id_i64).await?;
+	if let Some(chatbot_channel) = chatbot_channel_opt {
+		let chatbot_channel_id_i64 = i64::from(chatbot_channel.id());
+		set_chatbot_channel(ctx, chatbot_channel, guild_id_i64, chatbot_channel_id_i64).await?;
 		modified_settings.settings.ai_chat_channel = Some(chatbot_channel_id_i64);
+	}
+	if let Some((waifu_channel, waifu_occurrence)) = waifu_channel_opt {
+		let waifu_channel_id_i64 = i64::from(waifu_channel.id());
+		set_waifu_channel(
+			ctx,
+			waifu_channel,
+			guild_id_i64,
+			waifu_channel_id_i64,
+			waifu_occurrence,
+			system_time,
+		)
+		.await?;
+		modified_settings.settings.waifu_channel = Some(waifu_channel_id_i64);
+		modified_settings.settings.waifu_rate = Some(waifu_occurrence);
+		modified_settings.settings.last_waifu = Some(system_time);
 	}
 	if let Some((dead_chat_channel, dead_chat_occurrence)) = dead_chat_gifs_opt {
 		let dead_chat_channel_id_i64 = i64::from(dead_chat_channel.id());
@@ -121,9 +156,12 @@ async fn configure_channels(
 			guild_id_i64,
 			dead_chat_channel_id_i64,
 			dead_chat_occurrence,
+			system_time,
 		)
 		.await?;
-		modified_settings.settings.ai_chat_channel = Some(dead_chat_channel_id_i64);
+		modified_settings.settings.dead_chat_channel = Some(dead_chat_channel_id_i64);
+		modified_settings.settings.dead_chat_rate = Some(dead_chat_occurrence);
+		modified_settings.settings.last_dead_chat = Some(system_time);
 	}
 	ctx.data()
 		.guild_data
@@ -138,6 +176,7 @@ enum SelectionState {
 	SelectingSpoilerChannel,
 	SelectingQuoteChannel,
 	SelectingChatbotChannel,
+	SelectingWaifuChannel,
 	ConfiguringDeadChatGifs,
 }
 
@@ -149,6 +188,7 @@ impl SelectionState {
 			Self::SelectingSpoilerChannel => "spoiler",
 			Self::SelectingQuoteChannel => "quote",
 			Self::SelectingChatbotChannel => "chatbot",
+			Self::SelectingWaifuChannel => "waifu",
 			Self::ConfiguringDeadChatGifs => "dead gifs",
 		}
 		.to_owned()
@@ -161,7 +201,8 @@ impl SelectionState {
 			Self::SelectingSpoilerChannel => "Select a channel to spoiler attachments",
 			Self::SelectingQuoteChannel => "Select a channel to redirect quotes too",
 			Self::SelectingChatbotChannel => "Select a channel to respond to users as a chatbot",
-			Self::ConfiguringDeadChatGifs => "Select a channel to send dead gifs to every hour",
+			Self::SelectingWaifuChannel => "Select a channel to send waifus to every day",
+			Self::ConfiguringDeadChatGifs => "Select a channel to send dead gifs to every day",
 		}
 		.to_owned()
 	}
@@ -181,6 +222,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 			CreateSelectMenuOption::new("Music channel", "mu_chan"),
 			CreateSelectMenuOption::new("Quote channel", "qu_chan"),
 			CreateSelectMenuOption::new("Spoiler channel", "sp_chan"),
+			CreateSelectMenuOption::new("Waifu channel", "wu_chan"),
 			CreateSelectMenuOption::new("Dead chat gifs", "dc_gifs"),
 		];
 
@@ -243,6 +285,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		let mut spoiler_channel_opt = None;
 		let mut quote_channel_opt = None;
 		let mut chatbot_channel_opt = None;
+		let mut waifu_channel_opt = None;
 		let mut dead_chat_gifs_opt = None;
 
 		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
@@ -254,6 +297,8 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 					.starts_with(ctx_id_copy.to_string().as_str())
 			})
 			.stream();
+
+		let mut too_slow = true;
 
 		while let Some(interaction) = collector_stream.next().await {
 			interaction
@@ -275,11 +320,13 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 					spoiler_channel_opt,
 					quote_channel_opt,
 					chatbot_channel_opt,
+					waifu_channel_opt,
 					dead_chat_gifs_opt,
 					ctx,
 					guild_id,
 				)
 				.await?;
+				too_slow = false;
 				break;
 			} else if interaction.data.custom_id.ends_with('d') {
 				message
@@ -291,6 +338,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 							.components(&[]),
 					)
 					.await?;
+				too_slow = false;
 				break;
 			} else if interaction.data.custom_id.ends_with('r') {
 				reset_server_settings(ctx, guild_id).await?;
@@ -303,6 +351,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 							.components(&[]),
 					)
 					.await?;
+				too_slow = false;
 				break;
 			}
 
@@ -319,6 +368,8 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 						SelectionState::SelectingQuoteChannel
 					} else if menu_choice == "ch_chan" {
 						SelectionState::SelectingChatbotChannel
+					} else if menu_choice == "wu_chan" {
+						SelectionState::SelectingWaifuChannel
 					} else if menu_choice == "dc_gifs" {
 						SelectionState::ConfiguringDeadChatGifs
 					} else {
@@ -356,8 +407,11 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 							SelectionState::SelectingChatbotChannel => {
 								chatbot_channel_opt = Some(channel.clone());
 							}
+							SelectionState::SelectingWaifuChannel => {
+								waifu_channel_opt = Some((channel.clone(), 3600 * 24));
+							}
 							SelectionState::ConfiguringDeadChatGifs => {
-								dead_chat_gifs_opt = Some((channel.clone(), 60));
+								dead_chat_gifs_opt = Some((channel.clone(), 3600 * 24));
 							}
 							SelectionState::MainMenu => {
 								continue;
@@ -388,14 +442,16 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 				_ => {}
 			}
 		}
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.content("You were too slow")
-					.components(&[]),
-			)
-			.await?;
+		if too_slow {
+			message
+				.edit(
+					ctx,
+					CreateReply::default()
+						.content("You were too slow")
+						.components(&[]),
+				)
+				.await?;
+		}
 	}
 	Ok(())
 }
@@ -675,44 +731,28 @@ async fn set_dead_chat(
 	guild_id_i64: i64,
 	channel_id_i64: i64,
 	occurrence: i64,
+	system_time: i64,
 ) -> Result<(), Error> {
 	query!(
-		"INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel)
-            VALUES ($1, $2, $3)
+		"INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, last_dead_chat)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT(guild_id)
             DO UPDATE SET
                 dead_chat_rate = $2, 
-                dead_chat_channel = $3",
+                dead_chat_channel = $3,
+                last_dead_chat = $4",
 		guild_id_i64,
 		occurrence,
 		channel_id_i64,
+		system_time
 	)
 	.execute(&mut *ctx.data().db.acquire().await?)
 	.await?;
-	channel
-		.id()
-		.say(
-			ctx.http(),
-			format!(
-				"Dead chat gifs will only be sent every {occurrence} minute(s) in {channel}... \
-				 probably",
-			),
-		)
-		.await?;
-	/*
-		let mut modified_settings = ctx
-			.data()
-			.guild_data
-			.get(&guild_id)
-			.get_or_insert_default()
-			.as_ref()
-			.clone();
-		modified_settings.settings.dead_chat_channel = Some(channel_id_i64);
-		modified_settings.settings.dead_chat_rate = Some(occurrence);
-		ctx.data()
-			.guild_data
-			.insert(guild_id, Arc::new(modified_settings));
-	*/
+	let gifs = get_gifs("dead chat".to_owned()).await;
+	let index = RNG.lock().await.usize(..gifs.len());
+	if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
+		channel.id().say(ctx.http(), gif).await?;
+	}
 	Ok(())
 }
 
@@ -1098,6 +1138,33 @@ pub async fn set_user_ping(
 			.await?;
 		}
 	}
+	Ok(())
+}
+
+async fn set_waifu_channel(
+	ctx: SContext<'_>,
+	channel: Channel,
+	guild_id_i64: i64,
+	channel_id_i64: i64,
+	occurrence: i64,
+	system_time: i64,
+) -> Result<(), Error> {
+	query!(
+		"INSERT INTO guild_settings (guild_id, waifu_channel, waifu_rate, last_waifu)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                waifu_channel = $2,
+                waifu_rate = $3,
+                last_waifu = $4",
+		guild_id_i64,
+		channel_id_i64,
+		occurrence,
+		system_time
+	)
+	.execute(&mut *ctx.data().db.acquire().await?)
+	.await?;
+	channel.id().say(ctx.http(), get_waifu().await).await?;
 	Ok(())
 }
 
