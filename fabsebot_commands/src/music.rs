@@ -957,6 +957,7 @@ pub async fn play_song(
 		} else {
 			YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
 		};
+		//		.user_args(vec!["--cookies /root/cookies.txt".to_string()]);
 		let mut input = Input::from(src.clone());
 		if let Ok(metadata) = input.aux_metadata().await {
 			let uuid = Uuid::new_v4();

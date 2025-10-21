@@ -36,26 +36,6 @@ pub struct APIConfig {
 }
 
 #[derive(Default, Clone)]
-pub struct GuildSettings {
-	pub guild_id: i64,
-	pub dead_chat_channel: Option<i64>,
-	pub dead_chat_rate: Option<i64>,
-	pub last_dead_chat: Option<i64>,
-	pub quotes_channel: Option<i64>,
-	pub spoiler_channel: Option<i64>,
-	pub prefix: Option<String>,
-	pub ai_chat_channel: Option<i64>,
-	pub global_chat_channel: Option<i64>,
-	pub global_chat: bool,
-	pub global_music: bool,
-	pub global_call: bool,
-	pub music_channel: Option<i64>,
-	pub waifu_channel: Option<i64>,
-	pub waifu_rate: Option<i64>,
-	pub last_waifu: Option<i64>,
-}
-
-#[derive(Default, Clone)]
 pub struct UserSettings {
 	pub guild_id: i64,
 	pub user_id: i64,
@@ -73,27 +53,4 @@ pub struct UserSettings {
 	pub pinged_links: Option<String>,
 	pub ping_content: Option<String>,
 	pub ping_media: Option<String>,
-}
-
-#[derive(Default, Eq, Hash, PartialEq, Clone)]
-pub struct WordReactions {
-	pub guild_id: i64,
-	pub word: String,
-	pub content: String,
-	pub media: Option<String>,
-}
-
-#[derive(Default, Eq, Hash, PartialEq, Clone)]
-pub struct WordTracking {
-	pub guild_id: i64,
-	pub word: String,
-	pub count: i64,
-}
-
-#[derive(Default, Eq, Hash, PartialEq, Clone)]
-pub struct EmojiReactions {
-	pub guild_id: i64,
-	pub emoji_id: i64,
-	pub content_reaction: String,
-	pub guild_emoji: bool,
 }

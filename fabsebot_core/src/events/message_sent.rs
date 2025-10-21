@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult, bail};
+use fabsebot_db::guild::{GuildData, WordTracking};
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
@@ -27,8 +28,7 @@ use crate::{
 			FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FLOPPAGANDA_GIF,
 			VILBOT_NAME, VILBOT_PFP,
 		},
-		settings::WordTracking,
-		types::{Data, GuildData, HTTP_CLIENT, RNG, UTILS_CONFIG},
+		types::{Data, HTTP_CLIENT, RNG, UTILS_CONFIG},
 	},
 	utils::{
 		ai::ai_chatbot,

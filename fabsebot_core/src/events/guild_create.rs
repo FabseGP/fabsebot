@@ -1,13 +1,11 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Result as AResult;
+use fabsebot_db::guild::{GuildData, GuildSettings};
 use serenity::all::Guild;
 use sqlx::query;
 
-use crate::config::{
-	settings::GuildSettings,
-	types::{Data, GuildData},
-};
+use crate::config::types::Data;
 
 pub async fn handle_guild_create(
 	data: Arc<Data>,
@@ -35,9 +33,7 @@ pub async fn handle_guild_create(
 			guild.id,
 			Arc::new(GuildData {
 				settings: default_settings,
-				word_reactions: HashSet::new(),
-				word_tracking: HashSet::new(),
-				emoji_reactions: HashSet::new(),
+				..Default::default()
 			}),
 		);
 	}

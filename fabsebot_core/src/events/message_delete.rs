@@ -24,6 +24,7 @@ pub async fn handle_message_delete(
 				None,
 				None,
 				None,
+				None,
 			)
 			.await?;
 		let deleted_content = ctx

@@ -1182,7 +1182,7 @@ pub async fn translate(
 	ctx: SContext<'_>,
 	#[description = "Language to be translated to, e.g. en"] target: Option<String>,
 	#[description = "What should be translated"]
-	#[rest]
+	//	#[rest]
 	sentence: Option<String>,
 ) -> Result<(), Error> {
 	ctx.defer().await?;

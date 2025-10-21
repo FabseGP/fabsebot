@@ -266,13 +266,13 @@ pub async fn bot_start(
 				.avatar(
 					CreateAttachment::url(&client.http, &utils_config.bot.avatar, "bot_avatar.gif")
 						.await?
-						.encode()
+						.encode("image/gif")
 						.await?,
 				)
 				.banner(
 					CreateAttachment::url(&client.http, &utils_config.bot.banner, "bot_banner.gif")
 						.await?
-						.encode()
+						.encode("image/gif")
 						.await?,
 				)
 				.username(&utils_config.bot.username),

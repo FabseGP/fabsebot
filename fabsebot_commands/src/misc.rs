@@ -959,7 +959,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.await?
 		};
-		let message_url = reply.link();
+		let message_url = reply.link().to_string();
 		let attachment = CreateAttachment::bytes(
 			image_handle.current.clone(),
 			if image_handle.is_animated {
@@ -1041,7 +1041,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 						ctx.http(),
 						CreateMessage::default()
 							.add_file(attachment.clone())
-							.content(&message_url),
+							.content(message_url),
 					)
 					.await?;
 			} else {
@@ -1158,9 +1158,9 @@ pub async fn respond(
 pub async fn slow_mode(
 	ctx: SContext<'_>,
 	#[description = "Channel to rate limit"] mut channel: GuildChannel,
-	#[description = "Duration of rate limit in seconds"] duration: NonMaxU16,
+	#[description = "Duration of rate limit in seconds"] duration: u8,
 ) -> Result<(), Error> {
-	let settings = EditChannel::default().rate_limit_per_user(duration);
+	let settings = EditChannel::default().rate_limit_per_user(NonMaxU16::from(duration));
 	channel.edit(ctx.http(), settings).await?;
 	ctx.send(
 		CreateReply::default()

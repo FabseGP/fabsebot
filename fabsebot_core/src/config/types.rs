@@ -1,10 +1,11 @@
 use std::{
-	collections::{HashMap, HashSet},
+	collections::HashMap,
 	sync::{Arc, LazyLock, OnceLock},
 };
 
 use anyhow::Error as AError;
 use dashmap::DashMap;
+use fabsebot_db::guild::GuildData;
 use fastrand::Rng;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
@@ -17,10 +18,7 @@ use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::config::settings::{
-	APIConfig, BotConfig, EmojiReactions, GuildSettings, ServerConfig, UserSettings, WordReactions,
-	WordTracking,
-};
+use crate::config::settings::{APIConfig, BotConfig, ServerConfig, UserSettings};
 
 pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
 type GlobalChatMap = Cache<GuildId, Arc<HashMap<GuildId, MessageId>>>;
@@ -105,14 +103,6 @@ impl AIChatMessage {
 	pub const fn model(content: String) -> Self {
 		Self::new(Role::Model, content)
 	}
-}
-
-#[derive(Clone, Default)]
-pub struct GuildData {
-	pub settings: GuildSettings,
-	pub word_reactions: HashSet<WordReactions>,
-	pub word_tracking: HashSet<WordTracking>,
-	pub emoji_reactions: HashSet<EmojiReactions>,
 }
 
 pub struct Data {

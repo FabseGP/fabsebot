@@ -8,11 +8,12 @@ use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
 		constants::COLOUR_RED,
-		settings::{EmojiReactions, GuildSettings, UserSettings, WordReactions, WordTracking},
-		types::{Error, GuildData, HTTP_CLIENT, RNG, SContext},
+		settings::UserSettings,
+		types::{Error, HTTP_CLIENT, RNG, SContext},
 	},
 	utils::helpers::{get_gifs, get_waifu},
 };
+use fabsebot_db::guild::{EmojiReactions, GuildData, GuildSettings, WordReactions, WordTracking};
 use poise::CreateReply;
 use serde::Serialize;
 use serenity::{
@@ -28,48 +29,15 @@ use tracing::warn;
 
 async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(guild_id);
-	let mut tx = ctx
+	let tx = ctx
 		.data()
 		.db
 		.begin()
 		.await
 		.context("Failed to acquire savepoint")?;
-	query!(
-		"UPDATE guild_settings
-            SET dead_chat_rate = NULL,
-                dead_chat_channel = NULL,
-                quotes_channel = NULL,
-                spoiler_channel = NULL,
-                prefix = NULL,
-                ai_chat_channel = NULL,
-                global_chat_channel = NULL,
-                global_chat = FALSE,
-                global_music = FALSE,
-                global_call = FALSE,
-                music_channel = NULL,
-                waifu_channel = NULL
-            WHERE guild_id = $1",
-		guild_id_i64
-	)
-	.execute(&mut *tx)
-	.await?;
-	query!(
-		"DELETE FROM guild_word_tracking
-            WHERE guild_id = $1",
-		guild_id_i64
-	)
-	.execute(&mut *tx)
-	.await?;
-	query!(
-		"DELETE FROM guild_word_reaction
-            WHERE guild_id = $1",
-		guild_id_i64
-	)
-	.execute(&mut *tx)
-	.await?;
-	tx.commit()
-		.await
-		.context("Failed to commit sql-transaction")?;
+	if let Some(guild_data) = ctx.data().guild_data.get(&guild_id) {
+		guild_data.reset(guild_id_i64, tx).await?;
+	}
 	ctx.data().guild_data.insert(
 		guild_id,
 		Arc::new(GuildData {
@@ -113,14 +81,36 @@ async fn configure_channels(
 		return Ok(());
 	};
 
+	let conn = &mut *ctx.data().db.acquire().await?;
 	if let Some(music_channel) = music_channel_opt {
 		let music_channel_id_i64 = i64::from(music_channel.id());
-		set_music_channel(ctx, music_channel, guild_id_i64, music_channel_id_i64).await?;
+		modified_settings
+			.settings
+			.set_music_channel(guild_id_i64, music_channel_id_i64, conn)
+			.await?;
+		music_channel
+			.id()
+			.say(
+				ctx.http(),
+				"Once I'm in a voice channel with /join_voice, I'll start listen to your song \
+				 requests!\nMessages prefixed with # will be ignored",
+			)
+			.await?;
 		modified_settings.settings.music_channel = Some(music_channel_id_i64);
 	}
 	if let Some(spoiler_channel) = spoiler_channel_opt {
 		let spoiler_channel_id_i64 = i64::from(spoiler_channel.id());
-		set_spoiler_channel(ctx, spoiler_channel, guild_id_i64, spoiler_channel_id_i64).await?;
+		modified_settings
+			.settings
+			.set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, conn)
+			.await?;
+		spoiler_channel
+			.id()
+			.say(
+				ctx.http(),
+				"Every attachment sent here will now be spoilered",
+			)
+			.await?;
 		modified_settings.settings.spoiler_channel = Some(spoiler_channel_id_i64);
 	}
 	if let Some(quote_channel) = quote_channel_opt {
@@ -924,17 +914,6 @@ async fn set_music_channel(
 	guild_id_i64: i64,
 	channel_id_i64: i64,
 ) -> Result<(), Error> {
-	query!(
-		"INSERT INTO guild_settings (guild_id, music_channel)
-            VALUES ($1, $2)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                music_channel = $2",
-		guild_id_i64,
-		channel_id_i64
-	)
-	.execute(&mut *ctx.data().db.acquire().await?)
-	.await?;
 	channel
 		.id()
 		.say(
