@@ -1,4 +1,4 @@
-cargo-features = ["codegen-backend"]
+cargo-features = ["codegen-backend", "panic-immediate-abort"]
 
 [package]
 name = "fabsebot"
@@ -95,11 +95,11 @@ tracing-subscriber = "*"
 codegen-units = 1
 lto = "thin"
 strip = true
-panic = "abort"
+panic = "immediate-abort"
 
 [profile.dev]
 debug = "line-tables-only"
-panic = "abort"
+panic = "immediate-abort"
 #codegen-backend = "cranelift"
 
 [package.metadata.cargo-machete]
