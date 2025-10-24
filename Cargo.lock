@@ -207,8 +207,7 @@ dependencies = [
 [[package]]
 name = "audiopus_sys"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62314a1546a2064e033665d658e88c620a62904be945f8147e6b16c3db9f8651"
+source = "git+https://github.com/sevenc-nanashi/audiopus_sys?rev=00e9d16#00e9d168493710193ee133bc7fbb50715a1f6e61"
 dependencies = [
  "cmake",
  "log",
@@ -3870,6 +3869,7 @@ checksum = "5773a4c030a19d9bfaa090f49746ff35c75dfddfa700df7a5939d5e076a57039"
 dependencies = [
  "lazy_static",
  "symphonia-bundle-flac",
+ "symphonia-codec-aac",
  "symphonia-codec-pcm",
  "symphonia-core",
  "symphonia-format-mkv",
@@ -3887,6 +3887,17 @@ dependencies = [
  "symphonia-core",
  "symphonia-metadata",
  "symphonia-utils-xiph",
+]
+
+[[package]]
+name = "symphonia-codec-aac"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c263845aa86881416849c1729a54c7f55164f8b96111dba59de46849e73a790"
+dependencies = [
+ "lazy_static",
+ "log",
+ "symphonia-core",
 ]
 
 [[package]]

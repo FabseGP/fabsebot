@@ -44,6 +44,9 @@ unwrap_in_result = "warn"
 unused_trait_names = "warn"
 unused_result_ok = "warn"
 
+[patch.crates-io]
+audiopus_sys = { git = 'https://github.com/sevenc-nanashi/audiopus_sys', rev = '00e9d16' }
+
 [workspace.dependencies]
 ab_glyph = "*"
 anyhow = "*"
