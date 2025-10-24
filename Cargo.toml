@@ -65,7 +65,7 @@ serde = "*"
 serenity = { git = "https://github.com/serenity-rs/serenity.git", branch = "next", default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
 songbird = { git = "https://github.com/serenity-rs/songbird.git", branch = "serenity-next", features = ["builtin-queue", "receive"] }
 sqlx = { git = "https://github.com/launchbadge/sqlx.git", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
-symphonia = { version = "*", default-features = false, features = ["flac", "mkv", "pcm", "wav"] }
+symphonia = { version = "*", default-features = false, features = ["aac", "flac", "mkv", "pcm", "wav"] }
 systemstat = "*"
 textwrap = "*"
 tokio = { version = "*", features = ["rt-multi-thread", "signal"] }

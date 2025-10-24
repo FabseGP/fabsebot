@@ -146,3 +146,17 @@ impl GuildData {
 		Ok(())
 	}
 }
+
+pub async fn insert_guild(guild_id_i64: i64, conn: &mut PgConnection) -> AResult<()> {
+	query!(
+		"INSERT INTO guilds (guild_id)
+                VALUES ($1)
+                ON CONFLICT (guild_id)
+                DO NOTHING",
+		guild_id_i64
+	)
+	.execute(conn)
+	.await?;
+
+	Ok(())
+}

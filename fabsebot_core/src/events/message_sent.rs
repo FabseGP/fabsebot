@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult, bail};
-use fabsebot_db::guild::{GuildData, WordTracking};
+use fabsebot_db::guild::{GuildData, GuildSettings, WordTracking, insert_guild};
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
@@ -854,6 +854,21 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> AResult<()
 	let content = new_message.content.to_lowercase();
 	emoji_reaction(ctx, new_message, &content, data.clone()).await?;
 	if let Some(guild_id) = new_message.guild_id {
+		let guild_id_i64 = i64::from(guild_id);
+		if !data.guild_data.contains_key(&guild_id) {
+			insert_guild(guild_id_i64, &mut *data.db.acquire().await?).await?;
+			let default_settings = GuildSettings {
+				guild_id: guild_id_i64,
+				..Default::default()
+			};
+			data.guild_data.insert(
+				guild_id,
+				Arc::new(GuildData {
+					settings: default_settings,
+					..Default::default()
+				}),
+			);
+		}
 		let guild_id_i64 = i64::from(guild_id);
 		let user_id_i64 = i64::from(new_message.author.id);
 		let tx = data

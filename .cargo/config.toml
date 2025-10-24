@@ -6,6 +6,10 @@ rustflags = ["-Ctarget-cpu=native", "-Clink-arg=--ld-path=wild"]
 linker = "clang"
 rustflags = ["-Ctarget-cpu=native", "-Clink-arg=--ld-path=wild"]
 
+[target.aarch64-unknown-linux-musl]
+linker = "clang"
+rustflags = ["-Ctarget-cpu=native", "-Clink-arg=--ld-path=wild"]
+
 [build]
 rustc-wrapper = "sccache"
 rustflags = ["-Z", "threads=8"]

@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::Result as AResult;
-use fabsebot_db::guild::{GuildData, GuildSettings};
+use fabsebot_db::guild::{GuildData, GuildSettings, insert_guild};
 use serenity::all::Guild;
-use sqlx::query;
 
 use crate::config::types::Data;
 
@@ -16,15 +15,7 @@ pub async fn handle_guild_create(
 		&& *new_guild
 	{
 		let guild_id_i64 = i64::from(guild.id);
-		query!(
-			"INSERT INTO guilds (guild_id)
-                VALUES ($1)
-                ON CONFLICT (guild_id)
-                DO NOTHING",
-			guild_id_i64
-		)
-		.execute(&mut *data.db.acquire().await?)
-		.await?;
+		insert_guild(guild_id_i64, &mut *data.db.acquire().await?).await?;
 		let default_settings = GuildSettings {
 			guild_id: guild_id_i64,
 			..Default::default()

@@ -24,6 +24,9 @@ pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
 type GlobalChatMap = Cache<GuildId, Arc<HashMap<GuildId, MessageId>>>;
 pub type WebhookMap = Cache<GenericChannelId, Webhook>;
 pub type GuildDataMap = Cache<GuildId, Arc<GuildData>>;
+
+impl GuildDataMap {}
+
 type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 
 pub struct AIModelDefaults {
