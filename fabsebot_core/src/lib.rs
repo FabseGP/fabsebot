@@ -67,11 +67,11 @@ where
 	}
 }
 
-async fn periodic_ping(url: &str) -> ! {
+async fn periodic_ping(url: &str, token: &str) -> ! {
 	let mut interval = interval(Duration::from_secs(PING_INTERVAL_SEC));
 	loop {
 		interval.tick().await;
-		if let Err(err) = HTTP_CLIENT.get(url).send().await {
+		if let Err(err) = HTTP_CLIENT.post(url).bearer_auth(token).send().await {
 			error!("Failed to report uptime: {:?}", &err);
 		}
 	}
@@ -186,7 +186,7 @@ pub async fn bot_start(
 	});
 
 	spawn(async move {
-		periodic_ping(&utils_config.bot.uptime_url).await;
+		periodic_ping(&utils_config.bot.uptime_url, &utils_config.bot.uptime_token).await;
 	});
 
 	initialize_counters();

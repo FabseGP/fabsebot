@@ -1025,7 +1025,7 @@ pub async fn roast(
 			|_| "user has no banner".to_owned(),
 			|user| {
 				user.banner_url()
-					.map_or_else(|| "user has no banner".to_owned(), |banner| banner)
+					.unwrap_or_else(|| "user has no banner".to_owned())
 			},
 		);
 		let roles = member.roles(ctx.cache()).map_or_else(

@@ -192,7 +192,7 @@ pub async fn ai_chatbot(
 						.await
 					{
 						Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
-							.map_or_else(|| "Unable to describe".to_owned(), |desc| desc),
+							.unwrap_or_else(|| "Unable to describe".to_owned()),
 						Err(_) => "Unable to describe".to_owned(),
 					};
 					let author_name_guild = author_member.display_name();
@@ -259,7 +259,7 @@ pub async fn ai_chatbot(
 						.await
 					{
 						Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
-							.map_or_else(|| "Unable to describe".to_owned(), |desc| desc),
+							.unwrap_or_else(|| "Unable to describe".to_owned()),
 						Err(_) => "Unable to describe".to_owned(),
 					};
 					let author_name_guild = author_member.display_name();
@@ -302,7 +302,7 @@ pub async fn ai_chatbot(
 						.await
 					{
 						Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
-							.map_or_else(|| "Unable to describe".to_owned(), |desc| desc),
+							.unwrap_or_else(|| "Unable to describe".to_owned()),
 						Err(_) => "Unable to describe".to_owned(),
 					};
 					let target_name = target_member.display_name();
@@ -353,12 +353,10 @@ pub async fn ai_chatbot(
 						.static_info
 						.users
 						.get(&author_id_u64)
-						.map_or_else(|| "Nothing is known about this user", |user| user),
+						.map_or_else(|| "Nothing is known about this user", |user| user.as_str()),
 					Timestamp::now(),
-					internet_search_opt.map_or_else(
-						|| "Nothing scraped from the internet".to_owned(),
-						|internet_search| internet_search
-					),
+					internet_search_opt
+						.unwrap_or_else(|| "Nothing scraped from the internet".to_owned()),
 					system_content
 				);
 				if let Some(system_message) = convo_lock

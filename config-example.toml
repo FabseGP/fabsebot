@@ -9,7 +9,8 @@
 #activity =
 #ping_message =
 #ping_url = 
-#uptime_url = 
+#uptime_url =
+#uptime_token =
 
 [PostgreSQL]
 #database = 
