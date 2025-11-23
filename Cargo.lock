@@ -992,6 +992,7 @@ dependencies = [
  "dashmap",
  "fabsebot_core",
  "fabsebot_db",
+ "fastrand",
  "image",
  "poise",
  "rayon",

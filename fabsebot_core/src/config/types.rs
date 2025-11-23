@@ -6,7 +6,6 @@ use std::{
 use anyhow::Error as AError;
 use dashmap::DashMap;
 use fabsebot_db::guild::GuildData;
-use fastrand::Rng;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
@@ -133,7 +132,6 @@ pub struct UtilsConfig {
 
 pub static UTILS_CONFIG: OnceLock<Arc<UtilsConfig>> = OnceLock::new();
 pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
-pub static RNG: LazyLock<Mutex<Rng>> = LazyLock::new(|| Mutex::new(Rng::new()));
 pub static SYSTEM_STATS: LazyLock<Arc<System>> = LazyLock::new(|| Arc::new(System::new()));
 
 pub static GEMMA_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {

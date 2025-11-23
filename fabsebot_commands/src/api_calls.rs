@@ -6,7 +6,7 @@ use fabsebot_core::{
 	config::{
 		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
 		settings::UserSettings,
-		types::{Error, HTTP_CLIENT, RNG, SContext, UTILS_CONFIG},
+		types::{Error, HTTP_CLIENT, SContext, UTILS_CONFIG},
 	},
 	utils::{
 		ai::ai_response_simple,
@@ -74,7 +74,7 @@ pub async fn ai_image(
 ) -> Result<(), Error> {
 	ctx.defer().await?;
 	let request = ImageRequest {
-		prompt: format!("{prompt} {}", RNG.lock().await.usize(..1024)),
+		prompt: format!("{prompt} {}", fastrand::usize(..1024)),
 	};
 	if let Some(utils_config) = UTILS_CONFIG.get() {
 		let mut resp = HTTP_CLIENT
@@ -709,7 +709,7 @@ pub async fn gif(
 			)
 			.await?;
 	} else {
-		let index = RNG.lock().await.usize(..len);
+		let index = fastrand::usize(..len);
 		if let Some(gif) = gifs.get(index) {
 			embed = embed.image(gif.0.as_ref()).title(gif.1.as_ref());
 		}
@@ -748,7 +748,7 @@ pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
 				"I don't like you",
 				"you smell",
 			];
-			let index = RNG.lock().await.usize(..roasts.len());
+			let index = fastrand::usize(..roasts.len());
 			if let Some(roast) = roasts.get(index).copied() {
 				ctx.reply(roast).await?;
 			}

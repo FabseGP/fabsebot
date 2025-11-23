@@ -28,7 +28,7 @@ use crate::{
 			FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FLOPPAGANDA_GIF,
 			VILBOT_NAME, VILBOT_PFP,
 		},
-		types::{Data, HTTP_CLIENT, RNG, UTILS_CONFIG},
+		types::{Data, HTTP_CLIENT, UTILS_CONFIG},
 	},
 	utils::{
 		ai::ai_chatbot,
@@ -691,8 +691,7 @@ async fn db_queries(
 								Some(get_waifu().await)
 							} else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
 								let gifs = get_gifs(gif_query.to_owned()).await;
-								gifs.get(RNG.lock().await.usize(..gifs.len()))
-									.map(|g| g.0.clone())
+								gifs.get(fastrand::usize(..gifs.len())).map(|g| g.0.clone())
 							} else if !ping_media.is_empty() {
 								Some(Cow::Borrowed(ping_media.as_str()))
 							} else {
@@ -792,7 +791,7 @@ async fn db_queries(
 							let mut embed = CreateEmbed::default()
 								.title(&record.content)
 								.colour(COLOUR_YELLOW);
-							let index = RNG.lock().await.usize(..gifs.len());
+							let index = fastrand::usize(..gifs.len());
 							if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
 								embed = embed.image(gif);
 							}

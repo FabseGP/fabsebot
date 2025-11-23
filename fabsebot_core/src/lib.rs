@@ -37,8 +37,7 @@ use crate::{
 		constants::PING_INTERVAL_SEC,
 		settings::{APIConfig, BotConfig, ServerConfig},
 		types::{
-			CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, RNG, UTILS_CONFIG,
-			UtilsConfig,
+			CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, UTILS_CONFIG, UtilsConfig,
 		},
 	},
 	handlers::{EventHandler, dynamic_prefix, initialize_counters, on_command, on_error},
@@ -131,7 +130,7 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 						&& let Ok(dead_chat_channel_u64) = u64::try_from(dead_chat_channel)
 					{
 						let gifs = get_gifs("dead chat".to_owned()).await;
-						let index = RNG.lock().await.usize(..gifs.len());
+						let index = fastrand::usize(..gifs.len());
 						if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
 							if let Err(err) = GenericChannelId::new(dead_chat_channel_u64)
 								.say(&http, gif)

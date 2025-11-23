@@ -9,7 +9,7 @@ use fabsebot_core::{
 	config::{
 		constants::COLOUR_RED,
 		settings::UserSettings,
-		types::{Error, HTTP_CLIENT, RNG, SContext},
+		types::{Error, HTTP_CLIENT, SContext},
 	},
 	utils::helpers::{get_gifs, get_waifu},
 };
@@ -739,7 +739,7 @@ async fn set_dead_chat(
 	.execute(&mut *ctx.data().db.acquire().await?)
 	.await?;
 	let gifs = get_gifs("dead chat".to_owned()).await;
-	let index = RNG.lock().await.usize(..gifs.len());
+	let index = fastrand::usize(..gifs.len());
 	if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
 		channel.id().say(ctx.http(), gif).await?;
 	}
