@@ -235,10 +235,10 @@ pub async fn bot_start(
 	cache_settings.max_messages = utils_config.bot.cache_max_messages;
 	let activity = ActivityData::listening(&utils_config.bot.activity);
 	let mut client = Client::builder(Token::from_str(&utils_config.bot.token)?, intents)
-		.framework(framework)
-		.voice_manager::<Songbird>(music_manager)
+		.framework(Box::new(framework))
+		.voice_manager(music_manager)
 		.cache_settings(cache_settings)
-		.event_handler(EventHandler)
+		.event_handler(Arc::new(EventHandler))
 		.activity(activity)
 		.status(OnlineStatus::Online)
 		.data(bot_data.clone())

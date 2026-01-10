@@ -14,7 +14,7 @@ bytes = { workspace = true }
 dashmap = { workspace = true }
 fastrand = { workspace = true }
 image = { workspace = true, default-features = false, features = ["gif", "rayon", "webp"] }
-imageproc = { workspace = true, default-features = false, features = ["rayon"] }
+imageproc = { workspace = true, default-features = false, features = ["rayon", "text"] }
 metrics = { workspace = true }
 mini-moka = { workspace = true }
 poise = { workspace = true }

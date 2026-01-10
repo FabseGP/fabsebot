@@ -230,10 +230,6 @@ pub async fn bot_control(
 /// Debugging fabsebot's host
 #[poise::command(prefix_command, slash_command)]
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
-	ctx.framework()
-		.serenity_context
-		.set_activity(Some(ActivityData::playing("pizza")));
-
 	let mut embed = CreateEmbed::default().title("Debug");
 	let latency = if let Some(shard_runner) = ctx
 		.serenity_context()

@@ -3,9 +3,9 @@ use std::string::ToString;
 use fabsebot_core::config::types::{Error, SContext};
 use poise::CreateReply;
 use serenity::all::{
-	CreateComponent, CreateContainer, CreateEmbed, CreateSection, CreateSectionAccessory,
-	CreateSectionComponent, CreateSeparator, CreateTextDisplay, CreateThumbnail,
-	CreateUnfurledMediaItem, Member, MessageFlags, PremiumType,
+	CreateComponent, CreateContainer, CreateContainerComponent, CreateEmbed, CreateSection,
+	CreateSectionAccessory, CreateSectionComponent, CreateSeparator, CreateTextDisplay,
+	CreateThumbnail, CreateUnfurledMediaItem, Member, MessageFlags, PremiumType,
 };
 
 /// Get server information
@@ -109,7 +109,7 @@ pub async fn user_info(
 		},
 	))];
 
-	let thumbnail_section = [CreateComponent::Section(CreateSection::new(
+	let thumbnail_section = [CreateContainerComponent::Section(CreateSection::new(
 		&username_display,
 		CreateSectionAccessory::Thumbnail(CreateThumbnail::new(CreateUnfurledMediaItem::new(
 			member.avatar_url().unwrap_or_else(|| {
@@ -121,7 +121,7 @@ pub async fn user_info(
 		))),
 	))];
 
-	let separator = CreateComponent::Separator(CreateSeparator::new(true));
+	let separator = CreateContainerComponent::Separator(CreateSeparator::new(true));
 
 	let premium_type = match member.user.premium_type {
 		PremiumType::NitroBasic => "Basic nitro",
@@ -151,7 +151,7 @@ pub async fn user_info(
 		premium_type
 	);
 
-	let info_display = CreateComponent::TextDisplay(CreateTextDisplay::new(user_info));
+	let info_display = CreateContainerComponent::TextDisplay(CreateTextDisplay::new(user_info));
 
 	let container = CreateContainer::new(&thumbnail_section)
 		.add_component(separator.clone())
