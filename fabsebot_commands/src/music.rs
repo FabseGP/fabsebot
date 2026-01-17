@@ -210,8 +210,10 @@ impl PlaybackHandler {
 		lyrics_embed: &mut Option<CreateEmbed<'_>>,
 		history_shown: &mut bool,
 		history_embed: &mut Option<CreateEmbed<'_>>,
-		guild_tracks: &DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
-		metadata: &AuxMetadata,
+		guild_tracks: &(
+			Arc<AuxMetadata>,
+			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
+		),
 		embed: &CreateEmbed<'_>,
 	) -> AResult<()> {
 		interaction.defer(&self.serenity_context.http).await?;
@@ -221,7 +223,7 @@ impl PlaybackHandler {
 		let handler = get_configured_songbird_handler(&handler_lock).await;
 		let queue = handler.queue();
 		if interaction.data.custom_id.ends_with('s') && queue.len() > 1 {
-			for guild in guild_tracks {
+			for guild in &guild_tracks.1 {
 				if guild.key() == &self.guild_id {
 					queue.skip()?;
 				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.key()) {
@@ -245,12 +247,12 @@ impl PlaybackHandler {
 					.await?;
 			}
 		} else if interaction.data.custom_id.ends_with('p') {
-			for guild in guild_tracks {
+			for guild in &guild_tracks.1 {
 				if guild.key() == &self.guild_id {
 					if let Some(current_track) = queue.current()
-						&& let Ok(track_info) = current_track.get_info().await
+						&& let Ok(track_state) = current_track.get_info().await.map(|t| t.playing)
 					{
-						match track_info.playing {
+						match track_state {
 							PlayMode::Pause => {
 								current_track.play()?;
 							}
@@ -264,9 +266,10 @@ impl PlaybackHandler {
 					&& let Some(current_track) = get_configured_songbird_handler(&handler_lock)
 						.await
 						.queue()
-						.current() && let Ok(track_info) = current_track.get_info().await
+						.current() && let Ok(track_state) =
+					current_track.get_info().await.map(|t| t.playing)
 				{
-					match track_info.playing {
+					match track_state {
 						PlayMode::Pause => {
 							current_track.play()?;
 						}
@@ -278,7 +281,7 @@ impl PlaybackHandler {
 				}
 			}
 		} else if interaction.data.custom_id.ends_with('c') {
-			for guild in guild_tracks {
+			for guild in &guild_tracks.1 {
 				if guild.key() == &self.guild_id {
 					queue.stop();
 				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.key()) {
@@ -314,8 +317,8 @@ impl PlaybackHandler {
 				*history_shown = false;
 				let new_embed = if let Some(embed) = &lyrics_embed {
 					embed.clone()
-				} else if let Some(artist_name) = &metadata.artist
-					&& let Some(track_name) = &metadata.title
+				} else if let Some(artist_name) = &guild_tracks.0.artist
+					&& let Some(track_name) = &guild_tracks.0.title
 					&& let Some(lyrics) = get_lyrics(artist_name, track_name).await
 				{
 					let embed = CreateEmbed::default()
@@ -359,7 +362,11 @@ impl PlaybackHandler {
 					for track in &self.bot_data.track_metadata {
 						if let Some(guild_track) = track.1.get(&self.guild_id) {
 							embed = embed.field(
-								track.0.title.clone().unwrap_or_default(),
+								track
+									.0
+									.title
+									.clone()
+									.unwrap_or_else(|| "Unknown".to_owned()),
 								format!("Added by {}", guild_track.0),
 								false,
 							);
@@ -388,16 +395,15 @@ impl PlaybackHandler {
 		notifier: Arc<Notify>,
 	) -> AResult<()> {
 		if let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id)
-			&& let Some(mut guild_data) = guild_tracks.1.clone().get_mut(&self.guild_id)
+			&& let Some(mut guild_data) = guild_tracks.1.get_mut(&self.guild_id)
 		{
-			let metadata = guild_tracks.0;
 			let queue_size = get_configured_songbird_handler(&handler_lock)
 				.await
 				.queue()
 				.len();
 
 			let (embed, action_rows) =
-				Self::create_components(&guild_data.0, guild_data.1, &metadata, queue_size);
+				Self::create_components(&guild_data.0, guild_data.1, &guild_tracks.0, queue_size);
 
 			guild_data
 				.2
@@ -410,7 +416,7 @@ impl PlaybackHandler {
 						.content(""),
 				)
 				.await?;
-			let message_id_copy = guild_data.1;
+			let message_id_copy = guild_data.1.to_string();
 
 			let mut lyrics_shown = false;
 			let mut history_shown = false;
@@ -424,7 +430,7 @@ impl PlaybackHandler {
 					interaction
 						.data
 						.custom_id
-						.starts_with(message_id_copy.to_string().as_str())
+						.starts_with(message_id_copy.as_str())
 				})
 				.stream();
 
@@ -438,9 +444,8 @@ impl PlaybackHandler {
 							&mut lyrics_embed,
 							&mut history_shown,
 							&mut history_embed,
-							&guild_tracks.1,
-							&metadata,
-							&embed,
+							&guild_tracks,
+											&embed
 						)
 						.await?;
 					},

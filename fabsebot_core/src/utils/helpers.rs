@@ -63,17 +63,17 @@ pub async fn queue_song(
 	channel_id: GenericChannelId,
 	author_name: String,
 ) -> AResult<()> {
-	let uuid = Uuid::new_v4();
+	let uuid = metadata
+		.source_url
+		.as_ref()
+		.map_or_else(Uuid::new_v4, |url| {
+			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
+		});
 	get_configured_songbird_handler(&handler_lock)
 		.await
-		.enqueue(Track::new_with_uuid_and_data(
+		.enqueue(Track::new_with_uuid(
 			Input::Live(LiveInput::Raw(audio), Some(Box::new(source))),
 			uuid,
-			Arc::new(MusicData {
-				duration: metadata
-					.duration
-					.map_or(3600, |d| d.as_secs().wrapping_add(10)),
-			}),
 		))
 		.await;
 

@@ -74,7 +74,7 @@ tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
 tracing = "*"
 url = "*"
 urlencoding = "*"
-uuid = { version = "*", features = ["v4"] }
+uuid = { version = "*", features = ["v4", "v5"] }
 winnow = { version = "*", features = ["simd"] }
 
 [lints]
