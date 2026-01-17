@@ -4,9 +4,17 @@ use anyhow::Result as AResult;
 use dashmap::DashMap;
 use serde::Deserialize;
 use serenity::all::{GenericChannelId, GuildId, MessageId};
-use songbird::{Call, driver::Bitrate, input::AuxMetadata, tracks::Track};
+use songbird::{
+	Call,
+	driver::Bitrate,
+	input::{AudioStream, AuxMetadata, Input, LiveInput, YoutubeDl},
+	tracks::Track,
+};
+use symphonia::core::io::MediaSource;
 use tokio::sync::{Mutex, MutexGuard};
+use url::Url;
 use urlencoding::encode;
+use uuid::Uuid;
 use winnow::{
 	ModalResult, Parser as _,
 	ascii::digit1,
@@ -31,9 +39,23 @@ pub async fn get_configured_songbird_handler(
 	handler
 }
 
+pub async fn youtube_source(url: String) -> Option<YoutubeDl<'static>> {
+	if Url::parse(&url).is_ok() {
+		url.contains("youtu")
+			.then(|| YoutubeDl::new(HTTP_CLIENT.clone(), url))
+	} else {
+		Some(YoutubeDl::new_search(HTTP_CLIENT.clone(), url))
+	}
+}
+
+pub struct MusicData {
+	pub duration: u64,
+}
+
 pub async fn queue_song(
-	track: Track,
-	metadata: AuxMetadata,
+	metadata: Arc<AuxMetadata>,
+	audio: AudioStream<Box<dyn MediaSource>>,
+	source: YoutubeDl<'static>,
 	handler_lock: Arc<Mutex<Call>>,
 	guild_id: GuildId,
 	data: Arc<Data>,
@@ -41,15 +63,23 @@ pub async fn queue_song(
 	channel_id: GenericChannelId,
 	author_name: String,
 ) -> AResult<()> {
-	let uuid = get_configured_songbird_handler(&handler_lock)
+	let uuid = Uuid::new_v4();
+	get_configured_songbird_handler(&handler_lock)
 		.await
-		.enqueue(track)
-		.await
-		.uuid();
+		.enqueue(Track::new_with_uuid_and_data(
+			Input::Live(LiveInput::Raw(audio), Some(Box::new(source))),
+			uuid,
+			Arc::new(MusicData {
+				duration: metadata
+					.duration
+					.map_or(3600, |d| d.as_secs().wrapping_add(10)),
+			}),
+		))
+		.await;
 
 	data.track_metadata
 		.entry(uuid)
-		.or_insert_with(|| (metadata.clone(), DashMap::default()))
+		.or_insert_with(|| (metadata, DashMap::default()))
 		.1
 		.insert(guild_id, (author_name, msg_id, channel_id, true));
 

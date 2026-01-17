@@ -60,7 +60,6 @@ indexmap = "*"
 metrics = { version = "*" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
 poise = { git = "https://github.com/serenity-rs/poise.git", branch = "serenity-next" }
-#poise = { git = "https://github.com/mkrasnitski/poise", branch = "argument-convert" }
 rayon = "*"
 reqwest = { version = "*", default-features = false, features = ["rustls-tls"] }
 scraper = "*"
@@ -73,6 +72,7 @@ systemstat = "*"
 textwrap = "*"
 tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
 tracing = "*"
+url = "*"
 urlencoding = "*"
 uuid = { version = "*", features = ["v4"] }
 winnow = { version = "*", features = ["simd"] }
@@ -96,14 +96,19 @@ tracing-subscriber = "*"
 
 [profile.release]
 codegen-units = 1
-lto = "thin"
+lto = true
 strip = true
 panic = "immediate-abort"
 
 [profile.dev]
-debug = "line-tables-only"
+opt-level = 1
 panic = "immediate-abort"
-#codegen-backend = "cranelift"
+debug = "line-tables-only"
+codegen-backend = "cranelift"
+
+[profile.dev.package."*"]
+opt-level = 3
+codegen-backend = "llvm"
 
 [package.metadata.cargo-machete]
 ignored = [

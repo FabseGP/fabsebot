@@ -25,4 +25,3 @@ systemstat = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
-uuid = { workspace = true, features = ["v4"] }

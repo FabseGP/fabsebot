@@ -10,7 +10,7 @@ use fabsebot_core::{
 	},
 	utils::{
 		ai::ai_voice,
-		helpers::{get_configured_songbird_handler, get_lyrics, queue_song},
+		helpers::{get_configured_songbird_handler, get_lyrics, queue_song, youtube_source},
 	},
 };
 use poise::{CreateReply, async_trait};
@@ -27,8 +27,8 @@ use serenity::{
 use songbird::{
 	Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
 	TrackEvent,
-	input::{AuxMetadata, Input, YoutubeDl},
-	tracks::{PlayMode, Track},
+	input::{AuxMetadata, Compose as _, Input, YoutubeDl},
+	tracks::PlayMode,
 };
 use sqlx::query;
 use tokio::{
@@ -37,7 +37,6 @@ use tokio::{
 	sync::{Mutex, Notify},
 };
 use tracing::{error, warn};
-use uuid::Uuid;
 
 #[derive(Deserialize)]
 struct DeezerResponse {
@@ -142,20 +141,20 @@ impl PlaybackHandler {
 		}
 	}
 
-	fn create_components(
-		author_name: &str,
+	fn create_components<'a>(
+		author_name: &'a str,
 		msg_id: MessageId,
-		metadata: AuxMetadata,
+		metadata: &'a Arc<AuxMetadata>,
 		queue_size: usize,
-	) -> (CreateEmbed<'_>, [CreateComponent<'_>; 1]) {
+	) -> (CreateEmbed<'a>, [CreateComponent<'a>; 1]) {
 		let mut e =
 			CreateEmbed::default()
 				.colour(COLOUR_RED)
 				.field("Added by:", author_name, false);
-		if let Some(artist) = metadata.artist {
+		if let Some(artist) = &metadata.artist {
 			e = e.field("Artist:", artist, true);
 		}
-		if let Some(url) = metadata.source_url.clone() {
+		if let Some(url) = &metadata.source_url {
 			e = e.url(url);
 		}
 		if let Some(duration) = &metadata.duration {
@@ -172,7 +171,7 @@ impl PlaybackHandler {
 				e = e.description(MessageBuilder::default().push_safe(title.as_str()).build());
 			}
 		}
-		if let Some(url) = metadata.thumbnail {
+		if let Some(url) = &metadata.thumbnail {
 			e = e.image(url);
 		}
 
@@ -212,7 +211,7 @@ impl PlaybackHandler {
 		history_shown: &mut bool,
 		history_embed: &mut Option<CreateEmbed<'_>>,
 		guild_tracks: &(
-			AuxMetadata,
+			Arc<AuxMetadata>,
 			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
 		),
 		metadata: &AuxMetadata,
@@ -386,7 +385,7 @@ impl PlaybackHandler {
 	pub async fn update_info(
 		&self,
 		guild_tracks: (
-			AuxMetadata,
+			Arc<AuxMetadata>,
 			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
 		),
 		notifier: Arc<Notify>,
@@ -401,7 +400,7 @@ impl PlaybackHandler {
 				.len();
 
 			let (embed, action_rows) =
-				Self::create_components(&guild_data.0, guild_data.1, metadata.clone(), queue_size);
+				Self::create_components(&guild_data.0, guild_data.1, &metadata, queue_size);
 
 			guild_data
 				.2
@@ -423,7 +422,11 @@ impl PlaybackHandler {
 			let mut history_embed: Option<CreateEmbed> = None;
 
 			let mut collector_stream = ComponentInteractionCollector::new(&self.serenity_context)
-				.timeout(Duration::from_secs(3600))
+				.timeout(
+					metadata
+						.duration
+						.unwrap_or_else(|| Duration::from_secs(3600)),
+				)
 				.filter(move |interaction| {
 					interaction
 						.data
@@ -572,15 +575,15 @@ pub async fn add_deezer_playlist(
 			{
 				for track in payload.tracks.data {
 					let search = format!("{} {}", track.title, track.artist.name);
-					let src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
-					let mut input = Input::from(src.clone());
-					if let Ok(metadata) = input.aux_metadata().await {
-						let uuid = Uuid::new_v4();
+					let mut src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
+					let audio = src.create_async().await?;
+					if let Ok(metadata) = src.aux_metadata().await {
 						let reply = ctx.reply("Song added to queue").await?;
 						let msg = reply.message().await?;
 						queue_song(
-							Track::new_with_uuid(input, uuid),
-							metadata.clone(),
+							Arc::new(metadata),
+							audio,
+							src,
 							handler_lock.clone(),
 							guild_id,
 							ctx.data(),
@@ -642,15 +645,15 @@ pub async fn add_youtube_playlist(
 			.collect();
 
 		for url in urls {
-			let src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
-			let mut input = Input::from(src.clone());
-			if let Ok(metadata) = input.aux_metadata().await {
-				let uuid = Uuid::new_v4();
+			let mut src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
+			let audio = src.create_async().await?;
+			if let Ok(metadata) = src.aux_metadata().await {
 				let reply = ctx.reply("Song added to queue").await?;
 				let msg = reply.message().await?;
 				queue_song(
-					Track::new_with_uuid(input, uuid),
-					metadata.clone(),
+					Arc::new(metadata),
+					audio,
+					src,
 					handler_lock.clone(),
 					guild_id,
 					ctx.data(),
@@ -794,7 +797,7 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 		});
 		if ctx.data().music_manager.get(guild_id).is_some() {
 			ctx.reply(
-				"Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection",
+				"Bruh, I'm already in a voice channel!\n Use /leave_voice to drop the connection",
 			)
 			.await?;
 		} else if let Some(channel_id) = channel_id
@@ -947,25 +950,18 @@ pub async fn play_song(
 	if let Some(guild_id) = ctx.guild_id()
 		&& let Some(handler_lock) = ctx.data().music_manager.get(guild_id)
 	{
-		let src = if url.starts_with("https") {
-			if url.contains("youtu") {
-				YoutubeDl::new(HTTP_CLIENT.clone(), url)
-			} else {
-				ctx.reply("Only YouTube-links are supported").await?;
-				return Ok(());
-			}
-		} else {
-			YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
+		let Some(mut src) = youtube_source(url).await else {
+			ctx.reply("Only YouTube-links are supported").await?;
+			return Ok(());
 		};
-		//		.user_args(vec!["--cookies /root/cookies.txt".to_string()]);
-		let mut input = Input::from(src.clone());
-		if let Ok(metadata) = input.aux_metadata().await {
-			let uuid = Uuid::new_v4();
+		let audio = src.create_async().await?;
+		if let Ok(metadata) = src.aux_metadata().await {
 			let reply = ctx.reply("Song added to queue").await?;
 			let msg = reply.message().await?;
 			queue_song(
-				Track::new_with_uuid(input, uuid),
-				metadata.clone(),
+				Arc::new(metadata),
+				audio,
+				src,
 				handler_lock.clone(),
 				guild_id,
 				ctx.data(),
@@ -1000,24 +996,18 @@ pub async fn play_song_global(
 	if let Some(guild_id) = ctx.guild_id()
 		&& let Some(handler_lock) = ctx.data().music_manager.get(guild_id)
 	{
-		let src = if url.starts_with("https") {
-			if url.contains("youtu") {
-				YoutubeDl::new(HTTP_CLIENT.clone(), url)
-			} else {
-				ctx.reply("Only YouTube-links are supported").await?;
-				return Ok(());
-			}
-		} else {
-			YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
+		let Some(mut src) = youtube_source(url).await else {
+			ctx.reply("Only YouTube-links are supported").await?;
+			return Ok(());
 		};
-		let mut input = Input::from(src.clone());
-		if let Ok(metadata) = input.aux_metadata().await {
-			let uuid = Uuid::new_v4();
+		let audio = src.create_async().await?;
+		if let Ok(metadata) = src.aux_metadata().await {
 			let reply = ctx.reply("Song added to queue").await?;
 			let msg = reply.message().await?;
 			queue_song(
-				Track::new_with_uuid(input, uuid),
-				metadata.clone(),
+				Arc::new(metadata),
+				audio,
+				src,
 				handler_lock.clone(),
 				guild_id,
 				ctx.data(),
@@ -1037,7 +1027,6 @@ pub async fn play_song_global(
 				.map(|entry| entry.value().settings.guild_id)
 				.collect();
 
-			let uuid = Uuid::new_v4();
 			for guild_id_global in guild_global_music {
 				if let Ok(guild_id_u64) = u64::try_from(guild_id_global) {
 					let current_guild_id = GuildId::new(guild_id_u64);
@@ -1057,10 +1046,13 @@ pub async fn play_song_global(
 								CreateMessage::default().content("Song added to queue"),
 							)
 							.await?;
+						todo!("Fix global music playback");
+						/*
 						queue_song(
-							Track::new_with_uuid(Input::from(src.clone()), uuid),
-							metadata.clone(),
-							global_handler_lock.clone(),
+							Arc::new(metadata),
+							audio,
+							src,
+							handler_lock.clone(),
 							guild_id,
 							ctx.data(),
 							msg.id,
@@ -1068,6 +1060,7 @@ pub async fn play_song_global(
 							ctx.author().display_name().to_owned(),
 						)
 						.await?;
+						*/
 					}
 				} else {
 					warn!("Failed to convert guild id to u64");

@@ -11,14 +11,10 @@ use serenity::all::{
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
 	GuildId, Message, MessageId, ReactionType, UserId,
 };
-use songbird::{
-	input::{Input, YoutubeDl},
-	tracks::Track,
-};
+use songbird::input::Compose as _;
 use sqlx::{Postgres, Transaction, query};
 use tokio::task::spawn;
 use tracing::warn;
-use uuid::Uuid;
 use winnow::Parser as _;
 
 use crate::{
@@ -28,11 +24,11 @@ use crate::{
 			FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FLOPPAGANDA_GIF,
 			VILBOT_NAME, VILBOT_PFP,
 		},
-		types::{Data, HTTP_CLIENT, UTILS_CONFIG},
+		types::{Data, UTILS_CONFIG},
 	},
 	utils::{
 		ai::ai_chatbot,
-		helpers::{discord_message_link, get_gifs, get_waifu, queue_song},
+		helpers::{discord_message_link, get_gifs, get_waifu, queue_song, youtube_source},
 		webhook::{spoiler_message, webhook_find},
 	},
 };
@@ -182,32 +178,23 @@ async fn music_channel(
 					let ctx_clone = ctx.clone();
 					let new_message_clone = new_message.clone();
 					spawn(async move {
-						let src = if new_message_clone.content.starts_with("https") {
-							if new_message_clone.content.contains("youtu") {
-								YoutubeDl::new(
-									HTTP_CLIENT.clone(),
-									new_message_clone.content.clone(),
-								)
-							} else {
-								new_message_clone
-									.reply(&ctx_clone.http, "Only YouTube-links are supported")
-									.await?;
-								return Ok(());
-							}
-						} else {
-							YoutubeDl::new_search(
-								HTTP_CLIENT.clone(),
-								new_message_clone.content.clone(),
-							)
+						let Some(mut src) =
+							youtube_source(new_message_clone.content.to_string()).await
+						else {
+							new_message_clone
+								.reply(&ctx_clone.http, "Only YouTube-links are supported")
+								.await?;
+							return Ok(());
 						};
-						let mut input = Input::from(src.clone());
-						if let Ok(metadata) = input.aux_metadata().await {
+						let audio = src.create_async().await?;
+						if let Ok(metadata) = src.aux_metadata().await {
 							let msg = new_message_clone
 								.reply(&ctx_clone.http, "Song added to queue")
 								.await?;
 							if let Err(err) = queue_song(
-								Track::new_with_uuid(input, Uuid::new_v4()),
-								metadata.clone(),
+								Arc::new(metadata),
+								audio,
+								src,
 								handler_lock.clone(),
 								guild_id,
 								ctx_clone.data(),

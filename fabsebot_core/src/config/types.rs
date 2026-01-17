@@ -115,7 +115,7 @@ pub struct Data {
 	pub track_metadata: DashMap<
 		Uuid,
 		(
-			AuxMetadata,
+			Arc<AuxMetadata>,
 			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
 		),
 	>,
