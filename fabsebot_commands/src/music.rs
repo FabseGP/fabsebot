@@ -210,10 +210,7 @@ impl PlaybackHandler {
 		lyrics_embed: &mut Option<CreateEmbed<'_>>,
 		history_shown: &mut bool,
 		history_embed: &mut Option<CreateEmbed<'_>>,
-		guild_tracks: &(
-			Arc<AuxMetadata>,
-			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
-		),
+		guild_tracks: &DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
 		metadata: &AuxMetadata,
 		embed: &CreateEmbed<'_>,
 	) -> AResult<()> {
@@ -224,7 +221,7 @@ impl PlaybackHandler {
 		let handler = get_configured_songbird_handler(&handler_lock).await;
 		let queue = handler.queue();
 		if interaction.data.custom_id.ends_with('s') && queue.len() > 1 {
-			for guild in &guild_tracks.1 {
+			for guild in guild_tracks {
 				if guild.key() == &self.guild_id {
 					queue.skip()?;
 				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.key()) {
@@ -248,7 +245,7 @@ impl PlaybackHandler {
 					.await?;
 			}
 		} else if interaction.data.custom_id.ends_with('p') {
-			for guild in &guild_tracks.1 {
+			for guild in guild_tracks {
 				if guild.key() == &self.guild_id {
 					if let Some(current_track) = queue.current()
 						&& let Ok(track_info) = current_track.get_info().await
@@ -281,7 +278,7 @@ impl PlaybackHandler {
 				}
 			}
 		} else if interaction.data.custom_id.ends_with('c') {
-			for guild in &guild_tracks.1 {
+			for guild in guild_tracks {
 				if guild.key() == &self.guild_id {
 					queue.stop();
 				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.key()) {
@@ -393,7 +390,7 @@ impl PlaybackHandler {
 		if let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id)
 			&& let Some(mut guild_data) = guild_tracks.1.clone().get_mut(&self.guild_id)
 		{
-			let metadata = guild_tracks.0.clone();
+			let metadata = guild_tracks.0;
 			let queue_size = get_configured_songbird_handler(&handler_lock)
 				.await
 				.queue()
@@ -422,11 +419,7 @@ impl PlaybackHandler {
 			let mut history_embed: Option<CreateEmbed> = None;
 
 			let mut collector_stream = ComponentInteractionCollector::new(&self.serenity_context)
-				.timeout(
-					metadata
-						.duration
-						.unwrap_or_else(|| Duration::from_secs(3600)),
-				)
+				.timeout(Duration::from_secs(3600))
 				.filter(move |interaction| {
 					interaction
 						.data
@@ -445,7 +438,7 @@ impl PlaybackHandler {
 							&mut lyrics_embed,
 							&mut history_shown,
 							&mut history_embed,
-							&guild_tracks,
+							&guild_tracks.1,
 							&metadata,
 							&embed,
 						)
