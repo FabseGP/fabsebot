@@ -82,7 +82,7 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 						.unwrap_or_default()
 						.1,
 				};
-				data.guild_data.insert(guild_id, Arc::new(guild_data));
+				data.guilds.insert(guild_id, Arc::new(guild_data));
 			} else {
 				warn!("Failed to convert guildid to u64");
 			}

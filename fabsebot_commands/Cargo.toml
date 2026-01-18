@@ -12,7 +12,6 @@ fabsebot_db = { path = "../fabsebot_db" }
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 base64 = { workspace = true }
-dashmap = { workspace = true }
 fastrand = { workspace = true }
 image = { workspace = true, default-features = false, features = ["gif", "rayon", "webp"] }
 poise = { workspace = true }
@@ -24,4 +23,5 @@ sqlx = { workspace = true, default-features = false, features = ["macros", "post
 systemstat = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tracing = { workspace = true }
+url = { workspace = true }
 urlencoding = { workspace = true }

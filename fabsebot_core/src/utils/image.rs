@@ -379,6 +379,12 @@ fn apply_text_layout(
 	);
 }
 
+type ImagePayload = (
+	Vec<u8>,
+	Option<TextLayout>,
+	Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
+);
+
 pub fn quote_image(
 	avatar_bytes: Option<&[u8]>,
 	avatar_resized: Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
@@ -394,11 +400,7 @@ pub fn quote_image(
 	is_gradient: bool,
 	is_animated: bool,
 	new_font: bool,
-) -> AResult<(
-	Vec<u8>,
-	Option<TextLayout>,
-	Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
-)> {
+) -> AResult<ImagePayload> {
 	let avatar_position = if is_reverse {
 		i64::from(QUOTE_WIDTH.saturating_sub(QUOTE_HEIGHT))
 	} else {

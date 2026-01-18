@@ -1,10 +1,10 @@
 use std::{
 	collections::HashMap,
 	sync::{Arc, LazyLock, OnceLock},
+	time::Duration,
 };
 
 use anyhow::Error as AError;
-use dashmap::DashMap;
 use fabsebot_db::guild::GuildData;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
@@ -17,12 +17,12 @@ use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::config::settings::{APIConfig, BotConfig, ServerConfig, UserSettings};
+use crate::config::settings::{APIConfig, ServerConfig, UserSettings};
 
 pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
 type GlobalChatMap = Cache<GuildId, Arc<HashMap<GuildId, MessageId>>>;
 pub type WebhookMap = Cache<GenericChannelId, Webhook>;
-pub type GuildDataMap = Cache<GuildId, Arc<GuildData>>;
+pub type GuildMap = Cache<GuildId, Arc<GuildData>>;
 type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 
 pub struct AIModelDefaults {
@@ -104,34 +104,42 @@ impl AIChatMessage {
 	}
 }
 
+pub type Metadata = Arc<(
+	AuxMetadata,
+	HashMap<GuildId, (String, MessageId, GenericChannelId)>,
+)>;
+
 pub struct Data {
 	pub db: PgPool,
 	pub music_manager: Arc<Songbird>,
 	pub ai_chats: AIChatMap,
 	pub global_chats: GlobalChatMap,
 	pub channel_webhooks: WebhookMap,
-	pub guild_data: GuildDataMap,
+	pub guilds: GuildMap,
 	pub user_settings: UserSettingsMap,
-	pub track_metadata: DashMap<
-		Uuid,
-		(
-			Arc<AuxMetadata>,
-			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
-		),
-	>,
+	pub track_metadata: Cache<Uuid, Metadata>,
 }
 
 pub type Error = AError;
 pub type SContext<'a> = PContext<'a, Data, Error>;
 
 pub struct UtilsConfig {
-	pub bot: BotConfig,
+	pub ping_message: String,
+	pub ping_payload: String,
 	pub fabseserver: ServerConfig,
 	pub api: APIConfig,
 }
 
 pub static UTILS_CONFIG: OnceLock<Arc<UtilsConfig>> = OnceLock::new();
-pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+	Client::builder()
+		.user_agent("FabseBot/1.0 (https://github.com/FabseGP/fabsebot; fabsegp@tutamail.com)")
+		.zstd(true)
+		.http3_congestion_bbr()
+		.timeout(Duration::from_secs(300))
+		.build()
+		.unwrap()
+});
 pub static SYSTEM_STATS: LazyLock<Arc<System>> = LazyLock::new(|| Arc::new(System::new()));
 
 pub static GEMMA_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {

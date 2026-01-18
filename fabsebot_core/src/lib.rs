@@ -12,14 +12,13 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult};
-use dashmap::DashMap;
 use mini_moka::sync::Cache;
 use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions};
 use serenity::{
 	Client,
 	all::{
 		ActivityData, CreateAllowedMentions, CreateAttachment, EditProfile, GatewayIntents,
-		GenericChannelId, GuildId, Http, OnlineStatus, Settings, Token,
+		GenericChannelId, Http, OnlineStatus, Settings, Token,
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
@@ -85,84 +84,80 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 			.map(|t| t.as_secs())
 			&& let Ok(now_timestamp) = i64::try_from(system_time)
 		{
-			let guild_ids: Vec<GuildId> = data.guild_data.iter().map(|g| *g.key()).collect();
-			for guild_id in guild_ids {
-				if let Some(guild_data) = data.guild_data.get(&guild_id) {
-					let guild_id_i64 = i64::from(guild_id);
-					let mut needs_update = false;
-					let mut modified_settings = guild_data.as_ref().clone();
-					if let Some(last_waifu) = modified_settings.settings.last_waifu
-						&& let Some(waifu_rate) = modified_settings.settings.waifu_rate
-						&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
-						&& let Some(waifu_channel) = modified_settings.settings.waifu_channel
-						&& let Ok(waifu_channel_u64) = u64::try_from(waifu_channel)
+			let mut needs_update = false;
+			for guild in &data.guilds {
+				let guild_id_i64 = i64::from(*guild.key());
+				let mut modified_settings = guild.as_ref().clone();
+				if let Some(last_waifu) = modified_settings.settings.last_waifu
+					&& let Some(waifu_rate) = modified_settings.settings.waifu_rate
+					&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
+					&& let Some(waifu_channel) = modified_settings.settings.waifu_channel
+					&& let Ok(waifu_channel_u64) = u64::try_from(waifu_channel)
+				{
+					if let Err(err) = GenericChannelId::new(waifu_channel_u64)
+						.say(&http, get_waifu().await)
+						.await
 					{
-						if let Err(err) = GenericChannelId::new(waifu_channel_u64)
-							.say(&http, get_waifu().await)
-							.await
-						{
-							error!("Failed to send waifu: {:?}", &err);
-						} else {
-							modified_settings.settings.last_waifu = Some(now_timestamp);
-							needs_update = true;
-							if let Ok(mut db_conn) = data.db.acquire().await
-								&& let Err(err) = query!(
-									"INSERT INTO guild_settings (guild_id, last_waifu)
+						error!("Failed to send waifu: {:?}", &err);
+					} else {
+						modified_settings.settings.last_waifu = Some(now_timestamp);
+						needs_update = true;
+						if let Ok(mut db_conn) = data.db.acquire().await
+							&& let Err(err) = query!(
+								"INSERT INTO guild_settings (guild_id, last_waifu)
             					VALUES ($1, $2)
             					ON CONFLICT(guild_id)
             					DO UPDATE SET
                        				last_waifu = $2",
+								guild_id_i64,
+								now_timestamp
+							)
+							.execute(&mut *db_conn)
+							.await
+						{
+							error!("Failed to update last_waifu in db: {:?}", &err);
+						}
+					}
+				}
+				if let Some(last_dead_chat) = modified_settings.settings.last_dead_chat
+					&& let Some(dead_chat_rate) = modified_settings.settings.dead_chat_rate
+					&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
+					&& let Some(dead_chat_channel) = modified_settings.settings.dead_chat_channel
+					&& let Ok(dead_chat_channel_u64) = u64::try_from(dead_chat_channel)
+				{
+					let gifs = get_gifs("dead chat".to_owned()).await;
+					let index = fastrand::usize(..gifs.len());
+					if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
+						if let Err(err) = GenericChannelId::new(dead_chat_channel_u64)
+							.say(&http, gif)
+							.await
+						{
+							error!("Failed to send dead chat gif: {:?}", &err);
+						} else {
+							modified_settings.settings.last_dead_chat = Some(now_timestamp);
+							needs_update = true;
+							if let Ok(mut db_conn) = data.db.acquire().await
+								&& let Err(err) = query!(
+									"INSERT INTO guild_settings (guild_id, last_dead_chat)
+            						VALUES ($1, $2)
+            						ON CONFLICT(guild_id)
+            						DO UPDATE SET
+                       					last_dead_chat = $2",
 									guild_id_i64,
 									now_timestamp
 								)
 								.execute(&mut *db_conn)
 								.await
 							{
-								error!("Failed to update last_waifu in db: {:?}", &err);
+								error!("Failed to update last_dead_chat in db: {:?}", &err);
 							}
 						}
 					}
-					if let Some(last_dead_chat) = modified_settings.settings.last_dead_chat
-						&& let Some(dead_chat_rate) = modified_settings.settings.dead_chat_rate
-						&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
-						&& let Some(dead_chat_channel) =
-							modified_settings.settings.dead_chat_channel
-						&& let Ok(dead_chat_channel_u64) = u64::try_from(dead_chat_channel)
-					{
-						let gifs = get_gifs("dead chat".to_owned()).await;
-						let index = fastrand::usize(..gifs.len());
-						if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
-							if let Err(err) = GenericChannelId::new(dead_chat_channel_u64)
-								.say(&http, gif)
-								.await
-							{
-								error!("Failed to send dead chat gif: {:?}", &err);
-							} else {
-								modified_settings.settings.last_dead_chat = Some(now_timestamp);
-								needs_update = true;
-								if let Ok(mut db_conn) = data.db.acquire().await
-									&& let Err(err) = query!(
-										"INSERT INTO guild_settings (guild_id, last_dead_chat)
-            						VALUES ($1, $2)
-            						ON CONFLICT(guild_id)
-            						DO UPDATE SET
-                       					last_dead_chat = $2",
-										guild_id_i64,
-										now_timestamp
-									)
-									.execute(&mut *db_conn)
-									.await
-								{
-									error!("Failed to update last_dead_chat in db: {:?}", &err);
-								}
-							}
-						}
-					}
-					if needs_update {
-						data.guild_data
-							.insert(guild_id, Arc::new(modified_settings));
-						break;
-					}
+				}
+				if needs_update {
+					data.guilds
+						.insert(*guild.key(), Arc::new(modified_settings));
+					needs_update = false;
 				}
 			}
 		}
@@ -176,16 +171,20 @@ pub async fn bot_start(
 	postgres_pool: Pool<Postgres>,
 	commands: Vec<Command<Data, SError>>,
 ) -> AResult<()> {
-	let utils_config = UTILS_CONFIG.get_or_init(|| {
-		Arc::new(UtilsConfig {
-			bot: bot_config,
+	if UTILS_CONFIG
+		.set(Arc::new(UtilsConfig {
+			ping_message: bot_config.ping_message,
+			ping_payload: bot_config.ping_payload,
 			fabseserver: server_config,
 			api: api_config,
-		})
-	});
+		}))
+		.is_err()
+	{
+		error!("UTILS_CONFIG already initialized");
+	}
 
 	spawn(async move {
-		periodic_ping(&utils_config.bot.uptime_url, &utils_config.bot.uptime_token).await;
+		periodic_ping(&bot_config.uptime_url, &bot_config.uptime_token).await;
 	});
 
 	initialize_counters();
@@ -194,7 +193,7 @@ pub async fn bot_start(
 	music_manager.set_config(
 		Config::default()
 			.use_softclip(false)
-			.decode_mode(DecodeMode::Pass),
+			.decode_mode(DecodeMode::Decode),
 	);
 
 	let bot_data = Arc::new(Data {
@@ -206,12 +205,12 @@ pub async fn bot_start(
 			.max_capacity(100)
 			.time_to_idle(Duration::from_secs(3600))
 			.build(),
-		guild_data: Cache::new(1000),
+		guilds: Cache::new(1000),
 		user_settings: Cache::new(1000),
-		track_metadata: DashMap::default(),
+		track_metadata: Cache::new(1000),
 	});
 	let additional_prefix: &'static str =
-		Box::leak(format!("hey {}", &utils_config.bot.username).into_boxed_str());
+		Box::leak(format!("hey {}", &bot_config.username).into_boxed_str());
 	let framework = Framework::builder()
 		.options(FrameworkOptions {
 			commands,
@@ -232,9 +231,9 @@ pub async fn bot_start(
 		| GatewayIntents::GUILD_VOICE_STATES
 		| GatewayIntents::MESSAGE_CONTENT;
 	let mut cache_settings = Settings::default();
-	cache_settings.max_messages = utils_config.bot.cache_max_messages;
-	let activity = ActivityData::listening(&utils_config.bot.activity);
-	let mut client = Client::builder(Token::from_str(&utils_config.bot.token)?, intents)
+	cache_settings.max_messages = bot_config.cache_max_messages;
+	let activity = ActivityData::listening(&bot_config.activity);
+	let mut client = Client::builder(Token::from_str(&bot_config.token)?, intents)
 		.framework(Box::new(framework))
 		.voice_manager(music_manager)
 		.cache_settings(cache_settings)
@@ -263,18 +262,18 @@ pub async fn bot_start(
 		.edit_profile(
 			&EditProfile::default()
 				.avatar(
-					CreateAttachment::url(&client.http, &utils_config.bot.avatar, "bot_avatar.gif")
+					CreateAttachment::url(&client.http, &bot_config.avatar, "bot_avatar.gif")
 						.await?
 						.encode("image/gif")
 						.await?,
 				)
 				.banner(
-					CreateAttachment::url(&client.http, &utils_config.bot.banner, "bot_banner.gif")
+					CreateAttachment::url(&client.http, &bot_config.banner, "bot_banner.gif")
 						.await?
 						.encode("image/gif")
 						.await?,
 				)
-				.username(&utils_config.bot.username),
+				.username(&bot_config.username),
 		)
 		.await
 		.context("Failed to edit bot profile")?;

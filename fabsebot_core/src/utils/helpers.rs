@@ -1,7 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
 use anyhow::Result as AResult;
-use dashmap::DashMap;
 use serde::Deserialize;
 use serenity::all::{GenericChannelId, GuildId, MessageId};
 use songbird::{
@@ -53,7 +52,7 @@ pub struct MusicData {
 }
 
 pub async fn queue_song(
-	metadata: Arc<AuxMetadata>,
+	metadata: AuxMetadata,
 	audio: AudioStream<Box<dyn MediaSource>>,
 	source: YoutubeDl<'static>,
 	handler_lock: Arc<Mutex<Call>>,
@@ -69,6 +68,21 @@ pub async fn queue_song(
 		.map_or_else(Uuid::new_v4, |url| {
 			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
 		});
+
+	let mut track_metadata = data
+		.track_metadata
+		.get(&uuid)
+		.unwrap_or_default()
+		.as_ref()
+		.clone();
+
+	track_metadata.0 = metadata;
+	track_metadata
+		.1
+		.insert(guild_id, (author_name, msg_id, channel_id));
+
+	data.track_metadata.insert(uuid, Arc::new(track_metadata));
+
 	get_configured_songbird_handler(&handler_lock)
 		.await
 		.enqueue(Track::new_with_uuid(
@@ -76,12 +90,6 @@ pub async fn queue_song(
 			uuid,
 		))
 		.await;
-
-	data.track_metadata
-		.entry(uuid)
-		.or_insert_with(|| (metadata, DashMap::default()))
-		.1
-		.insert(guild_id, (author_name, msg_id, channel_id, true));
 
 	Ok(())
 }
@@ -184,9 +192,9 @@ pub async fn get_waifu() -> Cow<'static, str> {
 }
 
 pub struct DiscordMessageLink {
-	pub guild_id: u64,
-	pub channel_id: u64,
-	pub message_id: u64,
+	pub guild: u64,
+	pub channel: u64,
+	pub message: u64,
 }
 
 pub struct DiscordEmoji {
@@ -218,15 +226,15 @@ pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink>
 		return Err(ErrMode::Cut(ContextError::new()));
 	};
 
-	let (guild_id, (channel_id, message_id)) = preceded(
+	let (guild, (channel, message)) = preceded(
 		channel_prefix,
 		separated_pair(discord_id, '/', separated_pair(discord_id, '/', discord_id)),
 	)
 	.parse_next(input)?;
 	Ok(DiscordMessageLink {
-		guild_id,
-		channel_id,
-		message_id,
+		guild,
+		channel,
+		message,
 	})
 }
 

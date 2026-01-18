@@ -14,9 +14,9 @@ members = [
 resolver = "3"
 
 [workspace.lints.clippy]
-all = "warn"
-nursery = "warn"
-pedantic = "warn"
+all = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
 absolute_paths = "warn"
 allow_attributes = "warn"
 arithmetic_side_effects = "warn"
@@ -43,6 +43,9 @@ unwrap_used = "warn"
 unwrap_in_result = "warn"
 unused_trait_names = "warn"
 unused_result_ok = "warn"
+missing_errors_doc = "allow"
+too_many_arguments = "allow"
+too_many_lines = "allow"
 
 [patch.crates-io]
 audiopus_sys = { git = 'https://github.com/sevenc-nanashi/audiopus_sys', rev = '00e9d16' }
@@ -52,7 +55,6 @@ ab_glyph = "*"
 anyhow = "*"
 base64 = "*"
 bytes = "*"
-dashmap = "*"
 fastrand = "*"
 image = { version = "*", default-features = false, features = ["gif", "rayon", "webp"] }
 imageproc = { version = "*", default-features = false, features = ["rayon", "text"] }
@@ -61,7 +63,7 @@ metrics = { version = "*" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
 poise = { git = "https://github.com/serenity-rs/poise.git", branch = "serenity-next" }
 rayon = "*"
-reqwest = { version = "*", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "*", default-features = false, features = ["http3", "rustls-tls", "zstd"] }
 scraper = "*"
 serde = "*"
 serenity = { git = "https://github.com/serenity-rs/serenity.git", branch = "next", default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }

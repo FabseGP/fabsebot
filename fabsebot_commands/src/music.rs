@@ -2,11 +2,10 @@ use core::time::Duration;
 use std::sync::Arc;
 
 use anyhow::Result as AResult;
-use dashmap::DashMap;
 use fabsebot_core::{
 	config::{
 		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED, COLOUR_YELLOW},
-		types::{Data, Error, HTTP_CLIENT, SContext},
+		types::{Data, Error, HTTP_CLIENT, Metadata, SContext},
 	},
 	utils::{
 		ai::ai_voice,
@@ -37,6 +36,7 @@ use tokio::{
 	sync::{Mutex, Notify},
 };
 use tracing::{error, warn};
+use url::Url;
 
 #[derive(Deserialize)]
 struct DeezerResponse {
@@ -144,7 +144,7 @@ impl PlaybackHandler {
 	fn create_components<'a>(
 		author_name: &'a str,
 		msg_id: MessageId,
-		metadata: &'a Arc<AuxMetadata>,
+		metadata: &'a AuxMetadata,
 		queue_size: usize,
 	) -> (CreateEmbed<'a>, [CreateComponent<'a>; 1]) {
 		let mut e =
@@ -210,10 +210,7 @@ impl PlaybackHandler {
 		lyrics_embed: &mut Option<CreateEmbed<'_>>,
 		history_shown: &mut bool,
 		history_embed: &mut Option<CreateEmbed<'_>>,
-		guild_tracks: &(
-			Arc<AuxMetadata>,
-			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
-		),
+		guild_tracks: Metadata,
 		embed: &CreateEmbed<'_>,
 	) -> AResult<()> {
 		interaction.defer(&self.serenity_context.http).await?;
@@ -224,9 +221,9 @@ impl PlaybackHandler {
 		let queue = handler.queue();
 		if interaction.data.custom_id.ends_with('s') && queue.len() > 1 {
 			for guild in &guild_tracks.1 {
-				if guild.key() == &self.guild_id {
+				if guild.0 == &self.guild_id {
 					queue.skip()?;
-				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.key()) {
+				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.0) {
 					get_configured_songbird_handler(&handler_lock)
 						.await
 						.queue()
@@ -235,10 +232,11 @@ impl PlaybackHandler {
 					continue;
 				}
 				guild
+					.1
 					.2
 					.edit_message(
 						&self.serenity_context.http,
-						guild.1,
+						guild.1.1,
 						EditMessage::default()
 							.suppress_embeds(true)
 							.content("Skipped to next song")
@@ -248,7 +246,7 @@ impl PlaybackHandler {
 			}
 		} else if interaction.data.custom_id.ends_with('p') {
 			for guild in &guild_tracks.1 {
-				if guild.key() == &self.guild_id {
+				if guild.0 == &self.guild_id {
 					if let Some(current_track) = queue.current()
 						&& let Ok(track_state) = current_track.get_info().await.map(|t| t.playing)
 					{
@@ -262,7 +260,7 @@ impl PlaybackHandler {
 							_ => {}
 						}
 					}
-				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.key())
+				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.0)
 					&& let Some(current_track) = get_configured_songbird_handler(&handler_lock)
 						.await
 						.queue()
@@ -282,9 +280,9 @@ impl PlaybackHandler {
 			}
 		} else if interaction.data.custom_id.ends_with('c') {
 			for guild in &guild_tracks.1 {
-				if guild.key() == &self.guild_id {
+				if guild.0 == &self.guild_id {
 					queue.stop();
-				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.key()) {
+				} else if let Some(handler_lock) = self.bot_data.music_manager.get(*guild.0) {
 					get_configured_songbird_handler(&handler_lock)
 						.await
 						.queue()
@@ -293,10 +291,11 @@ impl PlaybackHandler {
 					continue;
 				}
 				guild
+					.1
 					.2
 					.edit_message(
 						&self.serenity_context.http,
-						guild.1,
+						guild.1.1,
 						EditMessage::default()
 							.suppress_embeds(true)
 							.content("Nothing to play")
@@ -386,16 +385,9 @@ impl PlaybackHandler {
 		Ok(())
 	}
 
-	pub async fn update_info(
-		&self,
-		guild_tracks: (
-			Arc<AuxMetadata>,
-			DashMap<GuildId, (String, MessageId, GenericChannelId, bool)>,
-		),
-		notifier: Arc<Notify>,
-	) -> AResult<()> {
+	pub async fn update_info(&self, guild_tracks: Metadata, notifier: Arc<Notify>) -> AResult<()> {
 		if let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id)
-			&& let Some(mut guild_data) = guild_tracks.1.get_mut(&self.guild_id)
+			&& let Some(guild_data) = guild_tracks.1.get(&self.guild_id)
 		{
 			let queue_size = get_configured_songbird_handler(&handler_lock)
 				.await
@@ -444,7 +436,7 @@ impl PlaybackHandler {
 							&mut lyrics_embed,
 							&mut history_shown,
 							&mut history_embed,
-							&guild_tracks,
+							guild_tracks.clone(),
 											&embed
 						)
 						.await?;
@@ -465,7 +457,6 @@ impl PlaybackHandler {
 						.content("Song finished"),
 				)
 				.await?;
-			guild_data.3 = true;
 		}
 
 		Ok(())
@@ -480,13 +471,6 @@ impl VoiceEventHandler for PlaybackHandler {
 				if state.playing == PlayMode::Play
 					&& let Some(guild_tracks) = self.bot_data.track_metadata.get(&handle.uuid())
 				{
-					if let Some(mut guild_track) = guild_tracks.1.get_mut(&self.guild_id)
-						&& guild_track.3
-					{
-						guild_track.3 = false;
-					} else {
-						continue;
-					}
 					let self_clone = self.clone();
 					let guild_tracks_clone = guild_tracks.clone();
 					let notifier_clone = self.notifier.clone();
@@ -579,7 +563,7 @@ pub async fn add_deezer_playlist(
 						let reply = ctx.reply("Song added to queue").await?;
 						let msg = reply.message().await?;
 						queue_song(
-							Arc::new(metadata),
+							metadata,
 							audio,
 							src,
 							handler_lock.clone(),
@@ -634,11 +618,10 @@ pub async fn add_youtube_playlist(
 			.output()
 			.await?;
 
-		let urls_joined = String::from_utf8(yt_dlp_output.stdout)?;
-
-		let urls: Vec<String> = urls_joined
+		let urls_string = String::from_utf8(yt_dlp_output.stdout)?;
+		let urls: Vec<String> = urls_string
 			.lines()
-			.filter(|line| line.starts_with("https://"))
+			.filter(|line| Url::parse(line).is_ok())
 			.map(ToString::to_string)
 			.collect();
 
@@ -649,7 +632,7 @@ pub async fn add_youtube_playlist(
 				let reply = ctx.reply("Song added to queue").await?;
 				let msg = reply.message().await?;
 				queue_song(
-					Arc::new(metadata),
+					metadata,
 					audio,
 					src,
 					handler_lock.clone(),
@@ -708,7 +691,7 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			.await?;
 			let mut modified_settings = ctx
 				.data()
-				.guild_data
+				.guilds
 				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
@@ -716,7 +699,7 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			modified_settings.settings.global_call = true;
 			modified_settings.settings.global_music = true;
 			ctx.data()
-				.guild_data
+				.guilds
 				.insert(guild_id, Arc::new(modified_settings));
 			ctx.send(
 				CreateReply::default().embed(
@@ -894,7 +877,7 @@ pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			.await?;
 			let mut modified_settings = ctx
 				.data()
-				.guild_data
+				.guilds
 				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
@@ -902,11 +885,9 @@ pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			modified_settings.settings.global_music = false;
 			modified_settings.settings.global_call = false;
 			ctx.data()
-				.guild_data
+				.guilds
 				.insert(guild_id, Arc::new(modified_settings));
-			ctx.data()
-				.track_metadata
-				.retain(|_key, value| !value.1.contains_key(&guild_id));
+			todo!("clear cache");
 		} else {
 			ctx.reply(
 				"Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
@@ -923,9 +904,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	if let Some(guild_id) = ctx.guild_id() {
 		if ctx.data().music_manager.remove(guild_id).await.is_ok() {
 			ctx.reply("Left voice channel, don't forget me").await?;
-			ctx.data()
-				.track_metadata
-				.retain(|_key, value| !value.1.contains_key(&guild_id));
+			todo!("clear cache");
 		} else {
 			ctx.reply(
 				"Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
@@ -957,7 +936,7 @@ pub async fn play_song(
 			let reply = ctx.reply("Song added to queue").await?;
 			let msg = reply.message().await?;
 			queue_song(
-				Arc::new(metadata),
+				metadata,
 				audio,
 				src,
 				handler_lock.clone(),
@@ -1003,9 +982,9 @@ pub async fn play_song_global(
 			let reply = ctx.reply("Song added to queue").await?;
 			let msg = reply.message().await?;
 			queue_song(
-				Arc::new(metadata),
+				metadata.clone(),
 				audio,
-				src,
+				src.clone(),
 				handler_lock.clone(),
 				guild_id,
 				ctx.data(),
@@ -1014,54 +993,39 @@ pub async fn play_song_global(
 				ctx.author().display_name().to_owned(),
 			)
 			.await?;
-			let guild_global_music: Vec<_> = ctx
-				.data()
-				.guild_data
-				.iter()
-				.filter(|entry| {
-					let settings = &entry.value().settings;
-					entry.key() != &guild_id && settings.global_music
-				})
-				.map(|entry| entry.value().settings.guild_id)
-				.collect();
 
-			for guild_id_global in guild_global_music {
-				if let Ok(guild_id_u64) = u64::try_from(guild_id_global) {
-					let current_guild_id = GuildId::new(guild_id_u64);
-					if let Some(global_handler_lock) =
-						ctx.data().music_manager.get(current_guild_id)
-						&& let Some(id) = get_configured_songbird_handler(&handler_lock)
-							.await
-							.current_channel()
-						&& let Ok(channel) = ctx
-							.http()
-							.get_channel(GenericChannelId::new(id.get()))
-							.await && let Some(guild_channel) = channel.guild()
-					{
-						let msg = guild_channel
-							.send_message(
-								ctx.http(),
-								CreateMessage::default().content("Song added to queue"),
-							)
-							.await?;
-						todo!("Fix global music playback");
-						/*
-						queue_song(
-							Arc::new(metadata),
-							audio,
-							src,
-							handler_lock.clone(),
-							guild_id,
-							ctx.data(),
-							msg.id,
-							msg.channel_id,
-							ctx.author().display_name().to_owned(),
+			for global_guild in ctx.data().guilds.iter().filter(|entry| {
+				let settings = &entry.value().settings;
+				entry.key() != &guild_id && settings.global_music
+			}) {
+				if let Some(global_handler_lock) = ctx.data().music_manager.get(*global_guild.key())
+					&& let Some(id) = get_configured_songbird_handler(&handler_lock)
+						.await
+						.current_channel()
+					&& let Ok(channel) = ctx
+						.http()
+						.get_channel(GenericChannelId::new(id.get()))
+						.await && let Some(guild_channel) = channel.guild()
+				{
+					let msg = guild_channel
+						.send_message(
+							ctx.http(),
+							CreateMessage::default().content("Song added to queue"),
 						)
 						.await?;
-						*/
-					}
-				} else {
-					warn!("Failed to convert guild id to u64");
+					let global_audio = src.create_async().await?;
+					queue_song(
+						metadata.clone(),
+						global_audio,
+						src.clone(),
+						global_handler_lock.clone(),
+						guild_id,
+						ctx.data(),
+						msg.id,
+						msg.channel_id,
+						ctx.author().display_name().to_owned(),
+					)
+					.await?;
 				}
 			}
 		} else {

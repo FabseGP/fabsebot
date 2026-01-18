@@ -1,8 +1,7 @@
-use std::{fmt::Write as _, process, sync::Arc, time::Duration};
+use std::{collections::HashSet, fmt::Write as _, process, sync::Arc, time::Duration};
 
 use ab_glyph::FontArc;
 use anyhow::Context as _;
-use dashmap::DashSet;
 use fabsebot_core::{
 	config::{
 		constants::{COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, FONTS},
@@ -85,7 +84,7 @@ pub async fn anony_poll(
 		.await?;
 
 	let mut vote_counts = vec![0; options_count];
-	let voted_users = DashSet::new();
+	let mut voted_users = HashSet::new();
 
 	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 		.timeout(Duration::from_secs(duration.saturating_mul(60)))
@@ -407,7 +406,7 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 		ctx.data().global_chats.invalidate(&guild_id);
 		let mut modified_settings = ctx
 			.data()
-			.guild_data
+			.guilds
 			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
@@ -415,7 +414,7 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 		modified_settings.settings.global_chat = false;
 		modified_settings.settings.global_chat_channel = None;
 		ctx.data()
-			.guild_data
+			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
 		ctx.reply("Call ended...").await?;
 	}
@@ -443,7 +442,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		.await?;
 		let mut modified_settings = ctx
 			.data()
-			.guild_data
+			.guilds
 			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
@@ -451,12 +450,12 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		modified_settings.settings.global_chat = true;
 		modified_settings.settings.global_chat_channel = Some(channel_id_i64);
 		ctx.data()
-			.guild_data
+			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
 		let message = ctx.reply("Calling...").await?;
 		let result = timeout(Duration::from_secs(60), async {
 			loop {
-				let has_other_calls = ctx.data().guild_data.iter().any(|entry| {
+				let has_other_calls = ctx.data().guilds.iter().any(|entry| {
 					entry.key() != &guild_id
 						&& entry.value().settings.global_chat
 						&& entry.value().settings.global_chat_channel.is_some()
@@ -487,7 +486,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 			.await?;
 			let mut modified_settings = ctx
 				.data()
-				.guild_data
+				.guilds
 				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
@@ -495,7 +494,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 			modified_settings.settings.global_chat = false;
 			modified_settings.settings.global_chat_channel = None;
 			ctx.data()
-				.guild_data
+				.guilds
 				.insert(guild_id, Arc::new(modified_settings));
 			message
 				.edit(
@@ -1027,7 +1026,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 					.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
 			)
 			.await?;
-		if let Some(guild_data) = ctx.data().guild_data.get(&guild_id)
+		if let Some(guild_data) = ctx.data().guilds.get(&guild_id)
 			&& let Some(channel) = guild_data.settings.quotes_channel
 		{
 			if let Ok(channel_u64) = u64::try_from(channel) {
@@ -1189,7 +1188,7 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 
 		let mut words = ctx
 			.data()
-			.guild_data
+			.guilds
 			.get(&guild_id)
 			.map_or_else(Vec::new, |guild_data| {
 				let capacity = guild_data.word_tracking.len();

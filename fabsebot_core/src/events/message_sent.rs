@@ -45,8 +45,8 @@ async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 				CreateMessage::default()
 					.embed(
 						CreateEmbed::default()
-							.title(&utils_config.bot.ping_message)
-							.image(&utils_config.bot.ping_payload)
+							.title(&utils_config.ping_message)
+							.image(&utils_config.ping_payload)
 							.colour(COLOUR_BLUE),
 					)
 					.reference_message(new_message)
@@ -192,7 +192,7 @@ async fn music_channel(
 								.reply(&ctx_clone.http, "Song added to queue")
 								.await?;
 							if let Err(err) = queue_song(
-								Arc::new(metadata),
+								metadata,
 								audio,
 								src,
 								handler_lock.clone(),
@@ -232,13 +232,13 @@ async fn music_channel(
 	Ok(())
 }
 
-fn ai_chat_channel(
+async fn ai_chat_channel(
 	ctx: &SContext,
 	new_message: &Message,
 	data: &Arc<Data>,
 	guild_data: &Arc<GuildData>,
 	guild_id: GuildId,
-) {
+) -> AResult<()> {
 	if let Some(ai_chat_channel) = guild_data.settings.ai_chat_channel {
 		if let Ok(ai_chat_channel_u64) = u64::try_from(ai_chat_channel) {
 			if new_message.channel_id.get() == ai_chat_channel_u64 {
@@ -299,39 +299,35 @@ fn ai_chat_channel(
 							.unwrap_or_default()
 					}
 				};
-				let ctx_clone = ctx.clone();
-				let music_manager_clone = data.music_manager.get(guild_id);
-				let new_message_clone = new_message.clone();
-				let guild_id_clone = guild_id;
-				spawn(async move {
-					if let Err(e) = ai_chatbot(
-						&ctx_clone,
-						&new_message_clone,
-						chatbot_role.map_or_else(
-							|| DEFAULT_BOT_ROLE.to_owned(),
-							|role| format!("The current user wants you to act as: {role}"),
-						),
-						chatbot_internet_search,
-						chatbot_temperature,
-						chatbot_top_p,
-						chatbot_top_k,
-						chatbot_repetition_penalty,
-						chatbot_frequency_penalty,
-						chatbot_presence_penalty,
-						guild_id_clone,
-						&guild_ai_chats,
-						music_manager_clone,
-					)
-					.await
-					{
-						warn!("AI chatbot error: {e:?}");
-					}
-				});
+				let mut ai_chats = guild_ai_chats.lock().await;
+				if let Err(e) = ai_chatbot(
+					ctx,
+					new_message,
+					chatbot_role.map_or_else(
+						|| DEFAULT_BOT_ROLE.to_owned(),
+						|role| format!("The current user wants you to act as: {role}"),
+					),
+					chatbot_internet_search,
+					chatbot_temperature,
+					chatbot_top_p,
+					chatbot_top_k,
+					chatbot_repetition_penalty,
+					chatbot_frequency_penalty,
+					chatbot_presence_penalty,
+					guild_id,
+					&mut ai_chats,
+					data.music_manager.get(guild_id),
+				)
+				.await
+				{
+					warn!("AI chatbot error: {e:?}");
+				}
 			}
 		} else {
 			warn!("Failed to convert ai chat channel id to u64");
 		}
 	}
+	Ok(())
 }
 
 async fn global_chat_channel(
@@ -347,7 +343,7 @@ async fn global_chat_channel(
 				&& guild_data.settings.global_chat
 			{
 				let guild_global_chats: Vec<_> = data
-					.guild_data
+					.guilds
 					.iter()
 					.filter_map(|entry| {
 						let settings = &entry.value().settings;
@@ -491,9 +487,9 @@ async fn global_chat_channel(
 async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &str) -> AResult<()> {
 	if let Ok(link) = discord_message_link.parse_next(&mut content) {
 		let (guild_id, channel_id, message_id) = (
-			GuildId::new(link.guild_id),
-			GenericChannelId::new(link.channel_id),
-			MessageId::new(link.message_id),
+			GuildId::new(link.guild),
+			GenericChannelId::new(link.channel),
+			MessageId::new(link.message),
 		);
 		if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
 			&& let Some(ref_channel_name) = channel.guild().map(|g| g.base.name)
@@ -724,11 +720,11 @@ async fn db_queries(
 	.execute(&mut *tx)
 	.await?;
 
-	let guild_data_opt = data.guild_data.get(&guild_id);
+	let guild_data_opt = data.guilds.get(&guild_id);
 	if let Some(guild_data) = guild_data_opt {
 		spoiler_channel(ctx, new_message, data.clone(), guild_data.clone()).await?;
 		music_channel(ctx, new_message, data.clone(), guild_data.clone(), guild_id).await?;
-		ai_chat_channel(ctx, new_message, &data, &guild_data, guild_id);
+		ai_chat_channel(ctx, new_message, &data, &guild_data, guild_id).await?;
 		global_chat_channel(ctx, new_message, data.clone(), guild_data.clone(), guild_id).await?;
 		{
 			let mut word_tracking_updates: HashSet<WordTracking> = guild_data.word_tracking.clone();
@@ -753,14 +749,13 @@ async fn db_queries(
 				}
 			}
 			let mut modified_settings = data
-				.guild_data
+				.guilds
 				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
 				.clone();
 			modified_settings.word_tracking = word_tracking_updates;
-			data.guild_data
-				.insert(guild_id, Arc::new(modified_settings));
+			data.guilds.insert(guild_id, Arc::new(modified_settings));
 		}
 		for record in guild_data
 			.word_reactions
@@ -841,13 +836,13 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> AResult<()
 	emoji_reaction(ctx, new_message, &content, data.clone()).await?;
 	if let Some(guild_id) = new_message.guild_id {
 		let guild_id_i64 = i64::from(guild_id);
-		if !data.guild_data.contains_key(&guild_id) {
+		if !data.guilds.contains_key(&guild_id) {
 			insert_guild(guild_id_i64, &mut *data.db.acquire().await?).await?;
 			let default_settings = GuildSettings {
 				guild_id: guild_id_i64,
 				..Default::default()
 			};
-			data.guild_data.insert(
+			data.guilds.insert(
 				guild_id,
 				Arc::new(GuildData {
 					settings: default_settings,

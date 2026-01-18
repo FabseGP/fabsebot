@@ -35,10 +35,10 @@ async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(
 		.begin()
 		.await
 		.context("Failed to acquire savepoint")?;
-	if let Some(guild_data) = ctx.data().guild_data.get(&guild_id) {
+	if let Some(guild_data) = ctx.data().guilds.get(&guild_id) {
 		guild_data.reset(guild_id_i64, tx).await?;
 	}
-	ctx.data().guild_data.insert(
+	ctx.data().guilds.insert(
 		guild_id,
 		Arc::new(GuildData {
 			settings: GuildSettings {
@@ -64,7 +64,7 @@ async fn configure_channels(
 ) -> Result<(), Error> {
 	let mut modified_settings = ctx
 		.data()
-		.guild_data
+		.guilds
 		.get(&guild_id)
 		.get_or_insert_default()
 		.as_ref()
@@ -154,7 +154,7 @@ async fn configure_channels(
 		modified_settings.settings.last_dead_chat = Some(system_time);
 	}
 	ctx.data()
-		.guild_data
+		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
@@ -798,7 +798,7 @@ pub async fn set_emoji_react(
 			.await?;
 			let mut modified_settings = ctx
 				.data()
-				.guild_data
+				.guilds
 				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
@@ -810,7 +810,7 @@ pub async fn set_emoji_react(
 				content_reaction: content,
 			});
 			ctx.data()
-				.guild_data
+				.guilds
 				.insert(guild_id, Arc::new(modified_settings));
 		} else if let Some(emoji_media) = media {
 			let content_type_opt = if emoji_media.starts_with("https") {
@@ -874,7 +874,7 @@ pub async fn set_emoji_react(
 				.await?;
 				let mut modified_settings = ctx
 					.data()
-					.guild_data
+					.guilds
 					.get(&guild_id)
 					.get_or_insert_default()
 					.as_ref()
@@ -886,7 +886,7 @@ pub async fn set_emoji_react(
 					content_reaction: content,
 				});
 				ctx.data()
-					.guild_data
+					.guilds
 					.insert(guild_id, Arc::new(modified_settings));
 			} else {
 				ctx.send(
@@ -905,23 +905,6 @@ pub async fn set_emoji_react(
 			.await?;
 		}
 	}
-	Ok(())
-}
-
-async fn set_music_channel(
-	ctx: SContext<'_>,
-	channel: Channel,
-	guild_id_i64: i64,
-	channel_id_i64: i64,
-) -> Result<(), Error> {
-	channel
-		.id()
-		.say(
-			ctx.http(),
-			"Once I'm in a voice channel with /join_voice, I'll start listen to your song \
-			 requests!\nMessages prefixed with # will be ignored",
-		)
-		.await?;
 	Ok(())
 }
 
@@ -959,14 +942,14 @@ pub async fn set_prefix(
 		.await?;
 		let mut modified_settings = ctx
 			.data()
-			.guild_data
+			.guilds
 			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
 		modified_settings.settings.prefix = Some(characters);
 		ctx.data()
-			.guild_data
+			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())
@@ -994,34 +977,6 @@ async fn set_quote_channel(
 		.say(
 			ctx.http(),
 			"Every quoted message will be redirected here too",
-		)
-		.await?;
-
-	Ok(())
-}
-
-async fn set_spoiler_channel(
-	ctx: SContext<'_>,
-	channel: Channel,
-	guild_id_i64: i64,
-	channel_id_i64: i64,
-) -> Result<(), Error> {
-	query!(
-		"INSERT INTO guild_settings (guild_id, spoiler_channel)
-            VALUES ($1, $2)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                spoiler_channel = $2",
-		guild_id_i64,
-		channel_id_i64
-	)
-	.execute(&mut *ctx.data().db.acquire().await?)
-	.await?;
-	channel
-		.id()
-		.say(
-			ctx.http(),
-			"Every attachment sent here will now be spoilered",
 		)
 		.await?;
 
@@ -1204,7 +1159,7 @@ pub async fn set_word_react(
 			.await?;
 			let mut modified_settings = ctx
 				.data()
-				.guild_data
+				.guilds
 				.get(&guild_id)
 				.get_or_insert_default()
 				.as_ref()
@@ -1216,7 +1171,7 @@ pub async fn set_word_react(
 				media,
 			});
 			ctx.data()
-				.guild_data
+				.guilds
 				.insert(guild_id, Arc::new(modified_settings));
 		} else {
 			ctx.send(
@@ -1258,7 +1213,7 @@ pub async fn set_word_track(
 		.await?;
 		let mut modified_settings = ctx
 			.data()
-			.guild_data
+			.guilds
 			.get(&guild_id)
 			.get_or_insert_default()
 			.as_ref()
@@ -1269,7 +1224,7 @@ pub async fn set_word_track(
 			count: 0,
 		});
 		ctx.data()
-			.guild_data
+			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
 	}
 	Ok(())

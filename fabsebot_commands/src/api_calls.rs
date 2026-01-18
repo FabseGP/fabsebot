@@ -1181,23 +1181,23 @@ struct TranslateRequest<'a> {
 pub async fn translate(
 	ctx: SContext<'_>,
 	#[description = "Language to be translated to, e.g. en"] target: Option<String>,
-	#[description = "What should be translated"]
-	//	#[rest]
-	sentence: Option<String>,
+	#[description = "What should be translated"] sentence: Option<String>,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
 	let content = if ctx.guild_id().is_some() {
-		let msg = ctx
-			.channel_id()
-			.message(&ctx.http(), MessageId::new(ctx.id()))
-			.await?;
-		if let Some(ref_msg) = msg.referenced_message {
-			ref_msg.content.to_string()
-		} else if let Some(query) = sentence {
+		if let Some(query) = sentence {
 			query
 		} else {
-			ctx.reply("Bruh, give me smth to translate").await?;
-			return Ok(());
+			let msg = ctx
+				.channel_id()
+				.message(&ctx.http(), MessageId::new(ctx.id()))
+				.await?;
+			if let Some(ref_msg) = msg.referenced_message {
+				ref_msg.content.to_string()
+			} else {
+				ctx.reply("Bruh, give me smth to translate").await?;
+				return Ok(());
+			}
 		}
 	} else if let Some(query) = sentence {
 		query

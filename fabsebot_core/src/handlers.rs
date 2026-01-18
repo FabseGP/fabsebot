@@ -50,7 +50,7 @@ pub async fn dynamic_prefix(
 	let prefix = ctx.guild_id.map_or(Cow::Borrowed("!"), |id| {
 		ctx.framework
 			.user_data()
-			.guild_data
+			.guilds
 			.get(&id)
 			.map_or(Cow::Borrowed("!"), |guild_data| {
 				guild_data
