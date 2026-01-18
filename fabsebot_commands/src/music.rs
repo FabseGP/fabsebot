@@ -887,7 +887,6 @@ pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			ctx.data()
 				.guilds
 				.insert(guild_id, Arc::new(modified_settings));
-			todo!("clear cache");
 		} else {
 			ctx.reply(
 				"Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
@@ -904,7 +903,6 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	if let Some(guild_id) = ctx.guild_id() {
 		if ctx.data().music_manager.remove(guild_id).await.is_ok() {
 			ctx.reply("Left voice channel, don't forget me").await?;
-			todo!("clear cache");
 		} else {
 			ctx.reply(
 				"Bruh, I'm not even in a voice channel!\nUse /join_voice in a voice channel first",
