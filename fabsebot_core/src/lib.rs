@@ -190,11 +190,7 @@ pub async fn bot_start(
 	initialize_counters();
 
 	let music_manager = Songbird::serenity();
-	music_manager.set_config(
-		Config::default()
-			.use_softclip(false)
-			.decode_mode(DecodeMode::Decode),
-	);
+	music_manager.set_config(Config::default().decode_mode(DecodeMode::Decrypt));
 
 	let bot_data = Arc::new(Data {
 		db: postgres_pool,
