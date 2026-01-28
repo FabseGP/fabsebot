@@ -56,7 +56,7 @@ anyhow = "*"
 base64 = "*"
 bytes = "*"
 fastrand = "*"
-image = { version = "*", default-features = false, features = ["gif", "rayon", "webp"] }
+image = { version = "*", default-features = false, features = ["avif", "gif", "rayon"] }
 imageproc = { version = "*", default-features = false, features = ["rayon", "text"] }
 indexmap = "*"
 metrics = { version = "*" }
@@ -68,8 +68,8 @@ scraper = "*"
 serde = "*"
 serenity = { git = "https://github.com/serenity-rs/serenity.git", branch = "next", default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
 songbird = { git = "https://github.com/serenity-rs/songbird.git", branch = "serenity-next", features = ["builtin-queue", "receive"] }
-sqlx = { git = "https://github.com/launchbadge/sqlx.git", branch = "main", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
-symphonia = { version = "*", default-features = false, features = ["aac", "flac", "mkv", "pcm", "wav"] }
+sqlx = { version = "*", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+symphonia = { version = "*", default-features = false, features = ["aac", "mkv", "pcm"] }
 systemstat = "*"
 textwrap = "*"
 tokio = { version = "*", features = ["rt-multi-thread", "signal"] }

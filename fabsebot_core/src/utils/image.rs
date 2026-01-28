@@ -4,7 +4,7 @@ use ab_glyph::{FontArc, PxScale};
 use anyhow::{Context as _, Result as AResult, bail};
 use image::{
 	AnimationDecoder as _, Frame, GenericImage as _, ImageBuffer,
-	ImageFormat::WebP,
+	ImageFormat::Avif,
 	Rgba, RgbaImage,
 	codecs::gif::{GifDecoder, GifEncoder, Repeat::Infinite},
 	imageops::{FilterType, overlay, resize},
@@ -518,7 +518,7 @@ pub fn quote_image(
 	);
 
 	let mut output = Vec::with_capacity(img.len());
-	img.write_to(&mut Cursor::new(&mut output), WebP)?;
+	img.write_to(&mut Cursor::new(&mut output), Avif)?;
 
 	Ok((
 		output,

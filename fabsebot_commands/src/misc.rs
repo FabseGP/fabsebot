@@ -960,7 +960,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			if image_handle.is_animated {
 				"quote.gif"
 			} else {
-				"quote.webp"
+				"quote.avif"
 			},
 		);
 		let buttons = [
@@ -1093,7 +1093,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 				if image_handle.is_animated {
 					"quote.gif"
 				} else {
-					"quote.webp"
+					"quote.avif"
 				},
 			);
 			msg.edit(

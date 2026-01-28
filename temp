@@ -1,0 +1,839 @@
+arrayvec v0.7.6
+└── to-arraystring v0.2.2
+    ├── bool_to_bitflags v0.1.3 (proc-macro)
+    │   └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52)
+    │       ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands)
+    │       │   └── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+    │       ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core)
+    │       │   ├── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+    │       │   └── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+    │       ├── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765)
+    │       │   ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+    │       │   └── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+    │       └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087)
+    │           ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+    │           └── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+    └── typenum_mappings v0.1.0 (proc-macro)
+        └── aformat v0.1.8
+            └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+
+arrayvec v0.7.6
+├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+├── symphonia-core v0.5.5
+│   ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   ├── symphonia v0.5.5
+│   │   ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+│   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   ├── symphonia-bundle-flac v0.5.5
+│   │   └── symphonia v0.5.5 (*)
+│   ├── symphonia-codec-aac v0.5.5
+│   │   └── symphonia v0.5.5 (*)
+│   ├── symphonia-codec-pcm v0.5.5
+│   │   └── symphonia v0.5.5 (*)
+│   ├── symphonia-format-mkv v0.5.5
+│   │   └── symphonia v0.5.5 (*)
+│   ├── symphonia-format-riff v0.5.5
+│   │   └── symphonia v0.5.5 (*)
+│   ├── symphonia-metadata v0.5.5
+│   │   ├── symphonia v0.5.5 (*)
+│   │   ├── symphonia-bundle-flac v0.5.5 (*)
+│   │   ├── symphonia-format-mkv v0.5.5 (*)
+│   │   ├── symphonia-format-riff v0.5.5 (*)
+│   │   └── symphonia-utils-xiph v0.5.5
+│   │       ├── symphonia-bundle-flac v0.5.5 (*)
+│   │       └── symphonia-format-mkv v0.5.5 (*)
+│   └── symphonia-utils-xiph v0.5.5 (*)
+└── to-arraystring v0.2.2
+    ├── aformat v0.1.8 (*)
+    └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+
+base64 v0.22.1
+├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+├── hyper-util v0.1.19
+│   ├── hyper-rustls v0.27.7
+│   │   └── reqwest v0.12.28
+│   │       ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+│   │       ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   │       ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   │       └── stream_lib v0.5.2
+│   │           └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   ├── metrics-exporter-prometheus v0.18.1
+│   │   └── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+│   └── reqwest v0.12.28 (*)
+├── metrics-exporter-prometheus v0.18.1 (*)
+├── reqwest v0.12.28 (*)
+├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+├── sqlx-core v0.8.6
+│   ├── sqlx v0.8.6
+│   │   ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+│   │   ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+│   │   └── fabsebot_db v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_db)
+│   │       ├── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+│   │       ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+│   │       └── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+│   └── sqlx-postgres v0.8.6
+│       └── sqlx v0.8.6 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+base64 v0.22.1
+├── sqlx-core v0.8.6
+│   ├── sqlx-macros v0.8.6 (proc-macro)
+│   │   └── sqlx v0.8.6 (*)
+│   ├── sqlx-macros-core v0.8.6
+│   │   └── sqlx-macros v0.8.6 (proc-macro) (*)
+│   └── sqlx-postgres v0.8.6
+│       └── sqlx-macros-core v0.8.6 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+bitflags v1.3.2
+└── symphonia-core v0.5.5 (*)
+
+bitflags v2.10.0
+├── patricia_tree v0.8.0
+│   └── stream_lib v0.5.2 (*)
+├── raw-cpuid v11.6.0
+│   └── quanta v0.12.6
+│       ├── metrics-exporter-prometheus v0.18.1 (*)
+│       └── metrics-util v0.20.1
+│           └── metrics-exporter-prometheus v0.18.1 (*)
+├── selectors v0.33.0
+│   └── scraper v0.25.0
+│       └── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+├── serenity-voice-model v0.2.1
+│   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+├── sqlx-postgres v0.8.6 (*)
+├── sqlx-postgres v0.8.6 (*)
+└── tower-http v0.6.8
+    └── reqwest v0.12.28 (*)
+
+byteorder v1.5.0
+├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+└── sqlx-postgres v0.8.6 (*)
+
+byteorder v1.5.0
+└── sqlx-postgres v0.8.6 (*)
+
+darling v0.10.2
+├── derive_builder v0.9.0 (proc-macro)
+│   └── hls_m3u8 v0.4.2
+│       └── stream_lib v0.5.2 (*)
+└── derive_builder_core v0.9.0
+    └── derive_builder v0.9.0 (proc-macro) (*)
+
+darling v0.20.11
+├── bool_to_bitflags v0.1.3 (proc-macro) (*)
+└── poise_macros v0.6.1 (proc-macro) (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765)
+    └── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+
+darling_core v0.10.2
+├── darling v0.10.2 (*)
+└── darling_macro v0.10.2 (proc-macro)
+    └── darling v0.10.2 (*)
+
+darling_core v0.20.11
+├── darling v0.20.11 (*)
+└── darling_macro v0.20.11 (proc-macro)
+    └── darling v0.20.11 (*)
+
+darling_macro v0.10.2 (proc-macro) (*)
+
+darling_macro v0.20.11 (proc-macro) (*)
+
+derive_more v0.99.20 (proc-macro)
+└── hls_m3u8 v0.4.2 (*)
+
+derive_more v2.1.1
+└── selectors v0.33.0 (*)
+
+either v1.15.0
+├── sqlx-core v0.8.6 (*)
+└── sqlx-macros-core v0.8.6 (*)
+
+either v1.15.0
+├── itertools v0.14.0
+│   └── imageproc v0.26.0
+│       └── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+├── rayon v1.11.0
+│   ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+│   ├── image v0.25.9
+│   │   ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+│   │   ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+│   │   └── imageproc v0.26.0 (*)
+│   └── imageproc v0.26.0 (*)
+├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+└── sqlx-core v0.8.6 (*)
+
+fastrand v2.3.0
+└── phf_generator v0.13.1
+    ├── phf_codegen v0.13.1
+    │   [build-dependencies]
+    │   ├── selectors v0.33.0 (*)
+    │   └── web_atoms v0.2.1
+    │       └── markup5ever v0.36.1
+    │           └── html5ever v0.36.1
+    │               └── scraper v0.25.0 (*)
+    ├── phf_macros v0.13.1 (proc-macro)
+    │   └── phf v0.13.1
+    │       ├── cssparser v0.36.0
+    │       │   ├── scraper v0.25.0 (*)
+    │       │   └── selectors v0.33.0 (*)
+    │       ├── selectors v0.33.0 (*)
+    │       └── web_atoms v0.2.1 (*)
+    └── string_cache_codegen v0.6.1
+        [build-dependencies]
+        └── web_atoms v0.2.1 (*)
+
+fastrand v2.3.0
+├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+└── h3 v0.0.8
+    ├── h3-quinn v0.0.10
+    │   └── reqwest v0.12.28 (*)
+    └── reqwest v0.12.28 (*)
+
+foldhash v0.1.5
+└── hashbrown v0.15.5
+    ├── extract_map v0.3.1
+    │   └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+    ├── hashlink v0.10.0
+    │   ├── sqlx-core v0.8.6 (*)
+    │   └── sqlx-core v0.8.6 (*)
+    ├── sqlx-core v0.8.6 (*)
+    └── sqlx-core v0.8.6 (*)
+
+foldhash v0.2.0
+├── hashbrown v0.16.1
+│   ├── indexmap v2.13.0
+│   │   ├── h2 v0.4.13
+│   │   │   └── hyper v1.8.1
+│   │   │       ├── hyper-rustls v0.27.7 (*)
+│   │   │       ├── hyper-util v0.1.19 (*)
+│   │   │       ├── metrics-exporter-prometheus v0.18.1 (*)
+│   │   │       └── reqwest v0.12.28 (*)
+│   │   ├── metrics-exporter-prometheus v0.18.1 (*)
+│   │   ├── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   └── sqlx-core v0.8.6 (*)
+│   └── metrics-util v0.20.1 (*)
+└── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+
+form_urlencoded v1.2.2
+├── serde_urlencoded v0.7.1
+│   └── reqwest v0.12.28 (*)
+└── url v2.5.8
+    ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+    ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+    ├── reqwest v0.12.28 (*)
+    ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+    ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+    ├── sqlx-core v0.8.6 (*)
+    ├── stream_lib v0.5.2 (*)
+    ├── tungstenite v0.26.2
+    │   └── tokio-tungstenite v0.26.2
+    │       └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+    └── tungstenite v0.28.0
+        └── tokio-tungstenite v0.28.0
+            └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+
+form_urlencoded v1.2.2
+└── url v2.5.8
+    ├── sqlx-core v0.8.6 (*)
+    └── sqlx-macros-core v0.8.6 (*)
+
+futures-channel v0.3.31
+├── futures v0.3.31
+│   ├── h3-quinn v0.0.10 (*)
+│   ├── rusty_pool v0.7.0
+│   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+├── futures-util v0.3.31
+│   ├── futures v0.3.31 (*)
+│   ├── futures-executor v0.3.31
+│   │   ├── futures v0.3.31 (*)
+│   │   └── rusty_pool v0.7.0 (*)
+│   ├── h3 v0.0.8 (*)
+│   ├── hyper-util v0.1.19 (*)
+│   ├── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+│   ├── reqwest v0.12.28 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── stream_lib v0.5.2 (*)
+│   ├── streamcatcher v1.0.1
+│   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   ├── tokio-metrics v0.4.7
+│   │   └── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+│   ├── tokio-tungstenite v0.26.2 (*)
+│   ├── tokio-tungstenite v0.28.0 (*)
+│   ├── tower v0.5.3
+│   │   ├── reqwest v0.12.28 (*)
+│   │   └── tower-http v0.6.8 (*)
+│   └── tower-http v0.6.8 (*)
+├── hyper v1.8.1 (*)
+├── hyper-util v0.1.19 (*)
+├── rusty_pool v0.7.0 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+futures-channel v0.3.31
+└── sqlx-postgres v0.8.6 (*)
+
+futures-sink v0.3.31
+├── futures-channel v0.3.31 (*)
+└── futures-util v0.3.31
+    ├── sqlx-core v0.8.6 (*)
+    └── sqlx-postgres v0.8.6 (*)
+
+futures-sink v0.3.31
+├── flume v0.11.1
+│   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+├── futures v0.3.31 (*)
+├── futures-channel v0.3.31 (*)
+├── futures-util v0.3.31 (*)
+├── h2 v0.4.13 (*)
+└── tokio-util v0.7.18
+    ├── h2 v0.4.13 (*)
+    ├── h3-quinn v0.0.10 (*)
+    ├── reqwest v0.12.28 (*)
+    ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+    └── tower-http v0.6.8 (*)
+
+futures-util v0.3.31 (*)
+
+futures-util v0.3.31 (*)
+
+getrandom v0.2.17
+├── nanorand v0.7.0
+│   └── flume v0.11.1 (*)
+├── rand_core v0.6.4
+│   ├── crypto-common v0.1.7
+│   │   ├── aead v0.5.2
+│   │   │   ├── aes-gcm v0.10.3
+│   │   │   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   │   │   ├── chacha20poly1305 v0.10.1
+│   │   │   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   │   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   │   ├── cipher v0.4.4
+│   │   │   ├── aes v0.8.4
+│   │   │   │   └── aes-gcm v0.10.3 (*)
+│   │   │   ├── aes-gcm v0.10.3 (*)
+│   │   │   ├── chacha20 v0.9.1
+│   │   │   │   └── chacha20poly1305 v0.10.1 (*)
+│   │   │   ├── chacha20poly1305 v0.10.1 (*)
+│   │   │   └── ctr v0.9.2
+│   │   │       └── aes-gcm v0.10.3 (*)
+│   │   ├── digest v0.10.7
+│   │   │   ├── hmac v0.12.1
+│   │   │   │   ├── hkdf v0.12.4
+│   │   │   │   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   │   │   │   └── sqlx-postgres v0.8.6 (*)
+│   │   │   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   │   │   └── sqlx-postgres v0.8.6 (*)
+│   │   │   ├── md-5 v0.10.6
+│   │   │   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   │   │   └── sqlx-postgres v0.8.6 (*)
+│   │   │   ├── sha1 v0.10.6
+│   │   │   │   ├── tungstenite v0.26.2 (*)
+│   │   │   │   └── tungstenite v0.28.0 (*)
+│   │   │   ├── sha2 v0.10.9
+│   │   │   │   ├── sqlx-core v0.8.6 (*)
+│   │   │   │   └── sqlx-postgres v0.8.6 (*)
+│   │   │   └── sha2 v0.10.9
+│   │   │       ├── sqlx-core v0.8.6 (*)
+│   │   │       ├── sqlx-macros-core v0.8.6 (*)
+│   │   │       └── sqlx-postgres v0.8.6 (*)
+│   │   ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   │   └── universal-hash v0.5.1
+│   │       ├── poly1305 v0.8.0
+│   │       │   └── chacha20poly1305 v0.10.1 (*)
+│   │       └── polyval v0.6.2
+│   │           └── ghash v0.5.1
+│   │               └── aes-gcm v0.10.3 (*)
+│   ├── rand v0.8.5
+│   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   └── sqlx-postgres v0.8.6 (*)
+│   └── rand_chacha v0.3.1
+│       └── rand v0.8.5 (*)
+└── ring v0.17.14
+    ├── quinn-proto v0.11.13
+    │   └── quinn v0.11.9
+    │       ├── h3-quinn v0.0.10 (*)
+    │       └── reqwest v0.12.28 (*)
+    ├── rustls v0.23.36
+    │   ├── hyper-rustls v0.27.7 (*)
+    │   ├── quinn v0.11.9 (*)
+    │   ├── quinn-proto v0.11.13 (*)
+    │   ├── reqwest v0.12.28 (*)
+    │   ├── tokio-rustls v0.26.4
+    │   │   ├── hyper-rustls v0.27.7 (*)
+    │   │   ├── reqwest v0.12.28 (*)
+    │   │   ├── tokio-tungstenite v0.26.2 (*)
+    │   │   └── tokio-tungstenite v0.28.0 (*)
+    │   ├── tokio-tungstenite v0.26.2 (*)
+    │   ├── tokio-tungstenite v0.28.0 (*)
+    │   ├── tungstenite v0.26.2 (*)
+    │   └── tungstenite v0.28.0 (*)
+    └── rustls-webpki v0.103.9
+        └── rustls v0.23.36 (*)
+
+getrandom v0.3.4
+├── rand_core v0.9.5
+│   ├── rand v0.9.2
+│   │   ├── imageproc v0.26.0 (*)
+│   │   ├── metrics-util v0.20.1 (*)
+│   │   ├── quinn-proto v0.11.13 (*)
+│   │   ├── rand_distr v0.5.1
+│   │   │   └── imageproc v0.26.0 (*)
+│   │   ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   │   ├── tungstenite v0.26.2 (*)
+│   │   └── tungstenite v0.28.0 (*)
+│   ├── rand_chacha v0.9.0
+│   │   └── rand v0.9.2 (*)
+│   └── rand_xoshiro v0.7.0
+│       └── metrics-util v0.20.1 (*)
+└── uuid v1.19.0
+    ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+    └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+
+hashbrown v0.14.5
+└── dashmap v6.1.0
+    ├── mini-moka v0.11.0 (https://github.com/moka-rs/mini-moka.git?branch=v0.11.x#1ecd8f3f)
+    │   └── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+    ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+    └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+
+hashbrown v0.15.5 (*)
+
+hashbrown v0.16.1 (*)
+
+heck v0.3.3
+└── strum_macros v0.17.1 (proc-macro)
+    └── strum v0.17.1
+        └── hls_m3u8 v0.4.2 (*)
+
+heck v0.5.0
+├── sqlx-macros-core v0.8.6 (*)
+└── strum_macros v0.27.2 (proc-macro)
+    └── strum v0.27.2
+        └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+
+log v0.4.29
+├── sqlx-core v0.8.6 (*)
+└── sqlx-postgres v0.8.6 (*)
+[build-dependencies]
+└── audiopus_sys v0.2.2 (https://github.com/sevenc-nanashi/audiopus_sys?rev=00e9d16#00e9d168)
+    └── audiopus v0.3.0-rc.0
+        └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+
+log v0.4.29
+├── html5ever v0.36.1 (*)
+├── markup5ever v0.36.1 (*)
+├── reqwest v0.12.28 (*)
+├── selectors v0.33.0 (*)
+├── sqlx-core v0.8.6 (*)
+├── sqlx-postgres v0.8.6 (*)
+├── symphonia-bundle-flac v0.5.5 (*)
+├── symphonia-codec-aac v0.5.5 (*)
+├── symphonia-codec-pcm v0.5.5 (*)
+├── symphonia-core v0.5.5 (*)
+├── symphonia-format-mkv v0.5.5 (*)
+├── symphonia-format-riff v0.5.5 (*)
+├── symphonia-metadata v0.5.5 (*)
+├── tokio-tungstenite v0.26.2 (*)
+├── tokio-tungstenite v0.28.0 (*)
+├── tracing v0.1.44
+│   ├── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+│   ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+│   ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+│   ├── h2 v0.4.13 (*)
+│   ├── hyper-util v0.1.19 (*)
+│   ├── metrics-exporter-prometheus v0.18.1 (*)
+│   ├── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+│   ├── quinn v0.11.9 (*)
+│   ├── quinn-proto v0.11.13 (*)
+│   ├── quinn-udp v0.5.14
+│   │   └── quinn v0.11.9 (*)
+│   ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── stream_lib v0.5.2 (*)
+│   └── tracing-futures v0.2.5
+│       └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+├── tracing-log v0.2.0
+│   └── tracing-subscriber v0.3.22
+│       └── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+├── tungstenite v0.26.2 (*)
+└── tungstenite v0.28.0 (*)
+
+num-traits v0.2.19
+├── approx v0.5.1
+│   ├── imageproc v0.26.0 (*)
+│   ├── nalgebra v0.34.1
+│   │   └── imageproc v0.26.0 (*)
+│   └── simba v0.9.1
+│       └── nalgebra v0.34.1 (*)
+├── chrono v0.4.43
+│   ├── serde-aux v4.7.0
+│   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+├── image v0.25.9 (*)
+├── moxcms v0.7.11
+│   └── image v0.25.9 (*)
+├── nalgebra v0.34.1 (*)
+├── num v0.4.3
+│   └── imageproc v0.26.0 (*)
+├── num-complex v0.4.6
+│   ├── nalgebra v0.34.1 (*)
+│   ├── num v0.4.3 (*)
+│   ├── rubato v0.16.2
+│   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   ├── rustfft v6.4.1
+│   │   └── realfft v3.5.0
+│   │       └── rubato v0.16.2 (*)
+│   └── simba v0.9.1 (*)
+├── num-integer v0.1.46
+│   ├── num v0.4.3 (*)
+│   ├── num-iter v0.1.45
+│   │   └── num v0.4.3 (*)
+│   ├── num-rational v0.4.2
+│   │   ├── nalgebra v0.34.1 (*)
+│   │   └── num v0.4.3 (*)
+│   ├── primal-check v0.3.4
+│   │   └── rustfft v6.4.1 (*)
+│   ├── rubato v0.16.2 (*)
+│   ├── rustfft v6.4.1 (*)
+│   └── transpose v0.2.3
+│       └── rustfft v6.4.1 (*)
+├── num-iter v0.1.45 (*)
+├── num-rational v0.4.2 (*)
+├── ordered-float v2.10.1
+│   └── serde-value v0.7.0
+│       └── serde-aux v4.7.0 (*)
+├── pxfm v0.1.27
+│   └── moxcms v0.7.11 (*)
+├── rand_distr v0.5.1 (*)
+├── rubato v0.16.2 (*)
+├── rustfft v6.4.1 (*)
+├── serenity-voice-model v0.2.1 (*)
+└── simba v0.9.1 (*)
+
+num-traits v0.2.19
+└── atoi v2.0.0
+    ├── sqlx-postgres v0.8.6 (*)
+    └── sqlx-postgres v0.8.6 (*)
+
+rand v0.8.5 (*)
+
+rand v0.9.2 (*)
+
+rand_chacha v0.3.1 (*)
+
+rand_chacha v0.9.0 (*)
+
+rand_core v0.6.4 (*)
+
+rand_core v0.9.5 (*)
+
+regex v1.12.2
+└── pnet_macros v0.34.0 (proc-macro)
+    └── discortp v0.6.0
+        └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+
+regex v1.12.2
+└── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+
+regex-automata v0.4.13
+└── regex v1.12.2 (*)
+
+regex-automata v0.4.13
+└── regex v1.12.2 (*)
+
+regex-syntax v0.8.8
+├── regex v1.12.2 (*)
+└── regex-automata v0.4.13 (*)
+
+regex-syntax v0.8.8
+├── regex v1.12.2 (*)
+└── regex-automata v0.4.13 (*)
+
+sha2 v0.10.9 (*)
+
+sha2 v0.10.9 (*)
+
+smallvec v1.15.1
+├── cssparser v0.36.0 (*)
+├── hyper v1.8.1 (*)
+├── icu_normalizer v2.1.1
+│   └── idna_adapter v1.2.1
+│       └── idna v1.1.0
+│           ├── url v2.5.8 (*)
+│           └── url v2.5.8 (*)
+├── idna v1.1.0 (*)
+├── mini-moka v0.11.0 (https://github.com/moka-rs/mini-moka.git?branch=v0.11.x#1ecd8f3f) (*)
+├── parking_lot_core v0.9.12
+│   ├── dashmap v6.1.0 (*)
+│   └── parking_lot v0.12.5
+│       ├── futures-intrusive v0.5.0
+│       │   ├── sqlx-core v0.8.6 (*)
+│       │   └── sqlx-core v0.8.6 (*)
+│       ├── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+│       ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│       ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│       └── string_cache v0.9.0
+│           └── web_atoms v0.2.1 (*)
+├── selectors v0.33.0 (*)
+├── sqlx-core v0.8.6 (*)
+├── sqlx-postgres v0.8.6 (*)
+└── tracing-subscriber v0.3.22 (*)
+
+smallvec v1.15.1
+├── sqlx-core v0.8.6 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+socket2 v0.5.10
+└── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+
+socket2 v0.6.1
+├── hyper-util v0.1.19 (*)
+├── quinn v0.11.9 (*)
+├── quinn-udp v0.5.14 (*)
+├── tokio v1.49.0
+│   ├── async-compression v0.4.37
+│   │   └── tower-http v0.6.8 (*)
+│   ├── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+│   ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+│   ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+│   ├── h2 v0.4.13 (*)
+│   ├── h3 v0.0.8 (*)
+│   ├── h3-quinn v0.0.10 (*)
+│   ├── hyper v1.8.1 (*)
+│   ├── hyper-rustls v0.27.7 (*)
+│   ├── hyper-util v0.1.19 (*)
+│   ├── metrics-exporter-prometheus v0.18.1 (*)
+│   ├── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+│   ├── quinn v0.11.9 (*)
+│   ├── reqwest v0.12.28 (*)
+│   ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── stream_lib v0.5.2 (*)
+│   ├── tokio-metrics v0.4.7 (*)
+│   ├── tokio-rustls v0.26.4 (*)
+│   ├── tokio-stream v0.1.18
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   └── tokio-metrics v0.4.7 (*)
+│   ├── tokio-tungstenite v0.26.2 (*)
+│   ├── tokio-tungstenite v0.28.0 (*)
+│   ├── tokio-util v0.7.18 (*)
+│   ├── tower v0.5.3 (*)
+│   └── tower-http v0.6.8 (*)
+└── tokio v1.49.0
+    ├── sqlx-core v0.8.6 (*)
+    └── sqlx-macros-core v0.8.6 (*)
+
+sqlx-core v0.8.6 (*)
+
+sqlx-core v0.8.6 (*)
+
+sqlx-postgres v0.8.6 (*)
+
+sqlx-postgres v0.8.6 (*)
+
+strsim v0.9.3
+└── darling_core v0.10.2 (*)
+
+strsim v0.11.1
+└── darling_core v0.20.11 (*)
+
+strum v0.17.1 (*)
+
+strum v0.27.2 (*)
+
+strum_macros v0.17.1 (proc-macro) (*)
+
+strum_macros v0.27.2 (proc-macro) (*)
+
+syn v1.0.109
+├── darling_core v0.10.2 (*)
+├── darling_macro v0.10.2 (proc-macro) (*)
+├── derivative v2.2.0 (proc-macro)
+│   ├── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+│   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+├── derive_builder v0.9.0 (proc-macro) (*)
+├── derive_builder_core v0.9.0 (*)
+├── hashmap_derive v0.1.0 (proc-macro)
+│   └── from_map v0.1.0
+│       └── shorthand v0.1.1 (proc-macro)
+│           └── hls_m3u8 v0.4.2 (*)
+├── shorthand v0.1.1 (proc-macro) (*)
+└── strum_macros v0.17.1 (proc-macro) (*)
+
+syn v2.0.114
+├── aformat-macros v0.1.6 (proc-macro)
+│   └── aformat v0.1.8 (*)
+├── async-trait v0.1.89 (proc-macro)
+│   ├── poise v0.6.1 (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+│   ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+├── bool_to_bitflags v0.1.3 (proc-macro) (*)
+├── cssparser-macros v0.6.1 (proc-macro)
+│   └── cssparser v0.36.0 (*)
+├── darling_core v0.20.11 (*)
+├── darling_macro v0.20.11 (proc-macro) (*)
+├── derive_more v0.99.20 (proc-macro) (*)
+├── derive_more-impl v2.1.1 (proc-macro)
+│   └── derive_more v2.1.1 (*)
+├── displaydoc v0.2.5 (proc-macro)
+│   ├── icu_collections v2.1.1
+│   │   ├── icu_normalizer v2.1.1 (*)
+│   │   └── icu_properties v2.1.2
+│   │       └── idna_adapter v1.2.1 (*)
+│   ├── icu_locale_core v2.1.1
+│   │   ├── icu_properties v2.1.2 (*)
+│   │   └── icu_provider v2.1.1
+│   │       ├── icu_normalizer v2.1.1 (*)
+│   │       └── icu_properties v2.1.2 (*)
+│   ├── icu_provider v2.1.1 (*)
+│   ├── tinystr v0.8.2
+│   │   └── icu_locale_core v2.1.1 (*)
+│   └── zerotrie v0.2.3
+│       ├── icu_properties v2.1.2 (*)
+│       └── icu_provider v2.1.1 (*)
+├── futures-macro v0.3.31 (proc-macro)
+│   └── futures-util v0.3.31 (*)
+├── phf_macros v0.13.1 (proc-macro) (*)
+├── pin-project-internal v1.1.10 (proc-macro)
+│   └── pin-project v1.1.10
+│       ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│       └── tracing-futures v0.2.5 (*)
+├── pnet_macros v0.34.0 (proc-macro) (*)
+├── poise_macros v0.6.1 (proc-macro) (https://github.com/serenity-rs/poise.git?branch=serenity-next#3d2a7765) (*)
+├── ref-cast-impl v1.0.25 (proc-macro)
+│   └── ref-cast v1.0.25
+│       └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+├── serde_derive v1.0.228 (proc-macro)
+│   ├── serde v1.0.228
+│   │   ├── arrayvec v0.7.6 (*)
+│   │   ├── chrono v0.4.43 (*)
+│   │   ├── dashmap v6.1.0 (*)
+│   │   ├── either v1.15.0 (*)
+│   │   ├── either v1.15.0 (*)
+│   │   ├── extract_map v0.3.1 (*)
+│   │   ├── fabsebot v0.6.0 (/home/fabse/Repositories/fabsebot)
+│   │   ├── fabsebot_commands v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_commands) (*)
+│   │   ├── fabsebot_core v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_core) (*)
+│   │   ├── fabsebot_db v0.1.0 (/home/fabse/Repositories/fabsebot/fabsebot_db) (*)
+│   │   ├── nonmax v0.5.5
+│   │   │   ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   │   │   └── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   │   ├── reqwest v0.12.28 (*)
+│   │   ├── serde-aux v4.7.0 (*)
+│   │   ├── serde-value v0.7.0 (*)
+│   │   ├── serde_cow v0.1.2
+│   │   │   └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   │   ├── serde_urlencoded v0.7.1 (*)
+│   │   ├── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   │   ├── serenity-voice-model v0.2.1 (*)
+│   │   ├── small-fixed-array v0.4.10
+│   │   │   └── serenity v0.12.4 (https://github.com/serenity-rs/serenity.git?branch=next#50835b52) (*)
+│   │   ├── smallvec v1.15.1 (*)
+│   │   ├── smallvec v1.15.1 (*)
+│   │   ├── songbird v0.5.0 (https://github.com/serenity-rs/songbird.git?branch=serenity-next#87416087) (*)
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   ├── sqlx-macros-core v0.8.6 (*)
+│   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   └── url v2.5.8 (*)
+│   └── url v2.5.8 (*)
+├── serde_repr v0.1.20 (proc-macro)
+│   └── serenity-voice-model v0.2.1 (*)
+├── sqlx-macros v0.8.6 (proc-macro) (*)
+├── sqlx-macros-core v0.8.6 (*)
+├── strum_macros v0.27.2 (proc-macro) (*)
+├── synstructure v0.13.2
+│   ├── yoke-derive v0.8.1 (proc-macro)
+│   │   └── yoke v0.8.1
+│   │       ├── icu_collections v2.1.1 (*)
+│   │       ├── icu_provider v2.1.1 (*)
+│   │       ├── zerotrie v0.2.3 (*)
+│   │       └── zerovec v0.11.5
+│   │           ├── icu_collections v2.1.1 (*)
+│   │           ├── icu_locale_core v2.1.1 (*)
+│   │           ├── icu_normalizer v2.1.1 (*)
+│   │           ├── icu_properties v2.1.2 (*)
+│   │           ├── icu_provider v2.1.1 (*)
+│   │           ├── potential_utf v0.1.4
+│   │           │   └── icu_collections v2.1.1 (*)
+│   │           └── tinystr v0.8.2 (*)
+│   └── zerofrom-derive v0.1.6 (proc-macro)
+│       └── zerofrom v0.1.6
+│           ├── icu_collections v2.1.1 (*)
+│           ├── icu_provider v2.1.1 (*)
+│           ├── yoke v0.8.1 (*)
+│           ├── zerotrie v0.2.3 (*)
+│           └── zerovec v0.11.5 (*)
+├── thiserror-impl v1.0.69 (proc-macro)
+│   └── thiserror v1.0.69
+│       └── hls_m3u8 v0.4.2 (*)
+├── thiserror-impl v2.0.17 (proc-macro)
+│   └── thiserror v2.0.17
+│       ├── metrics-exporter-prometheus v0.18.1 (*)
+│       ├── quinn v0.11.9 (*)
+│       ├── quinn-proto v0.11.13 (*)
+│       ├── sqlx-core v0.8.6 (*)
+│       ├── sqlx-core v0.8.6 (*)
+│       ├── sqlx-postgres v0.8.6 (*)
+│       ├── sqlx-postgres v0.8.6 (*)
+│       ├── tungstenite v0.26.2 (*)
+│       └── tungstenite v0.28.0 (*)
+├── tokio-macros v2.6.0 (proc-macro)
+│   └── tokio v1.49.0 (*)
+├── tracing-attributes v0.1.31 (proc-macro)
+│   └── tracing v0.1.44 (*)
+├── typenum_mappings v0.1.0 (proc-macro) (*)
+├── yoke-derive v0.8.1 (proc-macro) (*)
+├── zerofrom-derive v0.1.6 (proc-macro) (*)
+└── zerovec-derive v0.11.2 (proc-macro)
+    └── zerovec v0.11.5 (*)
+
+thiserror v1.0.69 (*)
+
+thiserror v2.0.17 (*)
+
+thiserror-impl v1.0.69 (proc-macro) (*)
+
+thiserror-impl v2.0.17 (proc-macro) (*)
+
+to-arraystring v0.2.2 (*)
+
+to-arraystring v0.2.2 (*)
+
+tokio v1.49.0 (*)
+
+tokio v1.49.0 (*)
+
+tokio-tungstenite v0.26.2 (*)
+
+tokio-tungstenite v0.28.0 (*)
+
+tungstenite v0.26.2 (*)
+
+tungstenite v0.28.0 (*)
+
+url v2.5.8 (*)
+
+url v2.5.8 (*)
+
+webpki-roots v0.26.11
+├── tokio-tungstenite v0.26.2 (*)
+└── tokio-tungstenite v0.28.0 (*)
+
+webpki-roots v1.0.5
+├── hyper-rustls v0.27.7 (*)
+├── reqwest v0.12.28 (*)
+└── webpki-roots v0.26.11 (*)

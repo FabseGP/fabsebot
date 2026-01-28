@@ -23,7 +23,7 @@ serde = { workspace = true }
 serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
 songbird = { workspace = true, features = ["builtin-queue", "receive"] }
 sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
-symphonia = { workspace = true, default-features = false, features = ["aac", "flac", "mkv", "pcm", "wav"] }
+symphonia = { workspace = true, default-features = false, features = ["aac", "mkv", "pcm"] }
 systemstat = { workspace = true }
 textwrap = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
