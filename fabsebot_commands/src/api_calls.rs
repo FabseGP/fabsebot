@@ -24,7 +24,7 @@ use serenity::{
 	futures::StreamExt as _,
 };
 use tracing::warn;
-use urlencoding::encode;
+use url::form_urlencoded::byte_serialize;
 
 struct State {
 	next_id: String,
@@ -259,11 +259,12 @@ pub async fn anime(
 	anime: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let request_url = {
-		let encoded_input = &encode(&anime);
-		format!("https://api.jikan.moe/v4/anime?q={encoded_input}&limit=5")
-	};
-	if let Ok(resp) = HTTP_CLIENT.get(request_url).send().await {
+	if let Ok(resp) = HTTP_CLIENT
+		.get("https://api.jikan.moe/v4/anime")
+		.query(&[("q", anime.as_str()), ("limit", "5")])
+		.send()
+		.await
+	{
 		if let Ok(data) = resp.json::<AniMangaResponse<AnimeSpecific>>().await
 			&& let Some(first_entry) = data.data.first()
 		{
@@ -516,11 +517,12 @@ pub async fn anime_scene(
 	input: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let request_url = {
-		let encoded_input = encode(&input);
-		format!("https://api.trace.moe/search?cutBorders&anilistInfo&url={encoded_input}")
-	};
-	if let Ok(response) = HTTP_CLIENT.get(request_url).send().await {
+	if let Ok(response) = HTTP_CLIENT
+		.get("https://api.trace.moe/search?cutBorders&anilistInfo")
+		.query(&[("url", input.as_str())])
+		.send()
+		.await
+	{
 		if let Ok(scene) = response.json::<MoeResponse>().await {
 			if let Some(first_result) = scene.result.first() {
 				if first_result.video.is_empty() {
@@ -580,12 +582,11 @@ pub async fn eightball(
 	question: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let request_url = {
-		let encoded_input = encode(&question);
-		format!("https://eightballapi.com/api/biased?question={encoded_input}&lucky=false")
-	};
-	if let Ok(request) = HTTP_CLIENT.get(request_url).send().await
-		&& let Ok(judging) = request.json::<EightBallResponse>().await
+	if let Ok(request) = HTTP_CLIENT
+		.get("https://eightballapi.com/api/biased")
+		.query(&[("question", question.as_str()), ("lucky", "false")])
+		.send()
+		.await && let Ok(judging) = request.json::<EightBallResponse>().await
 		&& !judging.reading.is_empty()
 	{
 		ctx.send(
@@ -773,11 +774,12 @@ pub async fn manga(
 	manga: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let request_url = {
-		let encoded_input = &encode(&manga);
-		format!("https://api.jikan.moe/v4/manga?q={encoded_input}&limit=5")
-	};
-	if let Ok(resp) = HTTP_CLIENT.get(request_url).send().await {
+	if let Ok(resp) = HTTP_CLIENT
+		.get("https://api.jikan.moe/v4/manga")
+		.query(&[("manga", manga.as_str()), ("limit", "5")])
+		.send()
+		.await
+	{
 		if let Ok(data) = resp.json::<AniMangaResponse<MangaSpecific>>().await
 			&& let Some(first_entry) = data.data.first()
 		{
@@ -994,12 +996,10 @@ pub async fn memegen(
 	#[description = "Bottom text"] bottom: String,
 ) -> Result<(), Error> {
 	let request_url = {
-		let encoded_left = encode(&top_left);
-		let encoded_right = encode(&top_right);
-		let encoded_bottom = encode(&bottom);
-		format!(
-            "https://api.memegen.link/images/exit/{encoded_left}/{encoded_right}/{encoded_bottom}.png"
-        )
+		let encoded_left: String = byte_serialize(top_left.as_bytes()).collect();
+		let encoded_right: String = byte_serialize(top_right.as_bytes()).collect();
+		let encoded_bottom: String = byte_serialize(bottom.as_bytes()).collect();
+		format!("https://api.memegen.link/images/exit/{encoded_left}/{encoded_right}/{encoded_bottom}.png")
 	};
 	ctx.reply(request_url).await?;
 	Ok(())
@@ -1368,12 +1368,11 @@ pub async fn urban(
 	input: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let request_url = {
-		let encoded_input = encode(&input);
-		format!("https://api.urbandictionary.com/v0/define?term={encoded_input}")
-	};
-	if let Ok(response) = HTTP_CLIENT.get(request_url).send().await
-		&& let Ok(data) = response.json::<UrbanResponse>().await
+	if let Ok(response) = HTTP_CLIENT
+		.get("https://api.urbandictionary.com/v0/define")
+		.query(&[("term", input.as_str())])
+		.send()
+		.await && let Ok(data) = response.json::<UrbanResponse>().await
 		&& let Some(first_entry) = data.list.first()
 	{
 		let mut embed = CreateEmbed::default().colour(COLOUR_YELLOW);
@@ -1627,7 +1626,7 @@ pub async fn wiki(
 ) -> Result<(), Error> {
 	ctx.defer().await?;
 	let request_url = {
-		let encoded_input = encode(&input);
+		let encoded_input: String = byte_serialize(input.as_bytes()).collect();
 		format!("https://en.wikipedia.org/api/rest_v1/page/summary/{encoded_input}")
 	};
 	if let Ok(request) = HTTP_CLIENT.get(request_url).send().await

@@ -58,7 +58,6 @@ bytes = "*"
 fastrand = "*"
 image = { version = "*", default-features = false, features = ["avif", "gif", "rayon"] }
 imageproc = { version = "*", default-features = false, features = ["rayon", "text"] }
-indexmap = "*"
 metrics = { version = "*" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
 poise = { git = "https://github.com/serenity-rs/poise.git", branch = "serenity-next" }
@@ -75,7 +74,6 @@ textwrap = "*"
 tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
 tracing = "*"
 url = "*"
-urlencoding = "*"
 uuid = { version = "*", features = ["v4", "v5"] }
 winnow = { version = "*", features = ["simd"] }
 

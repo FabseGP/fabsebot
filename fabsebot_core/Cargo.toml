@@ -30,7 +30,6 @@ tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 tracing = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["v4", "v5"] }
-urlencoding = { workspace = true }
 winnow = { workspace = true, features = ["simd"] }
 
 [package.metadata.cargo-machete]

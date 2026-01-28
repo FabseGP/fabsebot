@@ -9,7 +9,6 @@ use serenity::all::{
 };
 use songbird::{Call, input::Input};
 use tokio::sync::{Mutex, MutexGuard};
-use urlencoding::encode;
 use winnow::Parser as _;
 
 use crate::{
@@ -41,10 +40,8 @@ async fn internet_search(
 	if let Some(internet_search) = chatbot_internet_search
 		&& internet_search
 		&& let Ok(resp) = HTTP_CLIENT
-			.get(format!(
-				"{fabseserver_search}/search?q={}&categories=general",
-				encode(&message.content)
-			))
+			.get(fabseserver_search)
+			.query(&[("q", message.content.as_str()), ("categories", "general")])
 			.send()
 			.await
 		&& let Ok(resp_text) = resp.text().await

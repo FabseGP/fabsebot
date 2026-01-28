@@ -639,6 +639,7 @@ pub async fn set_chatbot_options(
 		}
 		let guild_id_i64 = i64::from(guild_id);
 		let user_id_i64 = i64::from(ctx.author().id);
+		let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
 		query!(
 			"INSERT INTO user_settings 
             (guild_id, user_id, chatbot_role, chatbot_internet_search, chatbot_temperature, \
@@ -657,7 +658,7 @@ pub async fn set_chatbot_options(
                 chatbot_presence_penalty = $10",
 			guild_id_i64,
 			user_id_i64,
-			role,
+			final_role,
 			internet_search,
 			temperature,
 			top_p,
@@ -682,7 +683,7 @@ pub async fn set_chatbot_options(
 			.as_ref()
 			.clone();
 		if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
-			user_settings.chatbot_role = role;
+			user_settings.chatbot_role = final_role;
 			user_settings.chatbot_internet_search = internet_search;
 			user_settings.chatbot_temperature = temperature;
 			user_settings.chatbot_top_p = top_p;
@@ -696,7 +697,7 @@ pub async fn set_chatbot_options(
 				UserSettings {
 					guild_id: guild_id_i64,
 					user_id: user_id_i64,
-					chatbot_role: role,
+					chatbot_role: final_role,
 					chatbot_internet_search: internet_search,
 					chatbot_temperature: temperature,
 					chatbot_top_p: top_p,

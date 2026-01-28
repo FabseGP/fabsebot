@@ -107,19 +107,21 @@ pub async fn rps(
 					};
 					match result {
 						Some(winner) if winner == author_choice => {
-							let user_name = ctx
+							let mut user_name = ctx
 								.author()
 								.nick_in(ctx.http(), guild_id)
 								.await
 								.unwrap_or_else(|| ctx.author().display_name().to_owned());
-							format!("{user_name} won!")
+							user_name.push_str(" won!");
+							user_name
 						}
 						Some(_) => {
-							let user_name = user.nick.as_ref().map_or_else(
+							let mut user_name = user.nick.as_ref().map_or_else(
 								|| user.display_name().to_owned(),
 								ToString::to_string,
 							);
-							format!("{user_name} won!")
+							user_name.push_str(" won!");
+							user_name
 						}
 						None => "You both suck!".to_owned(),
 					}

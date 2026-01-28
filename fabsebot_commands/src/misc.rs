@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Write as _, process, sync::Arc, time::Duration};
+use std::{collections::HashSet, fmt::Write as _, path::Path, process, sync::Arc, time::Duration};
 
 use ab_glyph::FontArc;
 use anyhow::Context as _;
@@ -926,7 +926,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 				});
 				(
 					HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
-					avatar_url.contains(".gif"),
+					Path::new(&avatar_url)
+						.extension()
+						.is_some_and(|ext| ext.eq_ignore_ascii_case("gif")),
 					format!("- {}", reply.author.name),
 				)
 			} else {
@@ -941,7 +943,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 				});
 				(
 					HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
-					avatar_url.contains(".gif"),
+					Path::new(&avatar_url)
+						.extension()
+						.is_some_and(|ext| ext.eq_ignore_ascii_case("gif")),
 					format!("- {}", member.user.name),
 				)
 			};

@@ -303,10 +303,7 @@ async fn ai_chat_channel(
 				if let Err(e) = ai_chatbot(
 					ctx,
 					new_message,
-					chatbot_role.map_or_else(
-						|| DEFAULT_BOT_ROLE.to_owned(),
-						|role| format!("The current user wants you to act as: {role}"),
-					),
+					chatbot_role.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
 					chatbot_internet_search,
 					chatbot_temperature,
 					chatbot_top_p,

@@ -12,7 +12,6 @@ use songbird::{
 use symphonia::core::io::MediaSource;
 use tokio::sync::{Mutex, MutexGuard};
 use url::Url;
-use urlencoding::encode;
 use uuid::Uuid;
 use winnow::{
 	ModalResult, Parser as _,
@@ -39,11 +38,17 @@ pub async fn get_configured_songbird_handler(
 }
 
 pub async fn youtube_source(url: String) -> Option<YoutubeDl<'static>> {
-	if Url::parse(&url).is_ok() {
-		url.contains("youtu")
-			.then(|| YoutubeDl::new(HTTP_CLIENT.clone(), url))
-	} else {
-		Some(YoutubeDl::new_search(HTTP_CLIENT.clone(), url))
+	match Url::parse(&url) {
+		Ok(parsed_url) => parsed_url
+			.domain()
+			.filter(|d| {
+				*d == "youtube.com"
+					|| *d == "www.youtube.com"
+					|| *d == "youtu.be"
+					|| *d == "m.youtube.com"
+			})
+			.map(|_| YoutubeDl::new(HTTP_CLIENT.clone(), url)),
+		Err(_) => Some(YoutubeDl::new_search(HTTP_CLIENT.clone(), url)),
 	}
 }
 
@@ -116,18 +121,21 @@ struct GifObject {
 }
 
 pub async fn get_gifs(input: String) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
-	let request_url = {
-		let encoded_input = encode(&input);
-		format!(
-            "https://tenor.googleapis.com/v2/search?q={encoded_input}&key={}&contentfilter=medium&limit=40&media_filter=minimal",
-            UTILS_CONFIG
-                .get()
-                .map(|u| u.api.tenor_token.as_str())
-                .unwrap_or_default(),
-        )
-	};
-	if let Ok(response) = HTTP_CLIENT.get(request_url).send().await
-		&& let Ok(urls) = response.json::<GifResponse>().await
+	let key = UTILS_CONFIG
+		.get()
+		.map(|u| u.api.tenor_token.as_str())
+		.unwrap_or_default();
+	if let Ok(response) = HTTP_CLIENT
+		.get("https://tenor.googleapis.com/v2/search")
+		.query(&[
+			("q", input.as_str()),
+			("key", key),
+			("contentfilter", "medium"),
+			("limit", "40"),
+			("media_filter", "minimal"),
+		])
+		.send()
+		.await && let Ok(urls) = response.json::<GifResponse>().await
 	{
 		urls.results
 			.into_iter()
@@ -152,16 +160,11 @@ struct LyricsResponse {
 }
 
 pub async fn get_lyrics(artist_name: &str, track_name: &str) -> Option<String> {
-	let request_url = {
-		let encoded_artist = encode(artist_name);
-		let encoded_track = encode(track_name);
-		format!(
-			"https://lrclib.net/api/get?artist_name={encoded_artist}&track_name={encoded_track}"
-		)
-	};
-
-	if let Ok(response) = HTTP_CLIENT.get(request_url).send().await
-		&& let Ok(data) = response.json::<LyricsResponse>().await
+	if let Ok(response) = HTTP_CLIENT
+		.get("https://lrclib.net/api/get")
+		.query(&[("artist_name", artist_name), ("track_name", track_name)])
+		.send()
+		.await && let Ok(data) = response.json::<LyricsResponse>().await
 	{
 		Some(data.plain_lyrics)
 	} else {

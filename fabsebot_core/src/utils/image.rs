@@ -59,11 +59,22 @@ pub struct TextLayout {
 
 fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontArc) -> String {
 	let mut end = text.len().saturating_sub(ELLIPSIS.len());
-	let mut truncated = format!("{}{}", &text[..end], ELLIPSIS);
+	let mut truncated = String::with_capacity(text.len().saturating_sub(ELLIPSIS.len()));
 
-	while text_size(metrics.scale, font, &truncated).0 > max_width && end > ELLIPSIS.len() {
+	loop {
+		while end > 0 && !text.is_char_boundary(end) {
+			end = end.saturating_sub(1);
+		}
+
+		truncated.clear();
+		truncated.push_str(&text[..end]);
+		truncated.push_str(ELLIPSIS);
+
+		if text_size(metrics.scale, font, &truncated).0 <= max_width || end <= ELLIPSIS.len() {
+			break;
+		}
+
 		end = end.saturating_sub(1);
-		truncated = format!("{}{}", &text[..end], ELLIPSIS);
 	}
 
 	truncated
