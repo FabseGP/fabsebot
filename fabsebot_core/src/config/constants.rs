@@ -49,6 +49,9 @@ pub const FONTS: &[(&str, &[u8])] = &[
 ];
 pub const QUOTE_WIDTH: u32 = 1200;
 pub const QUOTE_HEIGHT: u32 = 630;
+pub const CONTENT_BOUND: u32 = 64;
+pub const MAX_CONTENT_WIDTH: u32 = QUOTE_WIDTH - QUOTE_HEIGHT - CONTENT_BOUND;
+pub const MAX_CONTENT_HEIGHT: u32 = QUOTE_HEIGHT - CONTENT_BOUND;
 
 pub static DARK_BASE_IMAGE: OnceLock<RgbaImage> = OnceLock::new();
 pub static LIGHT_BASE_IMAGE: OnceLock<RgbaImage> = OnceLock::new();

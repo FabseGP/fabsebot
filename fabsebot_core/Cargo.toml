@@ -12,7 +12,7 @@ ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 bytes = { workspace = true }
 fastrand = { workspace = true }
-image = { workspace = true, default-features = false, features = ["gif", "rayon", "webp"] }
+image = { workspace = true, default-features = false, features = ["avif", "gif", "nasm", "rayon", "webp"] }
 imageproc = { workspace = true, default-features = false, features = ["rayon", "text"] }
 metrics = { workspace = true }
 mini-moka = { workspace = true }
@@ -31,6 +31,13 @@ tracing = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["v4", "v5"] }
 winnow = { workspace = true, features = ["simd"] }
+
+[dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
+
+[[bench]]
+name = "quote_bench"
+harness = false
 
 [package.metadata.cargo-machete]
 ignored = ["symphonia"]

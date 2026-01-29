@@ -1,7 +1,7 @@
-use std::io::Cursor;
+use std::{io::Cursor, result::Result};
 
 use ab_glyph::{FontArc, PxScale};
-use anyhow::{Context as _, Result as AResult, bail};
+use anyhow::{Result as AResult, bail};
 use image::{
 	AnimationDecoder as _, Frame, GenericImage as _, ImageBuffer,
 	ImageFormat::Avif,
@@ -14,7 +14,8 @@ use imageproc::drawing::{draw_text_mut, text_size};
 use textwrap::wrap;
 
 use crate::config::constants::{
-	DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, QUOTE_HEIGHT, QUOTE_WIDTH, RAINBOW_BASE_THEME,
+	DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, MAX_CONTENT_HEIGHT, MAX_CONTENT_WIDTH, QUOTE_HEIGHT,
+	QUOTE_WIDTH, RAINBOW_BASE_THEME,
 };
 
 const MIN_CONTENT_FONT_SIZE: f32 = 40.0;
@@ -26,10 +27,6 @@ const DEFAULT_WRAP_LENGTH: usize = 80;
 const FONT_SIZE_DECREMENT: f32 = 2.0;
 const WRAP_LENGTH_DECREMENT: usize = 5;
 const LINE_SPACING: u32 = 10;
-
-const R_WEIGHT: u32 = 77;
-const G_WEIGHT: u32 = 150;
-const B_WEIGHT: u32 = 29;
 
 struct FontMetrics {
 	line_height: u32,
@@ -58,13 +55,11 @@ pub struct TextLayout {
 }
 
 fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontArc) -> String {
-	let mut end = text.len().saturating_sub(ELLIPSIS.len());
-	let mut truncated = String::with_capacity(text.len().saturating_sub(ELLIPSIS.len()));
+	let mut end = text.len() - ELLIPSIS.len();
+	let mut truncated = String::with_capacity(end);
 
 	loop {
-		while end > 0 && !text.is_char_boundary(end) {
-			end = end.saturating_sub(1);
-		}
+		end = text.floor_char_boundary(end);
 
 		truncated.clear();
 		truncated.push_str(&text[..end]);
@@ -74,44 +69,34 @@ fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontA
 			break;
 		}
 
-		end = end.saturating_sub(1);
+		end -= 1;
 	}
 
 	truncated
 }
 
-fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) -> AResult<()> {
-	let gradient_width = avatar.width().saturating_div(2);
+fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) {
+	let gradient_width = avatar.width() / 2;
 	let gradient_start = if is_reverse {
 		0
 	} else {
-		avatar.width().saturating_sub(gradient_width)
+		avatar.width() - gradient_width
 	};
 
 	for x in 0..gradient_width {
-		let progress = x.saturating_mul(255).saturating_div(gradient_width);
+		let progress = (x * 255 / gradient_width) as u8;
 		let alpha_multiplier = if is_reverse {
-			u8::try_from(progress.saturating_pow(2).saturating_div(255))?
+			(u32::from(progress).pow(u32::from(progress)) / 255) as u8
 		} else {
-			u8::try_from(
-				255_u32
-					.saturating_sub(progress)
-					.saturating_pow(2)
-					.saturating_div(255),
-			)?
+			let inv = u32::from(255 - progress);
+			(inv.pow(inv) / 255) as u8
 		};
 
 		for y in 0..avatar.height() {
-			let pixel = avatar.get_pixel_mut(gradient_start.saturating_add(x), y);
-			pixel[3] = u8::try_from(
-				u32::from(pixel[3])
-					.saturating_mul(u32::from(alpha_multiplier))
-					.saturating_div(255),
-			)?;
+			let pixel = avatar.get_pixel_mut(gradient_start + x, y);
+			pixel[3] = ((u32::from(pixel[3]) * u32::from(alpha_multiplier)) / 255) as u8;
 		}
 	}
-
-	Ok(())
 }
 
 fn get_base_image(theme: Option<&str>, is_light: bool) -> (RgbaImage, Rgba<u8>) {
@@ -196,54 +181,45 @@ fn prepare_text_layout(
 	author_name: &str,
 	content_font: &FontArc,
 	author_font: &FontArc,
-) -> AResult<TextLayout> {
-	let max_content_width = QUOTE_WIDTH.saturating_sub(QUOTE_HEIGHT).saturating_sub(64);
-	let max_content_height = QUOTE_HEIGHT.saturating_sub(64);
-
+) -> TextLayout {
 	let mut content_metrics = FontMetrics::new(content_font, PxScale::from(MAX_CONTENT_FONT_SIZE));
 	let author_metrics = FontMetrics::new(author_font, PxScale::from(AUTHOR_FONT_SIZE));
 
 	let mut wrapped_length = DEFAULT_WRAP_LENGTH;
 	let mut final_lines = Vec::with_capacity(MAX_LINES);
-	let (mut line_positions, mut line_positions_reverse) =
-		(Vec::with_capacity(MAX_LINES), Vec::with_capacity(MAX_LINES));
 
 	loop {
 		let wrapped_lines = wrap(quoted_content, wrapped_length);
 
 		if let Some(first_line) = wrapped_lines.first()
-			&& text_size(content_metrics.scale, content_font, first_line).0 > max_content_width
+			&& text_size(content_metrics.scale, content_font, first_line).0 > MAX_CONTENT_WIDTH
 		{
 			if content_metrics.scale.x == MIN_CONTENT_FONT_SIZE {
-				wrapped_length = wrapped_length.saturating_sub(WRAP_LENGTH_DECREMENT);
+				wrapped_length -= WRAP_LENGTH_DECREMENT;
 				if wrapped_length < 20 {
 					break;
 				}
 			} else {
-				content_metrics.recalculate(
-					content_font,
-					PxScale::from(
-						(content_metrics.scale.x.algebraic_sub(FONT_SIZE_DECREMENT))
-							.max(MIN_CONTENT_FONT_SIZE),
-					),
-				);
+				let new_size =
+					(content_metrics.scale.x - FONT_SIZE_DECREMENT).max(MIN_CONTENT_FONT_SIZE);
+				content_metrics.recalculate(content_font, PxScale::from(new_size));
 			}
 			continue;
 		}
 
 		final_lines.clear();
-		let max_possible_lines =
-			usize::try_from(max_content_height.saturating_div(content_metrics.line_height))?
-				.min(MAX_LINES);
+		let max_possible_lines = {
+			let height_per_line = content_metrics.line_height + LINE_SPACING;
+			((MAX_CONTENT_HEIGHT + LINE_SPACING) / height_per_line).min(MAX_LINES as u32) as usize
+		};
 
 		for (i, line) in wrapped_lines.iter().take(max_possible_lines).enumerate() {
-			let line_str = if (text_size(content_metrics.scale, content_font, line).0
-				> max_content_width
-				|| (i == max_possible_lines.saturating_sub(1)
-					&& wrapped_lines.len() > max_possible_lines))
-				&& line.len() > ELLIPSIS.len()
-			{
-				truncate_text(line, max_content_width, &content_metrics, content_font)
+			let is_last_line = i == max_possible_lines - 1;
+			let needs_truncation = text_size(content_metrics.scale, content_font, line).0
+				> MAX_CONTENT_WIDTH
+				|| (is_last_line && wrapped_lines.len() > max_possible_lines);
+			let line_str = if needs_truncation && line.len() > ELLIPSIS.len() {
+				truncate_text(line, MAX_CONTENT_WIDTH, &content_metrics, content_font)
 			} else {
 				line.to_string()
 			};
@@ -256,94 +232,59 @@ fn prepare_text_layout(
 		}
 
 		if content_metrics.scale.x == MIN_CONTENT_FONT_SIZE {
-			wrapped_length = wrapped_length.saturating_sub(WRAP_LENGTH_DECREMENT);
+			wrapped_length -= WRAP_LENGTH_DECREMENT;
 			if wrapped_length < 20 {
 				break;
 			}
 		} else {
-			content_metrics.recalculate(
-				content_font,
-				PxScale::from(
-					(content_metrics.scale.x - FONT_SIZE_DECREMENT).max(MIN_CONTENT_FONT_SIZE),
-				),
-			);
+			let new_size =
+				(content_metrics.scale.x - FONT_SIZE_DECREMENT).max(MIN_CONTENT_FONT_SIZE);
+			content_metrics.recalculate(content_font, PxScale::from(new_size));
 		}
 	}
 
-	let lines_count = u32::try_from(final_lines.len())?;
-	let total_text_height = lines_count
-		.saturating_mul(content_metrics.line_height)
-		.saturating_add(lines_count.saturating_sub(1).saturating_mul(LINE_SPACING));
-	let quoted_content_y = QUOTE_HEIGHT
-		.saturating_sub(total_text_height)
-		.saturating_div(2);
+	let lines_count = final_lines.len() as u32;
+	let total_text_height = (lines_count * content_metrics.line_height)
+		+ (lines_count.saturating_sub(1) * LINE_SPACING);
 
-	let mut current_y = i32::try_from(quoted_content_y)?;
+	let quoted_content_y = (QUOTE_HEIGHT - total_text_height) / 2;
+
+	let mut current_y = quoted_content_y.cast_signed();
+
+	let mut line_positions = Vec::with_capacity(final_lines.len());
+	let mut line_positions_reverse = Vec::with_capacity(final_lines.len());
 
 	for line in final_lines {
 		let line_width = text_size(content_metrics.scale, content_font, &line).0;
-		let (line_x, line_x_reverse) = (
-			i32::try_from(
-				QUOTE_HEIGHT.saturating_add(
-					(QUOTE_WIDTH
-						.saturating_sub(QUOTE_HEIGHT)
-						.saturating_sub(line_width))
-					.saturating_div(2),
-				),
-			)?,
-			i32::try_from(
-				QUOTE_WIDTH
-					.saturating_sub(QUOTE_HEIGHT)
-					.saturating_sub(line_width)
-					.saturating_div(2),
-			)?,
-		);
+		let centered_offset = (QUOTE_WIDTH - QUOTE_HEIGHT - line_width) / 2;
+
+		let line_x = (QUOTE_HEIGHT + centered_offset).cast_signed();
+		let line_x_reverse = centered_offset.cast_signed();
 
 		line_positions.push((line.clone(), line_x, current_y));
 		line_positions_reverse.push((line, line_x_reverse, current_y));
-		current_y = current_y.saturating_add(i32::try_from(
-			content_metrics.line_height.saturating_add(LINE_SPACING),
-		)?);
+
+		current_y += (content_metrics.line_height + LINE_SPACING).cast_signed();
 	}
 
 	let author_name_width = text_size(author_metrics.scale, author_font, author_name).0;
-	let (author_x, author_x_reverse) = (
-		i32::try_from(
-			QUOTE_WIDTH
-				.saturating_sub(author_name_width)
-				.saturating_div(2)
-				.saturating_add(QUOTE_HEIGHT.saturating_div(2)),
-		)?,
-		i32::try_from(
-			QUOTE_WIDTH
-				.saturating_sub(QUOTE_HEIGHT)
-				.saturating_sub(author_name_width)
-				.saturating_div(2),
-		)?,
-	);
+	let author_x = ((QUOTE_WIDTH - author_name_width) / 2 + QUOTE_HEIGHT / 2).cast_signed();
+	let author_x_reverse = ((QUOTE_WIDTH - QUOTE_HEIGHT - author_name_width) / 2).cast_signed();
 
-	let author_y = if line_positions.len() == 1 {
-		i32::try_from(
-			quoted_content_y
-				.saturating_add(total_text_height)
-				.saturating_add(LINE_SPACING)
-				.saturating_mul(3),
-		)?
+	let author_y_offset = if line_positions.len() == 1 {
+		LINE_SPACING * 3
 	} else {
-		i32::try_from(
-			quoted_content_y
-				.saturating_add(total_text_height)
-				.saturating_add(LINE_SPACING),
-		)?
+		LINE_SPACING
 	};
+	let author_y = (quoted_content_y + total_text_height + author_y_offset).cast_signed();
 
-	Ok(TextLayout {
+	TextLayout {
 		content_lines: line_positions,
 		content_lines_reverse: line_positions_reverse,
 		author_position: (author_name.to_owned(), author_x, author_x_reverse, author_y),
 		content_scale: content_metrics.scale,
 		author_scale: author_metrics.scale,
-	})
+	}
 }
 
 fn apply_text_layout(
@@ -425,13 +366,12 @@ pub fn quote_image(
 	{
 		text_layout
 	} else {
-		&prepare_text_layout(quoted_content, author_name, content_font, author_font)?
+		&prepare_text_layout(quoted_content, author_name, content_font, author_font)
 	};
 
 	if is_animated {
 		if let Some(avatar_bytes) = avatar_bytes {
-			let mut frames = GifDecoder::new(Cursor::new(avatar_bytes))?.into_frames();
-
+			let frames = GifDecoder::new(Cursor::new(avatar_bytes))?.into_frames();
 			let mut output = Vec::with_capacity(img.len().saturating_mul(2));
 
 			apply_text_layout(
@@ -450,38 +390,27 @@ pub fn quote_image(
 				let mut gif_encoder = GifEncoder::new_with_speed(&mut output, 10);
 				gif_encoder.set_repeat(Infinite)?;
 
-				let mut count: u32 = 0;
-
-				while let Some(Ok(frame)) = frames.next() {
+				for frame in frames.take(30).filter_map(Result::ok) {
 					avatar_frame = resize(
 						frame.buffer(),
 						QUOTE_HEIGHT,
 						QUOTE_HEIGHT,
 						FilterType::Nearest,
 					);
-
 					if !is_colour {
-						convert_to_bw(&mut avatar_frame)?;
+						convert_to_bw(&mut avatar_frame);
 					}
 					if is_gradient {
-						apply_gradient_to_avatar(&mut avatar_frame, is_reverse)?;
+						apply_gradient_to_avatar(&mut avatar_frame, is_reverse);
 					}
-
 					quote_frame.copy_from(&img, 0, 0)?;
 					overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
-
 					gif_encoder.encode_frame(Frame::from_parts(
 						quote_frame.clone(),
 						0,
 						0,
 						frame.delay(),
 					))?;
-
-					count = count.saturating_add(1);
-
-					if count > 30 {
-						break;
-					}
 				}
 			}
 
@@ -497,9 +426,9 @@ pub fn quote_image(
 	let mut avatar_image = if let Some(avatar_resized) = avatar_resized {
 		avatar_resized
 	} else if let Some(avatar_bytes) = avatar_bytes {
-		if let Ok(avatar_mem) = load_from_memory(avatar_bytes) {
+		if let Ok(avatar_mem) = load_from_memory(avatar_bytes).map(|a| a.to_rgba8()) {
 			resize(
-				&avatar_mem.to_rgba8(),
+				&avatar_mem,
 				QUOTE_HEIGHT,
 				QUOTE_HEIGHT,
 				FilterType::Triangle,
@@ -512,10 +441,10 @@ pub fn quote_image(
 	};
 
 	if !is_colour {
-		convert_to_bw(&mut avatar_image)?;
+		convert_to_bw(&mut avatar_image);
 	}
 	if is_gradient {
-		apply_gradient_to_avatar(&mut avatar_image, is_reverse)?;
+		apply_gradient_to_avatar(&mut avatar_image, is_reverse);
 	}
 
 	overlay(&mut img, &avatar_image, avatar_position, 0);
@@ -528,7 +457,7 @@ pub fn quote_image(
 		is_reverse,
 	);
 
-	let mut output = Vec::with_capacity(img.len());
+	let mut output = Vec::with_capacity(img.len() / 30);
 	img.write_to(&mut Cursor::new(&mut output), Avif)?;
 
 	Ok((
@@ -538,20 +467,15 @@ pub fn quote_image(
 	))
 }
 
-pub fn convert_to_bw(image: &mut RgbaImage) -> AResult<()> {
-	for pixel in image.pixels_mut() {
-		let gray = u8::try_from(
-			(u32::from(pixel[0])
-				.saturating_mul(R_WEIGHT)
-				.saturating_add(u32::from(pixel[1]).saturating_mul(G_WEIGHT))
-				.saturating_add(u32::from(pixel[2]).saturating_mul(B_WEIGHT)))
-				>> 8,
-		)
-		.context("Pixel values out of bounds for u8")?;
-		pixel[0] = gray;
-		pixel[1] = gray;
-		pixel[2] = gray;
+pub fn convert_to_bw(image: &mut RgbaImage) {
+	let pixels = image.as_flat_samples_mut();
+	for chunk in pixels.samples.chunks_exact_mut(4) {
+		let gray = ((u32::from(chunk[0]) * 77
+			+ u32::from(chunk[1]) * 150
+			+ u32::from(chunk[2]) * 29)
+			>> 8) as u8;
+		chunk[0] = gray;
+		chunk[1] = gray;
+		chunk[2] = gray;
 	}
-
-	Ok(())
 }

@@ -1,4 +1,4 @@
-cargo-features = ["codegen-backend", "panic-immediate-abort"]
+cargo-features = ["panic-immediate-abort"]
 
 [package]
 name = "fabsebot"
@@ -55,8 +55,9 @@ ab_glyph = "*"
 anyhow = "*"
 base64 = "*"
 bytes = "*"
+criterion = { version = "*", features = ["async_tokio", "html_reports"] }
 fastrand = "*"
-image = { version = "*", default-features = false, features = ["avif", "gif", "rayon"] }
+image = { version = "*", default-features = false, features = ["avif", "gif", "nasm", "rayon", "webp"] }
 imageproc = { version = "*", default-features = false, features = ["rayon", "text"] }
 metrics = { version = "*" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
@@ -104,11 +105,12 @@ panic = "immediate-abort"
 opt-level = 1
 panic = "immediate-abort"
 debug = "line-tables-only"
-codegen-backend = "cranelift"
+
+[profile.bench]
+panic = "unwind"
 
 [profile.dev.package."*"]
 opt-level = 3
-codegen-backend = "llvm"
 
 [package.metadata.cargo-machete]
 ignored = [

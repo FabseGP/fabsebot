@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Write as _, path::Path, process, sync::Arc, time::Duration};
+use std::{collections::HashSet, fmt::Write as _, process, sync::Arc, time::Duration};
 
 use ab_glyph::FontArc;
 use anyhow::Context as _;
@@ -914,6 +914,11 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			return Ok(());
 		};
 
+		if reply.content.is_empty() {
+			ctx.reply("Bruh, this message is empty").await?;
+			return Ok(());
+		}
+
 		ctx.defer().await?;
 
 		let mut image_handle = {
@@ -926,9 +931,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 				});
 				(
 					HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
-					Path::new(&avatar_url)
-						.extension()
-						.is_some_and(|ext| ext.eq_ignore_ascii_case("gif")),
+					avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
 					format!("- {}", reply.author.name),
 				)
 			} else {
@@ -943,9 +946,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 				});
 				(
 					HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
-					Path::new(&avatar_url)
-						.extension()
-						.is_some_and(|ext| ext.eq_ignore_ascii_case("gif")),
+					avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
 					format!("- {}", member.user.name),
 				)
 			};
