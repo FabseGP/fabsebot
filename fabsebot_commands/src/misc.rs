@@ -4,7 +4,7 @@ use ab_glyph::FontArc;
 use anyhow::Context as _;
 use fabsebot_core::{
 	config::{
-		constants::{COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, FONTS},
+		constants::{COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, FONTS, QUOTE_FILENAME, THEMES},
 		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
 	},
 	utils::{
@@ -645,16 +645,15 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 			.colour(COLOUR_RED);
 
 		for (index, user) in users.iter().enumerate() {
-			if let Ok(user_id_u64) = u64::try_from(user.id) {
-				if let Ok(target) = guild_id.member(&ctx.http(), UserId::new(user_id_u64)).await {
-					embed = embed.field(
-						format!("#{} {}", index.saturating_add(1), target.display_name()),
-						user.count.to_string(),
-						false,
-					);
-				}
-			} else {
-				warn!("Failed to convert user id to u64");
+			if let Ok(target) = guild_id
+				.member(&ctx.http(), UserId::new(user.id.cast_unsigned()))
+				.await
+			{
+				embed = embed.field(
+					format!("#{} {}", index.saturating_add(1), target.display_name()),
+					user.count.to_string(),
+					false,
+				);
 			}
 		}
 
@@ -705,7 +704,6 @@ struct ImageInfo {
 	is_animated: bool,
 	is_bw: bool,
 	is_reverse: bool,
-	is_light: bool,
 	is_gradient: bool,
 	new_font: bool,
 	content_font: FontArc,
@@ -756,7 +754,6 @@ impl ImageInfo {
 				false,
 				false,
 				false,
-				false,
 				is_animated,
 				false,
 			);
@@ -780,7 +777,6 @@ impl ImageInfo {
 					is_animated,
 					is_bw: false,
 					is_reverse: false,
-					is_light: false,
 					is_gradient: false,
 					new_font: false,
 					author_font,
@@ -806,13 +802,6 @@ impl ImageInfo {
 
 	async fn toggle_reverse(&mut self) -> Result<(), Error> {
 		self.is_reverse = !self.is_reverse;
-		self.image_gen().await?;
-
-		Ok(())
-	}
-
-	async fn toggle_light(&mut self) -> Result<(), Error> {
-		self.is_light = !self.is_light;
 		self.image_gen().await?;
 
 		Ok(())
@@ -850,7 +839,6 @@ impl ImageInfo {
 		let content_font = self.content_font.clone();
 		let text_layout = self.text_layout.clone();
 		let is_reverse = self.is_reverse;
-		let is_light = self.is_light;
 		let is_bw = self.is_bw;
 		let is_gradient = self.is_gradient;
 		let is_animated = self.is_animated;
@@ -871,7 +859,6 @@ impl ImageInfo {
 				theme.as_deref(),
 				text_layout.as_ref(),
 				is_reverse,
-				is_light,
 				is_bw,
 				is_gradient,
 				is_animated,
@@ -884,7 +871,7 @@ impl ImageInfo {
 		});
 		match rx.await.context("Rayon task for quote image panicked")? {
 			Ok(img_gen) => {
-				let (image, text_layout, _) = img_gen;
+				let (image, text_layout, ..) = img_gen;
 				if new_font {
 					self.new_font = false;
 					self.text_layout = text_layout;
@@ -922,34 +909,34 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		ctx.defer().await?;
 
 		let mut image_handle = {
-			let (avatar_image, is_animated, author_name) = if reply.webhook_id.is_some() {
-				let avatar_url = reply.author.avatar_url().unwrap_or_else(|| {
-					reply
-						.author
-						.static_avatar_url()
-						.unwrap_or_else(|| reply.author.default_avatar_url())
-				});
+			let (avatar_url, author_name) = if reply.webhook_id.is_some() {
 				(
-					HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
-					avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
+					reply.author.avatar_url().unwrap_or_else(|| {
+						reply
+							.author
+							.static_avatar_url()
+							.unwrap_or_else(|| reply.author.default_avatar_url())
+					}),
 					format!("- {}", reply.author.name),
 				)
 			} else {
 				let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-				let avatar_url = member.avatar_url().unwrap_or_else(|| {
-					reply.author.avatar_url().unwrap_or_else(|| {
-						member
-							.user
-							.static_avatar_url()
-							.unwrap_or_else(|| member.user.default_avatar_url())
-					})
-				});
 				(
-					HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
-					avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
+					member.avatar_url().unwrap_or_else(|| {
+						reply.author.avatar_url().unwrap_or_else(|| {
+							member
+								.user
+								.static_avatar_url()
+								.unwrap_or_else(|| member.user.default_avatar_url())
+						})
+					}),
 					format!("- {}", member.user.name),
 				)
 			};
+			let (avatar_image, is_animated) = (
+				HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
+				avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
+			);
 
 			ImageInfo::new(
 				&avatar_image,
@@ -965,7 +952,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			if image_handle.is_animated {
 				"quote.gif"
 			} else {
-				"quote.avif"
+				QUOTE_FILENAME
 			},
 		);
 		let buttons = [
@@ -975,9 +962,6 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			CreateButton::new(format!("{}_reverse", ctx.id()))
 				.style(ButtonStyle::Primary)
 				.label("🪞"),
-			CreateButton::new(format!("{}_light", ctx.id()))
-				.style(ButtonStyle::Primary)
-				.label("🔆"),
 			CreateButton::new(format!("{}_gradient", ctx.id()))
 				.style(ButtonStyle::Primary)
 				.label("🌫️"),
@@ -991,23 +975,23 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		let font_menu = CreateSelectMenu::new(
 			format!("{}_font_option", ctx.id()),
 			CreateSelectMenuKind::String {
-				options: font_select.into(),
+				options: Cow::Owned(font_select),
 			},
 		)
 		.placeholder("Font")
 		.min_values(1)
 		.max_values(1);
 
-		let theme_select: Vec<CreateSelectMenuOption> = vec![
-			CreateSelectMenuOption::new("rainbow", "rainbow"),
-			CreateSelectMenuOption::new("dark", "dark"),
-			CreateSelectMenuOption::new("light", "light"),
-		];
+		let mut theme_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(THEMES.len());
+
+		for theme in THEMES.iter() {
+			theme_select.push(CreateSelectMenuOption::new(*theme.0, *theme.0));
+		}
 
 		let theme_menu = CreateSelectMenu::new(
 			format!("{}_theme_option", ctx.id()),
 			CreateSelectMenuKind::String {
-				options: theme_select.into(),
+				options: Cow::Owned(theme_select),
 			},
 		)
 		.placeholder("Theme")
@@ -1017,6 +1001,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
 			&buttons,
 		))];
+
 		let mut message = ctx
 			.channel_id()
 			.send_message(
@@ -1031,23 +1016,21 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 					.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
 			)
 			.await?;
+
 		if let Some(guild_data) = ctx.data().guilds.get(&guild_id)
 			&& let Some(channel) = guild_data.settings.quotes_channel
 		{
-			if let Ok(channel_u64) = u64::try_from(channel) {
-				let quote_channel = GenericChannelId::new(channel_u64);
-				quote_channel
-					.send_message(
-						ctx.http(),
-						CreateMessage::default()
-							.add_file(attachment.clone())
-							.content(message_url),
-					)
-					.await?;
-			} else {
-				warn!("Failed to convert quotes channel id to u64");
-			}
+			let quote_channel = GenericChannelId::new(channel.cast_unsigned());
+			quote_channel
+				.send_message(
+					ctx.http(),
+					CreateMessage::default()
+						.add_file(attachment.clone())
+						.content(message_url),
+				)
+				.await?;
 		}
+
 		let ctx_id_copy = ctx.id();
 		let mut final_attachment = attachment.clone();
 
@@ -1077,18 +1060,13 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 					&& let Ok(new_font) = FontArc::try_from_slice(font.1)
 				{
 					image_handle.new_font(font.0, new_font).await?;
-				} else if menu_choice == "rainbow"
-					|| menu_choice == "light"
-					|| menu_choice == "dark"
-				{
+				} else if THEMES.contains_key(menu_choice.as_str()) {
 					image_handle.new_theme(menu_choice.to_owned()).await?;
 				}
 			} else if interaction.data.custom_id.ends_with("bw") {
 				image_handle.toggle_bw().await?;
 			} else if interaction.data.custom_id.ends_with("reverse") {
 				image_handle.toggle_reverse().await?;
-			} else if interaction.data.custom_id.ends_with("light") {
-				image_handle.toggle_light().await?;
 			} else if interaction.data.custom_id.ends_with("gradient") {
 				image_handle.toggle_gradient().await?;
 			}

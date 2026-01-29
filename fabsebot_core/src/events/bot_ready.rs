@@ -7,7 +7,7 @@ use anyhow::{Context as _, Result as AResult};
 use fabsebot_db::guild::{EmojiReactions, GuildData, GuildSettings, WordReactions, WordTracking};
 use serenity::all::{Context as SContext, GuildId, Ready, UserId};
 use sqlx::query_as;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::config::{settings::UserSettings, types::Data};
 
@@ -64,47 +64,36 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 
 	{
 		for settings in guild_settings {
-			if let Ok(guild_id_u64) = u64::try_from(settings.guild_id) {
-				let guild_id = GuildId::new(guild_id_u64);
-				let settings_guild_id = settings.guild_id;
-				let guild_data = GuildData {
-					settings,
-					word_reactions: grouped_word_reactions
-						.remove_entry(&settings_guild_id)
-						.unwrap_or_default()
-						.1,
-					word_tracking: grouped_word_tracking
-						.remove_entry(&settings_guild_id)
-						.unwrap_or_default()
-						.1,
-					emoji_reactions: grouped_emoji_reactions
-						.remove_entry(&settings_guild_id)
-						.unwrap_or_default()
-						.1,
-				};
-				data.guilds.insert(guild_id, Arc::new(guild_data));
-			} else {
-				warn!("Failed to convert guildid to u64");
-			}
+			let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
+			let settings_guild_id = settings.guild_id;
+			let guild_data = GuildData {
+				settings,
+				word_reactions: grouped_word_reactions
+					.remove_entry(&settings_guild_id)
+					.unwrap_or_default()
+					.1,
+				word_tracking: grouped_word_tracking
+					.remove_entry(&settings_guild_id)
+					.unwrap_or_default()
+					.1,
+				emoji_reactions: grouped_emoji_reactions
+					.remove_entry(&settings_guild_id)
+					.unwrap_or_default()
+					.1,
+			};
+			data.guilds.insert(guild_id, Arc::new(guild_data));
 		}
 	}
 
 	{
 		let mut guild_maps: HashMap<GuildId, HashMap<UserId, UserSettings>> = HashMap::default();
 		for settings in user_settings {
-			if let (Ok(guild_id_u64), Ok(user_id_u64)) = (
-				u64::try_from(settings.guild_id),
-				u64::try_from(settings.user_id),
-			) {
-				let guild_id = GuildId::new(guild_id_u64);
-				let user_id = UserId::new(user_id_u64);
-				guild_maps
-					.entry(guild_id)
-					.or_default()
-					.insert(user_id, settings);
-			} else {
-				warn!("Failed to convert ids to u64");
-			}
+			let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
+			let user_id = UserId::new(settings.user_id.cast_unsigned());
+			guild_maps
+				.entry(guild_id)
+				.or_default()
+				.insert(user_id, settings);
 		}
 		for (guild_id, map) in guild_maps {
 			data.user_settings.insert(guild_id, Arc::new(map));

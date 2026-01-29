@@ -82,8 +82,8 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 		if let Ok(system_time) = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
 			.map(|t| t.as_secs())
-			&& let Ok(now_timestamp) = i64::try_from(system_time)
 		{
+			let now_timestamp = system_time.cast_signed();
 			let mut needs_update = false;
 			for guild in &data.guilds {
 				let guild_id_i64 = i64::from(*guild.key());
@@ -92,9 +92,8 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 					&& let Some(waifu_rate) = modified_settings.settings.waifu_rate
 					&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
 					&& let Some(waifu_channel) = modified_settings.settings.waifu_channel
-					&& let Ok(waifu_channel_u64) = u64::try_from(waifu_channel)
 				{
-					if let Err(err) = GenericChannelId::new(waifu_channel_u64)
+					if let Err(err) = GenericChannelId::new(waifu_channel.cast_unsigned())
 						.say(&http, get_waifu().await)
 						.await
 					{
@@ -123,12 +122,11 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 					&& let Some(dead_chat_rate) = modified_settings.settings.dead_chat_rate
 					&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
 					&& let Some(dead_chat_channel) = modified_settings.settings.dead_chat_channel
-					&& let Ok(dead_chat_channel_u64) = u64::try_from(dead_chat_channel)
 				{
 					let gifs = get_gifs("dead chat".to_owned()).await;
 					let index = fastrand::usize(..gifs.len());
 					if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
-						if let Err(err) = GenericChannelId::new(dead_chat_channel_u64)
+						if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
 							.say(&http, gif)
 							.await
 						{

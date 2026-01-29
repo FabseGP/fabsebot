@@ -1063,10 +1063,9 @@ pub async fn seek_song(
 					.await?;
 				return Ok(());
 			};
-			let current_secs = i64::try_from(current_position.as_secs()).unwrap_or(0);
+			let current_secs = current_position.as_secs().cast_signed();
 			if seconds_value.is_negative() {
-				let new_position =
-					u64::try_from(current_secs.saturating_add(seconds_value)).unwrap_or(0);
+				let new_position = current_secs.saturating_add(seconds_value).cast_unsigned();
 				let seek = Duration::from_secs(new_position);
 				if seek.is_zero() {
 					ctx.reply("Bruh, wanting to seek more seconds back than what have been played")
@@ -1079,7 +1078,7 @@ pub async fn seek_song(
 						.await?;
 				}
 			} else {
-				let seconds_to_add = u64::try_from(seconds_value).unwrap_or(0);
+				let seconds_to_add = seconds_value.cast_unsigned();
 				let seek = current_position.saturating_add(Duration::from_secs(seconds_to_add));
 				if let Err(err) = current_playback.seek_async(seek).await {
 					ctx.reply(

@@ -1,11 +1,13 @@
-use std::{io::Cursor, result::Result};
+use std::{clone::Clone, io::Cursor, result::Result};
 
 use ab_glyph::{FontArc, PxScale};
 use anyhow::{Result as AResult, bail};
+#[cfg(not(feature = "quote_webp"))]
+use image::ImageFormat::Avif as STATIC_FORMAT;
+#[cfg(feature = "quote_webp")]
+use image::ImageFormat::WebP as STATIC_FORMAT;
 use image::{
-	AnimationDecoder as _, Frame, GenericImage as _, ImageBuffer,
-	ImageFormat::Avif,
-	Rgba, RgbaImage,
+	AnimationDecoder as _, Frame, GenericImage as _, ImageBuffer, Rgba, RgbaImage,
 	codecs::gif::{GifDecoder, GifEncoder, Repeat::Infinite},
 	imageops::{FilterType, overlay, resize},
 	load_from_memory,
@@ -14,8 +16,7 @@ use imageproc::drawing::{draw_text_mut, text_size};
 use textwrap::wrap;
 
 use crate::config::constants::{
-	DARK_BASE_IMAGE, LIGHT_BASE_IMAGE, MAX_CONTENT_HEIGHT, MAX_CONTENT_WIDTH, QUOTE_HEIGHT,
-	QUOTE_WIDTH, RAINBOW_BASE_THEME,
+	MAX_CONTENT_HEIGHT, MAX_CONTENT_WIDTH, QUOTE_HEIGHT, QUOTE_WIDTH, THEMES,
 };
 
 const MIN_CONTENT_FONT_SIZE: f32 = 40.0;
@@ -97,83 +98,6 @@ fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) {
 			pixel[3] = ((u32::from(pixel[3]) * u32::from(alpha_multiplier)) / 255) as u8;
 		}
 	}
-}
-
-fn get_base_image(theme: Option<&str>, is_light: bool) -> (RgbaImage, Rgba<u8>) {
-	theme.map_or_else(
-		|| {
-			if is_light {
-				(
-					LIGHT_BASE_IMAGE
-						.get_or_init(|| {
-							RgbaImage::from_pixel(
-								QUOTE_WIDTH,
-								QUOTE_HEIGHT,
-								Rgba([255, 255, 255, 255]),
-							)
-						})
-						.clone(),
-					Rgba([0, 0, 0, 255]),
-				)
-			} else {
-				(
-					DARK_BASE_IMAGE
-						.get_or_init(|| {
-							RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba([0, 0, 0, 255]))
-						})
-						.clone(),
-					Rgba([255, 255, 255, 255]),
-				)
-			}
-		},
-		|theme| {
-			if theme == "rainbow" {
-				(
-					RAINBOW_BASE_THEME
-						.get_or_init(|| {
-							RgbaImage::from_pixel(
-								QUOTE_WIDTH,
-								QUOTE_HEIGHT,
-								Rgba([255, 0, 128, 128]),
-							)
-						})
-						.clone(),
-					Rgba([255, 255, 255, 255]),
-				)
-			} else if theme == "dark" {
-				(
-					DARK_BASE_IMAGE
-						.get_or_init(|| {
-							RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba([0, 0, 0, 255]))
-						})
-						.clone(),
-					Rgba([255, 255, 255, 255]),
-				)
-			} else if theme == "light" {
-				(
-					LIGHT_BASE_IMAGE
-						.get_or_init(|| {
-							RgbaImage::from_pixel(
-								QUOTE_WIDTH,
-								QUOTE_HEIGHT,
-								Rgba([255, 255, 255, 255]),
-							)
-						})
-						.clone(),
-					Rgba([0, 0, 0, 255]),
-				)
-			} else {
-				(
-					DARK_BASE_IMAGE
-						.get_or_init(|| {
-							RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba([0, 0, 0, 255]))
-						})
-						.clone(),
-					Rgba([255, 255, 255, 255]),
-				)
-			}
-		},
-	)
 }
 
 fn prepare_text_layout(
@@ -347,7 +271,6 @@ pub fn quote_image(
 	theme: Option<&str>,
 	text: Option<&TextLayout>,
 	is_reverse: bool,
-	is_light: bool,
 	is_colour: bool,
 	is_gradient: bool,
 	is_animated: bool,
@@ -359,7 +282,9 @@ pub fn quote_image(
 		0
 	};
 
-	let (mut img, text_colour) = get_base_image(theme, is_light);
+	let (mut img, text_colour) = theme
+		.and_then(|t| THEMES.get(t))
+		.map_or_else(|| THEMES.get("dark").unwrap().clone(), Clone::clone);
 
 	let text_layout = if let Some(text_layout) = text
 		&& !new_font
@@ -458,7 +383,8 @@ pub fn quote_image(
 	);
 
 	let mut output = Vec::with_capacity(img.len() / 30);
-	img.write_to(&mut Cursor::new(&mut output), Avif)?;
+
+	img.write_to(&mut Cursor::new(&mut output), STATIC_FORMAT)?;
 
 	Ok((
 		output,

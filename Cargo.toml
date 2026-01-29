@@ -83,7 +83,7 @@ workspace = true
 
 [dependencies]
 fabsebot_commands = { path = "fabsebot_commands" }
-fabsebot_core = { path = "fabsebot_core" }
+fabsebot_core = { path = "fabsebot_core", default-features = false }
 fabsebot_db = { path = "fabsebot_db" }
 anyhow = { workspace = true }
 metrics-exporter-prometheus = { version = "*", default-features = false, features = ["http-listener"] }

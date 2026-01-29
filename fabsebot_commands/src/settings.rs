@@ -73,9 +73,8 @@ async fn configure_channels(
 	let system_time = if let Ok(system_time) = SystemTime::now()
 		.duration_since(UNIX_EPOCH)
 		.map(|t| t.as_secs())
-		&& let Ok(now_timestamp_i64) = i64::try_from(system_time)
 	{
-		now_timestamp_i64
+		system_time.cast_signed()
 	} else {
 		warn!("Failed to get system time");
 		return Ok(());

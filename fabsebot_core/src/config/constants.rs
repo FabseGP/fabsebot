@@ -1,6 +1,6 @@
-use std::sync::OnceLock;
+use std::{collections::HashMap, sync::LazyLock};
 
-use image::RgbaImage;
+use image::{Rgba, RgbaImage};
 
 pub const PING_INTERVAL_SEC: u64 = 60;
 
@@ -53,6 +53,30 @@ pub const CONTENT_BOUND: u32 = 64;
 pub const MAX_CONTENT_WIDTH: u32 = QUOTE_WIDTH - QUOTE_HEIGHT - CONTENT_BOUND;
 pub const MAX_CONTENT_HEIGHT: u32 = QUOTE_HEIGHT - CONTENT_BOUND;
 
-pub static DARK_BASE_IMAGE: OnceLock<RgbaImage> = OnceLock::new();
-pub static LIGHT_BASE_IMAGE: OnceLock<RgbaImage> = OnceLock::new();
-pub static RAINBOW_BASE_THEME: OnceLock<RgbaImage> = OnceLock::new();
+fn create_solid_theme(color: [u8; 4]) -> RgbaImage {
+	RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba(color))
+}
+
+pub static THEMES: LazyLock<HashMap<&'static str, (RgbaImage, Rgba<u8>)>> = LazyLock::new(|| {
+	HashMap::from([
+		(
+			"dark",
+			(
+				create_solid_theme([0, 0, 0, 255]),
+				Rgba([255, 255, 255, 255]),
+			),
+		),
+		(
+			"light",
+			(
+				create_solid_theme([255, 255, 255, 255]),
+				Rgba([0, 0, 0, 255]),
+			),
+		),
+	])
+});
+
+#[cfg(feature = "quote_webp")]
+pub const QUOTE_FILENAME: &str = "quote.webp";
+#[cfg(not(feature = "quote_webp"))]
+pub const QUOTE_FILENAME: &str = "quote.avif";
