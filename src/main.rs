@@ -1,7 +1,5 @@
 mod config;
 
-use std::fs::read_to_string;
-
 use anyhow::{Context as _, Result as AResult};
 use config::MainConfig;
 use fabsebot_commands::commands;
@@ -18,6 +16,8 @@ use tracing_subscriber::{filter::LevelFilter, fmt};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
+
+const CONFIG_TOML: &str = include_str!("../config.toml");
 
 fn setup_tracing(log_level_str: &str) -> AResult<()> {
 	let log_level = match log_level_str {
@@ -43,7 +43,7 @@ fn setup_tracing(log_level_str: &str) -> AResult<()> {
 
 #[tokio::main]
 async fn main() -> AResult<()> {
-	let config_toml: Table = read_to_string("config.toml")?.parse()?;
+	let config_toml: Table = CONFIG_TOML.parse()?;
 
 	let main_config: MainConfig = Value::try_into(config_toml["Main"].clone())?;
 	let bot_config: BotConfig = Value::try_into(config_toml["Bot"].clone())?;

@@ -29,7 +29,7 @@ pub struct ServerConfig {
 
 #[derive(Deserialize)]
 pub struct APIConfig {
-	pub tenor_token: String,
+	pub gif_token: String,
 	pub cloudflare_token: String,
 	pub cloudflare_token_fallback: String,
 	pub cloudflare_image_gen: String,
@@ -43,12 +43,6 @@ pub struct UserSettings {
 	pub message_count: i32,
 	pub chatbot_role: Option<String>,
 	pub chatbot_internet_search: Option<bool>,
-	pub chatbot_temperature: Option<f32>,
-	pub chatbot_top_p: Option<f32>,
-	pub chatbot_top_k: Option<i32>,
-	pub chatbot_repetition_penalty: Option<f32>,
-	pub chatbot_frequency_penalty: Option<f32>,
-	pub chatbot_presence_penalty: Option<f32>,
 	pub afk: bool,
 	pub afk_reason: Option<String>,
 	pub pinged_links: Option<String>,

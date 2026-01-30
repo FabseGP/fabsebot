@@ -7,7 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-fabsebot_core = { path = "../fabsebot_core", default-features = false }
+fabsebot_core = { path = "../fabsebot_core", default-features = false, features = ["quote_webp"] }
 fabsebot_db = { path = "../fabsebot_db" }
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }

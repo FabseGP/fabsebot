@@ -36,8 +36,9 @@ use crate::{
 async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 	if new_message.mentions_user_id(ctx.cache.current_user().id)
 		&& new_message.referenced_message.is_none()
-		&& let Some(utils_config) = UTILS_CONFIG.get()
 	{
+		let utils_config = UTILS_CONFIG.get().unwrap();
+
 		new_message
 			.channel_id
 			.send_message(
@@ -242,50 +243,19 @@ async fn ai_chat_channel(
 				modified_settings
 			}
 		};
-		let (
-			chatbot_role,
-			chatbot_internet_search,
-			chatbot_temperature,
-			chatbot_top_p,
-			chatbot_top_k,
-			chatbot_repetition_penalty,
-			chatbot_frequency_penalty,
-			chatbot_presence_penalty,
-		) = {
+		let (chatbot_role, chatbot_internet_search) = {
 			let user_settings_opt = data.user_settings.get(&guild_id);
 			if let Some(user_settings) = user_settings_opt {
 				user_settings
 					.get(&new_message.author.id)
-					.map(|a| {
-						(
-							a.chatbot_role.clone(),
-							a.chatbot_internet_search,
-							a.chatbot_temperature,
-							a.chatbot_top_p,
-							a.chatbot_top_k,
-							a.chatbot_repetition_penalty,
-							a.chatbot_frequency_penalty,
-							a.chatbot_presence_penalty,
-						)
-					})
+					.map(|a| (a.chatbot_role.clone(), a.chatbot_internet_search))
 					.unwrap_or_default()
 			} else {
 				let new_settings = user_settings_opt.unwrap_or_default();
 				data.user_settings.insert(guild_id, new_settings.clone());
 				new_settings
 					.get(&new_message.author.id)
-					.map(|a| {
-						(
-							a.chatbot_role.clone(),
-							a.chatbot_internet_search,
-							a.chatbot_temperature,
-							a.chatbot_top_p,
-							a.chatbot_top_k,
-							a.chatbot_repetition_penalty,
-							a.chatbot_frequency_penalty,
-							a.chatbot_presence_penalty,
-						)
-					})
+					.map(|a| (a.chatbot_role.clone(), a.chatbot_internet_search))
 					.unwrap_or_default()
 			}
 		};
@@ -295,12 +265,6 @@ async fn ai_chat_channel(
 			new_message,
 			chatbot_role.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
 			chatbot_internet_search,
-			chatbot_temperature,
-			chatbot_top_p,
-			chatbot_top_k,
-			chatbot_repetition_penalty,
-			chatbot_frequency_penalty,
-			chatbot_presence_penalty,
 			guild_id,
 			&mut ai_chats,
 			data.music_manager.get(guild_id),
@@ -809,7 +773,6 @@ pub async fn handle_message(ctx: &SContext, new_message: &Message) -> AResult<()
 				}),
 			);
 		}
-		let guild_id_i64 = i64::from(guild_id);
 		let user_id_i64 = i64::from(new_message.author.id);
 		let tx = data
 			.db

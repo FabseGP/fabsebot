@@ -42,6 +42,7 @@ All notable changes to this project will be documented in this file.
 - Updated deps + WIP impls for db-calls
 - Avoid calling yt-dlp twice from fetching metadata
 - Benchmark quote_image
+- Global quote themes
 
 ### 🐛 Bug Fixes
 
@@ -92,6 +93,7 @@ All notable changes to this project will be documented in this file.
 - Todo! and unimplemented! will always panic...
 - Replace webp with avif + remove unused codecs
 - Remove urlencoding + fewer format!-calls
+- Overflow when applying gradient
 
 ### 💼 Other
 

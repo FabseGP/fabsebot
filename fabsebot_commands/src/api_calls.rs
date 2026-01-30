@@ -76,14 +76,31 @@ pub async fn ai_image(
 	let request = ImageRequest {
 		prompt: format!("{prompt} {}", fastrand::usize(..1024)),
 	};
-	if let Some(utils_config) = UTILS_CONFIG.get() {
-		let mut resp = HTTP_CLIENT
-			.post(&utils_config.api.cloudflare_image_gen)
-			.bearer_auth(&utils_config.api.cloudflare_token)
+	let utils_config = UTILS_CONFIG.get().unwrap();
+	let mut resp = HTTP_CLIENT
+		.post(&utils_config.api.cloudflare_image_gen)
+		.bearer_auth(&utils_config.api.cloudflare_token)
+		.json(&request)
+		.send()
+		.await?;
+
+	if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
+		&& resp_parsed.success
+		&& let Ok(img_dec) = general_purpose::STANDARD.decode(resp_parsed.result.image)
+	{
+		ctx.send(
+			CreateReply::default()
+				.reply(true)
+				.attachment(CreateAttachment::bytes(img_dec, "output.png")),
+		)
+		.await?;
+	} else {
+		resp = HTTP_CLIENT
+			.post(&utils_config.api.cloudflare_image_gen_fallback)
+			.bearer_auth(&utils_config.api.cloudflare_token_fallback)
 			.json(&request)
 			.send()
 			.await?;
-
 		if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
 			&& resp_parsed.success
 			&& let Ok(img_dec) = general_purpose::STANDARD.decode(resp_parsed.result.image)
@@ -95,30 +112,9 @@ pub async fn ai_image(
 			)
 			.await?;
 		} else {
-			resp = HTTP_CLIENT
-				.post(&utils_config.api.cloudflare_image_gen_fallback)
-				.bearer_auth(&utils_config.api.cloudflare_token_fallback)
-				.json(&request)
-				.send()
+			ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
 				.await?;
-			if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
-				&& resp_parsed.success
-				&& let Ok(img_dec) = general_purpose::STANDARD.decode(resp_parsed.result.image)
-			{
-				ctx.send(
-					CreateReply::default()
-						.reply(true)
-						.attachment(CreateAttachment::bytes(img_dec, "output.png")),
-				)
-				.await?;
-			} else {
-				ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
-					.await?;
-			}
 		}
-	} else {
-		ctx.reply("User err- I mean, system error. Please standby")
-			.await?;
 	}
 
 	Ok(())
@@ -138,43 +134,40 @@ pub async fn ai_text(
 	prompt: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Some(utils_config) = UTILS_CONFIG.get() {
-		if let Some(resp) =
-			ai_response_simple(&role, &prompt, &utils_config.fabseserver.text_gen_model).await
-			&& !resp.is_empty()
-		{
-			let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
-			let mut current_chunk = String::with_capacity(1024);
-			let mut chunk_index: u32 = 0;
-			for ch in resp.chars() {
-				if current_chunk.len() >= 1024 {
-					let field_name = if chunk_index == 0 {
-						"Response:".to_owned()
-					} else {
-						format!("Response (cont. {}):", chunk_index.saturating_add(1))
-					};
-					embed = embed.field(field_name, current_chunk.clone(), false);
-					current_chunk.clear();
-					chunk_index = chunk_index.saturating_add(1);
-				}
-				current_chunk.push(ch);
-			}
-			if !current_chunk.is_empty() {
+	let utils_config = UTILS_CONFIG.get().unwrap();
+
+	if let Some(resp) =
+		ai_response_simple(&role, &prompt, &utils_config.fabseserver.text_gen_model).await
+		&& !resp.is_empty()
+	{
+		let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
+		let mut current_chunk = String::with_capacity(1024);
+		let mut chunk_index: u32 = 0;
+		for ch in resp.chars() {
+			if current_chunk.len() >= 1024 {
 				let field_name = if chunk_index == 0 {
 					"Response:".to_owned()
 				} else {
 					format!("Response (cont. {}):", chunk_index.saturating_add(1))
 				};
-				embed = embed.field(field_name, current_chunk, false);
+				embed = embed.field(field_name, current_chunk.clone(), false);
+				current_chunk.clear();
+				chunk_index = chunk_index.saturating_add(1);
 			}
-			ctx.send(CreateReply::default().embed(embed).reply(true))
-				.await?;
-		} else {
-			ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
-				.await?;
+			current_chunk.push(ch);
 		}
+		if !current_chunk.is_empty() {
+			let field_name = if chunk_index == 0 {
+				"Response:".to_owned()
+			} else {
+				format!("Response (cont. {}):", chunk_index.saturating_add(1))
+			};
+			embed = embed.field(field_name, current_chunk, false);
+		}
+		ctx.send(CreateReply::default().embed(embed).reply(true))
+			.await?;
 	} else {
-		ctx.reply("User err- I mean, system error. Please standby")
+		ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
 			.await?;
 	}
 
@@ -1103,45 +1096,41 @@ pub async fn roast(
 		);
 		let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no \
 		            mercy shown. the prompt will contain information of your target";
-		if let Some(utils_config) = UTILS_CONFIG.get() {
-			if let Some(resp) =
-				ai_response_simple(role, &description, &utils_config.fabseserver.text_gen_model)
-					.await && !resp.is_empty()
-			{
-				let mut embed = CreateEmbed::default()
-					.title(format!("Roasting {name}"))
-					.colour(COLOUR_RED);
-				let mut current_chunk = String::with_capacity(1024);
-				let mut chunk_index: u32 = 0;
-				for ch in resp.chars() {
-					if current_chunk.len() >= 1024 {
-						let field_name = if chunk_index == 0 {
-							"Response:".to_owned()
-						} else {
-							format!("Response (cont. {}):", chunk_index.saturating_add(1))
-						};
-						embed = embed.field(field_name, current_chunk.clone(), false);
-						current_chunk.clear();
-						chunk_index = chunk_index.saturating_add(1);
-					}
-					current_chunk.push(ch);
-				}
-				if !current_chunk.is_empty() {
+		let utils_config = UTILS_CONFIG.get().unwrap();
+		if let Some(resp) =
+			ai_response_simple(role, &description, &utils_config.fabseserver.text_gen_model).await
+			&& !resp.is_empty()
+		{
+			let mut embed = CreateEmbed::default()
+				.title(format!("Roasting {name}"))
+				.colour(COLOUR_RED);
+			let mut current_chunk = String::with_capacity(1024);
+			let mut chunk_index: u32 = 0;
+			for ch in resp.chars() {
+				if current_chunk.len() >= 1024 {
 					let field_name = if chunk_index == 0 {
 						"Response:".to_owned()
 					} else {
 						format!("Response (cont. {}):", chunk_index.saturating_add(1))
 					};
-					embed = embed.field(field_name, current_chunk, false);
+					embed = embed.field(field_name, current_chunk.clone(), false);
+					current_chunk.clear();
+					chunk_index = chunk_index.saturating_add(1);
 				}
-				ctx.send(CreateReply::default().reply(true).embed(embed))
-					.await?;
-			} else {
-				ctx.reply(format!("{name}'s life is already roasted"))
-					.await?;
+				current_chunk.push(ch);
 			}
+			if !current_chunk.is_empty() {
+				let field_name = if chunk_index == 0 {
+					"Response:".to_owned()
+				} else {
+					format!("Response (cont. {}):", chunk_index.saturating_add(1))
+				};
+				embed = embed.field(field_name, current_chunk, false);
+			}
+			ctx.send(CreateReply::default().reply(true).embed(embed))
+				.await?;
 		} else {
-			ctx.reply("User err- I mean, system error. Please standby")
+			ctx.reply(format!("{name}'s life is already roasted"))
 				.await?;
 		}
 	}
@@ -1212,132 +1201,131 @@ pub async fn translate(
 		target: &target_lang,
 		alternatives: 3,
 	};
-	if let Some(translate_server) = UTILS_CONFIG.get().map(|u| u.fabseserver.translate.as_str()) {
-		if let Ok(response) = HTTP_CLIENT
-			.post(translate_server)
-			.json(&request)
-			.send()
-			.await && let Ok(data) = response.json::<FabseTranslate>().await
-			&& !data.translated_text.is_empty()
-		{
-			let mut embed = CreateEmbed::default()
-				.title(format!(
-					"Translation from {} to {target_lang} with {}% confidence",
-					data.detected_language.language, data.detected_language.confidence
-				))
-				.colour(COLOUR_GREEN)
-				.field("Original:", &content, false)
-				.field("Translation:", &data.translated_text, false);
-			let len = data.alternatives.len();
-			if ctx.guild_id().is_some() && len > 1 {
-				let mut state = State::new(ctx.id(), len);
-				let mut final_embed = embed.clone();
-				let buttons = [
-					CreateButton::new(&state.prev_id)
-						.style(ButtonStyle::Primary)
-						.label("⬅️"),
-					CreateButton::new(&state.next_id)
-						.style(ButtonStyle::Primary)
-						.label("➡️"),
-				];
-				let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-					&buttons[1..],
-				))];
+	let translate_server = UTILS_CONFIG
+		.get()
+		.map(|u| u.fabseserver.translate.as_str())
+		.unwrap();
 
-				let message = ctx
-					.send(
-						CreateReply::default()
-							.reply(true)
-							.embed(embed)
-							.components(&action_row),
-					)
-					.await?;
+	if let Ok(response) = HTTP_CLIENT
+		.post(translate_server)
+		.json(&request)
+		.send()
+		.await && let Ok(data) = response.json::<FabseTranslate>().await
+		&& !data.translated_text.is_empty()
+	{
+		let mut embed = CreateEmbed::default()
+			.title(format!(
+				"Translation from {} to {target_lang} with {}% confidence",
+				data.detected_language.language, data.detected_language.confidence
+			))
+			.colour(COLOUR_GREEN)
+			.field("Original:", &content, false)
+			.field("Translation:", &data.translated_text, false);
+		let len = data.alternatives.len();
+		if ctx.guild_id().is_some() && len > 1 {
+			let mut state = State::new(ctx.id(), len);
+			let mut final_embed = embed.clone();
+			let buttons = [
+				CreateButton::new(&state.prev_id)
+					.style(ButtonStyle::Primary)
+					.label("⬅️"),
+				CreateButton::new(&state.next_id)
+					.style(ButtonStyle::Primary)
+					.label("➡️"),
+			];
+			let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+				&buttons[1..],
+			))];
 
-				let ctx_id_copy = ctx.id();
+			let message = ctx
+				.send(
+					CreateReply::default()
+						.reply(true)
+						.embed(embed)
+						.components(&action_row),
+				)
+				.await?;
 
-				let mut collector_stream =
-					ComponentInteractionCollector::new(ctx.serenity_context())
-						.timeout(Duration::from_secs(60))
-						.filter(move |interaction| {
-							interaction
-								.data
-								.custom_id
-								.starts_with(ctx_id_copy.to_string().as_str())
-						})
-						.stream();
+			let ctx_id_copy = ctx.id();
 
-				while let Some(interaction) = collector_stream.next().await {
+			let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
+				.timeout(Duration::from_secs(60))
+				.filter(move |interaction| {
 					interaction
-						.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-						.await?;
+						.data
+						.custom_id
+						.starts_with(ctx_id_copy.to_string().as_str())
+				})
+				.stream();
 
-					if interaction.data.custom_id.ends_with('n')
-						&& state.index < state.len.saturating_sub(1)
-					{
-						state.index = state.index.saturating_add(1);
-					} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-						state.index = state.index.saturating_sub(1);
-					}
-
-					embed = CreateEmbed::default()
-						.title(format!(
-							"Translation from {} to {target_lang} with {}% confidence",
-							data.detected_language.language, data.detected_language.confidence
-						))
-						.colour(COLOUR_GREEN)
-						.field("Original:", &content, false)
-						.field(
-							"Translation:",
-							if state.index == 0 {
-								&data.translated_text
-							} else if let Some(alternative) =
-								data.alternatives.get(state.index.saturating_sub(1))
-							{
-								alternative
-							} else {
-								"rip"
-							},
-							false,
-						);
-					final_embed = embed.clone();
-
-					action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
-						if state.index == 0 {
-							Cow::Borrowed(&buttons[1..])
-						} else if state.index == len.saturating_sub(1) {
-							Cow::Borrowed(&buttons[..1])
-						} else {
-							Cow::Borrowed(&buttons)
-						}
-					}))];
-
-					let mut msg = interaction.message;
-
-					msg.edit(
-						ctx.http(),
-						EditMessage::default().embed(embed).components(&action_row),
-					)
+			while let Some(interaction) = collector_stream.next().await {
+				interaction
+					.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 					.await?;
+
+				if interaction.data.custom_id.ends_with('n')
+					&& state.index < state.len.saturating_sub(1)
+				{
+					state.index = state.index.saturating_add(1);
+				} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
+					state.index = state.index.saturating_sub(1);
 				}
-				message
-					.edit(
-						ctx,
-						CreateReply::default()
-							.reply(true)
-							.embed(final_embed)
-							.components(&[]),
-					)
-					.await?;
-			} else {
-				ctx.send(CreateReply::default().reply(true).embed(embed))
-					.await?;
+
+				embed = CreateEmbed::default()
+					.title(format!(
+						"Translation from {} to {target_lang} with {}% confidence",
+						data.detected_language.language, data.detected_language.confidence
+					))
+					.colour(COLOUR_GREEN)
+					.field("Original:", &content, false)
+					.field(
+						"Translation:",
+						if state.index == 0 {
+							&data.translated_text
+						} else if let Some(alternative) =
+							data.alternatives.get(state.index.saturating_sub(1))
+						{
+							alternative
+						} else {
+							"rip"
+						},
+						false,
+					);
+				final_embed = embed.clone();
+
+				action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
+					if state.index == 0 {
+						Cow::Borrowed(&buttons[1..])
+					} else if state.index == len.saturating_sub(1) {
+						Cow::Borrowed(&buttons[..1])
+					} else {
+						Cow::Borrowed(&buttons)
+					}
+				}))];
+
+				let mut msg = interaction.message;
+
+				msg.edit(
+					ctx.http(),
+					EditMessage::default().embed(embed).components(&action_row),
+				)
+				.await?;
 			}
+			message
+				.edit(
+					ctx,
+					CreateReply::default()
+						.reply(true)
+						.embed(final_embed)
+						.components(&[]),
+				)
+				.await?;
 		} else {
-			ctx.reply("Too dangerous to translate").await?;
+			ctx.send(CreateReply::default().reply(true).embed(embed))
+				.await?;
 		}
 	} else {
-		ctx.reply("User err- I mean, system error. Please standby")
-			.await?;
+		ctx.reply("Too dangerous to translate").await?;
 	}
 
 	Ok(())

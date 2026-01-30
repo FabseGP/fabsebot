@@ -32,7 +32,7 @@
 #speech_to_text_model = 
 
 [API-Info]
-#tenor_token =
+#gif_token =
 #cloudflare_token =
 #cloudflare_token_fallback = 
 #cloudflare_image_gen = 

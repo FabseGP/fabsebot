@@ -4,7 +4,10 @@ use ab_glyph::FontArc;
 use anyhow::Context as _;
 use fabsebot_core::{
 	config::{
-		constants::{COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, FONTS, QUOTE_FILENAME, THEMES},
+		constants::{
+			AUTHOR_FONT, COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, CONTENT_FONT, FONTS,
+			QUOTE_FILENAME, THEMES,
+		},
 		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
 	},
 	utils::{
@@ -371,18 +374,15 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, owners_only)]
 #[expect(clippy::unused_async)]
 pub async fn end_pgo(ctx: SContext<'_>) -> Result<(), Error> {
-	if let Some(shutdown_trigger) = CLIENT_DATA
+	let shutdown_trigger = CLIENT_DATA
 		.get()
 		.map(|c| c.shard_manager.get_shutdown_trigger())
-	{
-		ctx.serenity_context().shutdown_all();
-		if shutdown_trigger() {
-			warn!("Successfully triggered shutdown for all shards");
-		} else {
-			warn!("Failed to trigger shutdown, shards may have already stopped");
-			process::exit(1);
-		}
+		.unwrap();
+	ctx.serenity_context().shutdown_all();
+	if shutdown_trigger() {
+		warn!("Successfully triggered shutdown for all shards");
 	} else {
+		warn!("Failed to trigger shutdown, shards may have already stopped");
 		process::exit(1);
 	}
 
@@ -672,25 +672,22 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Some(utils_config) = UTILS_CONFIG.get() {
-		if let Some(resp) = ai_response_simple(
-			"you're a tsundere",
-			"generate a one-line love-hate greeting",
-			&utils_config.fabseserver.text_gen_model,
-		)
-		.await
-		{
-			ctx.reply(resp).await?;
-		} else {
-			ctx.reply(
-				"Ugh, fine. It's nice to see you again, I suppose... 
-                for now, don't get any ideas thinking this means I actually like you or anything",
-			)
-			.await?;
-		}
+	let utils_config = UTILS_CONFIG.get().unwrap();
+
+	if let Some(resp) = ai_response_simple(
+		"you're a tsundere",
+		"generate a one-line love-hate greeting",
+		&utils_config.fabseserver.text_gen_model,
+	)
+	.await
+	{
+		ctx.reply(resp).await?;
 	} else {
-		ctx.reply("User err- I mean, system error. Please standby")
-			.await?;
+		ctx.reply(
+			"Ugh, fine. It's nice to see you again, I suppose... 
+                for now, don't get any ideas thinking this means I actually like you or anything",
+		)
+		.await?;
 	}
 	Ok(())
 }
@@ -720,19 +717,19 @@ impl ImageInfo {
 		content: String,
 		is_animated: bool,
 	) -> Result<Self, Error> {
-		let (content_font_data, author_font_data) = FONTS
-			.first()
-			.and_then(|content| FONTS.get(1).map(|author| (&content.1, &author.1)))
-			.context("Missing default fonts in FONTS array")?;
+		let (current_font_name, content_font_data, author_font_data) = {
+			let content_font = FONTS.get_key_value(CONTENT_FONT).unwrap();
+			(
+				content_font.0.to_string(),
+				content_font.1,
+				FONTS.get(AUTHOR_FONT).unwrap(),
+			)
+		};
 		let content_font =
 			FontArc::try_from_slice(content_font_data).context("Failed to load content font")?;
 		let author_font =
 			FontArc::try_from_slice(author_font_data).context("Failed to load author font")?;
 
-		let current_font_name = FONTS
-			.first()
-			.map(|(name, _)| (*name).to_owned())
-			.context("No fonts available in FONTS array")?;
 		let (tx, rx) = oneshot::channel();
 
 		let avatar_image_clone = avatar_image.to_vec();
@@ -976,8 +973,8 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		];
 		let mut font_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(FONTS.len());
 
-		for font in FONTS {
-			font_select.push(CreateSelectMenuOption::new(font.0, font.0));
+		for font in FONTS.iter() {
+			font_select.push(CreateSelectMenuOption::new(*font.0, *font.0));
 		}
 
 		let font_menu = CreateSelectMenu::new(
@@ -1063,12 +1060,15 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			};
 
 			if let Some(menu_choice) = menu_choice_opt {
-				if let Some(font) = FONTS.iter().find(|font| font.0 == menu_choice)
-					&& font.0 != image_handle.current_font_name
-					&& let Ok(new_font) = FontArc::try_from_slice(font.1)
+				if let Some(font) = FONTS.get(menu_choice.as_str())
+					&& *menu_choice != image_handle.current_font_name
+					&& let Ok(new_font) = FontArc::try_from_slice(font)
 				{
-					image_handle.new_font(font.0, new_font).await?;
-				} else if THEMES.contains_key(menu_choice.as_str()) {
+					image_handle.new_font(menu_choice, new_font).await?;
+				} else if THEMES.contains_key(menu_choice.as_str())
+					&& let Some(ref current_theme) = image_handle.theme
+					&& menu_choice != current_theme
+				{
 					image_handle.new_theme(menu_choice.to_owned()).await?;
 				}
 			} else if interaction.data.custom_id.ends_with("bw") {
@@ -1116,13 +1116,14 @@ pub async fn respond(
 	#[description = "Message"] message: Message,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Some(utils_config) = UTILS_CONFIG.get()
-		&& let Some(resp) = ai_response_simple(
-			"Mock this Discord message someone posted. Just give the roast, nothing else.",
-			&message.content,
-			&utils_config.fabseserver.text_gen_model,
-		)
-		.await && !resp.is_empty()
+	let utils_config = UTILS_CONFIG.get().unwrap();
+
+	if let Some(resp) = ai_response_simple(
+		"Mock this Discord message someone posted. Just give the roast, nothing else.",
+		&message.content,
+		&utils_config.fabseserver.text_gen_model,
+	)
+	.await && !resp.is_empty()
 	{
 		ctx.say(resp).await?;
 	} else {

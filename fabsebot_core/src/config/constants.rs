@@ -32,33 +32,40 @@ pub const FALLBACK_GIF: &str = "https://i.postimg.cc/zffntsGs/tenor.gif";
 pub const FALLBACK_WAIFU: &str = "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif";
 
 pub const DISCORD_CHANNEL_DEFAULT_PREFIX: &str = "https://discord.com/channels/";
-pub const DISCORD_CHANNEL_PTB_PREFIX: &str = "https://discord.com/channels/";
-pub const DISCORD_CHANNEL_CANARY_PREFIX: &str = "https://ptb.discord.com/channels/";
+pub const DISCORD_CHANNEL_PTB_PREFIX: &str = "https://ptb.discord.com/channels/";
+pub const DISCORD_CHANNEL_CANARY_PREFIX: &str = "https://canary.discord.com/channels/";
 
-pub const FONTS: &[(&str, &[u8])] = &[
-	(
-		"NotoSansJP-Regular",
-		include_bytes!("../../../fonts/NotoSansJP-Regular.ttf"),
-	),
-	(
-		"Satoshi-LightItalic",
-		include_bytes!("../../../fonts/Satoshi-LightItalic.otf"),
-	),
-	(
-		"RampartOne-Regular",
-		include_bytes!("../../../fonts/RampartOne-Regular.ttf"),
-	),
-];
+pub const CONTENT_FONT: &str = "NotoSansJP-Regular";
+pub const AUTHOR_FONT: &str = "Satoshi-LightItalic";
+
+pub static FONTS: LazyLock<HashMap<&'static str, &'static [u8]>> = LazyLock::new(|| {
+	HashMap::from([
+		(
+			CONTENT_FONT,
+			&include_bytes!("../../../fonts/NotoSansJP-Regular.ttf")[..],
+		),
+		(
+			AUTHOR_FONT,
+			&include_bytes!("../../../fonts/Satoshi-LightItalic.otf")[..],
+		),
+		(
+			"RampartOne-Regular",
+			&include_bytes!("../../../fonts/RampartOne-Regular.ttf")[..],
+		),
+	])
+});
 pub const QUOTE_WIDTH: u32 = 1200;
 pub const QUOTE_HEIGHT: u32 = 630;
 pub const CONTENT_BOUND: u32 = 64;
 pub const MAX_CONTENT_WIDTH: u32 = QUOTE_WIDTH - QUOTE_HEIGHT - CONTENT_BOUND;
 pub const MAX_CONTENT_HEIGHT: u32 = QUOTE_HEIGHT - CONTENT_BOUND;
 
+pub const DEFAULT_THEME: &str = "dark";
+
 pub static THEMES: LazyLock<HashMap<&'static str, (RgbaImage, Rgba<u8>)>> = LazyLock::new(|| {
 	HashMap::from([
 		(
-			"dark",
+			DEFAULT_THEME,
 			(
 				create_solid_theme([0, 0, 0, 255]),
 				Rgba([255, 255, 255, 255]),

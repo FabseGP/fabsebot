@@ -25,16 +25,6 @@ pub type WebhookMap = Cache<GenericChannelId, Webhook>;
 pub type GuildMap = Cache<GuildId, Arc<GuildData>>;
 type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 
-pub struct AIModelDefaults {
-	pub temperature: f32,
-	pub top_k: i32,
-	pub min_p: f32,
-	pub top_p: f32,
-	pub repetition_penalty: f32,
-	pub frequency_penalty: f32,
-	pub presence_penalty: f32,
-}
-
 #[derive(Default)]
 pub struct AIChatContext {
 	pub messages: Vec<AIChatMessage>,
@@ -141,36 +131,6 @@ pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
 		.unwrap()
 });
 pub static SYSTEM_STATS: LazyLock<Arc<System>> = LazyLock::new(|| Arc::new(System::new()));
-
-pub static GEMMA_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {
-	temperature: 1.0,
-	top_k: 64,
-	min_p: 0.01,
-	top_p: 0.95,
-	repetition_penalty: 1.0,
-	frequency_penalty: 0.0,
-	presence_penalty: 0.0,
-});
-
-pub static LLAMA_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {
-	temperature: 0.7,
-	top_k: 40,
-	min_p: 0.05,
-	top_p: 0.9,
-	repetition_penalty: 1.1,
-	frequency_penalty: 0.0,
-	presence_penalty: 0.0,
-});
-
-pub static QWEN_DEFAULTS: LazyLock<AIModelDefaults> = LazyLock::new(|| AIModelDefaults {
-	temperature: 0.6,
-	top_k: 40,
-	min_p: 0.01,
-	top_p: 0.9,
-	repetition_penalty: 1.1,
-	frequency_penalty: 0.0,
-	presence_penalty: 0.0,
-});
 
 pub static CLIENT_DATA: OnceLock<Arc<ClientData>> = OnceLock::new();
 

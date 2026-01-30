@@ -16,7 +16,7 @@ use imageproc::drawing::{draw_text_mut, text_size};
 use textwrap::wrap;
 
 use crate::config::constants::{
-	MAX_CONTENT_HEIGHT, MAX_CONTENT_WIDTH, QUOTE_HEIGHT, QUOTE_WIDTH, THEMES,
+	DEFAULT_THEME, MAX_CONTENT_HEIGHT, MAX_CONTENT_WIDTH, QUOTE_HEIGHT, QUOTE_WIDTH, THEMES,
 };
 
 const MIN_CONTENT_FONT_SIZE: f32 = 40.0;
@@ -296,7 +296,7 @@ pub fn quote_image(
 		}
 		_ => theme
 			.and_then(|t| THEMES.get(t))
-			.map_or_else(|| THEMES.get("dark").unwrap().clone(), Clone::clone),
+			.map_or_else(|| THEMES.get(DEFAULT_THEME).unwrap().clone(), Clone::clone),
 	};
 
 	let text_layout = if let Some(text_layout) = text

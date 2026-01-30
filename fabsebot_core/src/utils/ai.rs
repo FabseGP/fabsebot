@@ -12,25 +12,9 @@ use tokio::sync::{Mutex, MutexGuard};
 use winnow::Parser as _;
 
 use crate::{
-	config::types::{
-		AIChatContext, AIChatMessage, AIChatStatic, AIModelDefaults, GEMMA_DEFAULTS, HTTP_CLIENT,
-		LLAMA_DEFAULTS, QWEN_DEFAULTS, UTILS_CONFIG,
-	},
+	config::types::{AIChatContext, AIChatMessage, AIChatStatic, HTTP_CLIENT, UTILS_CONFIG},
 	utils::helpers::{discord_message_link, get_configured_songbird_handler},
 };
-
-fn get_model_config(model_name: &str) -> (&'static str, &'static str, &'static AIModelDefaults) {
-	let model_name_lower = model_name.to_lowercase();
-	if model_name_lower.starts_with("gemma") {
-		("<start_of_turn>{}", "<end_of_turn>", &GEMMA_DEFAULTS)
-	} else if model_name_lower.starts_with("llama") {
-		("[INST]{}", "[/INST]", &LLAMA_DEFAULTS)
-	} else if model_name_lower.starts_with("qwen") {
-		("<|im_start|>{}", "<|im_end|>", &QWEN_DEFAULTS)
-	} else {
-		("<start_of_turn>{}", "<end_of_turn>", &GEMMA_DEFAULTS)
-	}
-}
 
 async fn internet_search(
 	message: &Message,
@@ -70,12 +54,6 @@ pub async fn ai_chatbot(
 	message: &Message,
 	chatbot_role: String,
 	chatbot_internet_search: Option<bool>,
-	chatbot_temperature: Option<f32>,
-	chatbot_top_p: Option<f32>,
-	chatbot_top_k: Option<i32>,
-	chatbot_repetition_penalty: Option<f32>,
-	chatbot_frequency_penalty: Option<f32>,
-	chatbot_presence_penalty: Option<f32>,
 	guild_id: GuildId,
 	conversations: &mut MutexGuard<'_, AIChatContext>,
 	voice_handle: Option<Arc<Mutex<Call>>>,
@@ -86,9 +64,9 @@ pub async fn ai_chatbot(
 		conversations.static_info = AIChatStatic::default();
 		message.reply(&ctx.http, "Conversation cleared!").await?;
 		return Ok(());
-	} else if !message.content.starts_with('#')
-		&& let Some(utils_config) = UTILS_CONFIG.get()
-	{
+	} else if !message.content.starts_with('#') {
+		let utils_config = UTILS_CONFIG.get().unwrap();
+
 		let typing = message
 			.channel_id
 			.start_typing(Arc::<Http>::clone(&ctx.http));
@@ -157,8 +135,6 @@ pub async fn ai_chatbot(
 				}
 			}
 		}
-		let (start_tag, end_tag, model_defaults) =
-			get_model_config(&utils_config.fabseserver.text_gen_model);
 		{
 			let (static_set, known_user, same_bot_role) = (
 				conversations.static_info.is_set,
@@ -369,25 +345,10 @@ pub async fn ai_chatbot(
 				)));
 				conversations.messages.clone()
 			};
-			ai_response(
-				&convo_copy,
-				chatbot_temperature.unwrap_or(model_defaults.temperature),
-				chatbot_top_p.unwrap_or(model_defaults.top_p),
-				chatbot_top_k.unwrap_or(model_defaults.top_k),
-				chatbot_repetition_penalty.unwrap_or(model_defaults.repetition_penalty),
-				chatbot_frequency_penalty.unwrap_or(model_defaults.frequency_penalty),
-				chatbot_presence_penalty.unwrap_or(model_defaults.presence_penalty),
-			)
-			.await
+			ai_response(&convo_copy).await
 		};
 
-		if let Some(mut response) = response_opt {
-			if response.starts_with(start_tag) {
-				response.drain(..start_tag.len());
-			}
-			if response.ends_with(end_tag) {
-				response.truncate(response.len().saturating_sub(end_tag.len()));
-			}
+		if let Some(response) = response_opt {
 			if response.len() >= 2000 {
 				let mut start = 0;
 				while start < response.len() {
@@ -458,7 +419,7 @@ struct AIMessage {
 }
 
 pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> Option<String> {
-	let utils_config = UTILS_CONFIG.get()?;
+	let utils_config = UTILS_CONFIG.get().unwrap();
 	let request = ImageDesc {
 		messages: [
 			SimpleMessage {
@@ -506,7 +467,7 @@ pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> Option
 		],
 		model,
 	};
-	let utils_config = UTILS_CONFIG.get()?;
+	let utils_config = UTILS_CONFIG.get().unwrap();
 	let resp = HTTP_CLIENT
 		.post(&utils_config.fabseserver.llm_host_text)
 		.json(&request)
@@ -523,33 +484,13 @@ pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> Option
 struct ChatRequest<'a> {
 	messages: &'a [AIChatMessage],
 	model: &'a str,
-	temperature: f32,
-	top_p: f32,
-	top_k: i32,
-	repetition_penalty: f32,
-	frequency_penalty: f32,
-	presence_penalty: f32,
 }
 
-pub async fn ai_response(
-	messages: &[AIChatMessage],
-	temperature: f32,
-	top_p: f32,
-	top_k: i32,
-	repetition_penalty: f32,
-	frequency_penalty: f32,
-	presence_penalty: f32,
-) -> Option<String> {
-	let utils_config = UTILS_CONFIG.get()?;
+pub async fn ai_response(messages: &[AIChatMessage]) -> Option<String> {
+	let utils_config = UTILS_CONFIG.get().unwrap();
 	let request = ChatRequest {
 		model: &utils_config.fabseserver.text_gen_model,
 		messages,
-		temperature,
-		top_p,
-		top_k,
-		repetition_penalty,
-		frequency_penalty,
-		presence_penalty,
 	};
 	let resp = HTTP_CLIENT
 		.post(&utils_config.fabseserver.llm_host_text)
@@ -585,7 +526,7 @@ struct NormalizationOptions {
 }
 
 pub async fn ai_voice(prompt: &str) -> Option<Bytes> {
-	let utils_config = UTILS_CONFIG.get()?;
+	let utils_config = UTILS_CONFIG.get().unwrap();
 	let request = AIVoiceRequest {
 		input: &prompt.replace('\'', ""),
 		model: &utils_config.fabseserver.text_to_speech_model,

@@ -123,8 +123,8 @@ struct GifObject {
 pub async fn get_gifs(input: String) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
 	let key = UTILS_CONFIG
 		.get()
-		.map(|u| u.api.tenor_token.as_str())
-		.unwrap_or_default();
+		.map(|u| u.api.gif_token.as_str())
+		.unwrap();
 	if let Ok(response) = HTTP_CLIENT
 		.get("https://tenor.googleapis.com/v2/search")
 		.query(&[
