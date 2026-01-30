@@ -62,48 +62,43 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 			.insert(emoji);
 	}
 
-	{
-		for settings in guild_settings {
-			let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
-			let settings_guild_id = settings.guild_id;
-			let guild_data = GuildData {
-				settings,
-				word_reactions: grouped_word_reactions
-					.remove_entry(&settings_guild_id)
-					.unwrap_or_default()
-					.1,
-				word_tracking: grouped_word_tracking
-					.remove_entry(&settings_guild_id)
-					.unwrap_or_default()
-					.1,
-				emoji_reactions: grouped_emoji_reactions
-					.remove_entry(&settings_guild_id)
-					.unwrap_or_default()
-					.1,
-			};
-			data.guilds.insert(guild_id, Arc::new(guild_data));
-		}
+	for settings in guild_settings {
+		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
+		let settings_guild_id = settings.guild_id;
+		let guild_data = GuildData {
+			settings,
+			word_reactions: grouped_word_reactions
+				.remove(&settings_guild_id)
+				.unwrap_or_default(),
+			word_tracking: grouped_word_tracking
+				.remove(&settings_guild_id)
+				.unwrap_or_default(),
+			emoji_reactions: grouped_emoji_reactions
+				.remove(&settings_guild_id)
+				.unwrap_or_default(),
+		};
+		data.guilds.insert(guild_id, Arc::new(guild_data));
 	}
 
-	{
-		let mut guild_maps: HashMap<GuildId, HashMap<UserId, UserSettings>> = HashMap::default();
-		for settings in user_settings {
-			let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
-			let user_id = UserId::new(settings.user_id.cast_unsigned());
-			guild_maps
-				.entry(guild_id)
-				.or_default()
-				.insert(user_id, settings);
-		}
-		for (guild_id, map) in guild_maps {
-			data.user_settings.insert(guild_id, Arc::new(map));
-		}
+	let mut guild_maps: HashMap<GuildId, HashMap<UserId, UserSettings>> = HashMap::default();
+	for settings in user_settings {
+		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
+		let user_id = UserId::new(settings.user_id.cast_unsigned());
+		guild_maps
+			.entry(guild_id)
+			.or_default()
+			.insert(user_id, settings);
 	}
-	let user_count = if let Ok(info) = ctx.http.get_current_application_info().await {
-		info.approximate_user_install_count.unwrap_or(0)
-	} else {
-		0
-	};
+	for (guild_id, map) in guild_maps {
+		data.user_settings.insert(guild_id, Arc::new(map));
+	}
+
+	let user_count = ctx
+		.http
+		.get_current_application_info()
+		.await
+		.map_or(0, |info| info.approximate_user_install_count.unwrap_or(0));
+
 	info!(
 		"Logged in as {} in {} server(s) and installed for {user_count} user(s)",
 		data_about_bot.user.name,

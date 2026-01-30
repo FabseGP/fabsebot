@@ -41,6 +41,7 @@ All notable changes to this project will be documented in this file.
 - Separate task for timed user events
 - Updated deps + WIP impls for db-calls
 - Avoid calling yt-dlp twice from fetching metadata
+- Benchmark quote_image
 
 ### 🐛 Bug Fixes
 

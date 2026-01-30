@@ -2,6 +2,8 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use image::{Rgba, RgbaImage};
 
+use crate::utils::image::create_solid_theme;
+
 pub const PING_INTERVAL_SEC: u64 = 60;
 
 pub const COLOUR_BLUE: u32 = 0x0000_B0F4;
@@ -52,10 +54,6 @@ pub const QUOTE_HEIGHT: u32 = 630;
 pub const CONTENT_BOUND: u32 = 64;
 pub const MAX_CONTENT_WIDTH: u32 = QUOTE_WIDTH - QUOTE_HEIGHT - CONTENT_BOUND;
 pub const MAX_CONTENT_HEIGHT: u32 = QUOTE_HEIGHT - CONTENT_BOUND;
-
-fn create_solid_theme(color: [u8; 4]) -> RgbaImage {
-	RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba(color))
-}
 
 pub static THEMES: LazyLock<HashMap<&'static str, (RgbaImage, Rgba<u8>)>> = LazyLock::new(|| {
 	HashMap::from([

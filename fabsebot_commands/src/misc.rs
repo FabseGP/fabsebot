@@ -814,6 +814,13 @@ impl ImageInfo {
 		Ok(())
 	}
 
+	async fn random_theme(&mut self) -> Result<(), Error> {
+		self.theme = Some("random".to_owned());
+		self.image_gen().await?;
+
+		Ok(())
+	}
+
 	async fn new_font(&mut self, font_name: &str, new_font: FontArc) -> Result<(), Error> {
 		self.content_font = new_font;
 		font_name.clone_into(&mut self.current_font_name);
@@ -947,14 +954,12 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			.await?
 		};
 		let message_url = reply.link().to_string();
-		let attachment = CreateAttachment::bytes(
-			image_handle.current.clone(),
-			if image_handle.is_animated {
-				"quote.gif"
-			} else {
-				QUOTE_FILENAME
-			},
-		);
+		let filename = if image_handle.is_animated {
+			"quote.gif"
+		} else {
+			QUOTE_FILENAME
+		};
+		let attachment = CreateAttachment::bytes(image_handle.current.clone(), filename);
 		let buttons = [
 			CreateButton::new(format!("{}_bw", ctx.id()))
 				.style(ButtonStyle::Primary)
@@ -965,6 +970,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			CreateButton::new(format!("{}_gradient", ctx.id()))
 				.style(ButtonStyle::Primary)
 				.label("🌫️"),
+			CreateButton::new(format!("{}_random", ctx.id()))
+				.style(ButtonStyle::Primary)
+				.label("🎲"),
 		];
 		let mut font_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(FONTS.len());
 
@@ -1069,16 +1077,11 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 				image_handle.toggle_reverse().await?;
 			} else if interaction.data.custom_id.ends_with("gradient") {
 				image_handle.toggle_gradient().await?;
+			} else if interaction.data.custom_id.ends_with("random") {
+				image_handle.random_theme().await?;
 			}
 			let mut msg = interaction.message;
-			final_attachment = CreateAttachment::bytes(
-				image_handle.current.clone(),
-				if image_handle.is_animated {
-					"quote.gif"
-				} else {
-					"quote.avif"
-				},
-			);
+			final_attachment = CreateAttachment::bytes(image_handle.current.clone(), filename);
 			msg.edit(
 				ctx.http(),
 				EditMessage::default().new_attachment(final_attachment.clone()),

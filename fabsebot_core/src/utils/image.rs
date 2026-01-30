@@ -55,6 +55,11 @@ pub struct TextLayout {
 	author_scale: PxScale,
 }
 
+#[must_use]
+pub fn create_solid_theme(color: [u8; 4]) -> RgbaImage {
+	RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba(color))
+}
+
 fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontArc) -> String {
 	let mut end = text.len() - ELLIPSIS.len();
 	let mut truncated = String::with_capacity(end);
@@ -85,17 +90,17 @@ fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) {
 	};
 
 	for x in 0..gradient_width {
-		let progress = (x * 255 / gradient_width) as u8;
+		let progress = x * 255 / gradient_width;
+
 		let alpha_multiplier = if is_reverse {
-			(u32::from(progress).pow(u32::from(progress)) / 255) as u8
+			progress.pow(2) / 255
 		} else {
-			let inv = u32::from(255 - progress);
-			(inv.pow(inv) / 255) as u8
+			(255 - progress).pow(2) / 255
 		};
 
 		for y in 0..avatar.height() {
 			let pixel = avatar.get_pixel_mut(gradient_start + x, y);
-			pixel[3] = ((u32::from(pixel[3]) * u32::from(alpha_multiplier)) / 255) as u8;
+			pixel[3] = ((u32::from(pixel[3]) * alpha_multiplier) / 255) as u8;
 		}
 	}
 }
@@ -282,9 +287,17 @@ pub fn quote_image(
 		0
 	};
 
-	let (mut img, text_colour) = theme
-		.and_then(|t| THEMES.get(t))
-		.map_or_else(|| THEMES.get("dark").unwrap().clone(), Clone::clone);
+	let (mut img, text_colour) = match theme {
+		Some("random") => {
+			let random_base =
+				create_solid_theme([fastrand::u8(..), fastrand::u8(..), fastrand::u8(..), 255]);
+			let random_color = Rgba([fastrand::u8(..), fastrand::u8(..), fastrand::u8(..), 255]);
+			(random_base, random_color)
+		}
+		_ => theme
+			.and_then(|t| THEMES.get(t))
+			.map_or_else(|| THEMES.get("dark").unwrap().clone(), Clone::clone),
+	};
 
 	let text_layout = if let Some(text_layout) = text
 		&& !new_font
