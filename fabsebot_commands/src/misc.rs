@@ -1043,7 +1043,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		let mut final_attachment = attachment.clone();
 
 		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_secs(60))
+			.timeout(Duration::from_secs(300))
 			.filter(move |interaction| {
 				interaction
 					.data
