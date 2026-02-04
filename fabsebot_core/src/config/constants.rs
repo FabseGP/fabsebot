@@ -37,7 +37,7 @@ pub const FALLBACK_GIF_TITLE: &str = "Sucks to be you";
 pub const FALLBACK_WAIFU: &str = "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif";
 
 pub static EMOJI_FONT: LazyLock<FontArc> = LazyLock::new(|| {
-	FontArc::try_from_slice(include_bytes!("../../../fonts/NotoColorEmoji-Regular.ttf")).unwrap()
+	FontArc::try_from_slice(include_bytes!("../../../fonts/NotoEmoji-Regular.ttf")).unwrap()
 });
 
 pub const CONTENT_FONT: &str = "NotoSansJP-Regular";
