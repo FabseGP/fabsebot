@@ -5,7 +5,7 @@ use config::MainConfig;
 use fabsebot_commands::commands;
 use fabsebot_core::{
 	bot_start,
-	config::settings::{APIConfig, BotConfig, ServerConfig},
+	config::settings::{APIConfig, BotConfig, HTTPAgent, ServerConfig},
 };
 use fabsebot_db::{PostgresConfig, PostgresConn};
 use metrics_exporter_prometheus::PrometheusBuilder;
@@ -50,6 +50,7 @@ async fn main() -> AResult<()> {
 	let postgres_config: PostgresConfig = Value::try_into(config_toml["PostgreSQL"].clone())?;
 	let server_config: ServerConfig = Value::try_into(config_toml["Server"].clone())?;
 	let api_config: APIConfig = Value::try_into(config_toml["API-Info"].clone())?;
+	let http_agent: HTTPAgent = Value::try_into(config_toml["HTTP-Agent"].clone())?;
 
 	setup_tracing(&main_config.log_level)?;
 
@@ -59,6 +60,7 @@ async fn main() -> AResult<()> {
 		bot_config,
 		server_config,
 		api_config,
+		http_agent,
 		postgres_pool.pool,
 		commands(),
 	)

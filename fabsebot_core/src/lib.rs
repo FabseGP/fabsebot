@@ -33,7 +33,7 @@ use tracing::{error, warn};
 
 use crate::{
 	config::{
-		settings::{APIConfig, BotConfig, ServerConfig},
+		settings::{APIConfig, BotConfig, HTTPAgent, ServerConfig},
 		types::{
 			CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, UTILS_CONFIG, UtilsConfig,
 		},
@@ -167,6 +167,7 @@ pub async fn bot_start(
 	bot_config: BotConfig,
 	server_config: ServerConfig,
 	api_config: APIConfig,
+	http_agent: HTTPAgent,
 	postgres_pool: Pool<Postgres>,
 	commands: Vec<Command<Data, SError>>,
 ) -> AResult<()> {
@@ -177,6 +178,7 @@ pub async fn bot_start(
 			ping_payload: bot_config.ping_payload,
 			fabseserver: server_config,
 			api: api_config,
+			http_agent,
 		}))
 		.is_err()
 	{

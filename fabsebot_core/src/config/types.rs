@@ -16,7 +16,7 @@ use sqlx::PgPool;
 use systemstat::{Platform as _, System};
 use uuid::Uuid;
 
-use crate::config::settings::{APIConfig, ServerConfig, UserSettings};
+use crate::config::settings::{APIConfig, HTTPAgent, ServerConfig, UserSettings};
 
 pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
 type GlobalChatMap = Cache<GuildId, Arc<HashMap<GuildId, MessageId>>>;
@@ -119,12 +119,17 @@ pub struct UtilsConfig {
 	pub ping_payload: String,
 	pub fabseserver: ServerConfig,
 	pub api: APIConfig,
+	pub http_agent: HTTPAgent,
 }
 
 pub static UTILS_CONFIG: OnceLock<Arc<UtilsConfig>> = OnceLock::new();
 pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+	let http_agent = &UTILS_CONFIG.get().unwrap().http_agent;
 	Client::builder()
-		.user_agent("FabseBot/1.0 (https://github.com/FabseGP/fabsebot; fabsegp@tutamail.com)")
+		.user_agent(format!(
+			"{} ({}; {})",
+			http_agent.title, http_agent.repo, http_agent.email
+		))
 		.zstd(true)
 		.http3_congestion_bbr()
 		.timeout(Duration::from_secs(300))

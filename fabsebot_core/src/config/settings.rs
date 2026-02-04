@@ -37,6 +37,13 @@ pub struct APIConfig {
 	pub cloudflare_image_gen_fallback: String,
 }
 
+#[derive(Deserialize)]
+pub struct HTTPAgent {
+	pub title: String,
+	pub repo: String,
+	pub email: String,
+}
+
 #[derive(Default, Clone)]
 pub struct UserSettings {
 	pub guild_id: i64,

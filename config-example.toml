@@ -38,3 +38,8 @@
 #cloudflare_token_fallback = 
 #cloudflare_image_gen = 
 #cloudflare_image_gen_fallback = 
+
+[HTTP-Agent]
+#title = ""
+#repo = ""
+#email = ""
