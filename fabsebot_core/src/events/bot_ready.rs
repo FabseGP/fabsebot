@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult};
-use fabsebot_db::guild::{EmojiReactions, GuildData, GuildSettings, WordReactions, WordTracking};
+use fabsebot_db::guild::{EmojiReplies, GuildData, GuildSettings, WordReactions, WordTracking};
 use serenity::all::{Context as SContext, GuildId, Ready, UserId};
 use sqlx::query_as;
 use tracing::info;
@@ -30,16 +30,13 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 	let word_tracking = query_as!(WordTracking, "SELECT * FROM guild_word_tracking")
 		.fetch_all(&mut *tx)
 		.await?;
-	let emoji_reactions = query_as!(EmojiReactions, "SELECT * FROM guild_emoji_reaction")
-		.fetch_all(&mut *tx)
-		.await?;
 	tx.commit()
 		.await
 		.context("Failed to commit sql-transaction")?;
 
 	let mut grouped_word_reactions: HashMap<i64, HashSet<WordReactions>> = HashMap::default();
 	let mut grouped_word_tracking: HashMap<i64, HashSet<WordTracking>> = HashMap::default();
-	let mut grouped_emoji_reactions: HashMap<i64, HashSet<EmojiReactions>> = HashMap::default();
+	let mut grouped_emoji_replies: HashMap<i64, HashSet<EmojiReplies>> = HashMap::default();
 
 	for reaction in word_reactions {
 		grouped_word_reactions
@@ -55,13 +52,6 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 			.insert(tracking);
 	}
 
-	for emoji in emoji_reactions {
-		grouped_emoji_reactions
-			.entry(emoji.guild_id)
-			.or_default()
-			.insert(emoji);
-	}
-
 	for settings in guild_settings {
 		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
 		let settings_guild_id = settings.guild_id;
@@ -73,7 +63,7 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 			word_tracking: grouped_word_tracking
 				.remove(&settings_guild_id)
 				.unwrap_or_default(),
-			emoji_reactions: grouped_emoji_reactions
+			emoji_replies: grouped_emoji_replies
 				.remove(&settings_guild_id)
 				.unwrap_or_default(),
 		};
@@ -91,6 +81,12 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 	}
 	for (guild_id, map) in guild_maps {
 		data.user_settings.insert(guild_id, Arc::new(map));
+	}
+
+	if let Ok(app_emojis) = ctx.get_application_emojis().await {
+		for emoji in app_emojis {
+			data.app_emojis.insert(emoji.id.get(), Arc::new(emoji));
+		}
 	}
 
 	let user_count = ctx

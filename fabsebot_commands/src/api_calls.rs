@@ -4,7 +4,9 @@ use std::{sync::Arc, time::Duration};
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
-		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
+		constants::{
+			COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, NOT_IN_GUILD_MSG,
+		},
 		settings::UserSettings,
 		types::{Error, HTTP_CLIENT, SContext, UTILS_CONFIG},
 	},
@@ -136,7 +138,7 @@ pub async fn ai_text(
 	ctx.defer().await?;
 	let utils_config = UTILS_CONFIG.get().unwrap();
 
-	if let Some(resp) =
+	if let Ok(resp) =
 		ai_response_simple(&role, &prompt, &utils_config.fabseserver.text_gen_model).await
 		&& !resp.is_empty()
 	{
@@ -615,7 +617,7 @@ pub async fn gif(
 	input: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let gifs = get_gifs(input).await;
+	let gifs = get_gifs(&input).await;
 	let mut embed = CreateEmbed::default().colour(COLOUR_ORANGE);
 	let len = gifs.len();
 	if ctx.guild_id().is_some() && len > 1 {
@@ -1006,134 +1008,136 @@ pub async fn roast(
 	#[rest]
 	member: Member,
 ) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		ctx.defer().await?;
-		let avatar_url = member.avatar_url().unwrap_or_else(|| {
-			member
-				.user
-				.avatar_url()
-				.unwrap_or_else(|| member.user.default_avatar_url())
-		});
-		let banner_url = (ctx.http().get_user(member.user.id).await).map_or_else(
-			|_| "user has no banner".to_owned(),
-			|user| {
-				user.banner_url()
-					.unwrap_or_else(|| "user has no banner".to_owned())
-			},
-		);
-		let roles = member.roles(ctx.cache()).map_or_else(
-			|| "no roles".to_owned(),
-			|member_roles| {
-				member_roles
-					.iter()
-					.map(|role| role.name.as_str())
-					.intersperse(", ")
-					.collect()
-			},
-		);
-		let name = member.display_name();
-		let account_date = member.user.id.created_at();
-		let join_date = member.joined_at.unwrap_or_default();
-		let message_count = {
-			let mut user_settings_opt = ctx.data().user_settings.get(&guild_id);
-			if let Some(settings) = user_settings_opt {
-				settings
-					.get(&member.user.id)
-					.map_or(0, |count| count.message_count)
-			} else {
-				let mut modified_settings =
-					user_settings_opt.get_or_insert_default().as_ref().clone();
-				modified_settings.insert(
-					member.user.id,
-					UserSettings {
-						guild_id: i64::from(guild_id),
-						user_id: i64::from(member.user.id),
-						..Default::default()
-					},
-				);
-				ctx.data()
-					.user_settings
-					.insert(guild_id, Arc::new(modified_settings.clone()));
-				0
-			}
-		};
-		let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	ctx.defer().await?;
+	let avatar_url = member.avatar_url().unwrap_or_else(|| {
+		member
+			.user
+			.avatar_url()
+			.unwrap_or_else(|| member.user.default_avatar_url())
+	});
+	let banner_url = (ctx.http().get_user(member.user.id).await).map_or_else(
+		|_| "user has no banner".to_owned(),
+		|user| {
+			user.banner_url()
+				.unwrap_or_else(|| "user has no banner".to_owned())
+		},
+	);
+	let roles = member.roles(ctx.cache()).map_or_else(
+		|| "no roles".to_owned(),
+		|member_roles| {
+			member_roles
+				.iter()
+				.map(|role| role.name.as_str())
+				.intersperse(", ")
+				.collect()
+		},
+	);
+	let name = member.display_name();
+	let account_date = member.user.id.created_at();
+	let join_date = member.joined_at.unwrap_or_default();
+	let message_count = {
+		let mut user_settings_opt = ctx.data().user_settings.get(&guild_id);
+		if let Some(settings) = user_settings_opt {
+			settings
+				.get(&member.user.id)
+				.map_or(0, |count| count.message_count)
+		} else {
+			let mut modified_settings = user_settings_opt.get_or_insert_default().as_ref().clone();
+			modified_settings.insert(
+				member.user.id,
+				UserSettings {
+					guild_id: i64::from(guild_id),
+					user_id: i64::from(member.user.id),
+					..Default::default()
+				},
+			);
+			ctx.data()
+				.user_settings
+				.insert(guild_id, Arc::new(modified_settings.clone()));
+			0
+		}
+	};
+	let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
-		let messages_string = {
-			let mut result = String::new();
-			let mut result_count: u32 = 0;
-			let mut missing_match_count: u32 = 0;
+	let messages_string = {
+		let mut result = String::new();
+		let mut result_count: u32 = 0;
+		let mut missing_match_count: u32 = 0;
 
-			while let Some(message_result) = messages.next().await {
-				if let Ok(message) = message_result {
-					if message.author.id == member.user.id {
-						let index = result_count.saturating_add(1);
-						if result_count > 0 {
-							result.push(',');
-						}
-						result.push_str(&index.to_string());
-						result.push(':');
-						result.push_str(&message.content);
-						result_count = result_count.saturating_add(1);
-					} else {
-						missing_match_count = missing_match_count.saturating_add(1);
+		while let Some(message_result) = messages.next().await {
+			if let Ok(message) = message_result {
+				if message.author.id == member.user.id {
+					let index = result_count.saturating_add(1);
+					if result_count > 0 {
+						result.push(',');
 					}
+					result.push_str(&index.to_string());
+					result.push(':');
+					result.push_str(&message.content);
+					result_count = result_count.saturating_add(1);
 				} else {
-					break;
+					missing_match_count = missing_match_count.saturating_add(1);
 				}
-				if result_count >= 25 || missing_match_count >= 100 {
-					break;
-				}
+			} else {
+				break;
 			}
-
-			result
-		};
-
-		let description = format!(
-			"name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles},acc_create:\
-			 {account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:\
-			 {messages_string}"
-		);
-		let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no \
-		            mercy shown. the prompt will contain information of your target";
-		let utils_config = UTILS_CONFIG.get().unwrap();
-		if let Some(resp) =
-			ai_response_simple(role, &description, &utils_config.fabseserver.text_gen_model).await
-			&& !resp.is_empty()
-		{
-			let mut embed = CreateEmbed::default()
-				.title(format!("Roasting {name}"))
-				.colour(COLOUR_RED);
-			let mut current_chunk = String::with_capacity(1024);
-			let mut chunk_index: u32 = 0;
-			for ch in resp.chars() {
-				if current_chunk.len() >= 1024 {
-					let field_name = if chunk_index == 0 {
-						"Response:".to_owned()
-					} else {
-						format!("Response (cont. {}):", chunk_index.saturating_add(1))
-					};
-					embed = embed.field(field_name, current_chunk.clone(), false);
-					current_chunk.clear();
-					chunk_index = chunk_index.saturating_add(1);
-				}
-				current_chunk.push(ch);
+			if result_count >= 25 || missing_match_count >= 100 {
+				break;
 			}
-			if !current_chunk.is_empty() {
+		}
+
+		result
+	};
+
+	let description = format!(
+		"name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles},acc_create:\
+		 {account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:\
+		 {messages_string}"
+	);
+	let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no \
+	            mercy shown. the prompt will contain information of your target";
+	let utils_config = UTILS_CONFIG.get().unwrap();
+	if let Ok(resp) =
+		ai_response_simple(role, &description, &utils_config.fabseserver.text_gen_model).await
+		&& !resp.is_empty()
+	{
+		let mut embed = CreateEmbed::default()
+			.title(format!("Roasting {name}"))
+			.colour(COLOUR_RED);
+		let mut current_chunk = String::with_capacity(1024);
+		let mut chunk_index: u32 = 0;
+		for ch in resp.chars() {
+			if current_chunk.len() >= 1024 {
 				let field_name = if chunk_index == 0 {
 					"Response:".to_owned()
 				} else {
 					format!("Response (cont. {}):", chunk_index.saturating_add(1))
 				};
-				embed = embed.field(field_name, current_chunk, false);
+				embed = embed.field(field_name, current_chunk.clone(), false);
+				current_chunk.clear();
+				chunk_index = chunk_index.saturating_add(1);
 			}
-			ctx.send(CreateReply::default().reply(true).embed(embed))
-				.await?;
-		} else {
-			ctx.reply(format!("{name}'s life is already roasted"))
-				.await?;
+			current_chunk.push(ch);
 		}
+		if !current_chunk.is_empty() {
+			let field_name = if chunk_index == 0 {
+				"Response:".to_owned()
+			} else {
+				format!("Response (cont. {}):", chunk_index.saturating_add(1))
+			};
+			embed = embed.field(field_name, current_chunk, false);
+		}
+		ctx.send(CreateReply::default().reply(true).embed(embed))
+			.await?;
+	} else {
+		ctx.reply(format!("{name}'s life is already roasted"))
+			.await?;
 	}
+
 	Ok(())
 }
 
@@ -1194,7 +1198,13 @@ pub async fn translate(
 		ctx.reply("Bruh, give me smth to translate").await?;
 		return Ok(());
 	};
-	let target_lang = target.map_or_else(|| "en".to_owned(), |lang| lang.to_lowercase());
+	let target_lang = target.map_or_else(
+		|| "en".to_owned(),
+		|mut lang| {
+			lang.make_ascii_lowercase();
+			lang
+		},
+	);
 	let request = TranslateRequest {
 		q: &content,
 		source: "auto",

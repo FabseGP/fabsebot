@@ -73,8 +73,10 @@ impl GuildSettings {
 pub struct WordReactions {
 	pub guild_id: i64,
 	pub word: String,
-	pub content: String,
+	pub content: Option<String>,
 	pub media: Option<String>,
+	pub emoji_id: Option<i64>,
+	pub guild_emoji: bool,
 }
 
 #[derive(Default, Eq, Hash, PartialEq, Clone)]
@@ -85,7 +87,7 @@ pub struct WordTracking {
 }
 
 #[derive(Default, Eq, Hash, PartialEq, Clone)]
-pub struct EmojiReactions {
+pub struct EmojiReplies {
 	pub guild_id: i64,
 	pub emoji_id: i64,
 	pub content_reaction: String,
@@ -97,7 +99,7 @@ pub struct GuildData {
 	pub settings: GuildSettings,
 	pub word_reactions: HashSet<WordReactions>,
 	pub word_tracking: HashSet<WordTracking>,
-	pub emoji_reactions: HashSet<EmojiReactions>,
+	pub emoji_replies: HashSet<EmojiReplies>,
 }
 
 impl GuildData {
@@ -154,6 +156,20 @@ pub async fn insert_guild(guild_id_i64: i64, conn: &mut PgConnection) -> AResult
                 ON CONFLICT (guild_id)
                 DO NOTHING",
 		guild_id_i64
+	)
+	.execute(conn)
+	.await?;
+
+	Ok(())
+}
+
+pub async fn insert_user(user_id_i64: i64, conn: &mut PgConnection) -> AResult<()> {
+	query!(
+		"INSERT INTO users (user_id)
+                VALUES ($1)
+                ON CONFLICT (user_id)
+                DO NOTHING",
+		user_id_i64
 	)
 	.execute(conn)
 	.await?;

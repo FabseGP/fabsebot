@@ -7,13 +7,13 @@ use anyhow::Context as _;
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
-		constants::COLOUR_RED,
+		constants::{COLOUR_RED, NOT_IN_GUILD_MSG},
 		settings::UserSettings,
 		types::{Error, HTTP_CLIENT, SContext},
 	},
 	utils::helpers::{get_gifs, get_waifu},
 };
-use fabsebot_db::guild::{EmojiReactions, GuildData, GuildSettings, WordReactions, WordTracking};
+use fabsebot_db::guild::{GuildData, GuildSettings, WordReactions, WordTracking};
 use poise::CreateReply;
 use serde::Serialize;
 use serenity::{
@@ -26,6 +26,7 @@ use serenity::{
 };
 use sqlx::query;
 use tracing::warn;
+use url::Url;
 
 async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(guild_id);
@@ -203,260 +204,267 @@ impl SelectionState {
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
 )]
 pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let mut current_state = SelectionState::MainMenu;
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
 
-		let settings_options = vec![
-			CreateSelectMenuOption::new("Chatbot channel", "ch_chan"),
-			CreateSelectMenuOption::new("Music channel", "mu_chan"),
-			CreateSelectMenuOption::new("Quote channel", "qu_chan"),
-			CreateSelectMenuOption::new("Spoiler channel", "sp_chan"),
-			CreateSelectMenuOption::new("Waifu channel", "wu_chan"),
-			CreateSelectMenuOption::new("Dead chat gifs", "dc_gifs"),
-		];
+	let mut current_state = SelectionState::MainMenu;
 
-		let settings_menu = CreateSelectMenu::new(
-			format!("{}_settings_menu", ctx.id()),
-			CreateSelectMenuKind::String {
-				options: Cow::from(settings_options),
-			},
+	let settings_options = vec![
+		CreateSelectMenuOption::new("Chatbot channel", "ch_chan"),
+		CreateSelectMenuOption::new("Music channel", "mu_chan"),
+		CreateSelectMenuOption::new("Quote channel", "qu_chan"),
+		CreateSelectMenuOption::new("Spoiler channel", "sp_chan"),
+		CreateSelectMenuOption::new("Waifu channel", "wu_chan"),
+		CreateSelectMenuOption::new("Dead chat gifs", "dc_gifs"),
+	];
+
+	let settings_menu = CreateSelectMenu::new(
+		format!("{}_settings_menu", ctx.id()),
+		CreateSelectMenuKind::String {
+			options: Cow::from(settings_options),
+		},
+	)
+	.placeholder("Select server setting to configure")
+	.min_values(1)
+	.max_values(1);
+
+	let settings_component = [
+		CreateComponent::ActionRow(CreateActionRow::SelectMenu(settings_menu)),
+		CreateComponent::ActionRow(CreateActionRow::Buttons(Cow::from(vec![
+			CreateButton::new(format!("{}_c", ctx.id()))
+				.label("Confirm changes")
+				.style(ButtonStyle::Success),
+			CreateButton::new(format!("{}_d", ctx.id()))
+				.label("Cancel")
+				.style(ButtonStyle::Danger),
+			CreateButton::new(format!("{}_r", ctx.id()))
+				.label("Reset")
+				.style(ButtonStyle::Danger),
+		]))),
+	];
+
+	let channel_menu = CreateSelectMenu::new(
+		format!("{}_channels_menu", ctx.id()),
+		CreateSelectMenuKind::Channel {
+			channel_types: None,
+			default_channels: None,
+		},
+	)
+	.placeholder("Select channel")
+	.min_values(1)
+	.max_values(1);
+
+	let channels_component = [
+		CreateComponent::ActionRow(CreateActionRow::SelectMenu(channel_menu)),
+		CreateComponent::ActionRow(CreateActionRow::Buttons(Cow::from(vec![
+			CreateButton::new(format!("{}_d", ctx.id()))
+				.label("Back")
+				.style(ButtonStyle::Secondary),
+		]))),
+	];
+
+	let message = ctx
+		.send(
+			CreateReply::default()
+				.content(current_state.description())
+				.components(&settings_component),
 		)
-		.placeholder("Select server setting to configure")
-		.min_values(1)
-		.max_values(1);
+		.await?;
 
-		let settings_component = [
-			CreateComponent::ActionRow(CreateActionRow::SelectMenu(settings_menu)),
-			CreateComponent::ActionRow(CreateActionRow::Buttons(Cow::from(vec![
-				CreateButton::new(format!("{}_c", ctx.id()))
-					.label("Confirm changes")
-					.style(ButtonStyle::Success),
-				CreateButton::new(format!("{}_d", ctx.id()))
-					.label("Cancel")
-					.style(ButtonStyle::Danger),
-				CreateButton::new(format!("{}_r", ctx.id()))
-					.label("Reset")
-					.style(ButtonStyle::Danger),
-			]))),
-		];
+	let ctx_id_copy = ctx.id();
 
-		let channel_menu = CreateSelectMenu::new(
-			format!("{}_channels_menu", ctx.id()),
-			CreateSelectMenuKind::Channel {
-				channel_types: None,
-				default_channels: None,
-			},
-		)
-		.placeholder("Select channel")
-		.min_values(1)
-		.max_values(1);
+	let mut music_channel_opt = None;
+	let mut spoiler_channel_opt = None;
+	let mut quote_channel_opt = None;
+	let mut chatbot_channel_opt = None;
+	let mut waifu_channel_opt = None;
+	let mut dead_chat_gifs_opt = None;
 
-		let channels_component = [
-			CreateComponent::ActionRow(CreateActionRow::SelectMenu(channel_menu)),
-			CreateComponent::ActionRow(CreateActionRow::Buttons(Cow::from(vec![
-				CreateButton::new(format!("{}_d", ctx.id()))
-					.label("Back")
-					.style(ButtonStyle::Secondary),
-			]))),
-		];
+	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
+		.timeout(Duration::from_secs(600))
+		.filter(move |interaction| {
+			interaction
+				.data
+				.custom_id
+				.starts_with(ctx_id_copy.to_string().as_str())
+		})
+		.stream();
 
-		let message = ctx
-			.send(
-				CreateReply::default()
-					.content(current_state.description())
-					.components(&settings_component),
-			)
+	let mut too_slow = true;
+
+	while let Some(interaction) = collector_stream.next().await {
+		interaction
+			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 			.await?;
 
-		let ctx_id_copy = ctx.id();
-
-		let mut music_channel_opt = None;
-		let mut spoiler_channel_opt = None;
-		let mut quote_channel_opt = None;
-		let mut chatbot_channel_opt = None;
-		let mut waifu_channel_opt = None;
-		let mut dead_chat_gifs_opt = None;
-
-		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_secs(600))
-			.filter(move |interaction| {
-				interaction
-					.data
-					.custom_id
-					.starts_with(ctx_id_copy.to_string().as_str())
-			})
-			.stream();
-
-		let mut too_slow = true;
-
-		while let Some(interaction) = collector_stream.next().await {
-			interaction
-				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-				.await?;
-
-			if interaction.data.custom_id.ends_with('c') {
-				message
-					.edit(
-						ctx,
-						CreateReply::default()
-							.content("Server settings set... probably")
-							.reply(true)
-							.components(&[]),
-					)
-					.await?;
-				configure_channels(
-					music_channel_opt,
-					spoiler_channel_opt,
-					quote_channel_opt,
-					chatbot_channel_opt,
-					waifu_channel_opt,
-					dead_chat_gifs_opt,
-					ctx,
-					guild_id,
-				)
-				.await?;
-				too_slow = false;
-				break;
-			} else if interaction.data.custom_id.ends_with('d') {
-				message
-					.edit(
-						ctx,
-						CreateReply::default()
-							.content("Server settings not changed... coward")
-							.reply(true)
-							.components(&[]),
-					)
-					.await?;
-				too_slow = false;
-				break;
-			} else if interaction.data.custom_id.ends_with('r') {
-				reset_server_settings(ctx, guild_id).await?;
-				message
-					.edit(
-						ctx,
-						CreateReply::default()
-							.content("Server settings reset... probably")
-							.reply(true)
-							.components(&[]),
-					)
-					.await?;
-				too_slow = false;
-				break;
-			}
-
-			match &interaction.data.kind {
-				ComponentInteractionDataKind::StringSelect { values } => {
-					let Some(menu_choice) = values.first() else {
-						continue;
-					};
-					current_state = if menu_choice == "mu_chan" {
-						SelectionState::SelectingMusicChannel
-					} else if menu_choice == "sp_chan" {
-						SelectionState::SelectingSpoilerChannel
-					} else if menu_choice == "qu_chan" {
-						SelectionState::SelectingQuoteChannel
-					} else if menu_choice == "ch_chan" {
-						SelectionState::SelectingChatbotChannel
-					} else if menu_choice == "wu_chan" {
-						SelectionState::SelectingWaifuChannel
-					} else if menu_choice == "dc_gifs" {
-						SelectionState::ConfiguringDeadChatGifs
-					} else {
-						continue;
-					};
-					message
-						.edit(
-							ctx,
-							CreateReply::default()
-								.content(current_state.description())
-								.components(&channels_component),
-						)
-						.await?;
-				}
-				ComponentInteractionDataKind::ChannelSelect { values } => {
-					let Some(channel_id) = values.first() else {
-						continue;
-					};
-
-					let channel_name = if let Ok(channel) = channel_id
-						.widen()
-						.to_channel(ctx.http(), ctx.guild_id())
-						.await
-					{
-						match current_state {
-							SelectionState::SelectingMusicChannel => {
-								music_channel_opt = Some(channel.clone());
-							}
-							SelectionState::SelectingSpoilerChannel => {
-								spoiler_channel_opt = Some(channel.clone());
-							}
-							SelectionState::SelectingQuoteChannel => {
-								quote_channel_opt = Some(channel.clone());
-							}
-							SelectionState::SelectingChatbotChannel => {
-								chatbot_channel_opt = Some(channel.clone());
-							}
-							SelectionState::SelectingWaifuChannel => {
-								waifu_channel_opt = Some((channel.clone(), 3600 * 24));
-							}
-							SelectionState::ConfiguringDeadChatGifs => {
-								dead_chat_gifs_opt = Some((channel.clone(), 3600 * 24));
-							}
-							SelectionState::MainMenu => {
-								continue;
-							}
-						}
-						if let Some(guild_channel) = channel.guild() {
-							guild_channel.base.name.into_string()
-						} else {
-							channel_id.to_string()
-						}
-					} else {
-						channel_id.to_string()
-					};
-
-					message
-						.edit(
-							ctx,
-							CreateReply::default()
-								.content(format!(
-									"\"{channel_name}\" chosen as {} channel",
-									current_state.label()
-								))
-								.components(&settings_component),
-						)
-						.await?;
-					current_state = SelectionState::MainMenu;
-				}
-				_ => {}
-			}
-		}
-		if too_slow {
+		if interaction.data.custom_id.ends_with('c') {
 			message
 				.edit(
 					ctx,
 					CreateReply::default()
-						.content("You were too slow")
+						.content("Server settings set... probably")
+						.reply(true)
 						.components(&[]),
 				)
 				.await?;
+			configure_channels(
+				music_channel_opt,
+				spoiler_channel_opt,
+				quote_channel_opt,
+				chatbot_channel_opt,
+				waifu_channel_opt,
+				dead_chat_gifs_opt,
+				ctx,
+				guild_id,
+			)
+			.await?;
+			too_slow = false;
+			break;
+		} else if interaction.data.custom_id.ends_with('d') {
+			message
+				.edit(
+					ctx,
+					CreateReply::default()
+						.content("Server settings not changed... coward")
+						.reply(true)
+						.components(&[]),
+				)
+				.await?;
+			too_slow = false;
+			break;
+		} else if interaction.data.custom_id.ends_with('r') {
+			reset_server_settings(ctx, guild_id).await?;
+			message
+				.edit(
+					ctx,
+					CreateReply::default()
+						.content("Server settings reset... probably")
+						.reply(true)
+						.components(&[]),
+				)
+				.await?;
+			too_slow = false;
+			break;
+		}
+
+		match &interaction.data.kind {
+			ComponentInteractionDataKind::StringSelect { values } => {
+				let Some(menu_choice) = values.first() else {
+					continue;
+				};
+				current_state = if menu_choice == "mu_chan" {
+					SelectionState::SelectingMusicChannel
+				} else if menu_choice == "sp_chan" {
+					SelectionState::SelectingSpoilerChannel
+				} else if menu_choice == "qu_chan" {
+					SelectionState::SelectingQuoteChannel
+				} else if menu_choice == "ch_chan" {
+					SelectionState::SelectingChatbotChannel
+				} else if menu_choice == "wu_chan" {
+					SelectionState::SelectingWaifuChannel
+				} else if menu_choice == "dc_gifs" {
+					SelectionState::ConfiguringDeadChatGifs
+				} else {
+					continue;
+				};
+				message
+					.edit(
+						ctx,
+						CreateReply::default()
+							.content(current_state.description())
+							.components(&channels_component),
+					)
+					.await?;
+			}
+			ComponentInteractionDataKind::ChannelSelect { values } => {
+				let Some(channel_id) = values.first() else {
+					continue;
+				};
+
+				let channel_name = if let Ok(channel) = channel_id
+					.widen()
+					.to_channel(ctx.http(), ctx.guild_id())
+					.await
+				{
+					match current_state {
+						SelectionState::SelectingMusicChannel => {
+							music_channel_opt = Some(channel.clone());
+						}
+						SelectionState::SelectingSpoilerChannel => {
+							spoiler_channel_opt = Some(channel.clone());
+						}
+						SelectionState::SelectingQuoteChannel => {
+							quote_channel_opt = Some(channel.clone());
+						}
+						SelectionState::SelectingChatbotChannel => {
+							chatbot_channel_opt = Some(channel.clone());
+						}
+						SelectionState::SelectingWaifuChannel => {
+							waifu_channel_opt = Some((channel.clone(), 3600 * 24));
+						}
+						SelectionState::ConfiguringDeadChatGifs => {
+							dead_chat_gifs_opt = Some((channel.clone(), 3600 * 24));
+						}
+						SelectionState::MainMenu => {
+							continue;
+						}
+					}
+					if let Some(guild_channel) = channel.guild() {
+						guild_channel.base.name.into_string()
+					} else {
+						channel_id.to_string()
+					}
+				} else {
+					channel_id.to_string()
+				};
+
+				message
+					.edit(
+						ctx,
+						CreateReply::default()
+							.content(format!(
+								"\"{channel_name}\" chosen as {} channel",
+								current_state.label()
+							))
+							.components(&settings_component),
+					)
+					.await?;
+				current_state = SelectionState::MainMenu;
+			}
+			_ => {}
 		}
 	}
+	if too_slow {
+		message
+			.edit(
+				ctx,
+				CreateReply::default()
+					.content("You were too slow")
+					.components(&[]),
+			)
+			.await?;
+	}
+
 	Ok(())
 }
 
 /// To reset or not to reset the user, that's the question
 #[poise::command(prefix_command, slash_command)]
 pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		ctx.send(
-			CreateReply::default()
-				.content("User settings resetted... probably")
-				.ephemeral(true),
-		)
-		.await?;
-		query!(
-			"UPDATE user_settings
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	ctx.send(
+		CreateReply::default()
+			.content("User settings resetted... probably")
+			.ephemeral(true),
+	)
+	.await?;
+	query!(
+		"UPDATE user_settings
             SET chatbot_role = NULL,
                 chatbot_internet_search = NULL,
                 afk = FALSE,
@@ -466,30 +474,30 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
                 ping_media = NULL
             WHERE guild_id = $1
             AND user_id = $2",
-			i64::from(guild_id),
-			i64::from(ctx.author().id)
-		)
-		.execute(&mut *ctx.data().db.acquire().await?)
-		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.user_settings
-			.get(&guild_id)
-			.unwrap_or_default()
-			.as_ref()
-			.clone();
-		modified_settings.insert(
-			ctx.author().id,
-			UserSettings {
-				guild_id: i64::from(guild_id),
-				user_id: i64::from(ctx.author().id),
-				..Default::default()
-			},
-		);
-		ctx.data()
-			.user_settings
-			.insert(guild_id, Arc::new(modified_settings));
-	}
+		i64::from(guild_id),
+		i64::from(ctx.author().id)
+	)
+	.execute(&mut *ctx.data().db.acquire().await?)
+	.await?;
+	let mut modified_settings = ctx
+		.data()
+		.user_settings
+		.get(&guild_id)
+		.unwrap_or_default()
+		.as_ref()
+		.clone();
+	modified_settings.insert(
+		ctx.author().id,
+		UserSettings {
+			guild_id: i64::from(guild_id),
+			user_id: i64::from(ctx.author().id),
+			..Default::default()
+		},
+	);
+	ctx.data()
+		.user_settings
+		.insert(guild_id, Arc::new(modified_settings));
+
 	Ok(())
 }
 
@@ -499,69 +507,72 @@ pub async fn set_afk(
 	ctx: SContext<'_>,
 	#[description = "Reason for afk"] reason: Option<String>,
 ) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let guild_id_i64 = i64::from(guild_id);
-		let user_id_i64 = i64::from(ctx.author().id);
-		query!(
-			"INSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let guild_id_i64 = i64::from(guild_id);
+	let user_id_i64 = i64::from(ctx.author().id);
+	query!(
+		"INSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)
             VALUES ($1, $2, TRUE, $3, NULL)
             ON CONFLICT(guild_id, user_id)
             DO UPDATE SET
                 afk = TRUE,
                 afk_reason = $3,
                 pinged_links = NULL",
-			guild_id_i64,
-			user_id_i64,
-			reason,
-		)
-		.execute(&mut *ctx.data().db.acquire().await?)
-		.await?;
-		let embed_reason = reason
-			.as_deref()
-			.unwrap_or("Didn't renew life subscription");
-		let user_name = ctx.author().display_name();
-		ctx.send(
-			CreateReply::default()
-				.embed(
-					CreateEmbed::default()
-						.title(format!("{user_name} killed!"))
-						.description(format!("Reason: {embed_reason}"))
-						.thumbnail(ctx.author().avatar_url().unwrap_or_else(|| {
-							ctx.author()
-								.static_avatar_url()
-								.unwrap_or_else(|| ctx.author().default_avatar_url())
-						}))
-						.color(COLOUR_RED),
-				)
-				.reply(true),
-		)
-		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.user_settings
-			.get(&guild_id)
-			.unwrap_or_default()
-			.as_ref()
-			.clone();
-		if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
-			user_settings.afk = true;
-			user_settings.afk_reason = reason;
-		} else {
-			modified_settings.insert(
-				ctx.author().id,
-				UserSettings {
-					guild_id: guild_id_i64,
-					user_id: user_id_i64,
-					afk: true,
-					afk_reason: reason,
-					..Default::default()
-				},
-			);
-		}
-		ctx.data()
-			.user_settings
-			.insert(guild_id, Arc::new(modified_settings));
+		guild_id_i64,
+		user_id_i64,
+		reason,
+	)
+	.execute(&mut *ctx.data().db.acquire().await?)
+	.await?;
+	let embed_reason = reason
+		.as_deref()
+		.unwrap_or("Didn't renew life subscription");
+	let user_name = ctx.author().display_name();
+	ctx.send(
+		CreateReply::default()
+			.embed(
+				CreateEmbed::default()
+					.title(format!("{user_name} killed!"))
+					.description(format!("Reason: {embed_reason}"))
+					.thumbnail(ctx.author().avatar_url().unwrap_or_else(|| {
+						ctx.author()
+							.static_avatar_url()
+							.unwrap_or_else(|| ctx.author().default_avatar_url())
+					}))
+					.color(COLOUR_RED),
+			)
+			.reply(true),
+	)
+	.await?;
+	let mut modified_settings = ctx
+		.data()
+		.user_settings
+		.get(&guild_id)
+		.unwrap_or_default()
+		.as_ref()
+		.clone();
+	if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+		user_settings.afk = true;
+		user_settings.afk_reason = reason;
+	} else {
+		modified_settings.insert(
+			ctx.author().id,
+			UserSettings {
+				guild_id: guild_id_i64,
+				user_id: user_id_i64,
+				afk: true,
+				afk_reason: reason,
+				..Default::default()
+			},
+		);
 	}
+	ctx.data()
+		.user_settings
+		.insert(guild_id, Arc::new(modified_settings));
+
 	Ok(())
 }
 
@@ -603,57 +614,60 @@ pub async fn set_chatbot_options(
 	>,
 	#[description = "Enable bot to search online every message sent"] internet_search: Option<bool>,
 ) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let guild_id_i64 = i64::from(guild_id);
-		let user_id_i64 = i64::from(ctx.author().id);
-		let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
-		query!(
-			"INSERT INTO user_settings 
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let guild_id_i64 = i64::from(guild_id);
+	let user_id_i64 = i64::from(ctx.author().id);
+	let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
+	query!(
+		"INSERT INTO user_settings 
             (guild_id, user_id, chatbot_role, chatbot_internet_search)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT(guild_id, user_id)
             DO UPDATE SET
                 chatbot_role = $3,
                 chatbot_internet_search = $4",
-			guild_id_i64,
-			user_id_i64,
-			final_role,
-			internet_search,
-		)
-		.execute(&mut *ctx.data().db.acquire().await?)
-		.await?;
-		ctx.send(
-			CreateReply::default()
-				.content("Options for chatbot set... probably")
-				.ephemeral(true),
-		)
-		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.user_settings
-			.get(&guild_id)
-			.unwrap_or_default()
-			.as_ref()
-			.clone();
-		if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
-			user_settings.chatbot_role = final_role;
-			user_settings.chatbot_internet_search = internet_search;
-		} else {
-			modified_settings.insert(
-				ctx.author().id,
-				UserSettings {
-					guild_id: guild_id_i64,
-					user_id: user_id_i64,
-					chatbot_role: final_role,
-					chatbot_internet_search: internet_search,
-					..Default::default()
-				},
-			);
-		}
-		ctx.data()
-			.user_settings
-			.insert(guild_id, Arc::new(modified_settings));
+		guild_id_i64,
+		user_id_i64,
+		final_role,
+		internet_search,
+	)
+	.execute(&mut *ctx.data().db.acquire().await?)
+	.await?;
+	ctx.send(
+		CreateReply::default()
+			.content("Options for chatbot set... probably")
+			.ephemeral(true),
+	)
+	.await?;
+	let mut modified_settings = ctx
+		.data()
+		.user_settings
+		.get(&guild_id)
+		.unwrap_or_default()
+		.as_ref()
+		.clone();
+	if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+		user_settings.chatbot_role = final_role;
+		user_settings.chatbot_internet_search = internet_search;
+	} else {
+		modified_settings.insert(
+			ctx.author().id,
+			UserSettings {
+				guild_id: guild_id_i64,
+				user_id: user_id_i64,
+				chatbot_role: final_role,
+				chatbot_internet_search: internet_search,
+				..Default::default()
+			},
+		);
 	}
+	ctx.data()
+		.user_settings
+		.insert(guild_id, Arc::new(modified_settings));
+
 	Ok(())
 }
 
@@ -680,7 +694,7 @@ async fn set_dead_chat(
 	)
 	.execute(&mut *ctx.data().db.acquire().await?)
 	.await?;
-	let gifs = get_gifs("dead chat".to_owned()).await;
+	let gifs = get_gifs("dead chat").await;
 	let index = fastrand::usize(..gifs.len());
 	if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
 		channel.id().say(ctx.http(), gif).await?;
@@ -692,162 +706,6 @@ async fn set_dead_chat(
 struct CreateApplicationEmoji<'a> {
 	name: &'a str,
 	image: &'a str,
-}
-
-/// Configure content to react to with a certain emoji
-#[poise::command(slash_command)]
-pub async fn set_emoji_react(
-	ctx: SContext<'_>,
-	#[description = "Word/sentence to react to"] content: String,
-	#[description = "Name of emoji to react with"] emoji_name: String,
-	#[description = "Image/gif for emoji if not in current server"] media: Option<String>,
-) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let guild_id_i64 = i64::from(guild_id);
-		let emoji_opt = match ctx.guild() {
-			Some(guild) => guild
-				.emojis
-				.iter()
-				.find(|emoji| emoji.name == emoji_name)
-				.cloned(),
-			_ => None,
-		};
-		if let Some(emoji) = emoji_opt {
-			let emoji_id_i64 = i64::from(emoji.id);
-			query!(
-				"INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, \
-				 content_reaction)
-                    VALUES ($1, $2, TRUE, $3)
-                    ON CONFLICT(guild_id, emoji_id)
-                    DO UPDATE SET
-                        emoji_id = $2,
-                        guild_emoji = TRUE,
-                        content_reaction = $3",
-				guild_id_i64,
-				emoji_id_i64,
-				content,
-			)
-			.execute(&mut *ctx.data().db.acquire().await?)
-			.await?;
-			ctx.send(
-				CreateReply::default()
-					.content(format!(
-						"Every time {content} is sent, {} will be reacted with... probably",
-						emoji.name
-					))
-					.ephemeral(true),
-			)
-			.await?;
-			let mut modified_settings = ctx
-				.data()
-				.guilds
-				.get(&guild_id)
-				.get_or_insert_default()
-				.as_ref()
-				.clone();
-			modified_settings.emoji_reactions.insert(EmojiReactions {
-				guild_id: guild_id_i64,
-				emoji_id: emoji_id_i64,
-				guild_emoji: true,
-				content_reaction: content,
-			});
-			ctx.data()
-				.guilds
-				.insert(guild_id, Arc::new(modified_settings));
-		} else if let Some(emoji_media) = media {
-			let content_type_opt = if emoji_media.starts_with("https") {
-				ctx.defer().await?;
-				let response = HTTP_CLIENT.head(&emoji_media).send().await?;
-				let content_type = response
-					.headers()
-					.get("content-type")
-					.and_then(|ct| ct.to_str().ok())
-					.unwrap_or("image/png")
-					.to_string();
-				(content_type.starts_with("image/") || content_type == "application/gif")
-					.then_some(content_type)
-			} else {
-				None
-			};
-			if let Some(content_type) = content_type_opt {
-				let image_bytes = HTTP_CLIENT.get(&emoji_media).send().await?.bytes().await?;
-				let base64_str = general_purpose::STANDARD.encode(&image_bytes);
-				let image_data = format!("data:{};base64,{}", &content_type, base64_str);
-				let params = CreateApplicationEmoji {
-					name: &emoji_name,
-					image: &image_data,
-				};
-				let emoji = match ctx.http().create_application_emoji(&params).await {
-					Ok(result) => result,
-					Err(e) => {
-						ctx.send(
-							CreateReply::default()
-								.content(format!("No can do, Discord gave this error: {e}"))
-								.ephemeral(true),
-						)
-						.await?;
-						return Ok(());
-					}
-				};
-				let emoji_id_i64 = i64::from(emoji.id);
-				query!(
-					"INSERT INTO guild_emoji_reaction (guild_id, emoji_id, guild_emoji, \
-					 content_reaction)
-                    VALUES ($1, $2, FALSE, $3)
-                    ON CONFLICT(guild_id, emoji_id)
-                    DO UPDATE SET
-                        emoji_id = $2,
-                        guild_emoji = FALSE,
-                        content_reaction = $3",
-					guild_id_i64,
-					emoji_id_i64,
-					content,
-				)
-				.execute(&mut *ctx.data().db.acquire().await?)
-				.await?;
-				ctx.send(
-					CreateReply::default()
-						.content(format!(
-							"Every time {content} is sent, {} will be reacted with... probably",
-							emoji.name
-						))
-						.ephemeral(true),
-				)
-				.await?;
-				let mut modified_settings = ctx
-					.data()
-					.guilds
-					.get(&guild_id)
-					.get_or_insert_default()
-					.as_ref()
-					.clone();
-				modified_settings.emoji_reactions.insert(EmojiReactions {
-					guild_id: guild_id_i64,
-					emoji_id: emoji_id_i64,
-					guild_emoji: false,
-					content_reaction: content,
-				});
-				ctx.data()
-					.guilds
-					.insert(guild_id, Arc::new(modified_settings));
-			} else {
-				ctx.send(
-					CreateReply::default()
-						.content("Bruh, invalid media was given!")
-						.ephemeral(true),
-				)
-				.await?;
-			}
-		} else {
-			ctx.send(
-				CreateReply::default()
-					.content("Bruh, the emoji doesn't exist + no media was given!")
-					.ephemeral(true),
-			)
-			.await?;
-		}
-	}
-	Ok(())
 }
 
 /// Configure which prefix to use for commands
@@ -862,38 +720,41 @@ pub async fn set_prefix(
 	#[rest]
 	characters: String,
 ) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		query!(
-			"INSERT INTO guild_settings (guild_id, prefix)
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	query!(
+		"INSERT INTO guild_settings (guild_id, prefix)
             VALUES ($1, $2)
             ON CONFLICT(guild_id)
             DO UPDATE SET
                 prefix = $2",
-			i64::from(guild_id),
-			characters,
-		)
-		.execute(&mut *ctx.data().db.acquire().await?)
-		.await?;
-		ctx.send(
-			CreateReply::default()
-				.content(format!(
-					"{characters} set as the prefix for commands... probably"
-				))
-				.ephemeral(true),
-		)
-		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.guilds
-			.get(&guild_id)
-			.get_or_insert_default()
-			.as_ref()
-			.clone();
-		modified_settings.settings.prefix = Some(characters);
-		ctx.data()
-			.guilds
-			.insert(guild_id, Arc::new(modified_settings));
-	}
+		i64::from(guild_id),
+		characters,
+	)
+	.execute(&mut *ctx.data().db.acquire().await?)
+	.await?;
+	ctx.send(
+		CreateReply::default()
+			.content(format!(
+				"{characters} set as the prefix for commands... probably"
+			))
+			.ephemeral(true),
+	)
+	.await?;
+	let mut modified_settings = ctx
+		.data()
+		.guilds
+		.get(&guild_id)
+		.get_or_insert_default()
+		.as_ref()
+		.clone();
+	modified_settings.settings.prefix = Some(characters);
+	ctx.data()
+		.guilds
+		.insert(guild_id, Arc::new(modified_settings));
+
 	Ok(())
 }
 
@@ -934,86 +795,89 @@ pub async fn set_user_ping(
 	                 query"]
 	media: Option<String>,
 ) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let valid = if let Some(user_media) = &media {
-			if user_media.starts_with("https") {
-				ctx.defer().await?;
-				HTTP_CLIENT
-					.head(user_media)
-					.send()
-					.await
-					.is_ok_and(|response| {
-						response
-							.headers()
-							.get("content-type")
-							.and_then(|ct| ct.to_str().ok())
-							.is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif")
-					})
-			} else if let Some(media_stripped) = user_media.strip_prefix("!gif") {
-				!media_stripped.is_empty()
-			} else {
-				user_media == "waifu"
-			}
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let valid = if let Some(user_media) = &media {
+		if user_media.starts_with("https") {
+			ctx.defer().await?;
+			HTTP_CLIENT
+				.head(user_media)
+				.send()
+				.await
+				.is_ok_and(|response| {
+					response
+						.headers()
+						.get("content-type")
+						.and_then(|ct| ct.to_str().ok())
+						.is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif")
+				})
+		} else if let Some(media_stripped) = user_media.strip_prefix("!gif") {
+			!media_stripped.is_empty()
 		} else {
-			true
-		};
-		if valid {
-			let guild_id_i64 = i64::from(guild_id);
-			let user_id_i64 = i64::from(ctx.author().id);
-			query!(
-				"INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
+			user_media == "waifu"
+		}
+	} else {
+		true
+	};
+	if valid {
+		let guild_id_i64 = i64::from(guild_id);
+		let user_id_i64 = i64::from(ctx.author().id);
+		query!(
+			"INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT(guild_id, user_id)
                 DO UPDATE SET 
                     ping_content = $3, 
                     ping_media = $4",
-				guild_id_i64,
-				user_id_i64,
-				content,
-				media,
-			)
-			.execute(&mut *ctx.data().db.acquire().await?)
-			.await?;
-			ctx.send(
-				CreateReply::default()
-					.content("Custom user ping created... probably")
-					.ephemeral(true),
-			)
-			.await?;
-			let mut modified_settings = ctx
-				.data()
-				.user_settings
-				.get(&guild_id)
-				.unwrap_or_default()
-				.as_ref()
-				.clone();
-			if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
-				user_settings.ping_content = Some(content);
-				user_settings.ping_media = media;
-			} else {
-				modified_settings.insert(
-					ctx.author().id,
-					UserSettings {
-						guild_id: guild_id_i64,
-						user_id: user_id_i64,
-						ping_content: Some(content),
-						ping_media: media,
-						..Default::default()
-					},
-				);
-			}
-			ctx.data()
-				.user_settings
-				.insert(guild_id, Arc::new(modified_settings));
+			guild_id_i64,
+			user_id_i64,
+			content,
+			media,
+		)
+		.execute(&mut *ctx.data().db.acquire().await?)
+		.await?;
+		ctx.send(
+			CreateReply::default()
+				.content("Custom user ping created... probably")
+				.ephemeral(true),
+		)
+		.await?;
+		let mut modified_settings = ctx
+			.data()
+			.user_settings
+			.get(&guild_id)
+			.unwrap_or_default()
+			.as_ref()
+			.clone();
+		if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+			user_settings.ping_content = Some(content);
+			user_settings.ping_media = media;
 		} else {
-			ctx.send(
-				CreateReply::default()
-					.content("Invalid media given... really bro?")
-					.ephemeral(true),
-			)
-			.await?;
+			modified_settings.insert(
+				ctx.author().id,
+				UserSettings {
+					guild_id: guild_id_i64,
+					user_id: user_id_i64,
+					ping_content: Some(content),
+					ping_media: media,
+					..Default::default()
+				},
+			);
 		}
+		ctx.data()
+			.user_settings
+			.insert(guild_id, Arc::new(modified_settings));
+	} else {
+		ctx.send(
+			CreateReply::default()
+				.content("Invalid media given... really bro?")
+				.ephemeral(true),
+		)
+		.await?;
 	}
+
 	Ok(())
 }
 
@@ -1049,12 +913,22 @@ async fn set_waifu_channel(
 pub async fn set_word_react(
 	ctx: SContext<'_>,
 	#[description = "Word to react to"] word: String,
-	#[description = "Text to send on react"] content: String,
+	#[description = "Text to send on react"] content: Option<String>,
 	#[description = "Media to send on react; use !gif query for a random gif of query"]
 	media: Option<String>,
+	#[description = "Name of emoji to react with"] emoji_name: Option<String>,
+	#[description = "Link to image/gif for emoji if not in current server"] emoji_media: Option<
+		String,
+	>,
 ) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let valid = if let Some(user_media) = &media {
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let mut emoji_id = None;
+	let mut guild_emoji = false;
+	let valid = if content.is_some() {
+		if let Some(user_media) = &media {
 			if user_media.starts_with("https") {
 				ctx.defer().await?;
 				HTTP_CLIENT
@@ -1075,81 +949,78 @@ pub async fn set_word_react(
 			}
 		} else {
 			true
-		};
-		if valid {
-			let guild_id_i64 = i64::from(guild_id);
-			query!(
-				"INSERT INTO guild_word_reaction (guild_id, word, content, media)
-                VALUES ($1, $2, $3, $4)
+		}
+	} else if let Some(emoji_name) = emoji_name {
+		if let Some(guild) = ctx.guild()
+			&& guild.emojis.iter().any(|emoji| emoji.name == emoji_name)
+		{
+			guild_emoji = true;
+			true
+		} else if let Some(emoji_media) = emoji_media {
+			if Url::parse(&emoji_media).is_ok() {
+				ctx.defer().await?;
+				let response = HTTP_CLIENT.head(&emoji_media).send().await?;
+				let content_type = response
+					.headers()
+					.get("content-type")
+					.and_then(|ct| ct.to_str().ok())
+					.unwrap_or("image/png")
+					.to_string();
+				if content_type.starts_with("image/") || content_type == "application/gif" {
+					let image_bytes = HTTP_CLIENT.get(&emoji_media).send().await?.bytes().await?;
+					let base64_str = general_purpose::STANDARD.encode(&image_bytes);
+					let image_data = format!("data:{};base64,{}", &content_type, base64_str);
+					let params = CreateApplicationEmoji {
+						name: &emoji_name,
+						image: &image_data,
+					};
+					if let Ok(http_emoji) = ctx.http().create_application_emoji(&params).await {
+						emoji_id = Some(http_emoji.id.get().cast_signed());
+						ctx.data()
+							.app_emojis
+							.insert(http_emoji.id.get(), Arc::new(http_emoji));
+
+						true
+					} else {
+						false
+					}
+				} else {
+					false
+				}
+			} else {
+				false
+			}
+		} else {
+			false
+		}
+	} else {
+		false
+	};
+	if valid {
+		let guild_id_i64 = i64::from(guild_id);
+		query!(
+			"INSERT INTO guild_word_reaction (guild_id, word, content, media, emoji_id, \
+			 guild_emoji)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT(guild_id, word)
                 DO UPDATE SET
                     word = $2,
                     content = $3,
-                    media = $4",
-				guild_id_i64,
-				word,
-				content,
-				media
-			)
-			.execute(&mut *ctx.data().db.acquire().await?)
-			.await?;
-			ctx.send(
-				CreateReply::default()
-					.content(format!("{word} will be reacted to from now on... probably"))
-					.ephemeral(true),
-			)
-			.await?;
-			let mut modified_settings = ctx
-				.data()
-				.guilds
-				.get(&guild_id)
-				.get_or_insert_default()
-				.as_ref()
-				.clone();
-			modified_settings.word_reactions.insert(WordReactions {
-				guild_id: guild_id_i64,
-				word,
-				content,
-				media,
-			});
-			ctx.data()
-				.guilds
-				.insert(guild_id, Arc::new(modified_settings));
-		} else {
-			ctx.send(
-				CreateReply::default()
-					.content("Invalid media given... really bro?")
-					.ephemeral(true),
-			)
-			.await?;
-		}
-	}
-	Ok(())
-}
-
-/// Configure words to track count of
-#[poise::command(slash_command)]
-pub async fn set_word_track(
-	ctx: SContext<'_>,
-	#[description = "Word to track count of"] word: String,
-) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let guild_id_i64 = i64::from(guild_id);
-		query!(
-			"INSERT INTO guild_word_tracking (guild_id, word)
-            VALUES ($1, $2)
-            ON CONFLICT(guild_id, word)
-            DO UPDATE SET
-                word = $2, 
-                count = 0",
+                    media = $4,
+                    emoji_id = $5,
+                    guild_emoji = $6",
 			guild_id_i64,
 			word,
+			content,
+			media,
+			emoji_id,
+			guild_emoji
 		)
 		.execute(&mut *ctx.data().db.acquire().await?)
 		.await?;
 		ctx.send(
 			CreateReply::default()
-				.content(format!("The count of {word} will be tracked... probably"))
+				.content(format!("{word} will be reacted to from now on... probably"))
 				.ephemeral(true),
 		)
 		.await?;
@@ -1160,14 +1031,72 @@ pub async fn set_word_track(
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
-		modified_settings.word_tracking.insert(WordTracking {
+		modified_settings.word_reactions.insert(WordReactions {
 			guild_id: guild_id_i64,
 			word,
-			count: 0,
+			content,
+			media,
+			emoji_id,
+			guild_emoji,
 		});
 		ctx.data()
 			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
+	} else {
+		ctx.send(
+			CreateReply::default()
+				.content("Invalid media given... really bro?")
+				.ephemeral(true),
+		)
+		.await?;
 	}
+	Ok(())
+}
+
+/// Configure words to track count of
+#[poise::command(slash_command)]
+pub async fn set_word_track(
+	ctx: SContext<'_>,
+	#[description = "Word to track count of"] word: String,
+) -> Result<(), Error> {
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let guild_id_i64 = i64::from(guild_id);
+	query!(
+		"INSERT INTO guild_word_tracking (guild_id, word)
+            VALUES ($1, $2)
+            ON CONFLICT(guild_id, word)
+            DO UPDATE SET
+                word = $2, 
+                count = 0",
+		guild_id_i64,
+		word,
+	)
+	.execute(&mut *ctx.data().db.acquire().await?)
+	.await?;
+	ctx.send(
+		CreateReply::default()
+			.content(format!("The count of {word} will be tracked... probably"))
+			.ephemeral(true),
+	)
+	.await?;
+	let mut modified_settings = ctx
+		.data()
+		.guilds
+		.get(&guild_id)
+		.get_or_insert_default()
+		.as_ref()
+		.clone();
+	modified_settings.word_tracking.insert(WordTracking {
+		guild_id: guild_id_i64,
+		word,
+		count: 0,
+	});
+	ctx.data()
+		.guilds
+		.insert(guild_id, Arc::new(modified_settings));
+
 	Ok(())
 }

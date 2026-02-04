@@ -63,7 +63,6 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		settings::reset_user_settings(),
 		settings::set_afk(),
 		settings::set_chatbot_options(),
-		settings::set_emoji_react(),
 		settings::set_prefix(),
 		settings::set_user_ping(),
 		settings::set_word_react(),

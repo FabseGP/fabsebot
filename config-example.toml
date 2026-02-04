@@ -11,6 +11,7 @@
 #ping_url = 
 #uptime_url =
 #uptime_token =
+#owner_id = 
 
 [PostgreSQL]
 #database = 

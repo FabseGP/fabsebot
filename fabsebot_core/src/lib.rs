@@ -1,4 +1,4 @@
-#![feature(iter_intersperse, float_algebraic)]
+#![feature(iter_intersperse, const_convert, const_trait_impl)]
 
 pub mod config;
 mod events;
@@ -33,7 +33,6 @@ use tracing::{error, warn};
 
 use crate::{
 	config::{
-		constants::PING_INTERVAL_SEC,
 		settings::{APIConfig, BotConfig, ServerConfig},
 		types::{
 			CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, UTILS_CONFIG, UtilsConfig,
@@ -42,6 +41,8 @@ use crate::{
 	handlers::{EventHandler, dynamic_prefix, initialize_counters, on_command, on_error},
 	utils::helpers::{get_gifs, get_waifu},
 };
+
+const PING_INTERVAL_SEC: u64 = 60;
 
 async fn wait_and_shutdown<F>(shutdown_trigger: F)
 where
@@ -123,7 +124,7 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 					&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
 					&& let Some(dead_chat_channel) = modified_settings.settings.dead_chat_channel
 				{
-					let gifs = get_gifs("dead chat".to_owned()).await;
+					let gifs = get_gifs("dead chat").await;
 					let index = fastrand::usize(..gifs.len());
 					if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
 						if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
@@ -171,6 +172,7 @@ pub async fn bot_start(
 ) -> AResult<()> {
 	if UTILS_CONFIG
 		.set(Arc::new(UtilsConfig {
+			owner_id: bot_config.owner_id,
 			ping_message: bot_config.ping_message,
 			ping_payload: bot_config.ping_payload,
 			fabseserver: server_config,
@@ -202,6 +204,7 @@ pub async fn bot_start(
 		guilds: Cache::new(1000),
 		user_settings: Cache::new(1000),
 		track_metadata: Cache::new(1000),
+		app_emojis: Cache::new(1000),
 	});
 	let additional_prefix: &'static str =
 		Box::leak(format!("hey {}", &bot_config.username).into_boxed_str());

@@ -1,8 +1,9 @@
 use std::{borrow::Cow, sync::Arc};
 
-use anyhow::Result as AResult;
+use anyhow::{Result as AResult, bail};
+use mini_moka::sync::Cache;
 use serde::Deserialize;
-use serenity::all::{GenericChannelId, GuildId, MessageId};
+use serenity::all::{Context as SContext, Emoji, EmojiId, GenericChannelId, GuildId, MessageId};
 use songbird::{
 	Call,
 	driver::Bitrate,
@@ -22,12 +23,13 @@ use winnow::{
 };
 
 use crate::config::{
-	constants::{
-		DISCORD_CHANNEL_CANARY_PREFIX, DISCORD_CHANNEL_DEFAULT_PREFIX, DISCORD_CHANNEL_PTB_PREFIX,
-		FALLBACK_GIF, FALLBACK_WAIFU,
-	},
+	constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
 	types::{Data, HTTP_CLIENT, UTILS_CONFIG},
 };
+
+const DISCORD_CHANNEL_DEFAULT_PREFIX: &str = "https://discord.com/channels/";
+const DISCORD_CHANNEL_PTB_PREFIX: &str = "https://ptb.discord.com/channels/";
+const DISCORD_CHANNEL_CANARY_PREFIX: &str = "https://canary.discord.com/channels/";
 
 pub async fn get_configured_songbird_handler(
 	handler_lock: &Arc<Mutex<Call>>,
@@ -66,7 +68,7 @@ pub async fn queue_song(
 	msg_id: MessageId,
 	channel_id: GenericChannelId,
 	author_name: String,
-) -> AResult<()> {
+) {
 	let uuid = metadata
 		.source_url
 		.as_ref()
@@ -95,8 +97,6 @@ pub async fn queue_song(
 			uuid,
 		))
 		.await;
-
-	Ok(())
 }
 
 #[derive(Deserialize)]
@@ -120,7 +120,7 @@ struct GifObject {
 	url: String,
 }
 
-pub async fn get_gifs(input: String) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
+pub async fn get_gifs(input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
 	let key = UTILS_CONFIG
 		.get()
 		.map(|u| u.api.gif_token.as_str())
@@ -128,7 +128,7 @@ pub async fn get_gifs(input: String) -> Vec<(Cow<'static, str>, Cow<'static, str
 	if let Ok(response) = HTTP_CLIENT
 		.get("https://tenor.googleapis.com/v2/search")
 		.query(&[
-			("q", input.as_str()),
+			("q", input),
 			("key", key),
 			("contentfilter", "medium"),
 			("limit", "40"),
@@ -149,7 +149,10 @@ pub async fn get_gifs(input: String) -> Vec<(Cow<'static, str>, Cow<'static, str
 			})
 			.collect()
 	} else {
-		vec![(Cow::Borrowed(FALLBACK_GIF), Cow::Owned(input))]
+		vec![(
+			Cow::Borrowed(FALLBACK_GIF),
+			Cow::Borrowed(FALLBACK_GIF_TITLE),
+		)]
 	}
 }
 
@@ -159,16 +162,22 @@ struct LyricsResponse {
 	plain_lyrics: String,
 }
 
-pub async fn get_lyrics(artist_name: &str, track_name: &str) -> Option<String> {
-	if let Ok(response) = HTTP_CLIENT
+pub async fn get_lyrics(artist_name: &str, track_name: &str) -> AResult<String> {
+	match HTTP_CLIENT
 		.get("https://lrclib.net/api/get")
 		.query(&[("artist_name", artist_name), ("track_name", track_name)])
 		.send()
-		.await && let Ok(data) = response.json::<LyricsResponse>().await
+		.await
 	{
-		Some(data.plain_lyrics)
-	} else {
-		None
+		Ok(response) => match response.json::<LyricsResponse>().await {
+			Ok(json) => Ok(json.plain_lyrics),
+			Err(err) => {
+				bail!("Failed to parse to json: {err}");
+			}
+		},
+		Err(err) => {
+			bail!("Failed to fetch lyrics: {err}");
+		}
 	}
 }
 
@@ -192,6 +201,60 @@ pub async fn get_waifu() -> Cow<'static, str> {
 	}
 
 	Cow::Borrowed(FALLBACK_WAIFU)
+}
+
+pub async fn send_emoji(
+	ctx: &SContext,
+	content: &str,
+	emojis: &Cache<u64, Arc<Emoji>>,
+	target_emoji: u64,
+) -> AResult<String> {
+	let (emoji_name, emoji_id, is_animated) = match get_app_emoji(ctx, emojis, target_emoji).await {
+		Ok(emoji) => emoji,
+		Err(err) => {
+			bail!(err);
+		}
+	};
+	let emoji_string = format!(
+		"<{}:{}:{}>",
+		if is_animated { "a" } else { "" },
+		emoji_name,
+		emoji_id
+	);
+	let count = content.matches(&emoji_name).count();
+	Ok(emoji_string.repeat(count))
+}
+
+async fn get_app_emoji(
+	ctx: &SContext,
+	emojis: &Cache<u64, Arc<Emoji>>,
+	target_emoji: u64,
+) -> AResult<(String, EmojiId, bool)> {
+	if let Some(app_emoji) = emojis.get(&target_emoji) {
+		return Ok((
+			app_emoji.name.to_string(),
+			app_emoji.id,
+			app_emoji.animated(),
+		));
+	}
+	match ctx.get_application_emojis().await {
+		Ok(app_emojis) => {
+			if let Some(app_emoji) = app_emojis
+				.iter()
+				.find(|emoji| emoji.id.get() == target_emoji)
+			{
+				return Ok((
+					app_emoji.name.to_string(),
+					app_emoji.id,
+					app_emoji.animated(),
+				));
+			}
+			bail!("Couldn't find application emoji");
+		}
+		Err(err) => {
+			bail!("Failed to fetch application emojis: {err}");
+		}
+	}
 }
 
 pub struct DiscordMessageLink {

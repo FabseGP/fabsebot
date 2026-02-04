@@ -1,23 +1,28 @@
 use std::{clone::Clone, io::Cursor, result::Result};
 
 use ab_glyph::{FontArc, PxScale};
-use anyhow::{Result as AResult, bail};
+use anyhow::Result as AResult;
 #[cfg(not(feature = "quote_webp"))]
 use image::ImageFormat::Avif as STATIC_FORMAT;
 #[cfg(feature = "quote_webp")]
 use image::ImageFormat::WebP as STATIC_FORMAT;
 use image::{
-	AnimationDecoder as _, Frame, GenericImage as _, ImageBuffer, Rgba, RgbaImage,
-	codecs::gif::{GifDecoder, GifEncoder, Repeat::Infinite},
+	AnimationDecoder as _, Frame, ImageBuffer, Rgba, RgbaImage,
+	codecs::gif::{GifDecoder, GifEncoder, Repeat},
 	imageops::{FilterType, overlay, resize},
 	load_from_memory,
 };
 use imageproc::drawing::{draw_text_mut, text_size};
+use rayon::prelude::*;
 use textwrap::wrap;
 
-use crate::config::constants::{
-	DEFAULT_THEME, MAX_CONTENT_HEIGHT, MAX_CONTENT_WIDTH, QUOTE_HEIGHT, QUOTE_WIDTH, THEMES,
-};
+use crate::config::constants::{DEFAULT_THEME, EMOJI_FONT, THEMES};
+
+const QUOTE_WIDTH: u32 = 1200;
+const QUOTE_HEIGHT: u32 = 630;
+const CONTENT_BOUND: u32 = 64;
+const MAX_CONTENT_WIDTH: u32 = QUOTE_WIDTH - QUOTE_HEIGHT - CONTENT_BOUND;
+const MAX_CONTENT_HEIGHT: u32 = QUOTE_HEIGHT - CONTENT_BOUND;
 
 const MIN_CONTENT_FONT_SIZE: f32 = 40.0;
 const MAX_CONTENT_FONT_SIZE: f32 = 96.0;
@@ -53,6 +58,18 @@ pub struct TextLayout {
 	author_position: (String, i32, i32, i32),
 	content_scale: PxScale,
 	author_scale: PxScale,
+}
+
+impl Default for TextLayout {
+	fn default() -> Self {
+		Self {
+			content_lines: Vec::new(),
+			content_lines_reverse: Vec::new(),
+			author_position: (String::new(), 0, 0, 0),
+			content_scale: PxScale::from(0.0),
+			author_scale: PxScale::from(0.0),
+		}
+	}
 }
 
 #[must_use]
@@ -110,7 +127,8 @@ fn prepare_text_layout(
 	author_name: &str,
 	content_font: &FontArc,
 	author_font: &FontArc,
-) -> TextLayout {
+	text_layout: &mut TextLayout,
+) {
 	let mut content_metrics = FontMetrics::new(content_font, PxScale::from(MAX_CONTENT_FONT_SIZE));
 	let author_metrics = FontMetrics::new(author_font, PxScale::from(AUTHOR_FONT_SIZE));
 
@@ -207,13 +225,11 @@ fn prepare_text_layout(
 	};
 	let author_y = (quoted_content_y + total_text_height + author_y_offset).cast_signed();
 
-	TextLayout {
-		content_lines: line_positions,
-		content_lines_reverse: line_positions_reverse,
-		author_position: (author_name.to_owned(), author_x, author_x_reverse, author_y),
-		content_scale: content_metrics.scale,
-		author_scale: author_metrics.scale,
-	}
+	text_layout.content_lines = line_positions;
+	text_layout.content_lines_reverse = line_positions_reverse;
+	text_layout.author_position = (author_name.to_owned(), author_x, author_x_reverse, author_y);
+	text_layout.content_scale = content_metrics.scale;
+	text_layout.author_scale = author_metrics.scale;
 }
 
 fn apply_text_layout(
@@ -229,15 +245,18 @@ fn apply_text_layout(
 	} else {
 		&layout.content_lines
 	} {
-		draw_text_mut(
-			img,
-			text_colour,
-			*x,
-			*y,
-			layout.content_scale,
-			content_font,
-			line,
-		);
+		let mut step = *x;
+		for c in line.chars().map(|c| c.to_string()) {
+			let font = if emojis::get(&c).is_some() {
+				&EMOJI_FONT
+			} else {
+				content_font
+			};
+
+			draw_text_mut(img, text_colour, step, *y, layout.content_scale, font, &c);
+
+			step += text_size(layout.content_scale, font, &c).0.cast_signed();
+		}
 	}
 
 	let (author_text, x, y) = &(
@@ -260,124 +279,77 @@ fn apply_text_layout(
 	);
 }
 
-type ImagePayload = (
-	Vec<u8>,
-	Option<TextLayout>,
-	Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
-);
+pub fn resize_avatar(avatar_bytes: &[u8]) -> AResult<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+	let avatar_mem = load_from_memory(avatar_bytes)?.to_rgba8();
+	Ok(resize(
+		&avatar_mem,
+		QUOTE_HEIGHT,
+		QUOTE_HEIGHT,
+		FilterType::Triangle,
+	))
+}
 
-pub fn quote_image(
-	avatar_bytes: Option<&[u8]>,
-	avatar_resized: Option<ImageBuffer<Rgba<u8>, Vec<u8>>>,
-	author_name: &str,
-	quoted_content: &str,
-	author_font: &FontArc,
-	content_font: &FontArc,
-	theme: Option<&str>,
-	text: Option<&TextLayout>,
-	is_reverse: bool,
-	is_colour: bool,
-	is_gradient: bool,
-	is_animated: bool,
-	new_font: bool,
-) -> AResult<ImagePayload> {
-	let avatar_position = if is_reverse {
-		i64::from(QUOTE_WIDTH.saturating_sub(QUOTE_HEIGHT))
+#[must_use]
+pub const fn avatar_position(is_reverse: bool) -> i64 {
+	if is_reverse {
+		i64::from(QUOTE_WIDTH - QUOTE_HEIGHT)
 	} else {
 		0
-	};
+	}
+}
 
-	let (mut img, text_colour) = match theme {
-		Some("random") => {
+pub fn get_theme(theme: &str) -> (ImageBuffer<Rgba<u8>, Vec<u8>>, Rgba<u8>) {
+	match theme {
+		"random" => {
 			let random_base =
 				create_solid_theme([fastrand::u8(..), fastrand::u8(..), fastrand::u8(..), 255]);
 			let random_color = Rgba([fastrand::u8(..), fastrand::u8(..), fastrand::u8(..), 255]);
 			(random_base, random_color)
 		}
-		_ => theme
-			.and_then(|t| THEMES.get(t))
+		_ => THEMES
+			.get(theme)
 			.map_or_else(|| THEMES.get(DEFAULT_THEME).unwrap().clone(), Clone::clone),
-	};
-
-	let text_layout = if let Some(text_layout) = text
-		&& !new_font
-	{
-		text_layout
-	} else {
-		&prepare_text_layout(quoted_content, author_name, content_font, author_font)
-	};
-
-	if is_animated {
-		if let Some(avatar_bytes) = avatar_bytes {
-			let frames = GifDecoder::new(Cursor::new(avatar_bytes))?.into_frames();
-			let mut output = Vec::with_capacity(img.len().saturating_mul(2));
-
-			apply_text_layout(
-				&mut img,
-				text_layout,
-				text_colour,
-				content_font,
-				author_font,
-				is_reverse,
-			);
-
-			let mut quote_frame = img.clone();
-			let mut avatar_frame;
-
-			{
-				let mut gif_encoder = GifEncoder::new_with_speed(&mut output, 10);
-				gif_encoder.set_repeat(Infinite)?;
-
-				for frame in frames.take(30).filter_map(Result::ok) {
-					avatar_frame = resize(
-						frame.buffer(),
-						QUOTE_HEIGHT,
-						QUOTE_HEIGHT,
-						FilterType::Nearest,
-					);
-					if !is_colour {
-						convert_to_bw(&mut avatar_frame);
-					}
-					if is_gradient {
-						apply_gradient_to_avatar(&mut avatar_frame, is_reverse);
-					}
-					quote_frame.copy_from(&img, 0, 0)?;
-					overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
-					gif_encoder.encode_frame(Frame::from_parts(
-						quote_frame.clone(),
-						0,
-						0,
-						frame.delay(),
-					))?;
-				}
-			}
-
-			return Ok((
-				output,
-				(text.is_none() || new_font).then(|| text_layout.clone()),
-				None,
-			));
-		}
-		bail!("Missing avatar bytes");
 	}
+}
 
-	let mut avatar_image = if let Some(avatar_resized) = avatar_resized {
-		avatar_resized
-	} else if let Some(avatar_bytes) = avatar_bytes {
-		if let Ok(avatar_mem) = load_from_memory(avatar_bytes).map(|a| a.to_rgba8()) {
-			resize(
-				&avatar_mem,
-				QUOTE_HEIGHT,
-				QUOTE_HEIGHT,
-				FilterType::Triangle,
-			)
-		} else {
-			bail!("Failed to load avatar into memory");
-		}
-	} else {
-		bail!("Missing avatar");
-	};
+pub fn convert_to_bw(image: &mut RgbaImage) {
+	let pixels = image.as_flat_samples_mut();
+	pixels.samples.par_chunks_exact_mut(4).for_each(|chunk| {
+		let gray = ((u32::from(chunk[0]) * 77
+			+ u32::from(chunk[1]) * 150
+			+ u32::from(chunk[2]) * 29)
+			>> 8) as u8;
+		chunk[0] = gray;
+		chunk[1] = gray;
+		chunk[2] = gray;
+	});
+}
 
+pub fn quote_static_image(
+	mut avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+	author_name: &str,
+	quoted_content: &str,
+	author_font: &FontArc,
+	content_font: &FontArc,
+	text_colour: Rgba<u8>,
+	mut img: ImageBuffer<Rgba<u8>, Vec<u8>>,
+	text_layout: &mut TextLayout,
+	avatar_position: i64,
+	is_colour: bool,
+	is_gradient: bool,
+	is_reverse: bool,
+	new_font: bool,
+	cursor: &mut Cursor<Vec<u8>>,
+) -> AResult<()> {
+	if new_font {
+		prepare_text_layout(
+			quoted_content,
+			author_name,
+			content_font,
+			author_font,
+			text_layout,
+		);
+	}
 	if !is_colour {
 		convert_to_bw(&mut avatar_image);
 	}
@@ -386,6 +358,7 @@ pub fn quote_image(
 	}
 
 	overlay(&mut img, &avatar_image, avatar_position, 0);
+
 	apply_text_layout(
 		&mut img,
 		text_layout,
@@ -395,26 +368,66 @@ pub fn quote_image(
 		is_reverse,
 	);
 
-	let mut output = Vec::with_capacity(img.len() / 30);
-
-	img.write_to(&mut Cursor::new(&mut output), STATIC_FORMAT)?;
-
-	Ok((
-		output,
-		(text.is_none() || new_font).then(|| text_layout.clone()),
-		avatar_bytes.is_none().then_some(avatar_image),
-	))
+	Ok(img.write_to(cursor, STATIC_FORMAT)?)
 }
 
-pub fn convert_to_bw(image: &mut RgbaImage) {
-	let pixels = image.as_flat_samples_mut();
-	for chunk in pixels.samples.chunks_exact_mut(4) {
-		let gray = ((u32::from(chunk[0]) * 77
-			+ u32::from(chunk[1]) * 150
-			+ u32::from(chunk[2]) * 29)
-			>> 8) as u8;
-		chunk[0] = gray;
-		chunk[1] = gray;
-		chunk[2] = gray;
+pub fn quote_animated_image(
+	author_name: &str,
+	quoted_content: &str,
+	author_font: &FontArc,
+	content_font: &FontArc,
+	text_colour: Rgba<u8>,
+	mut img: ImageBuffer<Rgba<u8>, Vec<u8>>,
+	text_layout: &mut TextLayout,
+	avatar_position: i64,
+	is_colour: bool,
+	is_gradient: bool,
+	is_reverse: bool,
+	new_font: bool,
+	cursor: &mut Cursor<Vec<u8>>,
+	output: &mut Vec<u8>,
+) -> AResult<()> {
+	if new_font {
+		prepare_text_layout(
+			quoted_content,
+			author_name,
+			content_font,
+			author_font,
+			text_layout,
+		);
 	}
+
+	apply_text_layout(
+		&mut img,
+		text_layout,
+		text_colour,
+		content_font,
+		author_font,
+		is_reverse,
+	);
+
+	let frames = GifDecoder::new(cursor)?.into_frames();
+
+	let mut encoder = GifEncoder::new_with_speed(output, 10);
+	encoder.set_repeat(Repeat::Infinite)?;
+
+	for frame in frames.take(30).filter_map(Result::ok) {
+		let mut avatar_frame = resize(
+			frame.buffer(),
+			QUOTE_HEIGHT,
+			QUOTE_HEIGHT,
+			FilterType::Nearest,
+		);
+		if !is_colour {
+			convert_to_bw(&mut avatar_frame);
+		}
+		if is_gradient {
+			apply_gradient_to_avatar(&mut avatar_frame, is_reverse);
+		}
+		let mut quote_frame = img.clone();
+		overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
+		encoder.encode_frame(Frame::from_parts(quote_frame, 0, 0, frame.delay()))?;
+	}
+
+	Ok(())
 }

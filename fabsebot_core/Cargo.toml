@@ -11,12 +11,14 @@ fabsebot_db = { path = "../fabsebot_db" }
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 bytes = { workspace = true }
+emojis = { workspace = true }
 fastrand = { workspace = true }
 image = { workspace = true, default-features = false, features = ["avif", "gif", "nasm", "rayon", "webp"] }
 imageproc = { workspace = true, default-features = false, features = ["rayon", "text"] }
 metrics = { workspace = true }
 mini-moka = { workspace = true }
 poise = { workspace = true }
+rayon = { workspace = true }
 reqwest = { workspace = true, default-features = false, features = ["http3", "rustls-tls", "zstd"] }
 scraper = { workspace = true }
 serde = { workspace = true }

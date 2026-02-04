@@ -1,5 +1,8 @@
 use fabsebot_core::{
-	config::types::{Error, SContext},
+	config::{
+		constants::NOT_IN_GUILD_MSG,
+		types::{Error, SContext},
+	},
 	utils::webhook::webhook_find,
 };
 use poise::CreateReply;
@@ -52,47 +55,49 @@ pub async fn user_misuse(
 	#[rest]
 	message: String,
 ) -> Result<(), Error> {
-	if ctx.guild_id().is_some() {
-		if let Some(webhook) = webhook_find(
-			ctx.serenity_context(),
-			ctx.guild_id(),
-			ctx.channel_id(),
-			ctx.data().channel_webhooks.clone(),
+	if ctx.guild_id().is_none() {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	}
+	if let Ok(webhook) = webhook_find(
+		ctx.serenity_context(),
+		ctx.guild_id(),
+		ctx.channel_id(),
+		ctx.data().channel_webhooks.clone(),
+	)
+	.await
+	{
+		ctx.send(
+			CreateReply::default()
+				.content("you're going to hell")
+				.ephemeral(true),
 		)
-		.await
-		{
-			ctx.send(
-				CreateReply::default()
-					.content("you're going to hell")
-					.ephemeral(true),
+		.await?;
+		let avatar_url = member.avatar_url().unwrap_or_else(|| {
+			member.user.avatar_url().unwrap_or_else(|| {
+				member
+					.user
+					.avatar_url()
+					.unwrap_or_else(|| member.user.default_avatar_url())
+			})
+		});
+		webhook
+			.execute(
+				ctx.http(),
+				false,
+				ExecuteWebhook::default()
+					.username(member.display_name())
+					.avatar_url(avatar_url)
+					.content(message),
 			)
 			.await?;
-			let avatar_url = member.avatar_url().unwrap_or_else(|| {
-				member.user.avatar_url().unwrap_or_else(|| {
-					member
-						.user
-						.avatar_url()
-						.unwrap_or_else(|| member.user.default_avatar_url())
-				})
-			});
-			webhook
-				.execute(
-					ctx.http(),
-					false,
-					ExecuteWebhook::default()
-						.username(member.display_name())
-						.avatar_url(avatar_url)
-						.content(message),
-				)
-				.await?;
-		} else {
-			ctx.send(
-				CreateReply::default()
-					.content("no misuse for now")
-					.ephemeral(true),
-			)
-			.await?;
-		}
+	} else {
+		ctx.send(
+			CreateReply::default()
+				.content("No misuse for now")
+				.ephemeral(true),
+		)
+		.await?;
 	}
 
 	Ok(())

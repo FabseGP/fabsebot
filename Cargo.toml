@@ -56,6 +56,7 @@ anyhow = "*"
 base64 = "*"
 bytes = "*"
 criterion = { version = "*", features = ["async_tokio", "html_reports"] }
+emojis = "*"
 fastrand = "*"
 image = { version = "*", default-features = false, features = ["avif", "gif", "nasm", "rayon", "webp"] }
 imageproc = { version = "*", default-features = false, features = ["rayon", "text"] }

@@ -1,6 +1,6 @@
 use std::{
 	collections::HashMap,
-	sync::{Arc, LazyLock, OnceLock},
+	sync::{Arc, LazyLock, Mutex, OnceLock},
 	time::Duration,
 };
 
@@ -10,11 +10,10 @@ use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
 use serde::Serialize;
-use serenity::all::{GenericChannelId, GuildId, MessageId, ShardManager, UserId, Webhook};
+use serenity::all::{Emoji, GenericChannelId, GuildId, MessageId, ShardManager, UserId, Webhook};
 use songbird::{Songbird, input::AuxMetadata};
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::config::settings::{APIConfig, ServerConfig, UserSettings};
@@ -108,12 +107,14 @@ pub struct Data {
 	pub guilds: GuildMap,
 	pub user_settings: UserSettingsMap,
 	pub track_metadata: Cache<Uuid, Metadata>,
+	pub app_emojis: Cache<u64, Arc<Emoji>>,
 }
 
 pub type Error = AError;
 pub type SContext<'a> = PContext<'a, Data, Error>;
 
 pub struct UtilsConfig {
+	pub owner_id: u64,
 	pub ping_message: String,
 	pub ping_payload: String,
 	pub fabseserver: ServerConfig,

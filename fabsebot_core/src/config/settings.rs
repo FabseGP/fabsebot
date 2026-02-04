@@ -12,6 +12,7 @@ pub struct BotConfig {
 	pub ping_payload: String,
 	pub uptime_url: String,
 	pub uptime_token: String,
+	pub owner_id: u64,
 }
 
 #[derive(Deserialize)]

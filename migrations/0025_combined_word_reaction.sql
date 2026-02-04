@@ -1,0 +1,7 @@
+ALTER TABLE guild_word_reaction 
+ADD COLUMN IF NOT EXISTS emoji_name TEXT NULL DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS guild_emoji BOOLEAN NULL DEFAULT FALSE;
+
+DROP TABLE IF EXISTS guild_emoji_reaction;
+DROP INDEX IF EXISTS idx_guild_emoji_reactions;
+

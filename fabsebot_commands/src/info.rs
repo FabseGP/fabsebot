@@ -1,6 +1,9 @@
 use std::string::ToString;
 
-use fabsebot_core::config::types::{Error, SContext};
+use fabsebot_core::config::{
+	constants::NOT_IN_GUILD_MSG,
+	types::{Error, SContext},
+};
 use poise::CreateReply;
 use serenity::all::{
 	CreateComponent, CreateContainer, CreateContainerComponent, CreateEmbed, CreateSection,
@@ -26,47 +29,46 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 		guild_roles,
 		guild_channels,
 	) = {
-		if let Some(guild) = ctx.guild() {
-			let id = guild.id;
-			(
-				id.to_string(),
-				guild.name.to_string(),
-				guild
-					.banner
-					.as_ref()
-					.map(ToString::to_string)
-					.or_else(|| {
-						guild
-							.icon
-							.as_ref()
-							.map(|i| format!("https://cdn.discordapp.com/icons/{id}/{i}.png"))
-					})
-					.unwrap_or_else(|| "https://...".to_owned()),
-				guild
-					.description
-					.as_ref()
-					.map_or_else(|| "Unknown description".to_owned(), ToString::to_string),
-				format!(
-					"{}/{}",
-					guild.member_count,
-					guild.max_members.unwrap_or_default()
-				),
-				guild
-					.premium_subscription_count
-					.unwrap_or_default()
-					.to_string(),
-				guild.owner_id.to_string(),
-				id.created_at().to_string(),
-				if guild.large() { "Large" } else { "Not large" }.to_owned(),
-				guild.emojis.len().to_string(),
-				guild.stickers.len().to_string(),
-				guild.roles.len().to_string(),
-				guild.channels.len().to_string(),
-			)
-		} else {
-			ctx.reply("Discord refuse to share the info").await?;
+		let Some(guild) = ctx.guild() else {
+			ctx.reply(NOT_IN_GUILD_MSG).await?;
 			return Ok(());
-		}
+		};
+		let id = guild.id;
+		(
+			id.to_string(),
+			guild.name.clone(),
+			guild
+				.banner
+				.as_ref()
+				.map(ToString::to_string)
+				.or_else(|| {
+					guild
+						.icon
+						.as_ref()
+						.map(|i| format!("https://cdn.discordapp.com/icons/{id}/{i}.png"))
+				})
+				.unwrap_or_else(|| "https://...".to_owned()),
+			guild
+				.description
+				.as_ref()
+				.map_or_else(|| "Unknown description".to_owned(), ToString::to_string),
+			format!(
+				"{}/{}",
+				guild.member_count,
+				guild.max_members.unwrap_or_default()
+			),
+			guild
+				.premium_subscription_count
+				.unwrap_or_default()
+				.to_string(),
+			guild.owner_id.to_string(),
+			id.created_at().to_string(),
+			if guild.large() { "Large" } else { "Not large" }.to_owned(),
+			guild.emojis.len().to_string(),
+			guild.stickers.len().to_string(),
+			guild.roles.len().to_string(),
+			guild.channels.len().to_string(),
+		)
 	};
 
 	let embed = CreateEmbed::default()

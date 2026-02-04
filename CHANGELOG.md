@@ -94,6 +94,7 @@ All notable changes to this project will be documented in this file.
 - Replace webp with avif + remove unused codecs
 - Remove urlencoding + fewer format!-calls
 - Overflow when applying gradient
+- Increase quote-collector duration to 300s
 
 ### 💼 Other
 

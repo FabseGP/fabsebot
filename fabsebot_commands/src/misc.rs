@@ -1,18 +1,25 @@
-use std::{collections::HashSet, fmt::Write as _, process, sync::Arc, time::Duration};
+use std::{
+	collections::HashSet, fmt::Write as _, io::Cursor, mem::take, process, sync::Arc,
+	time::Duration,
+};
 
 use ab_glyph::FontArc;
 use anyhow::Context as _;
 use fabsebot_core::{
 	config::{
 		constants::{
-			AUTHOR_FONT, COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, CONTENT_FONT, FONTS,
-			QUOTE_FILENAME, THEMES,
+			AUTHOR_FONT, COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, CONTENT_FONT, DEFAULT_THEME,
+			FONTS, NOT_IN_GUILD_MSG, QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME, RANDOM_THEME,
+			STATIC_QUOTE_VEC, THEMES,
 		},
 		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
 	},
 	utils::{
 		ai::ai_response_simple,
-		image::{TextLayout, quote_image},
+		image::{
+			TextLayout, avatar_position, get_theme, quote_animated_image, quote_static_image,
+			resize_avatar,
+		},
 	},
 };
 use image::{ImageBuffer, Rgba};
@@ -64,7 +71,7 @@ pub async fn anony_poll(
 		.fields(options_list.iter().map(|&option| (option, "0", false)));
 	let mut final_embed = embed.clone();
 
-	let ctx_id_copy = ctx.id();
+	let ctx_id_copy = ctx.id().to_string();
 	let mut buttons = Vec::with_capacity(options_count);
 	for index in 0..options_count {
 		buttons.push(
@@ -91,12 +98,7 @@ pub async fn anony_poll(
 
 	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 		.timeout(Duration::from_secs(duration.saturating_mul(60)))
-		.filter(move |interaction| {
-			interaction
-				.data
-				.custom_id
-				.starts_with(ctx_id_copy.to_string().as_str())
-		})
+		.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_copy.as_str()))
 		.stream();
 
 	while let Some(interaction) = collector_stream.next().await {
@@ -167,12 +169,11 @@ pub async fn birthday(
 				.unwrap_or_else(|| member.user.default_avatar_url())
 		})
 	});
-	let name = member.display_name();
 	ctx.send(
 		CreateReply::default()
 			.embed(
 				CreateEmbed::default()
-					.title(format!("HAPPY BIRTHDAY {name}!"))
+					.title(format!("HAPPY BIRTHDAY {}!", member.display_name()))
 					.thumbnail(avatar_url)
 					.image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
 					.colour(COLOUR_RED),
@@ -291,29 +292,32 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 		embed = embed.field("System uptime:", format!("{}s", uptime.as_secs()), true);
 	}
 
+	let mut reply = CreateReply::default().embed(embed.clone()).reply(true);
+
+	let owner_id = UTILS_CONFIG.get().unwrap().owner_id;
+
+	if ctx.author().id != owner_id {
+		ctx.send(reply).await?;
+		return Ok(());
+	}
+
 	let button = [CreateButton::new(format!("{}_shard_restart", ctx.id()))
 		.style(ButtonStyle::Primary)
 		.label("Restart shard")];
+	let component = [CreateComponent::ActionRow(CreateActionRow::Buttons(
+		Cow::Borrowed(&button),
+	))];
 
-	let message = ctx
-		.send(
-			CreateReply::default()
-				.embed(embed.clone())
-				.reply(true)
-				.components(&[CreateComponent::ActionRow(CreateActionRow::Buttons(
-					Cow::Borrowed(&button),
-				))]),
-		)
-		.await?;
+	reply = reply.components(&component);
 
-	let ctx_id_copy = ctx.id();
+	let message = ctx.send(reply).await?;
+
+	let ctx_id_str = ctx.id().to_string();
 	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
 		.timeout(Duration::from_secs(60))
 		.filter(move |interaction| {
-			interaction
-				.data
-				.custom_id
-				.starts_with(ctx_id_copy.to_string().as_str())
+			interaction.data.custom_id.starts_with(ctx_id_str.as_str())
+				&& interaction.user.id.get() == owner_id
 		})
 		.await
 	{
@@ -392,18 +396,104 @@ pub async fn end_pgo(ctx: SContext<'_>) -> Result<(), Error> {
 /// When you're not lonely anymore
 #[poise::command(prefix_command, slash_command)]
 pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		query!(
-			"INSERT INTO guild_settings (guild_id, global_chat)
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	query!(
+		"INSERT INTO guild_settings (guild_id, global_chat)
             VALUES ($1, FALSE)
             ON CONFLICT(guild_id)
             DO UPDATE SET
                 global_chat = FALSE",
-			i64::from(guild_id),
+		i64::from(guild_id),
+	)
+	.execute(&mut *ctx.data().db.acquire().await?)
+	.await?;
+	ctx.data().global_chats.invalidate(&guild_id);
+	let mut modified_settings = ctx
+		.data()
+		.guilds
+		.get(&guild_id)
+		.get_or_insert_default()
+		.as_ref()
+		.clone();
+	modified_settings.settings.global_chat = false;
+	modified_settings.settings.global_chat_channel = None;
+	ctx.data()
+		.guilds
+		.insert(guild_id, Arc::new(modified_settings));
+	ctx.reply("Call ended...").await?;
+
+	Ok(())
+}
+
+/// When you're lonely and need someone to chat with
+#[poise::command(prefix_command, slash_command)]
+pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let guild_id_i64 = i64::from(guild_id);
+	let channel_id_i64 = i64::from(ctx.channel_id());
+	let mut tx = ctx.data().db.begin().await?;
+	query!(
+		"INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
+            VALUES ($1, TRUE, $2)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET
+                global_chat = TRUE,
+                global_chat_channel = $2",
+		guild_id_i64,
+		channel_id_i64,
+	)
+	.execute(&mut *tx)
+	.await?;
+	let mut modified_settings = ctx
+		.data()
+		.guilds
+		.get(&guild_id)
+		.get_or_insert_default()
+		.as_ref()
+		.clone();
+	modified_settings.settings.global_chat = true;
+	modified_settings.settings.global_chat_channel = Some(channel_id_i64);
+	ctx.data()
+		.guilds
+		.insert(guild_id, Arc::new(modified_settings));
+	let message = ctx.reply("Calling...").await?;
+	let result = timeout(Duration::from_secs(60), async {
+		loop {
+			let has_other_calls = ctx.data().guilds.iter().any(|entry| {
+				entry.key() != &guild_id
+					&& entry.value().settings.global_chat
+					&& entry.value().settings.global_chat_channel.is_some()
+			});
+			if has_other_calls {
+				return Ok::<_, Error>(true);
+			}
+			sleep(Duration::from_secs(5)).await;
+		}
+	})
+	.await;
+	if result.is_ok() {
+		message
+			.edit(
+				ctx,
+				CreateReply::default()
+					.reply(true)
+					.content("Connected to global call!"),
+			)
+			.await?;
+	} else {
+		query!(
+			"UPDATE guild_settings SET global_chat = FALSE, global_chat_channel = NULL WHERE \
+			 guild_id = $1",
+			guild_id_i64
 		)
-		.execute(&mut *ctx.data().db.acquire().await?)
+		.execute(&mut *tx)
 		.await?;
-		ctx.data().global_chats.invalidate(&guild_id);
 		let mut modified_settings = ctx
 			.data()
 			.guilds
@@ -416,100 +506,20 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 		ctx.data()
 			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
-		ctx.reply("Call ended...").await?;
-	}
-	Ok(())
-}
-
-/// When you're lonely and need someone to chat with
-#[poise::command(prefix_command, slash_command)]
-pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let guild_id_i64 = i64::from(guild_id);
-		let channel_id_i64 = i64::from(ctx.channel_id());
-		let mut tx = ctx.data().db.begin().await?;
-		query!(
-			"INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
-            VALUES ($1, TRUE, $2)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                global_chat = TRUE,
-                global_chat_channel = $2",
-			guild_id_i64,
-			channel_id_i64,
-		)
-		.execute(&mut *tx)
-		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.guilds
-			.get(&guild_id)
-			.get_or_insert_default()
-			.as_ref()
-			.clone();
-		modified_settings.settings.global_chat = true;
-		modified_settings.settings.global_chat_channel = Some(channel_id_i64);
-		ctx.data()
-			.guilds
-			.insert(guild_id, Arc::new(modified_settings));
-		let message = ctx.reply("Calling...").await?;
-		let result = timeout(Duration::from_secs(60), async {
-			loop {
-				let has_other_calls = ctx.data().guilds.iter().any(|entry| {
-					entry.key() != &guild_id
-						&& entry.value().settings.global_chat
-						&& entry.value().settings.global_chat_channel.is_some()
-				});
-				if has_other_calls {
-					return Ok::<_, Error>(true);
-				}
-				sleep(Duration::from_secs(5)).await;
-			}
-		})
-		.await;
-		if result.is_ok() {
-			message
-				.edit(
-					ctx,
-					CreateReply::default()
-						.reply(true)
-						.content("Connected to global call!"),
-				)
-				.await?;
-		} else {
-			query!(
-				"UPDATE guild_settings SET global_chat = FALSE, global_chat_channel = NULL WHERE \
-				 guild_id = $1",
-				guild_id_i64
+		message
+			.edit(
+				ctx,
+				CreateReply::default()
+					.reply(true)
+					.content("No one joined the call within 1 minute 😢"),
 			)
-			.execute(&mut *tx)
 			.await?;
-			let mut modified_settings = ctx
-				.data()
-				.guilds
-				.get(&guild_id)
-				.get_or_insert_default()
-				.as_ref()
-				.clone();
-			modified_settings.settings.global_chat = false;
-			modified_settings.settings.global_chat_channel = None;
-			ctx.data()
-				.guilds
-				.insert(guild_id, Arc::new(modified_settings));
-			message
-				.edit(
-					ctx,
-					CreateReply::default()
-						.reply(true)
-						.content("No one joined the call within 1 minute 😢"),
-				)
-				.await?;
-		}
-
-		tx.commit()
-			.await
-			.context("Failed to commit sql-transaction")?;
 	}
+
+	tx.commit()
+		.await
+		.context("Failed to commit sql-transaction")?;
+
 	Ok(())
 }
 
@@ -605,61 +615,64 @@ struct UserCount {
 /// Leaderboard of lifeless ppl
 #[poise::command(prefix_command, slash_command)]
 pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let thumbnail = match ctx.guild() {
-			Some(guild) => guild.banner_url().unwrap_or_else(|| {
-				guild
-					.icon_url()
-					.unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
-			}),
-			None => {
-				return Ok(());
-			}
-		};
-		ctx.defer().await?;
-
-		let mut users =
-			ctx.data()
-				.user_settings
-				.get(&guild_id)
-				.map_or_else(Vec::new, |user_settings| {
-					let capacity = user_settings.len();
-					let mut result = Vec::with_capacity(capacity);
-
-					for entry in user_settings.iter() {
-						result.push(UserCount {
-							id: entry.1.user_id,
-							count: entry.1.message_count,
-						});
-					}
-
-					result
-				});
-
-		users.sort_by(|a, b| b.count.cmp(&a.count));
-		users.truncate(25);
-
-		let mut embed = CreateEmbed::default()
-			.title(format!("Top {} users by message count", users.len()))
-			.thumbnail(thumbnail)
-			.colour(COLOUR_RED);
-
-		for (index, user) in users.iter().enumerate() {
-			if let Ok(target) = guild_id
-				.member(&ctx.http(), UserId::new(user.id.cast_unsigned()))
-				.await
-			{
-				embed = embed.field(
-					format!("#{} {}", index.saturating_add(1), target.display_name()),
-					user.count.to_string(),
-					false,
-				);
-			}
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let thumbnail = match ctx.guild() {
+		Some(guild) => guild.banner_url().unwrap_or_else(|| {
+			guild
+				.icon_url()
+				.unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
+		}),
+		None => {
+			return Ok(());
 		}
+	};
+	ctx.defer().await?;
 
-		ctx.send(CreateReply::default().reply(true).embed(embed))
-			.await?;
+	let mut users =
+		ctx.data()
+			.user_settings
+			.get(&guild_id)
+			.map_or_else(Vec::new, |user_settings| {
+				let capacity = user_settings.len();
+				let mut result = Vec::with_capacity(capacity);
+
+				for entry in user_settings.iter() {
+					result.push(UserCount {
+						id: entry.1.user_id,
+						count: entry.1.message_count,
+					});
+				}
+
+				result
+			});
+
+	users.sort_by(|a, b| b.count.cmp(&a.count));
+	users.truncate(25);
+
+	let mut embed = CreateEmbed::default()
+		.title(format!("Top {} users by message count", users.len()))
+		.thumbnail(thumbnail)
+		.colour(COLOUR_RED);
+
+	for (index, user) in users.iter().enumerate() {
+		if let Ok(target) = guild_id
+			.member(&ctx.http(), UserId::new(user.id.cast_unsigned()))
+			.await
+		{
+			embed = embed.field(
+				format!("#{} {}", index.saturating_add(1), target.display_name()),
+				user.count.to_string(),
+				false,
+			);
+		}
 	}
+
+	ctx.send(CreateReply::default().reply(true).embed(embed))
+		.await?;
+
 	Ok(())
 }
 
@@ -674,7 +687,7 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 	ctx.defer().await?;
 	let utils_config = UTILS_CONFIG.get().unwrap();
 
-	if let Some(resp) = ai_response_simple(
+	if let Ok(resp) = ai_response_simple(
 		"you're a tsundere",
 		"generate a one-line love-hate greeting",
 		&utils_config.fabseserver.text_gen_model,
@@ -693,99 +706,165 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 struct ImageInfo {
-	avatar_image: Option<Arc<Vec<u8>>>,
-	avatar_resized: Option<Arc<ImageBuffer<Rgba<u8>, Vec<u8>>>>,
 	author_name: String,
 	content: String,
-	current: Vec<u8>,
-	is_animated: bool,
 	is_bw: bool,
 	is_reverse: bool,
 	is_gradient: bool,
 	new_font: bool,
-	content_font: FontArc,
+	content_font: (String, FontArc),
 	author_font: FontArc,
-	current_font_name: String,
-	theme: Option<String>,
-	text_layout: Option<TextLayout>,
+	text_colour: Rgba<u8>,
+	img: ImageBuffer<Rgba<u8>, Vec<u8>>,
+	text_layout: TextLayout,
+	buffer: Vec<u8>,
+	avatar_position: i64,
+	current_theme_name: String,
+	filename: String,
+	static_image: Option<StaticImage>,
+	animated_image: Option<AnimatedImage>,
+}
+
+struct StaticImage {
+	avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
+}
+
+struct AnimatedImage {
+	avatar_bytes: Vec<u8>,
 }
 
 impl ImageInfo {
 	async fn new(
-		avatar_image: &[u8],
+		avatar_image: Vec<u8>,
 		author_name: String,
 		content: String,
 		is_animated: bool,
 	) -> Result<Self, Error> {
-		let (current_font_name, content_font_data, author_font_data) = {
-			let content_font = FONTS.get_key_value(CONTENT_FONT).unwrap();
-			(
-				content_font.0.to_string(),
-				content_font.1,
-				FONTS.get(AUTHOR_FONT).unwrap(),
-			)
-		};
-		let content_font =
-			FontArc::try_from_slice(content_font_data).context("Failed to load content font")?;
-		let author_font =
-			FontArc::try_from_slice(author_font_data).context("Failed to load author font")?;
-
-		let (tx, rx) = oneshot::channel();
-
-		let avatar_image_clone = avatar_image.to_vec();
+		let content_font = FONTS.get(CONTENT_FONT).unwrap();
+		let author_font = FONTS.get(AUTHOR_FONT).unwrap();
 		let author_name_clone = author_name.clone();
 		let content_clone = content.clone();
 		let content_font_clone = content_font.clone();
 		let author_font_clone = author_font.clone();
 
-		spawn(move || {
-			let result = quote_image(
-				Some(&avatar_image_clone),
-				None,
-				&author_name_clone,
-				&content_clone,
-				&author_font_clone,
-				&content_font_clone,
-				None,
-				None,
-				false,
-				false,
-				false,
-				is_animated,
-				false,
-			);
-			if tx.send(result).is_err() {
-				warn!("Sender failed to send result");
-			}
-		});
-		match rx.await.context("Rayon task for quote image panicked")? {
-			Ok(img_gen) => {
-				let (image, text_layout, avatar_resized) = img_gen;
-				Ok(Self {
-					avatar_image: if avatar_resized.is_some() {
-						None
-					} else {
-						Some(Arc::new(avatar_image.to_vec()))
-					},
-					avatar_resized: avatar_resized.map(Arc::new),
+		let (img, text_colour) = get_theme(DEFAULT_THEME);
+		let img_clone = img.clone();
+		let avatar_position = avatar_position(false);
+
+		let mut buffer = Vec::with_capacity(STATIC_QUOTE_VEC);
+
+		if is_animated {
+			let (tx, rx) = oneshot::channel();
+			let avatar_image_clone = avatar_image.clone();
+			spawn(move || {
+				let mut text_layout = TextLayout::default();
+				let mut cursor = Cursor::new(avatar_image_clone);
+				let result = quote_animated_image(
+					&author_name_clone,
+					&content_clone,
+					&author_font_clone,
+					&content_font_clone,
+					text_colour,
+					img_clone,
+					&mut text_layout,
+					avatar_position,
+					false,
+					false,
+					false,
+					true,
+					&mut cursor,
+					&mut buffer,
+				);
+				if tx.send((result, text_layout, buffer)).is_err() {
+					warn!("Sender failed to send result");
+				}
+			});
+			let (result, text_layout, buffer) =
+				rx.await.context("Rayon task for quote image panicked")?;
+			match result {
+				Ok(()) => Ok(Self {
+					static_image: None,
+					animated_image: Some(AnimatedImage {
+						avatar_bytes: avatar_image,
+					}),
 					author_name,
 					content,
-					current: image,
-					is_animated,
 					is_bw: false,
 					is_reverse: false,
 					is_gradient: false,
 					new_font: false,
-					author_font,
-					content_font,
-					current_font_name,
-					theme: None,
+					author_font: author_font.clone(),
+					content_font: (CONTENT_FONT.to_owned(), content_font.clone()),
 					text_layout,
-				})
+					buffer,
+					img,
+					text_colour,
+					avatar_position,
+					current_theme_name: DEFAULT_THEME.to_owned(),
+					filename: QUOTE_ANIMATED_FILENAME.to_owned(),
+				}),
+				Err(err) => {
+					warn!("Failed to generate quote image: {:?}", err);
+					Err(err)
+				}
 			}
-			Err(err) => {
-				warn!("Failed to generate quote image: {:?}", err);
-				Err(err)
+		} else {
+			let (tx, rx) = oneshot::channel();
+			spawn(move || {
+				let avatar_resized = resize_avatar(&avatar_image).unwrap();
+				let mut cursor = Cursor::new(buffer);
+				let mut text_layout = TextLayout::default();
+				let result = quote_static_image(
+					avatar_resized.clone(),
+					&author_name_clone,
+					&content_clone,
+					&author_font_clone,
+					&content_font_clone,
+					text_colour,
+					img_clone,
+					&mut text_layout,
+					avatar_position,
+					false,
+					false,
+					false,
+					true,
+					&mut cursor,
+				);
+				if tx
+					.send((result, avatar_resized, text_layout, cursor.into_inner()))
+					.is_err()
+				{
+					warn!("Sender failed to send result");
+				}
+			});
+			let (result, avatar_resized, text_layout, output) =
+				rx.await.context("Rayon task for quote image panicked")?;
+			match result {
+				Ok(()) => Ok(Self {
+					static_image: Some(StaticImage {
+						avatar_image: avatar_resized,
+					}),
+					animated_image: None,
+					author_name,
+					content,
+					is_bw: false,
+					is_reverse: false,
+					is_gradient: false,
+					new_font: false,
+					author_font: author_font.clone(),
+					content_font: (CONTENT_FONT.to_owned(), content_font.clone()),
+					text_layout,
+					buffer: output,
+					img,
+					text_colour,
+					avatar_position,
+					current_theme_name: DEFAULT_THEME.to_owned(),
+					filename: QUOTE_STATIC_FILENAME.to_owned(),
+				}),
+				Err(err) => {
+					warn!("Failed to generate quote image: {:?}", err);
+					Err(err)
+				}
 			}
 		}
 	}
@@ -799,6 +878,7 @@ impl ImageInfo {
 
 	async fn toggle_reverse(&mut self) -> Result<(), Error> {
 		self.is_reverse = !self.is_reverse;
+		self.avatar_position = avatar_position(self.is_reverse);
 		self.image_gen().await?;
 
 		Ok(())
@@ -812,80 +892,131 @@ impl ImageInfo {
 	}
 
 	async fn random_theme(&mut self) -> Result<(), Error> {
-		self.theme = Some("random".to_owned());
+		(self.img, self.text_colour) = get_theme(RANDOM_THEME);
 		self.image_gen().await?;
 
 		Ok(())
 	}
 
 	async fn new_font(&mut self, font_name: &str, new_font: FontArc) -> Result<(), Error> {
-		self.content_font = new_font;
-		font_name.clone_into(&mut self.current_font_name);
+		self.content_font.1 = new_font;
+		font_name.clone_into(&mut self.content_font.0);
 		self.new_font = true;
 		self.image_gen().await?;
 
 		Ok(())
 	}
 
-	async fn new_theme(&mut self, theme_name: String) -> Result<(), Error> {
-		self.theme = Some(theme_name);
+	async fn new_theme(&mut self, theme_name: &str) -> Result<(), Error> {
+		theme_name.clone_into(&mut self.current_theme_name);
+		(self.img, self.text_colour) = get_theme(theme_name);
 		self.image_gen().await?;
 
 		Ok(())
 	}
 
 	async fn image_gen(&mut self) -> Result<(), Error> {
-		let avatar_image = self.avatar_image.clone();
-		let avatar_resized = self.avatar_resized.clone();
 		let author_name = self.author_name.clone();
 		let content = self.content.clone();
 		let author_font = self.author_font.clone();
 		let content_font = self.content_font.clone();
-		let text_layout = self.text_layout.clone();
+		let mut text_layout = self.text_layout.clone();
 		let is_reverse = self.is_reverse;
 		let is_bw = self.is_bw;
 		let is_gradient = self.is_gradient;
-		let is_animated = self.is_animated;
 		let new_font = self.new_font;
-		let theme = self.theme.clone();
+		let text_colour = self.text_colour;
+		let img = self.img.clone();
+		let avatar_position = self.avatar_position;
 
-		let (tx, rx) = oneshot::channel();
+		let mut buffer = take(&mut self.buffer);
+		buffer.clear();
 
-		spawn(move || {
-			let avatar_bytes = avatar_image.as_ref().map(|arc_vec| &arc_vec[..]);
-			let result = quote_image(
-				avatar_bytes,
-				avatar_resized.as_deref().cloned(),
-				&author_name,
-				&content,
-				&author_font,
-				&content_font,
-				theme.as_deref(),
-				text_layout.as_ref(),
-				is_reverse,
-				is_bw,
-				is_gradient,
-				is_animated,
-				new_font,
-			);
-
-			if tx.send(result).is_err() {
-				warn!("Sender failed to send result");
-			}
-		});
-		match rx.await.context("Rayon task for quote image panicked")? {
-			Ok(img_gen) => {
-				let (image, text_layout, ..) = img_gen;
-				if new_font {
-					self.new_font = false;
-					self.text_layout = text_layout;
+		if let Some(ref animated_image) = self.animated_image {
+			let (tx, rx) = oneshot::channel();
+			let avatar_bytes = animated_image.avatar_bytes.clone();
+			spawn(move || {
+				let mut cursor = Cursor::new(avatar_bytes);
+				let result = quote_animated_image(
+					&author_name,
+					&content,
+					&author_font,
+					&content_font.1,
+					text_colour,
+					img,
+					&mut text_layout,
+					avatar_position,
+					is_bw,
+					is_gradient,
+					is_reverse,
+					new_font,
+					&mut cursor,
+					&mut buffer,
+				);
+				if tx.send((result, text_layout, buffer)).is_err() {
+					warn!("Sender failed to send result");
 				}
-				self.current = image;
-				Ok(())
+			});
+
+			let (result, text_layout, buffer) =
+				rx.await.context("Rayon task for quote image panicked")?;
+
+			match result {
+				Ok(()) => {
+					if new_font {
+						self.new_font = false;
+						self.text_layout = text_layout;
+					}
+					self.buffer = buffer;
+					Ok(())
+				}
+				Err(err) => {
+					warn!("Failed to generate quote image: {:?}", err);
+					Err(err)
+				}
 			}
-			Err(err) => {
-				warn!("Failed to generate quote image: {:?}", err);
-				Err(err)
+		} else {
+			let avatar_image = self.static_image.as_ref().unwrap().avatar_image.clone();
+			let (tx, rx) = oneshot::channel();
+			spawn(move || {
+				let mut cursor = Cursor::new(buffer);
+				let result = quote_static_image(
+					avatar_image,
+					&author_name,
+					&content,
+					&author_font,
+					&content_font.1,
+					text_colour,
+					img,
+					&mut text_layout,
+					avatar_position,
+					is_bw,
+					is_gradient,
+					is_reverse,
+					new_font,
+					&mut cursor,
+				);
+
+				if tx.send((result, text_layout, cursor.into_inner())).is_err() {
+					warn!("Sender failed to send result");
+				}
+			});
+			let (result, text_layout, output) =
+				rx.await.context("Rayon task for quote image panicked")?;
+
+			match result {
+				Ok(()) => {
+					if new_font {
+						self.new_font = false;
+						self.text_layout = text_layout;
+					}
+					self.buffer = output;
+					Ok(())
+				}
+				Err(err) => {
+					warn!("Failed to generate quote image: {:?}", err);
+					Err(err)
+				}
 			}
 		}
 	}
@@ -894,209 +1025,208 @@ impl ImageInfo {
 /// When your memory is not enough
 #[poise::command(prefix_command)]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let msg = ctx
-			.channel_id()
-			.message(&ctx.http(), MessageId::new(ctx.id()))
-			.await?;
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let msg = ctx
+		.channel_id()
+		.message(&ctx.http(), MessageId::new(ctx.id()))
+		.await?;
 
-		let Some(ref reply) = msg.referenced_message else {
-			ctx.reply("Bruh, reply to a message").await?;
-			return Ok(());
-		};
+	let Some(ref reply) = msg.referenced_message else {
+		ctx.reply("Bruh, reply to a message").await?;
+		return Ok(());
+	};
 
-		if reply.content.is_empty() {
-			ctx.reply("Bruh, this message is empty").await?;
-			return Ok(());
-		}
+	if reply.content.is_empty() {
+		ctx.reply("Bruh, this message is empty").await?;
+		return Ok(());
+	}
 
-		ctx.defer().await?;
+	ctx.defer().await?;
 
-		let mut image_handle = {
-			let (avatar_url, author_name) = if reply.webhook_id.is_some() {
-				(
-					reply.author.avatar_url().unwrap_or_else(|| {
-						reply
-							.author
-							.static_avatar_url()
-							.unwrap_or_else(|| reply.author.default_avatar_url())
-					}),
-					format!("- {}", reply.author.name),
-				)
-			} else {
-				let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-				(
-					member.avatar_url().unwrap_or_else(|| {
-						reply.author.avatar_url().unwrap_or_else(|| {
-							member
-								.user
-								.static_avatar_url()
-								.unwrap_or_else(|| member.user.default_avatar_url())
-						})
-					}),
-					format!("- {}", member.user.name),
-				)
-			};
-			let (avatar_image, is_animated) = (
-				HTTP_CLIENT.get(&avatar_url).send().await?.bytes().await?,
-				avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
-			);
-
-			ImageInfo::new(
-				&avatar_image,
-				author_name,
-				reply.content.to_string(),
-				is_animated,
+	let mut image_handle = {
+		let (avatar_url, author_name) = if reply.webhook_id.is_some() {
+			(
+				reply.author.avatar_url().unwrap_or_else(|| {
+					reply
+						.author
+						.static_avatar_url()
+						.unwrap_or_else(|| reply.author.default_avatar_url())
+				}),
+				format!("- {}", reply.author.name),
 			)
-			.await?
-		};
-		let message_url = reply.link().to_string();
-		let filename = if image_handle.is_animated {
-			"quote.gif"
 		} else {
-			QUOTE_FILENAME
+			let member = guild_id.member(&ctx.http(), reply.author.id).await?;
+			(
+				member.avatar_url().unwrap_or_else(|| {
+					reply.author.avatar_url().unwrap_or_else(|| {
+						member
+							.user
+							.static_avatar_url()
+							.unwrap_or_else(|| member.user.default_avatar_url())
+					})
+				}),
+				format!("- {}", member.user.name),
+			)
 		};
-		let attachment = CreateAttachment::bytes(image_handle.current.clone(), filename);
-		let buttons = [
-			CreateButton::new(format!("{}_bw", ctx.id()))
-				.style(ButtonStyle::Primary)
-				.label("🎨"),
-			CreateButton::new(format!("{}_reverse", ctx.id()))
-				.style(ButtonStyle::Primary)
-				.label("🪞"),
-			CreateButton::new(format!("{}_gradient", ctx.id()))
-				.style(ButtonStyle::Primary)
-				.label("🌫️"),
-			CreateButton::new(format!("{}_random", ctx.id()))
-				.style(ButtonStyle::Primary)
-				.label("🎲"),
-		];
-		let mut font_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(FONTS.len());
+		let (avatar_image, is_animated) = (
+			HTTP_CLIENT
+				.get(&avatar_url)
+				.send()
+				.await?
+				.bytes()
+				.await?
+				.to_vec(),
+			avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
+		);
 
-		for font in FONTS.iter() {
-			font_select.push(CreateSelectMenuOption::new(*font.0, *font.0));
-		}
-
-		let font_menu = CreateSelectMenu::new(
-			format!("{}_font_option", ctx.id()),
-			CreateSelectMenuKind::String {
-				options: Cow::Owned(font_select),
-			},
+		ImageInfo::new(
+			avatar_image,
+			author_name,
+			reply.content.to_string(),
+			is_animated,
 		)
-		.placeholder("Font")
-		.min_values(1)
-		.max_values(1);
+		.await?
+	};
+	let message_url = reply.link().to_string();
+	let attachment =
+		CreateAttachment::bytes(image_handle.buffer.clone(), image_handle.filename.clone());
+	let buttons = [
+		CreateButton::new(format!("{}_bw", ctx.id()))
+			.style(ButtonStyle::Primary)
+			.label("🎨"),
+		CreateButton::new(format!("{}_reverse", ctx.id()))
+			.style(ButtonStyle::Primary)
+			.label("🪞"),
+		CreateButton::new(format!("{}_gradient", ctx.id()))
+			.style(ButtonStyle::Primary)
+			.label("🌫️"),
+		CreateButton::new(format!("{}_random", ctx.id()))
+			.style(ButtonStyle::Primary)
+			.label("🎲"),
+	];
+	let mut font_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(FONTS.len());
 
-		let mut theme_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(THEMES.len());
+	for font in FONTS.iter() {
+		font_select.push(CreateSelectMenuOption::new(*font.0, *font.0));
+	}
 
-		for theme in THEMES.iter() {
-			theme_select.push(CreateSelectMenuOption::new(*theme.0, *theme.0));
-		}
+	let font_menu = CreateSelectMenu::new(
+		format!("{}_font_option", ctx.id()),
+		CreateSelectMenuKind::String {
+			options: Cow::Owned(font_select),
+		},
+	)
+	.placeholder("Font")
+	.min_values(1)
+	.max_values(1);
 
-		let theme_menu = CreateSelectMenu::new(
-			format!("{}_theme_option", ctx.id()),
-			CreateSelectMenuKind::String {
-				options: Cow::Owned(theme_select),
-			},
+	let mut theme_select: Vec<CreateSelectMenuOption> = Vec::with_capacity(THEMES.len());
+
+	for theme in THEMES.iter() {
+		theme_select.push(CreateSelectMenuOption::new(*theme.0, *theme.0));
+	}
+
+	let theme_menu = CreateSelectMenu::new(
+		format!("{}_theme_option", ctx.id()),
+		CreateSelectMenuKind::String {
+			options: Cow::Owned(theme_select),
+		},
+	)
+	.placeholder("Theme")
+	.min_values(1)
+	.max_values(1);
+
+	let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+		&buttons,
+	))];
+
+	let mut message = ctx
+		.channel_id()
+		.send_message(
+			ctx.http(),
+			CreateMessage::default()
+				.add_file(attachment.clone())
+				.reference_message(&msg)
+				.content(&message_url)
+				.components(&action_row)
+				.select_menu(font_menu)
+				.select_menu(theme_menu)
+				.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
 		)
-		.placeholder("Theme")
-		.min_values(1)
-		.max_values(1);
+		.await?;
 
-		let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-			&buttons,
-		))];
-
-		let mut message = ctx
-			.channel_id()
+	if let Some(guild_data) = ctx.data().guilds.get(&guild_id)
+		&& let Some(channel) = guild_data.settings.quotes_channel
+	{
+		let quote_channel = GenericChannelId::new(channel.cast_unsigned());
+		quote_channel
 			.send_message(
 				ctx.http(),
 				CreateMessage::default()
 					.add_file(attachment.clone())
-					.reference_message(&msg)
-					.content(&message_url)
-					.components(&action_row)
-					.select_menu(font_menu)
-					.select_menu(theme_menu)
-					.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
-			)
-			.await?;
-
-		if let Some(guild_data) = ctx.data().guilds.get(&guild_id)
-			&& let Some(channel) = guild_data.settings.quotes_channel
-		{
-			let quote_channel = GenericChannelId::new(channel.cast_unsigned());
-			quote_channel
-				.send_message(
-					ctx.http(),
-					CreateMessage::default()
-						.add_file(attachment.clone())
-						.content(message_url),
-				)
-				.await?;
-		}
-
-		let ctx_id_copy = ctx.id();
-		let mut final_attachment = attachment.clone();
-
-		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_secs(300))
-			.filter(move |interaction| {
-				interaction
-					.data
-					.custom_id
-					.starts_with(ctx_id_copy.to_string().as_str())
-			})
-			.stream();
-
-		while let Some(interaction) = collector_stream.next().await {
-			interaction
-				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-				.await?;
-
-			let menu_choice_opt = match &interaction.data.kind {
-				ComponentInteractionDataKind::StringSelect { values } => values.first(),
-				_ => None,
-			};
-
-			if let Some(menu_choice) = menu_choice_opt {
-				if let Some(font) = FONTS.get(menu_choice.as_str())
-					&& *menu_choice != image_handle.current_font_name
-					&& let Ok(new_font) = FontArc::try_from_slice(font)
-				{
-					image_handle.new_font(menu_choice, new_font).await?;
-				} else if THEMES.contains_key(menu_choice.as_str())
-					&& let Some(ref current_theme) = image_handle.theme
-					&& menu_choice != current_theme
-				{
-					image_handle.new_theme(menu_choice.to_owned()).await?;
-				}
-			} else if interaction.data.custom_id.ends_with("bw") {
-				image_handle.toggle_bw().await?;
-			} else if interaction.data.custom_id.ends_with("reverse") {
-				image_handle.toggle_reverse().await?;
-			} else if interaction.data.custom_id.ends_with("gradient") {
-				image_handle.toggle_gradient().await?;
-			} else if interaction.data.custom_id.ends_with("random") {
-				image_handle.random_theme().await?;
-			}
-			let mut msg = interaction.message;
-			final_attachment = CreateAttachment::bytes(image_handle.current.clone(), filename);
-			msg.edit(
-				ctx.http(),
-				EditMessage::default().new_attachment(final_attachment.clone()),
-			)
-			.await?;
-		}
-		message
-			.edit(
-				ctx,
-				EditMessage::default()
-					.new_attachment(final_attachment)
-					.components(&[]),
+					.content(message_url),
 			)
 			.await?;
 	}
+
+	let ctx_id_str = ctx.id().to_string();
+	let mut final_attachment = attachment.clone();
+
+	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
+		.timeout(Duration::from_secs(300))
+		.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
+		.stream();
+
+	while let Some(interaction) = collector_stream.next().await {
+		interaction
+			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+			.await?;
+
+		let menu_choice_opt = match &interaction.data.kind {
+			ComponentInteractionDataKind::StringSelect { values } => values.first(),
+			_ => None,
+		};
+
+		if let Some(menu_choice) = menu_choice_opt {
+			if let Some(new_font) = FONTS.get(menu_choice.as_str())
+				&& *menu_choice != image_handle.content_font.0
+			{
+				image_handle.new_font(menu_choice, new_font.clone()).await?;
+			} else if THEMES.contains_key(menu_choice.as_str())
+				&& *menu_choice != image_handle.current_theme_name
+			{
+				image_handle.new_theme(menu_choice).await?;
+			}
+		} else if interaction.data.custom_id.ends_with("bw") {
+			image_handle.toggle_bw().await?;
+		} else if interaction.data.custom_id.ends_with("reverse") {
+			image_handle.toggle_reverse().await?;
+		} else if interaction.data.custom_id.ends_with("gradient") {
+			image_handle.toggle_gradient().await?;
+		} else if interaction.data.custom_id.ends_with("random") {
+			image_handle.random_theme().await?;
+		}
+		let mut msg = interaction.message;
+		final_attachment =
+			CreateAttachment::bytes(image_handle.buffer.clone(), image_handle.filename.clone());
+		msg.edit(
+			ctx.http(),
+			EditMessage::default().new_attachment(final_attachment.clone()),
+		)
+		.await?;
+	}
+	message
+		.edit(
+			ctx,
+			EditMessage::default()
+				.new_attachment(final_attachment)
+				.components(&[]),
+		)
+		.await?;
+
 	Ok(())
 }
 
@@ -1118,7 +1248,7 @@ pub async fn respond(
 	ctx.defer().await?;
 	let utils_config = UTILS_CONFIG.get().unwrap();
 
-	if let Some(resp) = ai_response_simple(
+	if let Ok(resp) = ai_response_simple(
 		"Mock this Discord message someone posted. Just give the roast, nothing else.",
 		&message.content,
 		&utils_config.fabseserver.text_gen_model,
@@ -1161,53 +1291,56 @@ struct WordCount {
 /// Count of tracked words
 #[poise::command(prefix_command, slash_command)]
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let thumbnail = match ctx.guild() {
-			Some(guild) => guild.banner_url().unwrap_or_else(|| {
-				guild
-					.icon_url()
-					.unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
-			}),
-			None => {
-				return Ok(());
-			}
-		};
-
-		let mut words = ctx
-			.data()
-			.guilds
-			.get(&guild_id)
-			.map_or_else(Vec::new, |guild_data| {
-				let capacity = guild_data.word_tracking.len();
-				let mut result = Vec::with_capacity(capacity);
-
-				for entry in &guild_data.word_tracking {
-					result.push(WordCount {
-						word: entry.word.clone(),
-						count: entry.count,
-					});
-				}
-
-				result
-			});
-
-		words.sort_by(|a, b| b.count.cmp(&a.count));
-		words.truncate(25);
-
-		let mut embed = CreateEmbed::default()
-			.title(format!("Top {} word tracked by count", words.len()))
-			.thumbnail(thumbnail)
-			.colour(COLOUR_RED);
-		for (index, word) in words.iter().enumerate() {
-			let rank = index.saturating_add(1);
-			embed = embed.field(
-				format!("#{rank} {}", word.word),
-				word.count.to_string(),
-				false,
-			);
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let thumbnail = match ctx.guild() {
+		Some(guild) => guild.banner_url().unwrap_or_else(|| {
+			guild
+				.icon_url()
+				.unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
+		}),
+		None => {
+			return Ok(());
 		}
-		ctx.send(CreateReply::default().reply(true).embed(embed))
-			.await?;
+	};
+
+	let mut words = ctx
+		.data()
+		.guilds
+		.get(&guild_id)
+		.map_or_else(Vec::new, |guild_data| {
+			let capacity = guild_data.word_tracking.len();
+			let mut result = Vec::with_capacity(capacity);
+
+			for entry in &guild_data.word_tracking {
+				result.push(WordCount {
+					word: entry.word.clone(),
+					count: entry.count,
+				});
+			}
+
+			result
+		});
+
+	words.sort_by(|a, b| b.count.cmp(&a.count));
+	words.truncate(25);
+
+	let mut embed = CreateEmbed::default()
+		.title(format!("Top {} word tracked by count", words.len()))
+		.thumbnail(thumbnail)
+		.colour(COLOUR_RED);
+	for (index, word) in words.iter().enumerate() {
+		let rank = index.saturating_add(1);
+		embed = embed.field(
+			format!("#{rank} {}", word.word),
+			word.count.to_string(),
+			false,
+		);
 	}
+	ctx.send(CreateReply::default().reply(true).embed(embed))
+		.await?;
+
 	Ok(())
 }

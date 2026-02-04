@@ -1,0 +1,3 @@
+ALTER TABLE guild_word_reaction
+ALTER COLUMN content DROP NOT NULL,
+ALTER COLUMN content SET DEFAULT NULL;
