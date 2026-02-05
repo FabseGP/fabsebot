@@ -117,8 +117,9 @@ async fn queue_track(
 					.await?;
 				return Ok(());
 			};
-			let audio = src.create_async().await?;
-			if let Ok(metadata) = src.aux_metadata().await {
+			if let Ok(audio) = src.create_async().await
+				&& let Ok(metadata) = src.aux_metadata().await
+			{
 				let msg = new_message_clone.reply(&ctx_clone.http, QUEUE_MSG).await?;
 				queue_song(
 					metadata,

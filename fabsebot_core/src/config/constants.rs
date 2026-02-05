@@ -63,7 +63,8 @@ pub static FONTS: LazyLock<HashMap<&'static str, FontArc>> = LazyLock::new(|| {
 	])
 });
 
-pub const STATIC_QUOTE_VEC: usize = 65536;
+pub const STATIC_QUOTE_VEC: usize = 131_072;
+pub const ANIMATED_QUOTE_VEC: usize = 1_048_576;
 
 pub const DEFAULT_THEME: &str = "dark";
 pub const RANDOM_THEME: &str = "random";

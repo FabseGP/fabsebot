@@ -8,9 +8,9 @@ use anyhow::Context as _;
 use fabsebot_core::{
 	config::{
 		constants::{
-			AUTHOR_FONT, COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, CONTENT_FONT, DEFAULT_THEME,
-			FONTS, NOT_IN_GUILD_MSG, QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME, RANDOM_THEME,
-			STATIC_QUOTE_VEC, THEMES,
+			ANIMATED_QUOTE_VEC, AUTHOR_FONT, COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, CONTENT_FONT,
+			DEFAULT_THEME, FONTS, NOT_IN_GUILD_MSG, QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME,
+			RANDOM_THEME, STATIC_QUOTE_VEC, THEMES,
 		},
 		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
 	},
@@ -751,13 +751,13 @@ impl ImageInfo {
 		let img_clone = img.clone();
 		let avatar_position = avatar_position(false);
 
-		let mut buffer = Vec::with_capacity(STATIC_QUOTE_VEC);
+		let mut text_layout = TextLayout::default();
 
-		if is_animated {
+		let (text_layout, output, static_image, animated_image) = if is_animated {
 			let (tx, rx) = oneshot::channel();
 			let avatar_image_clone = avatar_image.clone();
 			spawn(move || {
-				let mut text_layout = TextLayout::default();
+				let mut buffer = Vec::with_capacity(ANIMATED_QUOTE_VEC);
 				let mut cursor = Cursor::new(avatar_image_clone);
 				let result = quote_animated_image(
 					&author_name_clone,
@@ -779,41 +779,28 @@ impl ImageInfo {
 					warn!("Sender failed to send result");
 				}
 			});
-			let (result, text_layout, buffer) =
+			let (result, text_layout, output) =
 				rx.await.context("Rayon task for quote image panicked")?;
 			match result {
-				Ok(()) => Ok(Self {
-					static_image: None,
-					animated_image: Some(AnimatedImage {
+				Ok(()) => (
+					text_layout,
+					output,
+					None,
+					Some(AnimatedImage {
 						avatar_bytes: avatar_image,
 					}),
-					author_name,
-					content,
-					is_bw: false,
-					is_reverse: false,
-					is_gradient: false,
-					new_font: false,
-					author_font: author_font.clone(),
-					content_font: (CONTENT_FONT.to_owned(), content_font.clone()),
-					text_layout,
-					buffer,
-					img,
-					text_colour,
-					avatar_position,
-					current_theme_name: DEFAULT_THEME.to_owned(),
-					filename: QUOTE_ANIMATED_FILENAME.to_owned(),
-				}),
+				),
 				Err(err) => {
-					warn!("Failed to generate quote image: {:?}", err);
-					Err(err)
+					warn!("Failed to generate animated quote image: {:?}", err);
+					return Err(err);
 				}
 			}
 		} else {
 			let (tx, rx) = oneshot::channel();
 			spawn(move || {
+				let buffer = Vec::with_capacity(STATIC_QUOTE_VEC);
 				let avatar_resized = resize_avatar(&avatar_image).unwrap();
 				let mut cursor = Cursor::new(buffer);
-				let mut text_layout = TextLayout::default();
 				let result = quote_static_image(
 					avatar_resized.clone(),
 					&author_name_clone,
@@ -830,6 +817,7 @@ impl ImageInfo {
 					true,
 					&mut cursor,
 				);
+
 				if tx
 					.send((result, avatar_resized, text_layout, cursor.into_inner()))
 					.is_err()
@@ -839,34 +827,46 @@ impl ImageInfo {
 			});
 			let (result, avatar_resized, text_layout, output) =
 				rx.await.context("Rayon task for quote image panicked")?;
+
 			match result {
-				Ok(()) => Ok(Self {
-					static_image: Some(StaticImage {
+				Ok(()) => (
+					text_layout,
+					output,
+					Some(StaticImage {
 						avatar_image: avatar_resized,
 					}),
-					animated_image: None,
-					author_name,
-					content,
-					is_bw: false,
-					is_reverse: false,
-					is_gradient: false,
-					new_font: false,
-					author_font: author_font.clone(),
-					content_font: (CONTENT_FONT.to_owned(), content_font.clone()),
-					text_layout,
-					buffer: output,
-					img,
-					text_colour,
-					avatar_position,
-					current_theme_name: DEFAULT_THEME.to_owned(),
-					filename: QUOTE_STATIC_FILENAME.to_owned(),
-				}),
+					None,
+				),
 				Err(err) => {
-					warn!("Failed to generate quote image: {:?}", err);
-					Err(err)
+					warn!("Failed to generate static quote image: {:?}", err);
+					return Err(err);
 				}
 			}
-		}
+		};
+		Ok(Self {
+			static_image,
+			animated_image,
+			author_name,
+			content,
+			is_bw: false,
+			is_reverse: false,
+			is_gradient: false,
+			new_font: false,
+			author_font: author_font.clone(),
+			content_font: (CONTENT_FONT.to_owned(), content_font.clone()),
+			text_layout,
+			buffer: output,
+			img,
+			text_colour,
+			avatar_position,
+			current_theme_name: DEFAULT_THEME.to_owned(),
+			filename: if is_animated {
+				QUOTE_ANIMATED_FILENAME
+			} else {
+				QUOTE_STATIC_FILENAME
+			}
+			.to_owned(),
+		})
 	}
 
 	async fn toggle_bw(&mut self) -> Result<(), Error> {
@@ -903,6 +903,7 @@ impl ImageInfo {
 		font_name.clone_into(&mut self.content_font.0);
 		self.new_font = true;
 		self.image_gen().await?;
+		self.new_font = false;
 
 		Ok(())
 	}
@@ -920,7 +921,7 @@ impl ImageInfo {
 		let content = self.content.clone();
 		let author_font = self.author_font.clone();
 		let content_font = self.content_font.clone();
-		let mut text_layout = self.text_layout.clone();
+		let mut text_layout = take(&mut self.text_layout);
 		let is_reverse = self.is_reverse;
 		let is_bw = self.is_bw;
 		let is_gradient = self.is_gradient;
@@ -930,11 +931,12 @@ impl ImageInfo {
 		let avatar_position = self.avatar_position;
 
 		let mut buffer = take(&mut self.buffer);
-		buffer.clear();
+
+		let (tx, rx) = oneshot::channel();
 
 		if let Some(ref animated_image) = self.animated_image {
-			let (tx, rx) = oneshot::channel();
 			let avatar_bytes = animated_image.avatar_bytes.clone();
+			buffer.clear();
 			spawn(move || {
 				let mut cursor = Cursor::new(avatar_bytes);
 				let result = quote_animated_image(
@@ -957,27 +959,8 @@ impl ImageInfo {
 					warn!("Sender failed to send result");
 				}
 			});
-
-			let (result, text_layout, buffer) =
-				rx.await.context("Rayon task for quote image panicked")?;
-
-			match result {
-				Ok(()) => {
-					if new_font {
-						self.new_font = false;
-						self.text_layout = text_layout;
-					}
-					self.buffer = buffer;
-					Ok(())
-				}
-				Err(err) => {
-					warn!("Failed to generate quote image: {:?}", err);
-					Err(err)
-				}
-			}
 		} else {
 			let avatar_image = self.static_image.as_ref().unwrap().avatar_image.clone();
-			let (tx, rx) = oneshot::channel();
 			spawn(move || {
 				let mut cursor = Cursor::new(buffer);
 				let result = quote_static_image(
@@ -1001,22 +984,18 @@ impl ImageInfo {
 					warn!("Sender failed to send result");
 				}
 			});
-			let (result, text_layout, output) =
-				rx.await.context("Rayon task for quote image panicked")?;
-
-			match result {
-				Ok(()) => {
-					if new_font {
-						self.new_font = false;
-						self.text_layout = text_layout;
-					}
-					self.buffer = output;
-					Ok(())
-				}
-				Err(err) => {
-					warn!("Failed to generate quote image: {:?}", err);
-					Err(err)
-				}
+		}
+		let (result, text_layout, output) =
+			rx.await.context("Rayon task for quote image panicked")?;
+		match result {
+			Ok(()) => {
+				self.text_layout = text_layout;
+				self.buffer = output;
+				Ok(())
+			}
+			Err(err) => {
+				warn!("Failed to generate quote image: {:?}", err);
+				Err(err)
 			}
 		}
 	}

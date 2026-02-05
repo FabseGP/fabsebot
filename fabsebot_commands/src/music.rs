@@ -248,7 +248,6 @@ impl PlaybackHandler {
 							&self.serenity_context.http,
 							guild.1.1,
 							EditMessage::default()
-								.suppress_embeds(true)
 								.content("Skipped to next song")
 								.components(&[]),
 						)
@@ -471,7 +470,6 @@ impl PlaybackHandler {
 					&self.serenity_context.http,
 					guild_data.1,
 					EditMessage::default()
-						.suppress_embeds(true)
 						.components(&[])
 						.content("Song finished"),
 				)
@@ -609,13 +607,15 @@ pub async fn add_deezer_playlist(
 			.ok()
 			.filter(|output| !output.tracks.data.is_empty())
 		{
+			let reply = ctx.reply(QUEUE_MSG).await?;
+			let msg = reply.message().await?;
+			let mut failed_songs: u32 = 0;
 			for track in payload.tracks.data {
 				let search = format!("{} {}", track.title, track.artist.name);
 				let mut src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
-				let audio = src.create_async().await?;
-				if let Ok(metadata) = src.aux_metadata().await {
-					let reply = ctx.reply(QUEUE_MSG).await?;
-					let msg = reply.message().await?;
+				if let Ok(audio) = src.create_async().await
+					&& let Ok(metadata) = src.aux_metadata().await
+				{
 					queue_song(
 						metadata,
 						audio,
@@ -629,8 +629,14 @@ pub async fn add_deezer_playlist(
 					)
 					.await;
 				} else {
-					ctx.reply(MISSING_METADATA_MSG).await?;
+					failed_songs += 1;
 				}
+			}
+			if failed_songs != 0 {
+				ctx.reply(format!(
+					"Couldn't queue {failed_songs} because of YouTube :/"
+				))
+				.await?;
 			}
 		} else {
 			ctx.reply("Deezer refused to serve your request").await?;
@@ -659,7 +665,7 @@ pub async fn add_youtube_playlist(
 		return Ok(());
 	};
 	ctx.defer().await?;
-	let yt_dlp_output = Command::new("yt-dlp")
+	let yt_dlp_output = match Command::new("yt-dlp")
 		.args([
 			"--flat-playlist",
 			"--print",
@@ -668,7 +674,15 @@ pub async fn add_youtube_playlist(
 			&playlist_url,
 		])
 		.output()
-		.await?;
+		.await
+	{
+		Ok(res) => res,
+		Err(err) => {
+			ctx.reply("YouTube bailed out :/").await?;
+			warn!("Failed to get YouTube playlist: {err}");
+			return Ok(());
+		}
+	};
 
 	let urls: Vec<String> = String::from_utf8(yt_dlp_output.stdout)?
 		.lines()
@@ -676,12 +690,16 @@ pub async fn add_youtube_playlist(
 		.map(ToString::to_string)
 		.collect();
 
+	let reply = ctx.reply(QUEUE_MSG).await?;
+	let msg = reply.message().await?;
+
+	let mut failed_songs: u32 = 0;
+
 	for url in urls {
 		let mut src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
-		let audio = src.create_async().await?;
-		if let Ok(metadata) = src.aux_metadata().await {
-			let reply = ctx.reply(QUEUE_MSG).await?;
-			let msg = reply.message().await?;
+		if let Ok(audio) = src.create_async().await
+			&& let Ok(metadata) = src.aux_metadata().await
+		{
 			queue_song(
 				metadata,
 				audio,
@@ -695,8 +713,15 @@ pub async fn add_youtube_playlist(
 			)
 			.await;
 		} else {
-			ctx.reply(MISSING_METADATA_MSG).await?;
+			failed_songs += 1;
 		}
+	}
+
+	if failed_songs != 0 {
+		ctx.reply(format!(
+			"Couldn't queue {failed_songs} because of YouTube :/"
+		))
+		.await?;
 	}
 
 	Ok(())
@@ -932,8 +957,9 @@ pub async fn play_song(
 		ctx.reply(INVALID_TRACK_SOURCE).await?;
 		return Ok(());
 	};
-	let audio = src.create_async().await?;
-	if let Ok(metadata) = src.aux_metadata().await {
+	if let Ok(audio) = src.create_async().await
+		&& let Ok(metadata) = src.aux_metadata().await
+	{
 		let reply = ctx.reply(QUEUE_MSG).await?;
 		let msg = reply.message().await?;
 		queue_song(
@@ -976,8 +1002,9 @@ pub async fn play_song_global(
 		ctx.reply(INVALID_TRACK_SOURCE).await?;
 		return Ok(());
 	};
-	let audio = src.create_async().await?;
-	if let Ok(metadata) = src.aux_metadata().await {
+	if let Ok(audio) = src.create_async().await
+		&& let Ok(metadata) = src.aux_metadata().await
+	{
 		let reply = ctx.reply(QUEUE_MSG).await?;
 		let msg = reply.message().await?;
 		queue_song(
@@ -1008,11 +1035,11 @@ pub async fn play_song_global(
 					.http()
 					.get_channel(GenericChannelId::new(id.get()))
 					.await && let Some(guild_channel) = channel.guild()
+				&& let Ok(global_audio) = src.create_async().await
 			{
 				let msg = guild_channel
 					.send_message(ctx.http(), CreateMessage::default().content(QUEUE_MSG))
 					.await?;
-				let global_audio = src.create_async().await?;
 				queue_song(
 					metadata.clone(),
 					global_audio,

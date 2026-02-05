@@ -99,25 +99,30 @@ fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontA
 }
 
 fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) {
-	let gradient_width = avatar.width() / 2;
+	let width = avatar.width();
+	let height = avatar.height();
+	let gradient_width = width / 2;
 	let gradient_start = if is_reverse {
 		0
 	} else {
-		avatar.width() - gradient_width
+		width - gradient_width
 	};
 
-	for x in 0..gradient_width {
-		let progress = x * 255 / gradient_width;
+	let alpha_lut: Vec<u8> = (0..gradient_width)
+		.map(|x| {
+			let progress = x * 255 / gradient_width;
+			if is_reverse {
+				(progress.pow(2) / 255) as u8
+			} else {
+				((255 - progress).pow(2) / 255) as u8
+			}
+		})
+		.collect();
 
-		let alpha_multiplier = if is_reverse {
-			progress.pow(2) / 255
-		} else {
-			(255 - progress).pow(2) / 255
-		};
-
-		for y in 0..avatar.height() {
+	for y in 0..height {
+		for x in 0..gradient_width {
 			let pixel = avatar.get_pixel_mut(gradient_start + x, y);
-			pixel[3] = ((u32::from(pixel[3]) * alpha_multiplier) / 255) as u8;
+			pixel[3] = ((u32::from(pixel[3]) * u32::from(alpha_lut[x as usize])) / 255) as u8;
 		}
 	}
 }
@@ -240,11 +245,12 @@ fn apply_text_layout(
 	author_font: &FontArc,
 	is_reverse: bool,
 ) {
-	for (line, x, y) in if is_reverse {
+	let content_lines = if is_reverse {
 		&layout.content_lines_reverse
 	} else {
 		&layout.content_lines
-	} {
+	};
+	for (line, x, y) in content_lines {
 		let mut step = *x;
 		for c in line.chars().map(|c| c.to_string()) {
 			let font = if emojis::get(&c).is_some() {
@@ -259,30 +265,26 @@ fn apply_text_layout(
 		}
 	}
 
-	let (author_text, x, y) = &(
-		&layout.author_position.0,
-		if is_reverse {
-			layout.author_position.2
-		} else {
-			layout.author_position.1
-		},
-		layout.author_position.3,
-	);
+	let author_x = if is_reverse {
+		layout.author_position.2
+	} else {
+		layout.author_position.1
+	};
+
 	draw_text_mut(
 		img,
 		text_colour,
-		*x,
-		*y,
+		author_x,
+		layout.author_position.3,
 		layout.author_scale,
 		author_font,
-		author_text,
+		&layout.author_position.0,
 	);
 }
 
 pub fn resize_avatar(avatar_bytes: &[u8]) -> AResult<ImageBuffer<Rgba<u8>, Vec<u8>>> {
-	let avatar_mem = load_from_memory(avatar_bytes)?.to_rgba8();
 	Ok(resize(
-		&avatar_mem,
+		&load_from_memory(avatar_bytes)?.to_rgba8(),
 		QUOTE_HEIGHT,
 		QUOTE_HEIGHT,
 		FilterType::Triangle,
@@ -406,28 +408,37 @@ pub fn quote_animated_image(
 		is_reverse,
 	);
 
-	let frames = GifDecoder::new(cursor)?.into_frames();
+	let frames: Vec<_> = GifDecoder::new(cursor)?
+		.into_frames()
+		.take(30)
+		.filter_map(Result::ok)
+		.collect();
+
+	let processed_frames: Vec<_> = frames
+		.par_iter()
+		.map(|frame| {
+			let mut avatar_frame = resize(
+				frame.buffer(),
+				QUOTE_HEIGHT,
+				QUOTE_HEIGHT,
+				FilterType::Nearest,
+			);
+			if !is_colour {
+				convert_to_bw(&mut avatar_frame);
+			}
+			if is_gradient {
+				apply_gradient_to_avatar(&mut avatar_frame, is_reverse);
+			}
+
+			let mut quote_frame = img.clone();
+			overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
+			Frame::from_parts(quote_frame, 0, 0, frame.delay())
+		})
+		.collect();
 
 	let mut encoder = GifEncoder::new_with_speed(output, 10);
 	encoder.set_repeat(Repeat::Infinite)?;
-
-	for frame in frames.take(30).filter_map(Result::ok) {
-		let mut avatar_frame = resize(
-			frame.buffer(),
-			QUOTE_HEIGHT,
-			QUOTE_HEIGHT,
-			FilterType::Nearest,
-		);
-		if !is_colour {
-			convert_to_bw(&mut avatar_frame);
-		}
-		if is_gradient {
-			apply_gradient_to_avatar(&mut avatar_frame, is_reverse);
-		}
-		let mut quote_frame = img.clone();
-		overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
-		encoder.encode_frame(Frame::from_parts(quote_frame, 0, 0, frame.delay()))?;
-	}
+	encoder.encode_frames(processed_frames)?;
 
 	Ok(())
 }

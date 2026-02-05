@@ -96,6 +96,7 @@ All notable changes to this project will be documented in this file.
 - Remove urlencoding + fewer format!-calls
 - Overflow when applying gradient
 - Increase quote-collector duration to 300s
+- Use non-color emoji font for now
 
 ### 💼 Other
 
