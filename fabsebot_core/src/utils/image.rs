@@ -20,6 +20,7 @@ use crate::config::constants::{DEFAULT_THEME, EMOJI_FONT, THEMES};
 
 const QUOTE_WIDTH: u32 = 1200;
 const QUOTE_HEIGHT: u32 = 630;
+const AVATAR_SQUARE_SIZE: u32 = QUOTE_HEIGHT;
 const CONTENT_BOUND: u32 = 64;
 const MAX_CONTENT_WIDTH: u32 = QUOTE_WIDTH - QUOTE_HEIGHT - CONTENT_BOUND;
 const MAX_CONTENT_HEIGHT: u32 = QUOTE_HEIGHT - CONTENT_BOUND;
@@ -53,9 +54,8 @@ impl FontMetrics {
 
 #[derive(Clone)]
 pub struct TextLayout {
-	content_lines: Vec<(String, i32, i32)>,
-	content_lines_reverse: Vec<(String, i32, i32)>,
-	author_position: (String, i32, i32, i32),
+	content_lines: Vec<(String, i32, i32, i32)>,
+	author_position: (i32, i32, i32),
 	content_scale: PxScale,
 	author_scale: PxScale,
 }
@@ -64,8 +64,7 @@ impl Default for TextLayout {
 	fn default() -> Self {
 		Self {
 			content_lines: Vec::new(),
-			content_lines_reverse: Vec::new(),
-			author_position: (String::new(), 0, 0, 0),
+			author_position: (0, 0, 0),
 			content_scale: PxScale::from(0.0),
 			author_scale: PxScale::from(0.0),
 		}
@@ -77,35 +76,28 @@ pub fn create_solid_theme(color: [u8; 4]) -> RgbaImage {
 	RgbaImage::from_pixel(QUOTE_WIDTH, QUOTE_HEIGHT, Rgba(color))
 }
 
-fn truncate_text(text: &str, max_width: u32, metrics: &FontMetrics, font: &FontArc) -> String {
-	let mut end = text.len() - ELLIPSIS.len();
-	let mut truncated = String::with_capacity(end);
+fn truncate_text(text: &str, metrics: &FontMetrics, font: &FontArc) -> String {
+	let ellipsis_width = text_size(metrics.scale, font, ELLIPSIS).0;
+	let target_width = MAX_CONTENT_WIDTH - ellipsis_width;
 
-	loop {
-		end = text.floor_char_boundary(end);
+	let mut end = text.len();
+	while end > ELLIPSIS.len() {
+		end = text.floor_char_boundary(end - 1);
 
-		truncated.clear();
-		truncated.push_str(&text[..end]);
-		truncated.push_str(ELLIPSIS);
-
-		if text_size(metrics.scale, font, &truncated).0 <= max_width || end <= ELLIPSIS.len() {
+		if text_size(metrics.scale, font, &text[..end]).0 <= target_width {
 			break;
 		}
-
-		end -= 1;
 	}
 
-	truncated
+	format!("{}{}", &text[..end], ELLIPSIS)
 }
 
 fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) {
-	let width = avatar.width();
-	let height = avatar.height();
-	let gradient_width = width / 2;
+	let gradient_width = QUOTE_HEIGHT / 2;
 	let gradient_start = if is_reverse {
 		0
 	} else {
-		width - gradient_width
+		QUOTE_HEIGHT - gradient_width
 	};
 
 	let alpha_lut: Vec<u8> = (0..gradient_width)
@@ -119,7 +111,7 @@ fn apply_gradient_to_avatar(avatar: &mut RgbaImage, is_reverse: bool) {
 		})
 		.collect();
 
-	for y in 0..height {
+	for y in 0..QUOTE_HEIGHT {
 		for x in 0..gradient_width {
 			let pixel = avatar.get_pixel_mut(gradient_start + x, y);
 			pixel[3] = ((u32::from(pixel[3]) * u32::from(alpha_lut[x as usize])) / 255) as u8;
@@ -171,7 +163,7 @@ fn prepare_text_layout(
 				> MAX_CONTENT_WIDTH
 				|| (is_last_line && wrapped_lines.len() > max_possible_lines);
 			let line_str = if needs_truncation && line.len() > ELLIPSIS.len() {
-				truncate_text(line, MAX_CONTENT_WIDTH, &content_metrics, content_font)
+				truncate_text(line, &content_metrics, content_font)
 			} else {
 				line.to_string()
 			};
@@ -203,8 +195,7 @@ fn prepare_text_layout(
 
 	let mut current_y = quoted_content_y.cast_signed();
 
-	let mut line_positions = Vec::with_capacity(final_lines.len());
-	let mut line_positions_reverse = Vec::with_capacity(final_lines.len());
+	text_layout.content_lines.clear();
 
 	for line in final_lines {
 		let line_width = text_size(content_metrics.scale, content_font, &line).0;
@@ -213,8 +204,9 @@ fn prepare_text_layout(
 		let line_x = (QUOTE_HEIGHT + centered_offset).cast_signed();
 		let line_x_reverse = centered_offset.cast_signed();
 
-		line_positions.push((line.clone(), line_x, current_y));
-		line_positions_reverse.push((line, line_x_reverse, current_y));
+		text_layout
+			.content_lines
+			.push((line, line_x, line_x_reverse, current_y));
 
 		current_y += (content_metrics.line_height + LINE_SPACING).cast_signed();
 	}
@@ -223,16 +215,14 @@ fn prepare_text_layout(
 	let author_x = ((QUOTE_WIDTH - author_name_width) / 2 + QUOTE_HEIGHT / 2).cast_signed();
 	let author_x_reverse = ((QUOTE_WIDTH - QUOTE_HEIGHT - author_name_width) / 2).cast_signed();
 
-	let author_y_offset = if line_positions.len() == 1 {
+	let author_y_offset = if text_layout.content_lines.len() == 1 {
 		LINE_SPACING * 3
 	} else {
 		LINE_SPACING
 	};
 	let author_y = (quoted_content_y + total_text_height + author_y_offset).cast_signed();
 
-	text_layout.content_lines = line_positions;
-	text_layout.content_lines_reverse = line_positions_reverse;
-	text_layout.author_position = (author_name.to_owned(), author_x, author_x_reverse, author_y);
+	text_layout.author_position = (author_x, author_x_reverse, author_y);
 	text_layout.content_scale = content_metrics.scale;
 	text_layout.author_scale = author_metrics.scale;
 }
@@ -244,14 +234,10 @@ fn apply_text_layout(
 	content_font: &FontArc,
 	author_font: &FontArc,
 	is_reverse: bool,
+	author_name: &str,
 ) {
-	let content_lines = if is_reverse {
-		&layout.content_lines_reverse
-	} else {
-		&layout.content_lines
-	};
-	for (line, x, y) in content_lines {
-		let mut step = *x;
+	for (line, x, x_reverse, y) in &layout.content_lines {
+		let mut step = if is_reverse { *x_reverse } else { *x };
 		for c in line.chars().map(|c| c.to_string()) {
 			let font = if emojis::get(&c).is_some() {
 				&EMOJI_FONT
@@ -266,27 +252,27 @@ fn apply_text_layout(
 	}
 
 	let author_x = if is_reverse {
-		layout.author_position.2
-	} else {
 		layout.author_position.1
+	} else {
+		layout.author_position.0
 	};
 
 	draw_text_mut(
 		img,
 		text_colour,
 		author_x,
-		layout.author_position.3,
+		layout.author_position.2,
 		layout.author_scale,
 		author_font,
-		&layout.author_position.0,
+		author_name,
 	);
 }
 
 pub fn resize_avatar(avatar_bytes: &[u8]) -> AResult<ImageBuffer<Rgba<u8>, Vec<u8>>> {
 	Ok(resize(
 		&load_from_memory(avatar_bytes)?.to_rgba8(),
-		QUOTE_HEIGHT,
-		QUOTE_HEIGHT,
+		AVATAR_SQUARE_SIZE,
+		AVATAR_SQUARE_SIZE,
 		FilterType::Triangle,
 	))
 }
@@ -368,6 +354,7 @@ pub fn quote_static_image(
 		content_font,
 		author_font,
 		is_reverse,
+		author_name,
 	);
 
 	Ok(img.write_to(cursor, STATIC_FORMAT)?)
@@ -406,6 +393,7 @@ pub fn quote_animated_image(
 		content_font,
 		author_font,
 		is_reverse,
+		author_name,
 	);
 
 	let frames: Vec<_> = GifDecoder::new(cursor)?
