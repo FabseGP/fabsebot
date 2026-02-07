@@ -293,6 +293,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		.stream();
 
 	let mut too_slow = true;
+	let mut response = "";
 
 	while let Some(interaction) = collector_stream.next().await {
 		interaction
@@ -300,15 +301,6 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 			.await?;
 
 		if interaction.data.custom_id.ends_with('c') {
-			message
-				.edit(
-					ctx,
-					CreateReply::default()
-						.content("Server settings set... probably")
-						.reply(true)
-						.components(&[]),
-				)
-				.await?;
 			configure_channels(
 				music_channel_opt,
 				spoiler_channel_opt,
@@ -321,30 +313,15 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 			)
 			.await?;
 			too_slow = false;
+			response = "Server settings set... probably";
 			break;
 		} else if interaction.data.custom_id.ends_with('d') {
-			message
-				.edit(
-					ctx,
-					CreateReply::default()
-						.content("Server settings not changed... coward")
-						.reply(true)
-						.components(&[]),
-				)
-				.await?;
+			response = "Server settings not changed... coward";
 			too_slow = false;
 			break;
 		} else if interaction.data.custom_id.ends_with('r') {
 			reset_server_settings(ctx, guild_id).await?;
-			message
-				.edit(
-					ctx,
-					CreateReply::default()
-						.content("Server settings reset... probably")
-						.reply(true)
-						.components(&[]),
-				)
-				.await?;
+			response = "Server settings reset... probably";
 			too_slow = false;
 			break;
 		}
@@ -437,15 +414,18 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		}
 	}
 	if too_slow {
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.content("You were too slow")
-					.components(&[]),
-			)
-			.await?;
+		response = "You were too slow";
 	}
+
+	message
+		.edit(
+			ctx,
+			CreateReply::default()
+				.content(response)
+				.reply(true)
+				.components(&[]),
+		)
+		.await?;
 
 	Ok(())
 }
@@ -612,7 +592,9 @@ pub async fn set_chatbot_options(
 	#[description = "The role the bot should take; if not set, then default role"] role: Option<
 		String,
 	>,
-	#[description = "Enable bot to search online every message sent"] internet_search: Option<bool>,
+	#[description = "Enable bot to search online every message sent"]
+	#[flag]
+	internet_search: bool,
 ) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -821,7 +803,7 @@ pub async fn set_user_ping(
 	} else {
 		true
 	};
-	if valid {
+	let response = if valid {
 		let guild_id_i64 = i64::from(guild_id);
 		let user_id_i64 = i64::from(ctx.author().id);
 		query!(
@@ -837,12 +819,6 @@ pub async fn set_user_ping(
 			media,
 		)
 		.execute(&mut *ctx.data().db.acquire().await?)
-		.await?;
-		ctx.send(
-			CreateReply::default()
-				.content("Custom user ping created... probably")
-				.ephemeral(true),
-		)
 		.await?;
 		let mut modified_settings = ctx
 			.data()
@@ -869,14 +845,13 @@ pub async fn set_user_ping(
 		ctx.data()
 			.user_settings
 			.insert(guild_id, Arc::new(modified_settings));
+		"Custom user ping created... probably"
 	} else {
-		ctx.send(
-			CreateReply::default()
-				.content("Invalid media given... really bro?")
-				.ephemeral(true),
-		)
+		"Invalid media given... really bro?"
+	};
+
+	ctx.send(CreateReply::default().content(response).ephemeral(true))
 		.await?;
-	}
 
 	Ok(())
 }

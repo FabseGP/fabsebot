@@ -96,9 +96,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(prefix_command, slash_command)]
 pub async fn user_info(
 	ctx: SContext<'_>,
-	#[description = "Target"]
-	#[rest]
-	member: Member,
+	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
 	let username_display = [CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
 		if let Some(nick) = member.nick.as_ref() {

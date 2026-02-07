@@ -27,6 +27,17 @@ use crate::config::{
 	types::{Data, HTTP_CLIENT, UTILS_CONFIG},
 };
 
+#[macro_export]
+macro_rules! log_errors {
+    ($($result:expr),+ $(,)?) => {
+        $(
+            if let Err(err) = $result {
+                error!("{err}");
+            }
+        )+
+    };
+}
+
 const DISCORD_CHANNEL_DEFAULT_PREFIX: &str = "https://discord.com/channels/";
 const DISCORD_CHANNEL_PTB_PREFIX: &str = "https://ptb.discord.com/channels/";
 const DISCORD_CHANNEL_CANARY_PREFIX: &str = "https://canary.discord.com/channels/";
@@ -284,7 +295,7 @@ pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink>
 		DISCORD_CHANNEL_DEFAULT_PREFIX
 	} else if let Some(index) = input.find(DISCORD_CHANNEL_CANARY_PREFIX) {
 		*input = &input[index..];
-		DISCORD_CHANNEL_DEFAULT_PREFIX
+		DISCORD_CHANNEL_CANARY_PREFIX
 	} else if let Some(index) = input.find(DISCORD_CHANNEL_PTB_PREFIX) {
 		*input = &input[index..];
 		DISCORD_CHANNEL_PTB_PREFIX

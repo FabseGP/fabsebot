@@ -179,6 +179,7 @@ pub async fn bot_start(
 			fabseserver: server_config,
 			api: api_config,
 			http_agent,
+			bot_name: bot_config.username.clone(),
 		}))
 		.is_err()
 	{

@@ -79,47 +79,64 @@ pub async fn ai_image(
 		prompt: format!("{prompt} {}", fastrand::usize(..1024)),
 	};
 	let utils_config = UTILS_CONFIG.get().unwrap();
-	let mut resp = HTTP_CLIENT
+
+	let resp = if let Ok(response) = HTTP_CLIENT
 		.post(&utils_config.api.cloudflare_image_gen)
 		.bearer_auth(&utils_config.api.cloudflare_token)
 		.json(&request)
 		.send()
-		.await?;
+		.await
+	{
+		response
+	} else if let Ok(response) = HTTP_CLIENT
+		.post(&utils_config.api.cloudflare_image_gen_fallback)
+		.bearer_auth(&utils_config.api.cloudflare_token_fallback)
+		.json(&request)
+		.send()
+		.await
+	{
+		response
+	} else {
+		ctx.reply("Servers too overworked :/").await?;
+		return Ok(());
+	};
 
-	if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
+	let image = if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
 		&& resp_parsed.success
 		&& let Ok(img_dec) = general_purpose::STANDARD.decode(resp_parsed.result.image)
 	{
-		ctx.send(
-			CreateReply::default()
-				.reply(true)
-				.attachment(CreateAttachment::bytes(img_dec, "output.png")),
-		)
-		.await?;
+		Some(CreateAttachment::bytes(img_dec, "output.png"))
 	} else {
-		resp = HTTP_CLIENT
-			.post(&utils_config.api.cloudflare_image_gen_fallback)
-			.bearer_auth(&utils_config.api.cloudflare_token_fallback)
-			.json(&request)
-			.send()
+		None
+	};
+
+	if let Some(image) = image {
+		ctx.send(CreateReply::default().reply(true).attachment(image))
 			.await?;
-		if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
-			&& resp_parsed.success
-			&& let Ok(img_dec) = general_purpose::STANDARD.decode(resp_parsed.result.image)
-		{
-			ctx.send(
-				CreateReply::default()
-					.reply(true)
-					.attachment(CreateAttachment::bytes(img_dec, "output.png")),
-			)
+	} else {
+		ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
 			.await?;
-		} else {
-			ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
-				.await?;
-		}
 	}
 
 	Ok(())
+}
+
+fn chunk_string(s: &str, max_bytes: usize) -> Vec<&str> {
+	let mut chunks = Vec::with_capacity(s.len());
+	let mut start = 0;
+
+	while start < s.len() {
+		let mut end = (start + max_bytes).min(s.len());
+
+		while !s.is_char_boundary(end) && end > start {
+			end -= 1;
+		}
+
+		chunks.push(&s[start..end]);
+		start = end;
+	}
+
+	chunks
 }
 
 /// Make the ai generate text for you
@@ -143,28 +160,13 @@ pub async fn ai_text(
 		&& !resp.is_empty()
 	{
 		let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
-		let mut current_chunk = String::with_capacity(1024);
-		let mut chunk_index: u32 = 0;
-		for ch in resp.chars() {
-			if current_chunk.len() >= 1024 {
-				let field_name = if chunk_index == 0 {
-					"Response:".to_owned()
-				} else {
-					format!("Response (cont. {}):", chunk_index.saturating_add(1))
-				};
-				embed = embed.field(field_name, current_chunk.clone(), false);
-				current_chunk.clear();
-				chunk_index = chunk_index.saturating_add(1);
-			}
-			current_chunk.push(ch);
-		}
-		if !current_chunk.is_empty() {
-			let field_name = if chunk_index == 0 {
+		for (index, chunk) in chunk_string(&resp, 1024).iter().enumerate() {
+			let field_name = if index == 0 {
 				"Response:".to_owned()
 			} else {
-				format!("Response (cont. {}):", chunk_index.saturating_add(1))
+				format!("Response (cont. {}):", index + 1)
 			};
-			embed = embed.field(field_name, current_chunk, false);
+			embed = embed.field(field_name, *chunk, false);
 		}
 		ctx.send(CreateReply::default().embed(embed).reply(true))
 			.await?;
@@ -342,15 +344,12 @@ pub async fn anime(
 					)
 					.await?;
 
-				let ctx_id_copy = ctx.id();
+				let ctx_id_str = ctx.id().to_string();
 				let mut collector_stream =
 					ComponentInteractionCollector::new(ctx.serenity_context())
 						.timeout(Duration::from_secs(60))
 						.filter(move |interaction| {
-							interaction
-								.data
-								.custom_id
-								.starts_with(ctx_id_copy.to_string().as_str())
+							interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 						})
 						.stream();
 
@@ -647,15 +646,10 @@ pub async fn gif(
 			)
 			.await?;
 
-		let ctx_id_copy = ctx.id();
+		let ctx_id_str = ctx.id().to_string();
 		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 			.timeout(Duration::from_secs(60))
-			.filter(move |interaction| {
-				interaction
-					.data
-					.custom_id
-					.starts_with(ctx_id_copy.to_string().as_str())
-			})
+			.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
 			.stream();
 
 		while let Some(interaction) = collector_stream.next().await {
@@ -715,6 +709,15 @@ pub async fn gif(
 	Ok(())
 }
 
+const ROASTS: &[&str] = &[
+	"your life",
+	"you're not funny",
+	"you",
+	"get a life bitch",
+	"I don't like you",
+	"you smell",
+];
+
 #[derive(Deserialize)]
 struct JokeResponse {
 	joke: String,
@@ -736,17 +739,11 @@ pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
 		{
 			ctx.reply(&data.joke).await?;
 		} else {
-			let roasts = [
-				"your life",
-				"you're not funny",
-				"you",
-				"get a life bitch",
-				"I don't like you",
-				"you smell",
-			];
-			let index = fastrand::usize(..roasts.len());
-			if let Some(roast) = roasts.get(index).copied() {
-				ctx.reply(roast).await?;
+			let index = fastrand::usize(..ROASTS.len());
+			if let Some(roast) = ROASTS.get(index) {
+				ctx.reply(*roast).await?;
+			} else {
+				ctx.reply("no jokes now").await?;
 			}
 		}
 	} else {
@@ -854,16 +851,13 @@ pub async fn manga(
 					)
 					.await?;
 
-				let ctx_id_copy = ctx.id();
+				let ctx_id_str = ctx.id().to_string();
 
 				let mut collector_stream =
 					ComponentInteractionCollector::new(ctx.serenity_context())
 						.timeout(Duration::from_secs(60))
 						.filter(move |interaction| {
-							interaction
-								.data
-								.custom_id
-								.starts_with(ctx_id_copy.to_string().as_str())
+							interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 						})
 						.stream();
 
@@ -1057,7 +1051,7 @@ pub async fn roast(
 			);
 			ctx.data()
 				.user_settings
-				.insert(guild_id, Arc::new(modified_settings.clone()));
+				.insert(guild_id, Arc::new(modified_settings));
 			0
 		}
 	};
@@ -1108,28 +1102,13 @@ pub async fn roast(
 		let mut embed = CreateEmbed::default()
 			.title(format!("Roasting {name}"))
 			.colour(COLOUR_RED);
-		let mut current_chunk = String::with_capacity(1024);
-		let mut chunk_index: u32 = 0;
-		for ch in resp.chars() {
-			if current_chunk.len() >= 1024 {
-				let field_name = if chunk_index == 0 {
-					"Response:".to_owned()
-				} else {
-					format!("Response (cont. {}):", chunk_index.saturating_add(1))
-				};
-				embed = embed.field(field_name, current_chunk.clone(), false);
-				current_chunk.clear();
-				chunk_index = chunk_index.saturating_add(1);
-			}
-			current_chunk.push(ch);
-		}
-		if !current_chunk.is_empty() {
-			let field_name = if chunk_index == 0 {
+		for (index, chunk) in chunk_string(&resp, 1024).iter().enumerate() {
+			let field_name = if index == 0 {
 				"Response:".to_owned()
 			} else {
-				format!("Response (cont. {}):", chunk_index.saturating_add(1))
+				format!("Response (cont. {}):", index + 1)
 			};
-			embed = embed.field(field_name, current_chunk, false);
+			embed = embed.field(field_name, *chunk, false);
 		}
 		ctx.send(CreateReply::default().reply(true).embed(embed))
 			.await?;
@@ -1177,23 +1156,19 @@ pub async fn translate(
 	#[description = "What should be translated"] sentence: Option<String>,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let content = if ctx.guild_id().is_some() {
-		if let Some(query) = sentence {
-			query
-		} else {
-			let msg = ctx
-				.channel_id()
-				.message(&ctx.http(), MessageId::new(ctx.id()))
-				.await?;
-			if let Some(ref_msg) = msg.referenced_message {
-				ref_msg.content.to_string()
-			} else {
-				ctx.reply("Bruh, give me smth to translate").await?;
-				return Ok(());
-			}
-		}
-	} else if let Some(query) = sentence {
+	let content = if let Some(query) = sentence {
 		query
+	} else if ctx.guild_id().is_some() {
+		let msg = ctx
+			.channel_id()
+			.message(&ctx.http(), MessageId::new(ctx.id()))
+			.await?;
+		if let Some(ref_msg) = msg.referenced_message {
+			ref_msg.content.into_string()
+		} else {
+			ctx.reply("Bruh, give me smth to translate").await?;
+			return Ok(());
+		}
 	} else {
 		ctx.reply("Bruh, give me smth to translate").await?;
 		return Ok(());
@@ -1256,15 +1231,12 @@ pub async fn translate(
 				)
 				.await?;
 
-			let ctx_id_copy = ctx.id();
+			let ctx_id_str = ctx.id().to_string();
 
 			let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 				.timeout(Duration::from_secs(60))
 				.filter(move |interaction| {
-					interaction
-						.data
-						.custom_id
-						.starts_with(ctx_id_copy.to_string().as_str())
+					interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 				})
 				.stream();
 
@@ -1377,56 +1349,24 @@ pub async fn urban(
 		if let Some(title) = data.list.first().map(|d| d.word.as_str()) {
 			embed = embed.title(title);
 		}
-		let mut current_chunk = String::with_capacity(1024);
-		let mut chunk_index: u32 = 0;
-		for ch in first_entry.definition.replace(['[', ']'], "").chars() {
-			if current_chunk.len() >= 1024 {
-				let field_name = if chunk_index == 0 {
-					"Definition:".to_owned()
-				} else {
-					format!("Definition (cont. {}):", chunk_index.saturating_add(1))
-				};
-				embed = embed.field(field_name, current_chunk.clone(), false);
-				current_chunk.clear();
-				chunk_index = chunk_index.saturating_add(1);
-			}
-			current_chunk.push(ch);
-		}
-		if !current_chunk.is_empty() {
-			let field_name = if chunk_index == 0 {
-				"Definition:".to_owned()
+		let first_definition = first_entry.definition.replace(['[', ']'], "");
+		let first_example = first_entry.example.replace(['[', ']'], "");
+		for (index, chunk) in chunk_string(&first_definition, 1024).iter().enumerate() {
+			let field_name = if index == 0 {
+				"Response:".to_owned()
 			} else {
-				format!("Definition (cont. {}):", chunk_index.saturating_add(1))
+				format!("Response (cont. {}):", index + 1)
 			};
-			embed = embed.field(field_name, current_chunk.clone(), false);
+			embed = embed.field(field_name, *chunk, false);
 		}
-		current_chunk.clear();
-		chunk_index = 0;
-
-		for ch in first_entry.example.replace(['[', ']'], "").chars() {
-			if current_chunk.len() >= 1024 {
-				let field_name = if chunk_index == 0 {
-					"Example:".to_owned()
-				} else {
-					format!("Example (cont. {}):", chunk_index.saturating_add(1))
-				};
-				embed = embed.field(field_name, current_chunk.clone(), false);
-				current_chunk.clear();
-				chunk_index = chunk_index.saturating_add(1);
-			}
-			current_chunk.push(ch);
-		}
-		if !current_chunk.is_empty() {
-			let field_name = if chunk_index == 0 {
+		for (index, chunk) in chunk_string(&first_example, 1024).iter().enumerate() {
+			let field_name = if index == 0 {
 				"Example:".to_owned()
 			} else {
-				format!("Example (cont. {}):", chunk_index.saturating_add(1))
+				format!("Example (cont. {}):", index + 1)
 			};
-			embed = embed.field(field_name, current_chunk.clone(), false);
+			embed = embed.field(field_name, *chunk, false);
 		}
-		current_chunk.clear();
-		chunk_index = 0;
-
 		let len = data.list.len();
 		if ctx.guild_id().is_some() && len > 1 {
 			let mut state = State::new(ctx.id(), len);
@@ -1452,15 +1392,12 @@ pub async fn urban(
 				)
 				.await?;
 
-			let ctx_id_copy = ctx.id();
+			let ctx_id_str = ctx.id().to_string();
 
 			let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 				.timeout(Duration::from_secs(300))
 				.filter(move |interaction| {
-					interaction
-						.data
-						.custom_id
-						.starts_with(ctx_id_copy.to_string().as_str())
+					interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 				})
 				.stream();
 
@@ -1477,61 +1414,39 @@ pub async fn urban(
 					state.index = state.index.saturating_sub(1);
 				}
 
-				let Some(current_entry) = data.list.get(state.index) else {
+				let Some((current_word, current_definition, current_example)) =
+					data.list.get(state.index).map(|c| {
+						(
+							c.word.clone(),
+							c.definition.replace(['[', ']'], ""),
+							c.example.replace(['[', ']'], ""),
+						)
+					})
+				else {
 					warn!("Invalid urban dictionary index: {}", state.index);
 					continue;
 				};
 
 				embed = CreateEmbed::default()
-					.title(&current_entry.word)
+					.title(current_word)
 					.colour(COLOUR_YELLOW);
-				for ch in current_entry.definition.replace(['[', ']'], "").chars() {
-					if current_chunk.len() >= 1024 {
-						let field_name = if chunk_index == 0 {
-							"Definition:".to_owned()
-						} else {
-							format!("Definition (cont. {}):", chunk_index.saturating_add(1))
-						};
-						embed = embed.field(field_name, current_chunk.clone(), false);
-						current_chunk.clear();
-						chunk_index = chunk_index.saturating_add(1);
-					}
-					current_chunk.push(ch);
-				}
-				if !current_chunk.is_empty() {
-					let field_name = if chunk_index == 0 {
-						"Definition:".to_owned()
-					} else {
-						format!("Definition (cont. {}):", chunk_index.saturating_add(1))
-					};
-					embed = embed.field(field_name, current_chunk.clone(), false);
-				}
-				current_chunk.clear();
-				chunk_index = 0;
 
-				for ch in current_entry.example.replace(['[', ']'], "").chars() {
-					if current_chunk.len() >= 1024 {
-						let field_name = if chunk_index == 0 {
-							"Example:".to_owned()
-						} else {
-							format!("Example (cont. {}):", chunk_index.saturating_add(1))
-						};
-						embed = embed.field(field_name, current_chunk.clone(), false);
-						current_chunk.clear();
-						chunk_index = chunk_index.saturating_add(1);
-					}
-					current_chunk.push(ch);
+				for (index, chunk) in chunk_string(&current_definition, 1024).iter().enumerate() {
+					let field_name = if index == 0 {
+						"Response:".to_owned()
+					} else {
+						format!("Response (cont. {}):", index + 1)
+					};
+					embed = embed.field(field_name, chunk.to_string(), false);
 				}
-				if !current_chunk.is_empty() {
-					let field_name = if chunk_index == 0 {
+				for (index, chunk) in chunk_string(&current_example, 1024).iter().enumerate() {
+					let field_name = if index == 0 {
 						"Example:".to_owned()
 					} else {
-						format!("Example (cont. {}):", chunk_index.saturating_add(1))
+						format!("Example (cont. {}):", index + 1)
 					};
-					embed = embed.field(field_name, current_chunk.clone(), false);
+					embed = embed.field(field_name, chunk.to_string(), false);
 				}
-				current_chunk.clear();
-				chunk_index = 0;
 
 				final_embed = embed.clone();
 

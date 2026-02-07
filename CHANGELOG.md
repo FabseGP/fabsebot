@@ -97,6 +97,8 @@ All notable changes to this project will be documented in this file.
 - Overflow when applying gradient
 - Increase quote-collector duration to 300s
 - Use non-color emoji font for now
+- Set user-agent in config
+- Adding youtube & deezer playlists doesn't fail silently + parallize image quotes
 
 ### 💼 Other
 

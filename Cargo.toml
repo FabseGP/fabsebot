@@ -58,7 +58,7 @@ bytes = "*"
 criterion = { version = "*", features = ["async_tokio", "html_reports"] }
 emojis = "*"
 fastrand = "*"
-image = { version = "*", default-features = false, features = ["avif", "gif", "nasm", "rayon", "webp"] }
+image = { version = "*", default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
 imageproc = { version = "*", default-features = false, features = ["rayon", "text"] }
 metrics = { version = "*" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }

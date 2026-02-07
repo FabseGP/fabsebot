@@ -32,7 +32,7 @@ pub async fn anonymous(
 pub async fn user_dm(
 	ctx: SContext<'_>,
 	#[description = "Target"] user: User,
-	#[description = "Message to be sent"] message: String,
+	#[description = "Message to send"] message: String,
 ) -> Result<(), Error> {
 	user.id
 		.direct_message(ctx.http(), CreateMessage::default().content(message))
@@ -74,12 +74,10 @@ pub async fn user_misuse(
 		)
 		.await?;
 		let avatar_url = member.avatar_url().unwrap_or_else(|| {
-			member.user.avatar_url().unwrap_or_else(|| {
-				member
-					.user
-					.avatar_url()
-					.unwrap_or_else(|| member.user.default_avatar_url())
-			})
+			member
+				.user
+				.avatar_url()
+				.unwrap_or_else(|| member.user.default_avatar_url())
 		});
 		webhook
 			.execute(

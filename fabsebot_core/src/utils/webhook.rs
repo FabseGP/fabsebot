@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use anyhow::{Result as AResult, bail};
+use fabsebot_db::guild::GuildData;
 use serde::Serialize;
 use serenity::all::{
 	Channel, Context as SContext, CreateAttachment, ExecuteWebhook, GenericChannelId, GuildId,
@@ -12,48 +15,57 @@ const FABSEBOT_WEBHOOK_NAME: &str = "fabsebot";
 const FABSEBOT_WEBHOOK_PFP: &str =
 	"http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png";
 
-pub async fn spoiler_message(ctx: &SContext, message: &Message, data: WebhookMap) -> AResult<()> {
-	let Some(avatar_url) = message.author.avatar_url() else {
-		bail!("Avatar not found");
-	};
-	let webhook = match webhook_find(ctx, message.guild_id, message.channel_id, data).await {
-		Ok(webhook) => webhook,
-		Err(e) => {
-			bail!(e);
-		}
-	};
-	let username = message.author.display_name();
-	for (i, payload) in message.attachments.iter().enumerate() {
-		let download_bytes = match HTTP_CLIENT
-			.get(payload.url.as_str())
-			.send()
-			.await?
-			.bytes()
-			.await
-		{
-			Ok(bytes) => bytes,
+pub async fn spoiler_message(
+	ctx: &SContext,
+	message: &Message,
+	guild_data: &Arc<GuildData>,
+	data: WebhookMap,
+) -> AResult<()> {
+	if let Some(spoiler_channel) = guild_data.settings.spoiler_channel
+		&& message.channel_id.get() == spoiler_channel.cast_unsigned()
+	{
+		let Some(avatar_url) = message.author.avatar_url() else {
+			bail!("Avatar not found");
+		};
+		let webhook = match webhook_find(ctx, message.guild_id, message.channel_id, data).await {
+			Ok(webhook) => webhook,
 			Err(e) => {
-				warn!("Couldn't download attachment: {e}");
-				continue;
+				bail!(e);
 			}
 		};
+		let username = message.author.display_name();
+		for (i, payload) in message.attachments.iter().enumerate() {
+			let download_bytes = match HTTP_CLIENT
+				.get(payload.url.as_str())
+				.send()
+				.await?
+				.bytes()
+				.await
+			{
+				Ok(bytes) => bytes,
+				Err(e) => {
+					warn!("Couldn't download attachment: {e}");
+					continue;
+				}
+			};
 
-		let attachment =
-			CreateAttachment::bytes(download_bytes, format!("SPOILER_{}", &payload.filename));
+			let attachment =
+				CreateAttachment::bytes(download_bytes, format!("SPOILER_{}", &payload.filename));
 
-		let mut webhook_execute = ExecuteWebhook::default()
-			.username(username)
-			.avatar_url(avatar_url.as_str())
-			.add_file(attachment);
+			let mut webhook_execute = ExecuteWebhook::default()
+				.username(username)
+				.avatar_url(avatar_url.as_str())
+				.add_file(attachment);
 
-		if i == 0 {
-			webhook_execute = webhook_execute.content(message.content.as_str());
+			if i == 0 {
+				webhook_execute = webhook_execute.content(message.content.as_str());
+			}
+
+			webhook.execute(&ctx.http, false, webhook_execute).await?;
 		}
 
-		webhook.execute(&ctx.http, false, webhook_execute).await?;
+		message.delete(&ctx.http, None).await?;
 	}
-
-	message.delete(&ctx.http, None).await?;
 
 	Ok(())
 }

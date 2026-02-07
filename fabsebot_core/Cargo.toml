@@ -10,10 +10,11 @@ workspace = true
 fabsebot_db = { path = "../fabsebot_db" }
 ab_glyph = { workspace = true }
 anyhow = { workspace = true }
+base64 = { workspace = true }
 bytes = { workspace = true }
 emojis = { workspace = true }
 fastrand = { workspace = true }
-image = { workspace = true, default-features = false, features = ["avif", "gif", "nasm", "rayon", "webp"] }
+image = { workspace = true, default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
 imageproc = { workspace = true, default-features = false, features = ["rayon", "text"] }
 metrics = { workspace = true }
 mini-moka = { workspace = true }

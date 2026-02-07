@@ -23,7 +23,7 @@ use fabsebot_core::{
 	},
 };
 use image::{ImageBuffer, Rgba};
-use poise::{CreateReply, builtins::register_globally};
+use poise::{ChoiceParameter, CreateReply, builtins::register_globally};
 use rayon::spawn;
 use serenity::{
 	all::{
@@ -51,7 +51,9 @@ pub async fn anony_poll(
 	ctx: SContext<'_>,
 	#[description = "Question"] title: String,
 	#[description = "Comma-separated options"] options: String,
-	#[description = "Duration in minutes"] duration: u64,
+	#[description = "Duration in minutes"]
+	#[min = 0]
+	duration: u64,
 ) -> Result<(), Error> {
 	let options_list: Vec<_> = options
 		.split(',')
@@ -87,7 +89,7 @@ pub async fn anony_poll(
 	let message = ctx
 		.send(
 			CreateReply::default()
-				.embed(embed)
+				.embed(embed.clone())
 				.components(&action_row)
 				.reply(true),
 		)
@@ -162,12 +164,10 @@ pub async fn birthday(
 	member: Member,
 ) -> Result<(), Error> {
 	let avatar_url = member.avatar_url().unwrap_or_else(|| {
-		member.user.avatar_url().unwrap_or_else(|| {
-			member
-				.user
-				.avatar_url()
-				.unwrap_or_else(|| member.user.default_avatar_url())
-		})
+		member
+			.user
+			.avatar_url()
+			.unwrap_or_else(|| member.user.default_avatar_url())
 	});
 	ctx.send(
 		CreateReply::default()
@@ -184,12 +184,32 @@ pub async fn birthday(
 	Ok(())
 }
 
+#[derive(ChoiceParameter)]
+pub enum BotStatus {
+	#[name = "invisible"]
+	Invisible,
+	#[name = "dnd"]
+	Dnd,
+	#[name = "idle"]
+	Idle,
+}
+
+impl BotStatus {
+	const fn to_online_status(&self) -> OnlineStatus {
+		match self {
+			Self::Invisible => OnlineStatus::Invisible,
+			Self::Dnd => OnlineStatus::DoNotDisturb,
+			Self::Idle => OnlineStatus::Idle,
+		}
+	}
+}
+
 /// Fabsebot control
 #[poise::command(slash_command, owners_only)]
 pub async fn bot_control(
 	ctx: SContext<'_>,
 	new_activity_opt: Option<String>,
-	new_status_opt: Option<String>,
+	new_status_opt: Option<BotStatus>,
 	new_nickname_opt: Option<String>,
 ) -> Result<(), Error> {
 	if let Some(new_activity) = new_activity_opt {
@@ -198,14 +218,10 @@ pub async fn bot_control(
 			.set_activity(Some(ActivityData::listening(new_activity)));
 	}
 
-	if let Some(new_status_str) = new_status_opt {
-		let new_status = match new_status_str.as_str() {
-			"invisible" => OnlineStatus::Invisible,
-			"dnd" => OnlineStatus::DoNotDisturb,
-			"idle" => OnlineStatus::Idle,
-			_ => OnlineStatus::Online,
-		};
-		ctx.framework().serenity_context.set_status(new_status);
+	if let Some(new_status) = new_status_opt {
+		ctx.framework()
+			.serenity_context
+			.set_status(new_status.to_online_status());
 	}
 
 	if new_nickname_opt.is_some()
@@ -222,7 +238,10 @@ pub async fn bot_control(
 
 	ctx.send(
 		CreateReply::default()
-			.content("Fabsebot rebranded!")
+			.content(format!(
+				"{} rebranded!",
+				UTILS_CONFIG.get().unwrap().bot_name
+			))
 			.ephemeral(true),
 	)
 	.await?;
@@ -322,43 +341,35 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 		.await
 	{
 		let mut msg = interaction.message;
-		if let Some(runner) = ctx
+
+		let response = ctx
 			.serenity_context()
 			.runners
 			.get(&ctx.serenity_context().shard_id)
 			.map(|entry| entry.1.clone())
-		{
-			if let Err(err) = runner.unbounded_send(ShardRunnerMessage::Restart) {
-				warn!("Failed to queue restart of shard: {:?}", err);
-				msg.edit(
-					ctx.http(),
-					EditMessage::default()
-						.embed(embed)
-						.components(vec![])
-						.content("Rip, failed to restart shard!"),
-				)
-				.await?;
-			} else {
-				msg.edit(
-					ctx.http(),
-					EditMessage::default()
-						.embed(embed)
-						.components(vec![])
-						.content("Woah shard restarted!"),
-				)
-				.await?;
-			}
-		} else {
-			warn!("No shard runner found in runners map");
-			msg.edit(
-				ctx.http(),
-				EditMessage::default()
-					.embed(embed)
-					.components(vec![])
-					.content("Rip, shard doesn't exist!"),
-			)
-			.await?;
-		}
+			.map_or_else(
+				|| {
+					warn!("No shard runner found in runners map");
+					"Rip, shard doesn't exist!"
+				},
+				|runner| {
+					if let Err(err) = runner.unbounded_send(ShardRunnerMessage::Restart) {
+						warn!("Failed to queue restart of shard: {:?}", err);
+						"Rip, failed to restart shard!"
+					} else {
+						"Woah shard restarted!"
+					}
+				},
+			);
+
+		msg.edit(
+			ctx.http(),
+			EditMessage::default()
+				.embed(embed)
+				.components(vec![])
+				.content(response),
+		)
+		.await?;
 	} else {
 		message
 			.edit(
@@ -477,15 +488,8 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		}
 	})
 	.await;
-	if result.is_ok() {
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.reply(true)
-					.content("Connected to global call!"),
-			)
-			.await?;
+	let response = if result.is_ok() {
+		"Connected to global call!"
 	} else {
 		query!(
 			"UPDATE guild_settings SET global_chat = FALSE, global_chat_channel = NULL WHERE \
@@ -506,15 +510,12 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		ctx.data()
 			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.reply(true)
-					.content("No one joined the call within 1 minute 😢"),
-			)
-			.await?;
-	}
+		"No one joined the call within 1 minute 😢"
+	};
+
+	message
+		.edit(ctx, CreateReply::default().reply(true).content(response))
+		.await?;
 
 	tx.commit()
 		.await
@@ -692,7 +693,7 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 		"generate a one-line love-hate greeting",
 		&utils_config.fabseserver.text_gen_model,
 	)
-	.await
+	.await && !resp.is_empty()
 	{
 		ctx.reply(resp).await?;
 	} else {
@@ -1249,9 +1250,12 @@ pub async fn respond(
 pub async fn slow_mode(
 	ctx: SContext<'_>,
 	#[description = "Channel to rate limit"] mut channel: GuildChannel,
-	#[description = "Duration of rate limit in seconds"] duration: u8,
+	#[description = "Duration of rate limit in seconds"]
+	#[min = 300]
+	#[max = 21600]
+	duration: u16,
 ) -> Result<(), Error> {
-	let settings = EditChannel::default().rate_limit_per_user(NonMaxU16::from(duration));
+	let settings = EditChannel::default().rate_limit_per_user(NonMaxU16::new(duration).unwrap());
 	channel.edit(ctx.http(), settings).await?;
 	ctx.send(
 		CreateReply::default()
@@ -1274,37 +1278,32 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
 		return Ok(());
 	};
-	let thumbnail = match ctx.guild() {
-		Some(guild) => guild.banner_url().unwrap_or_else(|| {
+	let thumbnail = {
+		let guild = ctx.guild().unwrap();
+		guild.banner_url().unwrap_or_else(|| {
 			guild
 				.icon_url()
 				.unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
-		}),
-		None => {
-			return Ok(());
-		}
+		})
 	};
 
-	let mut words = ctx
+	let words: Vec<_> = ctx
 		.data()
 		.guilds
 		.get(&guild_id)
 		.map_or_else(Vec::new, |guild_data| {
-			let capacity = guild_data.word_tracking.len();
-			let mut result = Vec::with_capacity(capacity);
-
-			for entry in &guild_data.word_tracking {
-				result.push(WordCount {
+			let mut result: Vec<_> = guild_data
+				.word_tracking
+				.iter()
+				.map(|entry| WordCount {
 					word: entry.word.clone(),
 					count: entry.count,
-				});
-			}
-
+				})
+				.collect();
+			result.sort_by(|a, b| b.count.cmp(&a.count));
+			result.truncate(25);
 			result
 		});
-
-	words.sort_by(|a, b| b.count.cmp(&a.count));
-	words.truncate(25);
 
 	let mut embed = CreateEmbed::default()
 		.title(format!("Top {} word tracked by count", words.len()))

@@ -338,20 +338,18 @@ impl PlaybackHandler {
 				*history_shown = false;
 				if let Some(embed) = &lyrics_embed {
 					embed.clone()
-				} else if let Some(artist_name) = &guild_tracks.0.artist
-					&& let Some(track_name) = &guild_tracks.0.title
-					&& let Ok(lyrics) = get_lyrics(artist_name, track_name).await
-				{
+				} else {
+					let lyrics = if let Some(artist_name) = &guild_tracks.0.artist
+						&& let Some(track_name) = &guild_tracks.0.title
+						&& let Ok(lyrics) = get_lyrics(artist_name, track_name).await
+					{
+						lyrics
+					} else {
+						"Not found :(".to_owned()
+					};
 					let embed = CreateEmbed::default()
 						.title("Lyrics")
 						.description(lyrics)
-						.colour(COLOUR_BLUE);
-					*lyrics_embed = Some(embed.clone());
-					embed
-				} else {
-					let embed = CreateEmbed::default()
-						.title("Lyrics")
-						.description("Not found :(")
 						.colour(COLOUR_BLUE);
 					*lyrics_embed = Some(embed.clone());
 					embed
@@ -598,48 +596,43 @@ pub async fn add_deezer_playlist(
 	if let Ok(request) = HTTP_CLIENT
 		.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
 		.send()
+		.await && let Some(payload) = request
+		.json::<DeezerResponse>()
 		.await
+		.ok()
+		.filter(|output| !output.tracks.data.is_empty())
 	{
 		ctx.defer().await?;
-		if let Some(payload) = request
-			.json::<DeezerResponse>()
-			.await
-			.ok()
-			.filter(|output| !output.tracks.data.is_empty())
-		{
-			let reply = ctx.reply(QUEUE_MSG).await?;
-			let msg = reply.message().await?;
-			let mut failed_songs: u32 = 0;
-			for track in payload.tracks.data {
-				let search = format!("{} {}", track.title, track.artist.name);
-				let mut src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
-				if let Ok(audio) = src.create_async().await
-					&& let Ok(metadata) = src.aux_metadata().await
-				{
-					queue_song(
-						metadata,
-						audio,
-						src,
-						handler_lock.clone(),
-						guild_id,
-						ctx.data(),
-						msg.id,
-						msg.channel_id,
-						ctx.author().display_name().to_owned(),
-					)
-					.await;
-				} else {
-					failed_songs += 1;
-				}
+		let reply = ctx.reply(QUEUE_MSG).await?;
+		let msg = reply.message().await?;
+		let mut failed_songs: u32 = 0;
+		for track in payload.tracks.data {
+			let search = format!("{} {}", track.title, track.artist.name);
+			let mut src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
+			if let Ok(audio) = src.create_async().await
+				&& let Ok(metadata) = src.aux_metadata().await
+			{
+				queue_song(
+					metadata,
+					audio,
+					src,
+					handler_lock.clone(),
+					guild_id,
+					ctx.data(),
+					msg.id,
+					msg.channel_id,
+					ctx.author().display_name().to_owned(),
+				)
+				.await;
+			} else {
+				failed_songs += 1;
 			}
-			if failed_songs != 0 {
-				ctx.reply(format!(
-					"Couldn't queue {failed_songs} because of YouTube :/"
-				))
-				.await?;
-			}
-		} else {
-			ctx.reply("Deezer refused to serve your request").await?;
+		}
+		if failed_songs != 0 {
+			ctx.reply(format!(
+				"Couldn't queue {failed_songs} because of YouTube :/"
+			))
+			.await?;
 		}
 	} else {
 		ctx.reply("Invalid playlist-id for Deezer playlist").await?;
@@ -727,6 +720,54 @@ pub async fn add_youtube_playlist(
 	Ok(())
 }
 
+fn create_join_embed(is_global: bool) -> CreateEmbed<'static> {
+	CreateEmbed::default()
+		.title("I've joined the party!")
+		.description(
+			"NEW: Set a music channel with /configure_server_settings and I'll listen to your \
+			 song requests there",
+		)
+		.field(
+			if is_global {
+				"/play_song_global"
+			} else {
+				"/play_song"
+			},
+			"Queue a new song from a YouTube url or from a search",
+			false,
+		)
+		.field(
+			"/seek_song",
+			"Seek song forward (e.g. +20) or backwards (e.g. -20)",
+			false,
+		)
+		.field(
+			"/text_to_voice",
+			"Make the bot say smth either by providing an input or replying to a message",
+			false,
+		)
+		.field(
+			if is_global {
+				"/leave_voice_global"
+			} else {
+				"/leave_voice"
+			},
+			"Make the bot leave the party",
+			false,
+		)
+		.field(
+			"/add_youtube_playlist",
+			"Add songs in a YouTube-playlist",
+			false,
+		)
+		.field(
+			"/add_deezer_playlist",
+			"Add songs in a Deezer-playlist",
+			false,
+		)
+		.colour(COLOUR_YELLOW)
+}
+
 /// Join the current voice channel with global music playback
 #[poise::command(prefix_command, slash_command)]
 pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
@@ -773,35 +814,8 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 		ctx.data()
 			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
-		ctx.send(
-			CreateReply::default().embed(
-				CreateEmbed::default()
-					.title("I've joined the party!")
-					.description(
-						"NEW: Set a music channel with /configure_server_settings and I'll listen \
-						 to your song requests there",
-					)
-					.field(
-						"/play_song_global",
-						"Queue a new song from a YouTube url or from a search",
-						false,
-					)
-					.field(
-						"/seek_song",
-						"Seek song forward (e.g. +20) or backwards (e.g. -20)",
-						false,
-					)
-					.field(
-						"/text_to_voice",
-						"Make the bot say smth either by providing an input or replying to a \
-						 message",
-						false,
-					)
-					.field("/leave_voice_global", "Make the bot leave the party", false)
-					.colour(COLOUR_YELLOW),
-			),
-		)
-		.await?;
+		ctx.send(CreateReply::default().embed(create_join_embed(true)))
+			.await?;
 		add_events(&ctx, guild_id, handler_lock).await;
 	} else {
 		ctx.reply(ALREADY_IN_VOICE_CHAN_MSG).await?;
@@ -831,45 +845,8 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	if let Some(channel_id) = channel_id
 		&& let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
 	{
-		ctx.send(
-			CreateReply::default().embed(
-				CreateEmbed::default()
-					.title("I've joined the party!")
-					.description(
-						"NEW: Set a music channel with /configure_server_settings and I'll listen \
-						 to your song requests there",
-					)
-					.field(
-						"/play_song",
-						"Queue a new song from a YouTube url or from a search",
-						false,
-					)
-					.field(
-						"/add_youtube_playlist",
-						"Add songs in a YouTube-playlist",
-						false,
-					)
-					.field(
-						"/add_deezer_playlist",
-						"Add songs in a Deezer-playlist",
-						false,
-					)
-					.field(
-						"/seek_song",
-						"Seek song forward (e.g. +20) or backwards (e.g. -20)",
-						false,
-					)
-					.field(
-						"/text_to_voice",
-						"Make the bot say smth either by providing an input or replying to a \
-						 message",
-						false,
-					)
-					.field("/leave_voice", "Make the bot leave the party", false)
-					.colour(COLOUR_YELLOW),
-			),
-		)
-		.await?;
+		ctx.send(CreateReply::default().embed(create_join_embed(false)))
+			.await?;
 		add_events(&ctx, guild_id, handler_lock).await;
 	} else {
 		ctx.reply(ALREADY_IN_VOICE_CHAN_MSG).await?;

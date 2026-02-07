@@ -1,6 +1,6 @@
 use std::{
 	collections::HashMap,
-	sync::{Arc, LazyLock, Mutex, OnceLock},
+	sync::{Arc, LazyLock, OnceLock},
 	time::Duration,
 };
 
@@ -14,6 +14,7 @@ use serenity::all::{Emoji, GenericChannelId, GuildId, MessageId, ShardManager, U
 use songbird::{Songbird, input::AuxMetadata};
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::config::settings::{APIConfig, HTTPAgent, ServerConfig, UserSettings};
@@ -28,6 +29,7 @@ type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
 pub struct AIChatContext {
 	pub messages: Vec<AIChatMessage>,
 	pub static_info: AIChatStatic,
+	pub system_msg_index: usize,
 }
 
 #[derive(Default)]
@@ -120,6 +122,7 @@ pub struct UtilsConfig {
 	pub fabseserver: ServerConfig,
 	pub api: APIConfig,
 	pub http_agent: HTTPAgent,
+	pub bot_name: String,
 }
 
 pub static UTILS_CONFIG: OnceLock<Arc<UtilsConfig>> = OnceLock::new();

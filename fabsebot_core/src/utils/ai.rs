@@ -1,11 +1,9 @@
-use std::{
-	collections::HashSet,
-	fmt::Write as _,
-	sync::{Arc, Mutex as SMutex},
-};
+use std::{collections::HashSet, fmt::Write as _, io::Cursor, sync::Arc};
 
 use anyhow::{Result as AResult, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
+use image::{ImageFormat, guess_format, load_from_memory};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serenity::all::{
@@ -17,7 +15,7 @@ use tokio::sync::Mutex;
 use winnow::Parser as _;
 
 use crate::{
-	config::types::{AIChatContext, AIChatMessage, AIChatStatic, HTTP_CLIENT, UTILS_CONFIG},
+	config::types::{AIChatContext, AIChatMessage, HTTP_CLIENT, UTILS_CONFIG},
 	utils::helpers::{discord_message_link, get_configured_songbird_handler},
 };
 
@@ -56,65 +54,46 @@ async fn internet_search(message: &Message, fabseserver_search: &str) -> AResult
 	)
 }
 
-async fn user_role(
-	author_roles: &[Role],
-	author_member: Member,
-	author_id_u64: u64,
-	author_name: &str,
-	message: &Message,
-	conversations: Arc<SMutex<AIChatContext>>,
-) -> AResult<()> {
-	let roles_joined = author_roles
+async fn user_roles_pfp(roles: &[Role], member: &Member) -> AResult<(String, String)> {
+	let roles_joined = roles
 		.iter()
 		.map(|role| role.name.as_str())
 		.intersperse(", ")
 		.collect::<String>();
-	let pfp_desc = match HTTP_CLIENT
-		.get(
-			author_member
-				.avatar_url()
-				.unwrap_or_else(|| message.author.static_face()),
-		)
-		.send()
-		.await
-	{
+	let avatar_url = member.avatar_url().unwrap_or_else(|| {
+		member
+			.user
+			.avatar_url()
+			.unwrap_or_else(|| member.user.default_avatar_url())
+	});
+	let pfp_desc = match HTTP_CLIENT.get(avatar_url).send().await {
 		Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
 			.unwrap_or_else(|_| "Unable to describe".to_owned()),
 		Err(_) => "Unable to describe".to_owned(),
 	};
-	conversations.lock().unwrap().static_info.users.insert(
-		author_id_u64,
-		format!(
-			"\n{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the \
-			 following roles: {roles_joined}. Their nickname in the current guild is {} which \
-			 they joined on this date {}",
-			author_member.display_name(),
-			author_member.joined_at.unwrap_or_default()
-		),
-	);
 
-	Ok(())
+	Ok((roles_joined, pfp_desc))
 }
 
 pub async fn ai_chatbot(
 	ctx: &SContext,
 	message: &Message,
 	chatbot_role: String,
-	chatbot_internet_search: Option<bool>,
+	chatbot_internet_search: bool,
 	guild_id: GuildId,
-	conversations: Arc<SMutex<AIChatContext>>,
+	conversations: Arc<Mutex<AIChatContext>>,
 	voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> AResult<()> {
 	if message.content.eq_ignore_ascii_case("clear") {
 		{
-			let mut conversations = conversations.lock().unwrap();
-			conversations.messages.clear();
-			conversations.messages.shrink_to_fit();
-			conversations.static_info = AIChatStatic::default();
+			let mut conversations = conversations.lock().await;
+			*conversations = AIChatContext::default();
 		}
 		message.reply(&ctx.http, "Conversation cleared!").await?;
 		return Ok(());
 	}
+
+	let mut conversations = conversations.lock().await;
 
 	let utils_config = UTILS_CONFIG.get().unwrap();
 
@@ -123,7 +102,7 @@ pub async fn ai_chatbot(
 		.start_typing(Arc::<Http>::clone(&ctx.http));
 	let author_name = message.author.name.as_str();
 	let author_id_u64 = message.author.id.get();
-	let internet_search = if chatbot_internet_search.is_some_and(|c| c) {
+	let internet_search = if chatbot_internet_search {
 		internet_search(message, &utils_config.fabseserver.search).await?
 	} else {
 		"Nothing scraped from the internet".to_owned()
@@ -185,74 +164,55 @@ pub async fn ai_chatbot(
 			}
 		}
 	}
-	let (static_set, known_user) = {
-		let mut conversations = conversations.lock().unwrap();
-		if conversations.static_info.chatbot_role != chatbot_role {
-			conversations.static_info.chatbot_role = chatbot_role;
-		}
-		(
-			conversations.static_info.is_set,
-			conversations.static_info.users.contains_key(&author_id_u64),
-		)
-	};
-	if static_set {
-		if !known_user
-			&& let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await
-			&& let Some(author_roles) = author_member.roles(&ctx.cache)
-		{
-			user_role(
-				&author_roles,
-				author_member,
-				author_id_u64,
-				author_name,
-				message,
-				conversations.clone(),
-			)
-			.await?;
-		}
-	} else {
-		if let Some(guild) = message.guild(&ctx.cache) {
-			conversations.lock().unwrap().static_info.guild_desc = format!(
-				"\nThe guild you're currently talking in is named {} with this description {}, \
-				 have {} members and have {} channels with these names {}, current channel name \
-				 is {}. {}",
-				guild.name,
-				guild
-					.description
-					.as_ref()
-					.map_or("not known", |guild_desc| guild_desc),
-				guild.member_count,
-				guild.channels.len(),
-				guild
-					.channels
-					.iter()
-					.map(|c| c.base.name.as_str())
-					.intersperse(", ")
-					.collect::<String>(),
-				guild
-					.channel(message.channel_id)
-					.map_or("unknown", |channel| channel.base().name.as_str()),
-				if message.author.id == guild.owner_id {
-					"You're also talking to this guild's owner"
-				} else {
-					"But you're not talking to this guild's owner"
-				}
-			);
-		}
+	if conversations.static_info.chatbot_role != chatbot_role {
+		conversations.static_info.chatbot_role = chatbot_role;
+	}
+	if !conversations.static_info.is_set
+		&& let Some(guild) = message.guild(&ctx.cache)
+	{
+		conversations.static_info.guild_desc = format!(
+			"The guild you're currently talking in is named {} with this description {}, have {} \
+			 members and have {} channels with these names {}, current channel name is {}. {}\n",
+			guild.name,
+			guild
+				.description
+				.as_ref()
+				.map_or("not known", |guild_desc| guild_desc),
+			guild.member_count,
+			guild.channels.len(),
+			guild
+				.channels
+				.iter()
+				.map(|c| c.base.name.as_str())
+				.intersperse(", ")
+				.collect::<String>(),
+			guild
+				.channel(message.channel_id)
+				.map_or("unknown", |channel| channel.base().name.as_str()),
+			if message.author.id == guild.owner_id {
+				"You're also talking to this guild's owner"
+			} else {
+				"But you're not talking to this guild's owner"
+			}
+		);
+		conversations.static_info.is_set = true;
+	}
 
-		if let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await
-			&& let Some(author_roles) = author_member.roles(&ctx.cache)
-		{
-			user_role(
-				&author_roles,
-				author_member,
-				author_id_u64,
-				author_name,
-				message,
-				conversations.clone(),
-			)
-			.await?;
-		}
+	if !conversations.static_info.users.contains_key(&author_id_u64)
+		&& let Ok(author_member) = guild_id.member(&ctx.http, message.author.id).await
+		&& let Some(author_roles) = author_member.roles(&ctx.cache)
+	{
+		let (roles_joined, pfp_desc) = user_roles_pfp(&author_roles, &author_member).await?;
+		conversations.static_info.users.insert(
+			author_id_u64,
+			format!(
+				"{author_name}'s pfp can be described as: {pfp_desc} and {author_name} has the \
+				 following roles: {roles_joined}. Their nickname in the current guild is {} which \
+				 they joined on this date {}\n",
+				author_member.display_name(),
+				author_member.joined_at.unwrap_or_default()
+			),
+		);
 	}
 	if !message.mentions.is_empty() {
 		writeln!(
@@ -261,34 +221,12 @@ pub async fn ai_chatbot(
 			message.mentions.len()
 		)?;
 		for target in &message.mentions {
-			if let Some(target_info) = conversations
-				.lock()
-				.unwrap()
-				.static_info
-				.users
-				.get(&target.id.get())
-			{
+			if let Some(target_info) = conversations.static_info.users.get(&target.id.get()) {
 				writeln!(system_content, "{target_info}",)?;
-			} else if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await {
-				let target_roles = target_member.roles(&ctx.cache).map_or_else(
-					|| "No roles found".to_owned(),
-					|roles| {
-						roles
-							.iter()
-							.map(|role| role.name.as_str())
-							.intersperse(", ")
-							.collect::<String>()
-					},
-				);
-				let pfp_desc = match HTTP_CLIENT
-					.get(target.avatar_url().unwrap_or_else(|| target.static_face()))
-					.send()
-					.await
-				{
-					Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
-						.unwrap_or_else(|_| "Unable to describe".to_owned()),
-					Err(_) => "Unable to describe".to_owned(),
-				};
+			} else if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await
+				&& let Some(roles) = target_member.roles(&ctx.cache)
+			{
+				let (target_roles, pfp_desc) = user_roles_pfp(&roles, &target_member).await?;
 				let target_desc = format!(
 					"{} was mentioned (global name is {}). Roles: {target_roles}. Profile \
 					 picture: {pfp_desc}. Joined this guild at this date: {}",
@@ -298,8 +236,6 @@ pub async fn ai_chatbot(
 				);
 				writeln!(system_content, "{}", target_desc.as_str())?;
 				conversations
-					.lock()
-					.unwrap()
 					.static_info
 					.users
 					.insert(target.id.get(), target_desc);
@@ -307,96 +243,89 @@ pub async fn ai_chatbot(
 		}
 	}
 	let response_opt = {
-		let convo_copy = {
-			let content_safe = message.content_safe(&ctx.cache);
-			let mut conversations = conversations.lock().unwrap();
-			let mut seen_users: HashSet<&str> = HashSet::new();
-			for message in conversations.messages.iter().filter(|m| m.role.is_user()) {
-				if let Some(user) = message.content.split(':').next().map(str::trim)
-					&& seen_users.insert(user)
-				{
-					if seen_users.len() == 1 {
-						system_content.push_str("Current users in the conversation\n");
-					}
-					system_content.push_str(user);
-					system_content.push('\n');
-				}
-			}
-			let bot_context = format!(
-				"{}{}{}Currently the date and time in UTC-timezone is{}\nScraping the internet \
-				 for the user's message gives this: {}\n{}",
-				conversations.static_info.chatbot_role,
-				conversations.static_info.guild_desc,
-				conversations
-					.static_info
-					.users
-					.get(&author_id_u64)
-					.map_or_else(|| "Nothing is known about this user", |user| user.as_str()),
-				Timestamp::now(),
-				internet_search,
-				system_content
-			);
-			if let Some(system_message) = conversations
-				.messages
-				.iter_mut()
-				.find(|msg| msg.role.is_system())
+		let content_safe = message.content_safe(&ctx.cache);
+		let mut seen_users: HashSet<&str> = HashSet::new();
+		for message in conversations.messages.iter().filter(|m| m.role.is_user()) {
+			if let Some(user) = message.content.split(':').next().map(str::trim)
+				&& seen_users.insert(user)
 			{
-				system_message.content = bot_context;
-			} else {
-				let system_msg = AIChatMessage::system(bot_context);
-				conversations.messages.push(system_msg);
+				if seen_users.len() == 1 {
+					system_content.push_str("Current users in the conversation\n");
+				}
+				system_content.push_str(user);
+				system_content.push('\n');
 			}
-			conversations.static_info.is_set = true;
-			conversations.messages.push(AIChatMessage::user(format!(
-				"Message sent at: {} by user: {author_name}: {content_safe}",
-				message.timestamp
-			)));
-			conversations.messages.clone()
-		};
-		ai_response(&convo_copy).await
+		}
+		let bot_context = format!(
+			"{}{}{}Currently the date and time in UTC-timezone is{}\nScraping the internet for \
+			 the user's message gives this: {}\n{}",
+			conversations.static_info.chatbot_role,
+			conversations.static_info.guild_desc,
+			conversations
+				.static_info
+				.users
+				.get(&author_id_u64)
+				.map_or_else(|| "Nothing is known about this user", |user| user.as_str()),
+			Timestamp::now(),
+			internet_search,
+			system_content
+		);
+		let index = conversations.system_msg_index;
+		if !conversations.messages.is_empty()
+			&& let Some(system_message) = conversations.messages.get_mut(index)
+		{
+			system_message.content = bot_context;
+		} else {
+			let system_msg = AIChatMessage::system(bot_context);
+			conversations.messages.push(system_msg);
+			conversations.system_msg_index = conversations.messages.len() - 1;
+		}
+		conversations.messages.push(AIChatMessage::user(format!(
+			"Message sent at: {} by user: {author_name}: {content_safe}",
+			message.timestamp
+		)));
+		ai_response(&conversations.messages).await
 	};
 
-	if let Ok(response) = response_opt {
-		if response.len() >= 2000 {
-			let mut start = 0;
-			while start < response.len() {
-				let end = response[start..]
-					.char_indices()
-					.take_while(|(i, _)| *i < 2000)
-					.last()
-					.map_or(response.len(), |(i, c)| {
-						start.saturating_add(i).saturating_add(c.len_utf8())
-					});
-				message.reply(&ctx.http, &response[start..end]).await?;
-				start = end;
+	match response_opt {
+		Ok(response) => {
+			if response.len() >= 2000 {
+				let mut start = 0;
+				while start < response.len() {
+					let end = response[start..]
+						.char_indices()
+						.take_while(|(i, _)| *i < 2000)
+						.last()
+						.map_or(response.len(), |(i, c)| {
+							start.saturating_add(i).saturating_add(c.len_utf8())
+						});
+					message.reply(&ctx.http, &response[start..end]).await?;
+					start = end;
+				}
+			} else {
+				message.reply(&ctx.http, response.as_str()).await?;
 			}
-		} else {
-			message.reply(&ctx.http, response.as_str()).await?;
+			if let Some(handler_lock) = voice_handle
+				&& let Ok(bytes) = ai_voice(&response).await
+			{
+				get_configured_songbird_handler(&handler_lock)
+					.await
+					.enqueue_input(Input::from(bytes))
+					.await;
+			}
+			conversations
+				.messages
+				.push(AIChatMessage::assistant(response));
 		}
-		if let Some(handler_lock) = voice_handle
-			&& let Ok(bytes) = ai_voice(&response).await
-		{
-			get_configured_songbird_handler(&handler_lock)
-				.await
-				.enqueue_input(Input::from(bytes))
-				.await;
-		}
-		conversations
-			.lock()
-			.unwrap()
-			.messages
-			.push(AIChatMessage::assistant(response));
-	} else {
-		{
-			let mut conversations = conversations.lock().unwrap();
-			conversations.messages.clear();
-			conversations.messages.shrink_to_fit();
-			conversations.static_info = AIChatStatic::default();
-		}
+		Err(err) => {
+			*conversations = AIChatContext::default();
+			drop(conversations);
 
-		message
-			.reply(&ctx.http, "Sorry, I had to forget our convo, too boring!")
-			.await?;
+			message
+				.reply(&ctx.http, "Sorry, I had to forget our convo, too boring!")
+				.await?;
+			bail!(err);
+		}
 	}
 
 	typing.stop();
@@ -411,10 +340,27 @@ struct SimpleMessage<'a> {
 }
 
 #[derive(Serialize)]
+struct SimpleMessageImage<'a> {
+	role: &'a str,
+	content: [ContentPart<'a>; 2],
+}
+
+#[derive(Serialize)]
+struct ImageUrl<'a> {
+	url: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ContentPart<'a> {
+	Text { text: &'a str },
+	ImageUrl { image_url: ImageUrl<'a> },
+}
+
+#[derive(Serialize)]
 struct ImageDesc<'a> {
-	messages: [SimpleMessage<'a>; 2],
+	messages: [SimpleMessageImage<'a>; 1],
 	model: &'a str,
-	image: &'a [u8],
 }
 
 #[derive(Deserialize)]
@@ -432,35 +378,56 @@ struct AIMessage {
 	content: String,
 }
 
-pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> AResult<String> {
-	let utils_config = UTILS_CONFIG.get().unwrap();
-	let request = ImageDesc {
-		messages: [
-			SimpleMessage {
-				role: "system",
-				content: "Generate a detailed caption for this image",
-			},
-			SimpleMessage {
-				role: "user",
-				content: user_context.map_or("What is in this image?", |context| context),
-			},
-		],
-		model: &utils_config.fabseserver.image_to_text_model,
-		image: content,
-	};
-	let resp = HTTP_CLIENT
-		.post(&utils_config.fabseserver.llm_host_text)
-		.json(&request)
-		.send()
-		.await?;
+async fn ai_request_internal<T: Serialize + Send + Sync>(
+	endpoint: &str,
+	request: &T,
+) -> AResult<String> {
+	let resp = HTTP_CLIENT.post(endpoint).json(request).send().await?;
 
 	let ai_response = resp.json::<AIReponse>().await?;
-
 	ai_response
 		.choices
-		.first()
-		.ok_or_else(|| anyhow!("Failed to describe image"))
-		.map(|choice| choice.message.content.clone())
+		.into_iter()
+		.next()
+		.ok_or_else(|| anyhow!("Failed to get AI response"))
+		.map(|choice| choice.message.content)
+}
+
+pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> AResult<String> {
+	let image_format = guess_format(content)?;
+	let base64_image = if image_format == ImageFormat::WebP {
+		let img = load_from_memory(content)?;
+		let mut png_bytes = Vec::with_capacity(content.len());
+		img.write_to(&mut Cursor::new(&mut png_bytes), ImageFormat::Jpeg)?;
+		BASE64.encode(&png_bytes)
+	} else {
+		BASE64.encode(content)
+	};
+
+	let data_uri = format!(
+		"data:{};base64,{}",
+		image_format.to_mime_type(),
+		base64_image
+	);
+
+	let utils_config = UTILS_CONFIG.get().unwrap();
+
+	let request = ImageDesc {
+		model: &utils_config.fabseserver.image_to_text_model,
+		messages: [SimpleMessageImage {
+			role: "user",
+			content: [
+				ContentPart::Text {
+					text: user_context.map_or("What is in this image?", |context| context),
+				},
+				ContentPart::ImageUrl {
+					image_url: ImageUrl { url: &data_uri },
+				},
+			],
+		}],
+	};
+
+	ai_request_internal(&utils_config.fabseserver.llm_host_text, &request).await
 }
 
 #[derive(Serialize)]
@@ -483,20 +450,12 @@ pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> AResul
 		],
 		model,
 	};
-	let utils_config = UTILS_CONFIG.get().unwrap();
-	let resp = HTTP_CLIENT
-		.post(&utils_config.fabseserver.llm_host_text)
-		.json(&request)
-		.send()
-		.await?;
 
-	let ai_response = resp.json::<AIReponse>().await?;
-
-	ai_response
-		.choices
-		.first()
-		.ok_or_else(|| anyhow!("Failed to get response"))
-		.map(|choice| choice.message.content.clone())
+	ai_request_internal(
+		&UTILS_CONFIG.get().unwrap().fabseserver.llm_host_text,
+		&request,
+	)
+	.await
 }
 
 #[derive(Serialize)]
@@ -511,20 +470,8 @@ pub async fn ai_response(messages: &[AIChatMessage]) -> AResult<String> {
 		model: &utils_config.fabseserver.text_gen_model,
 		messages,
 	};
-	let resp = HTTP_CLIENT
-		.post(&utils_config.fabseserver.llm_host_text)
-		.json(&request)
-		.send()
-		.await?;
 
-	let output = resp.json::<AIReponse>().await?;
-
-	output
-		.choices
-		.into_iter()
-		.find(|choice| !choice.message.content.trim().is_empty())
-		.map(|choice| choice.message.content)
-		.ok_or_else(|| anyhow!("No valid response from AI"))
+	ai_request_internal(&utils_config.fabseserver.llm_host_text, &request).await
 }
 
 #[derive(Serialize)]
