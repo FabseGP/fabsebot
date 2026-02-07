@@ -44,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - Benchmark quote_image
 - Global quote themes
 - Major refactoring!
+- Increased concurrency!
 
 ### 🐛 Bug Fixes
 
@@ -99,6 +100,7 @@ All notable changes to this project will be documented in this file.
 - Use non-color emoji font for now
 - Set user-agent in config
 - Adding youtube & deezer playlists doesn't fail silently + parallize image quotes
+- Squash fields in TextLayout
 
 ### 💼 Other
 
