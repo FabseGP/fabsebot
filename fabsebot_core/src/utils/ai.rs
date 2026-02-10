@@ -278,7 +278,7 @@ pub async fn ai_chatbot(
 		} else {
 			let system_msg = AIChatMessage::system(bot_context);
 			conversations.messages.push(system_msg);
-			conversations.system_msg_index = conversations.messages.len() - 1;
+			conversations.system_msg_index = conversations.messages.len().saturating_sub(1);
 		}
 		conversations.messages.push(AIChatMessage::user(format!(
 			"Message sent at: {} by user: {author_name}: {content_safe}",

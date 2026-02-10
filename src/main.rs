@@ -41,16 +41,39 @@ fn setup_tracing(log_level_str: &str) -> AResult<()> {
 	Ok(())
 }
 
+#[expect(clippy::expect_used)]
 #[tokio::main]
 async fn main() -> AResult<()> {
 	let config_toml: Table = read_to_string("config.toml")?.parse()?;
 
-	let main_config: MainConfig = Value::try_into(config_toml["Main"].clone())?;
-	let bot_config: BotConfig = Value::try_into(config_toml["Bot"].clone())?;
-	let postgres_config: PostgresConfig = Value::try_into(config_toml["PostgreSQL"].clone())?;
-	let server_config: ServerConfig = Value::try_into(config_toml["Server"].clone())?;
-	let api_config: APIConfig = Value::try_into(config_toml["API-Info"].clone())?;
-	let http_agent: HTTPAgent = Value::try_into(config_toml["HTTP-Agent"].clone())?;
+	let main_config: MainConfig =
+		Value::try_into(config_toml.get("Main").expect("Missing Main-field").clone())?;
+	let bot_config: BotConfig =
+		Value::try_into(config_toml.get("Bot").expect("Missing Bot-field").clone())?;
+	let postgres_config: PostgresConfig = Value::try_into(
+		config_toml
+			.get("PostgreSQL")
+			.expect("Missing PostgreSQL-field")
+			.clone(),
+	)?;
+	let server_config: ServerConfig = Value::try_into(
+		config_toml
+			.get("Server")
+			.expect("Missing Server-field")
+			.clone(),
+	)?;
+	let api_config: APIConfig = Value::try_into(
+		config_toml
+			.get("API-Info")
+			.expect("Missing API-Info-field")
+			.clone(),
+	)?;
+	let http_agent: HTTPAgent = Value::try_into(
+		config_toml
+			.get("HTTP-Agent")
+			.expect("Missing HTTP-Agent-field")
+			.clone(),
+	)?;
 
 	setup_tracing(&main_config.log_level)?;
 

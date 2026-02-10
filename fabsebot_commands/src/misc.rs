@@ -17,8 +17,8 @@ use fabsebot_core::{
 	utils::{
 		ai::ai_response_simple,
 		image::{
-			TextLayout, avatar_position, get_theme, quote_animated_image, quote_static_image,
-			resize_avatar,
+			QuoteImageConfig, TextLayout, avatar_position, get_theme, quote_animated_image,
+			quote_static_image, resize_avatar,
 		},
 	},
 };
@@ -779,10 +779,7 @@ pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 struct ImageInfo {
 	author_name: String,
 	content: String,
-	is_bw: bool,
-	is_reverse: bool,
-	is_gradient: bool,
-	new_font: bool,
+	config: QuoteImageConfig,
 	content_font: (String, FontArc),
 	author_font: FontArc,
 	text_colour: Rgba<u8>,
@@ -822,6 +819,13 @@ impl ImageInfo {
 		let img_clone = img.clone();
 		let avatar_position = avatar_position(false);
 
+		let mut image_config = QuoteImageConfig {
+			bw: false,
+			gradient: false,
+			new_font: true,
+			reverse: false,
+		};
+
 		let mut text_layout = TextLayout::default();
 
 		let (text_layout, output, static_image, animated_image) = if is_animated {
@@ -839,10 +843,7 @@ impl ImageInfo {
 					img_clone,
 					&mut text_layout,
 					avatar_position,
-					false,
-					false,
-					false,
-					true,
+					image_config,
 					&mut cursor,
 					&mut buffer,
 				);
@@ -882,10 +883,7 @@ impl ImageInfo {
 					img_clone,
 					&mut text_layout,
 					avatar_position,
-					false,
-					false,
-					false,
-					true,
+					image_config,
 					&mut cursor,
 				);
 
@@ -914,15 +912,13 @@ impl ImageInfo {
 				}
 			}
 		};
+		image_config.new_font = false;
 		Ok(Self {
 			static_image,
 			animated_image,
 			author_name,
 			content,
-			is_bw: false,
-			is_reverse: false,
-			is_gradient: false,
-			new_font: false,
+			config: image_config,
 			author_font: author_font.clone(),
 			content_font: (CONTENT_FONT.to_owned(), content_font.clone()),
 			text_layout,
@@ -941,22 +937,22 @@ impl ImageInfo {
 	}
 
 	async fn toggle_bw(&mut self) -> Result<(), Error> {
-		self.is_bw = !self.is_bw;
+		self.config.bw = !self.config.bw;
 		self.image_gen().await?;
 
 		Ok(())
 	}
 
 	async fn toggle_reverse(&mut self) -> Result<(), Error> {
-		self.is_reverse = !self.is_reverse;
-		self.avatar_position = avatar_position(self.is_reverse);
+		self.config.reverse = !self.config.reverse;
+		self.avatar_position = avatar_position(self.config.reverse);
 		self.image_gen().await?;
 
 		Ok(())
 	}
 
 	async fn toggle_gradient(&mut self) -> Result<(), Error> {
-		self.is_gradient = !self.is_gradient;
+		self.config.gradient = !self.config.gradient;
 		self.image_gen().await?;
 
 		Ok(())
@@ -972,9 +968,9 @@ impl ImageInfo {
 	async fn new_font(&mut self, font_name: &str, new_font: FontArc) -> Result<(), Error> {
 		self.content_font.1 = new_font;
 		font_name.clone_into(&mut self.content_font.0);
-		self.new_font = true;
+		self.config.new_font = true;
 		self.image_gen().await?;
-		self.new_font = false;
+		self.config.new_font = false;
 
 		Ok(())
 	}
@@ -993,10 +989,7 @@ impl ImageInfo {
 		let author_font = self.author_font.clone();
 		let content_font = self.content_font.clone();
 		let mut text_layout = take(&mut self.text_layout);
-		let is_reverse = self.is_reverse;
-		let is_bw = self.is_bw;
-		let is_gradient = self.is_gradient;
-		let new_font = self.new_font;
+		let config = self.config;
 		let text_colour = self.text_colour;
 		let img = self.img.clone();
 		let avatar_position = self.avatar_position;
@@ -1019,10 +1012,7 @@ impl ImageInfo {
 					img,
 					&mut text_layout,
 					avatar_position,
-					is_bw,
-					is_gradient,
-					is_reverse,
-					new_font,
+					config,
 					&mut cursor,
 					&mut buffer,
 				);
@@ -1044,10 +1034,7 @@ impl ImageInfo {
 					img,
 					&mut text_layout,
 					avatar_position,
-					is_bw,
-					is_gradient,
-					is_reverse,
-					new_font,
+					config,
 					&mut cursor,
 				);
 
@@ -1183,18 +1170,19 @@ pub async fn quote_internal(
 
 	let (message_handle, reply_handle) = if let Some((reply, guild_id)) = reply
 		&& let Some(guild_data) = ctx.data().guilds.get(&guild_id)
-		&& let Some(channel) = guild_data.settings.quotes_channel
 	{
 		let message_url = reply.link().to_string();
-		let quote_channel = GenericChannelId::new(channel.cast_unsigned());
-		quote_channel
-			.send_message(
-				ctx.http(),
-				CreateMessage::default()
-					.add_file(attachment.clone())
-					.content(&message_url),
-			)
-			.await?;
+		if let Some(channel) = guild_data.settings.quotes_channel {
+			let quote_channel = GenericChannelId::new(channel.cast_unsigned());
+			quote_channel
+				.send_message(
+					ctx.http(),
+					CreateMessage::default()
+						.add_file(attachment.clone())
+						.content(&message_url),
+				)
+				.await?;
+		}
 		(
 			Some(
 				ctx.channel_id()

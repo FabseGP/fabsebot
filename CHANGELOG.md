@@ -101,6 +101,7 @@ All notable changes to this project will be documented in this file.
 - Set user-agent in config
 - Adding youtube & deezer playlists doesn't fail silently + parallize image quotes
 - Squash fields in TextLayout
+- Box large async future
 
 ### 💼 Other
 

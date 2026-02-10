@@ -126,10 +126,10 @@ fn chunk_string(s: &str, max_bytes: usize) -> Vec<&str> {
 	let mut start = 0;
 
 	while start < s.len() {
-		let mut end = (start + max_bytes).min(s.len());
+		let mut end = (start.saturating_add(max_bytes)).min(s.len());
 
 		while !s.is_char_boundary(end) && end > start {
-			end -= 1;
+			end = end.saturating_sub(1);
 		}
 
 		chunks.push(&s[start..end]);
@@ -164,7 +164,7 @@ pub async fn ai_text(
 			let field_name = if index == 0 {
 				"Response:".to_owned()
 			} else {
-				format!("Response (cont. {}):", index + 1)
+				format!("Response (cont. {}):", index.saturating_add(1))
 			};
 			embed = embed.field(field_name, *chunk, false);
 		}
@@ -1009,7 +1009,7 @@ pub async fn roast_internel(ctx: SContext<'_>, description: &str, name: &str) ->
 			let field_name = if index == 0 {
 				"Response:".to_owned()
 			} else {
-				format!("Response (cont. {}):", index + 1)
+				format!("Response (cont. {}):", index.saturating_add(1))
 			};
 			embed = embed.field(field_name, *chunk, false);
 		}
@@ -1398,7 +1398,7 @@ pub async fn urban(
 			let field_name = if index == 0 {
 				"Response:".to_owned()
 			} else {
-				format!("Response (cont. {}):", index + 1)
+				format!("Response (cont. {}):", index.saturating_add(1))
 			};
 			embed = embed.field(field_name, *chunk, false);
 		}
@@ -1406,7 +1406,7 @@ pub async fn urban(
 			let field_name = if index == 0 {
 				"Example:".to_owned()
 			} else {
-				format!("Example (cont. {}):", index + 1)
+				format!("Example (cont. {}):", index.saturating_add(1))
 			};
 			embed = embed.field(field_name, *chunk, false);
 		}
@@ -1478,7 +1478,7 @@ pub async fn urban(
 					let field_name = if index == 0 {
 						"Response:".to_owned()
 					} else {
-						format!("Response (cont. {}):", index + 1)
+						format!("Response (cont. {}):", index.saturating_add(1))
 					};
 					embed = embed.field(field_name, chunk.to_string(), false);
 				}
@@ -1486,7 +1486,7 @@ pub async fn urban(
 					let field_name = if index == 0 {
 						"Example:".to_owned()
 					} else {
-						format!("Example (cont. {}):", index + 1)
+						format!("Example (cont. {}):", index.saturating_add(1))
 					};
 					embed = embed.field(field_name, chunk.to_string(), false);
 				}

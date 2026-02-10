@@ -43,6 +43,7 @@ pub static EMOJI_FONT: LazyLock<FontArc> = LazyLock::new(|| {
 pub const CONTENT_FONT: &str = "NotoSansJP-Regular";
 pub const AUTHOR_FONT: &str = "Satoshi-LightItalic";
 
+#[expect(clippy::large_include_file)]
 pub static FONTS: LazyLock<HashMap<&'static str, FontArc>> = LazyLock::new(|| {
 	HashMap::from([
 		(

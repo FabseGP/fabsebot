@@ -635,7 +635,7 @@ pub async fn add_deezer_playlist(
 				)
 				.await;
 			} else {
-				failed_songs += 1;
+				failed_songs = failed_songs.saturating_add(1);
 			}
 		}
 		if failed_songs != 0 {
@@ -721,7 +721,7 @@ pub async fn add_youtube_playlist(
 			)
 			.await;
 		} else {
-			failed_songs += 1;
+			failed_songs = failed_songs.saturating_add(1);
 		}
 	}
 
