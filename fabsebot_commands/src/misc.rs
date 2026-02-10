@@ -1,6 +1,6 @@
 use std::{
-	collections::HashSet, fmt::Write as _, io::Cursor, mem::take, process, sync::Arc,
-	time::Duration,
+	borrow::Cow, cmp::Reverse, collections::HashSet, fmt::Write as _, io::Cursor, mem::take,
+	process, sync::Arc, time::Duration,
 };
 
 use ab_glyph::FontArc;
@@ -31,8 +31,8 @@ use serenity::{
 		ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
 		CreateAutocompleteResponse, CreateButton, CreateComponent, CreateEmbed, CreateEmbedFooter,
 		CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
-		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, Member,
-		Message, MessageId, OnlineStatus, ShardRunnerMessage, UserId,
+		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, GuildId,
+		Member, Message, MessageId, OnlineStatus, ShardRunnerMessage, User, UserId,
 	},
 	futures::StreamExt as _,
 	nonmax::NonMaxU16,
@@ -46,7 +46,11 @@ use tokio::{
 use tracing::warn;
 
 /// When you want to find the imposter
-#[poise::command(slash_command)]
+#[poise::command(
+	slash_command,
+	install_context = "User|Guild",
+	interaction_context = "Guild"
+)]
 pub async fn anony_poll(
 	ctx: SContext<'_>,
 	#[description = "Question"] title: String,
@@ -155,25 +159,16 @@ pub async fn anony_poll(
 	Ok(())
 }
 
-/// Send a birthday wish to a member
-#[poise::command(prefix_command, slash_command)]
-pub async fn birthday(
+pub async fn birthday_internal(
 	ctx: SContext<'_>,
-	#[description = "Member to congratulate"]
-	#[rest]
-	member: Member,
+	avatar_url: &str,
+	name: &str,
 ) -> Result<(), Error> {
-	let avatar_url = member.avatar_url().unwrap_or_else(|| {
-		member
-			.user
-			.avatar_url()
-			.unwrap_or_else(|| member.user.default_avatar_url())
-	});
 	ctx.send(
 		CreateReply::default()
 			.embed(
 				CreateEmbed::default()
-					.title(format!("HAPPY BIRTHDAY {}!", member.display_name()))
+					.title(format!("HAPPY BIRTHDAY {name}!"))
 					.thumbnail(avatar_url)
 					.image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
 					.colour(COLOUR_RED),
@@ -181,6 +176,46 @@ pub async fn birthday(
 			.reply(true),
 	)
 	.await?;
+	Ok(())
+}
+
+/// Send a birthday wish to a member
+#[poise::command(
+	prefix_command,
+	slash_command,
+	context_menu_command = "Birthday",
+	install_context = "User",
+	interaction_context = "PrivateChannel"
+)]
+pub async fn birthday_user(
+	ctx: SContext<'_>,
+	#[description = "User to congratulate"] user: User,
+) -> Result<(), Error> {
+	let avatar_url = user
+		.avatar_url()
+		.unwrap_or_else(|| user.default_avatar_url());
+	birthday_internal(ctx, &avatar_url, user.display_name()).await?;
+	Ok(())
+}
+
+/// Send a birthday wish to a member
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild|User",
+	interaction_context = "Guild"
+)]
+pub async fn birthday(
+	ctx: SContext<'_>,
+	#[description = "Member to congratulate"] member: Member,
+) -> Result<(), Error> {
+	let avatar_url = member.avatar_url().unwrap_or_else(|| {
+		member
+			.user
+			.avatar_url()
+			.unwrap_or_else(|| member.user.default_avatar_url())
+	});
+	birthday_internal(ctx, &avatar_url, member.display_name()).await?;
 	Ok(())
 }
 
@@ -205,7 +240,12 @@ impl BotStatus {
 }
 
 /// Fabsebot control
-#[poise::command(slash_command, owners_only)]
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild",
+	owners_only
+)]
 pub async fn bot_control(
 	ctx: SContext<'_>,
 	new_activity_opt: Option<String>,
@@ -250,7 +290,12 @@ pub async fn bot_control(
 }
 
 /// Debugging fabsebot's host
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	let mut embed = CreateEmbed::default().title("Debug");
 	let latency = if let Some(shard_runner) = ctx
@@ -333,7 +378,7 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let ctx_id_str = ctx.id().to_string();
 	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
-		.timeout(Duration::from_secs(60))
+		.timeout(Duration::from_mins(1))
 		.filter(move |interaction| {
 			interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 				&& interaction.user.id.get() == owner_id
@@ -386,7 +431,12 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// Ignore this command
-#[poise::command(prefix_command, owners_only)]
+#[poise::command(
+	prefix_command,
+	install_context = "Guild",
+	interaction_context = "Guild",
+	owners_only
+)]
 #[expect(clippy::unused_async)]
 pub async fn end_pgo(ctx: SContext<'_>) -> Result<(), Error> {
 	let shutdown_trigger = CLIENT_DATA
@@ -405,7 +455,12 @@ pub async fn end_pgo(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// When you're not lonely anymore
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -440,7 +495,12 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// When you're lonely and need someone to chat with
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -474,7 +534,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
 	let message = ctx.reply("Calling...").await?;
-	let result = timeout(Duration::from_secs(60), async {
+	let result = timeout(Duration::from_mins(1), async {
 		loop {
 			let has_other_calls = ctx.data().guilds.iter().any(|entry| {
 				entry.key() != &guild_id
@@ -542,7 +602,12 @@ async fn autocomplete_command<'a>(
 }
 
 /// When you need some help
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn help(
 	ctx: SContext<'_>,
 	#[description = "Command to get help with"]
@@ -614,7 +679,12 @@ struct UserCount {
 }
 
 /// Leaderboard of lifeless ppl
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -650,7 +720,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 				result
 			});
 
-	users.sort_by(|a, b| b.count.cmp(&a.count));
+	users.sort_by_key(|b| Reverse(b.count));
 	users.truncate(25);
 
 	let mut embed = CreateEmbed::default()
@@ -1002,53 +1072,46 @@ impl ImageInfo {
 	}
 }
 
-/// When your memory is not enough
-#[poise::command(prefix_command)]
-pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	let msg = ctx
-		.channel_id()
-		.message(&ctx.http(), MessageId::new(ctx.id()))
-		.await?;
-
-	let Some(ref reply) = msg.referenced_message else {
-		ctx.reply("Bruh, reply to a message").await?;
-		return Ok(());
-	};
-
-	if reply.content.is_empty() {
-		ctx.reply("Bruh, this message is empty").await?;
-		return Ok(());
-	}
-
+pub async fn quote_internal(
+	ctx: SContext<'_>,
+	msg: &Message,
+	reply: Option<(&Message, GuildId)>,
+) -> Result<(), Error> {
 	ctx.defer().await?;
-
 	let mut image_handle = {
-		let (avatar_url, author_name) = if reply.webhook_id.is_some() {
-			(
-				reply.author.avatar_url().unwrap_or_else(|| {
-					reply
-						.author
-						.static_avatar_url()
-						.unwrap_or_else(|| reply.author.default_avatar_url())
-				}),
-				format!("- {}", reply.author.name),
-			)
-		} else {
-			let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-			(
-				member.avatar_url().unwrap_or_else(|| {
+		let (avatar_url, author_name, text) = if let Some((reply, guild_id)) = reply {
+			let (url, name) = if reply.webhook_id.is_some() {
+				(
 					reply.author.avatar_url().unwrap_or_else(|| {
-						member
-							.user
+						reply
+							.author
 							.static_avatar_url()
-							.unwrap_or_else(|| member.user.default_avatar_url())
-					})
-				}),
-				format!("- {}", member.user.name),
+							.unwrap_or_else(|| reply.author.default_avatar_url())
+					}),
+					reply.author.name.clone(),
+				)
+			} else {
+				let member = guild_id.member(&ctx.http(), reply.author.id).await?;
+				(
+					member.avatar_url().unwrap_or_else(|| {
+						reply.author.avatar_url().unwrap_or_else(|| {
+							member
+								.user
+								.static_avatar_url()
+								.unwrap_or_else(|| member.user.default_avatar_url())
+						})
+					}),
+					member.user.name,
+				)
+			};
+			(url, format!("- {name}"), reply.content.to_string())
+		} else {
+			(
+				msg.author
+					.avatar_url()
+					.unwrap_or_else(|| msg.author.default_avatar_url()),
+				format!("- {}", msg.author.name),
+				msg.content.to_string(),
 			)
 		};
 		let (avatar_image, is_animated) = (
@@ -1062,15 +1125,8 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 			avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
 		);
 
-		ImageInfo::new(
-			avatar_image,
-			author_name,
-			reply.content.to_string(),
-			is_animated,
-		)
-		.await?
+		ImageInfo::new(avatar_image, author_name, text, is_animated).await?
 	};
-	let message_url = reply.link().to_string();
 	let attachment =
 		CreateAttachment::bytes(image_handle.buffer.clone(), image_handle.filename.clone());
 	let buttons = [
@@ -1123,40 +1179,60 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		&buttons,
 	))];
 
-	let mut message = ctx
-		.channel_id()
-		.send_message(
-			ctx.http(),
-			CreateMessage::default()
-				.add_file(attachment.clone())
-				.reference_message(&msg)
-				.content(&message_url)
-				.components(&action_row)
-				.select_menu(font_menu)
-				.select_menu(theme_menu)
-				.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
-		)
-		.await?;
+	let allowed_mentions = CreateAllowedMentions::default().replied_user(false);
 
-	if let Some(guild_data) = ctx.data().guilds.get(&guild_id)
+	let (message_handle, reply_handle) = if let Some((reply, guild_id)) = reply
+		&& let Some(guild_data) = ctx.data().guilds.get(&guild_id)
 		&& let Some(channel) = guild_data.settings.quotes_channel
 	{
+		let message_url = reply.link().to_string();
 		let quote_channel = GenericChannelId::new(channel.cast_unsigned());
 		quote_channel
 			.send_message(
 				ctx.http(),
 				CreateMessage::default()
 					.add_file(attachment.clone())
-					.content(message_url),
+					.content(&message_url),
 			)
 			.await?;
-	}
+		(
+			Some(
+				ctx.channel_id()
+					.send_message(
+						ctx.http(),
+						CreateMessage::default()
+							.add_file(attachment.clone())
+							.reference_message(msg)
+							.content(message_url)
+							.components(&action_row)
+							.select_menu(font_menu)
+							.select_menu(theme_menu)
+							.allowed_mentions(allowed_mentions),
+					)
+					.await?,
+			),
+			None,
+		)
+	} else {
+		(
+			None,
+			Some(
+				ctx.send(
+					CreateReply::default()
+						.attachment(attachment.clone())
+						.components(&action_row)
+						.allowed_mentions(allowed_mentions),
+				)
+				.await?,
+			),
+		)
+	};
 
 	let ctx_id_str = ctx.id().to_string();
 	let mut final_attachment = attachment.clone();
 
 	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-		.timeout(Duration::from_secs(300))
+		.timeout(Duration::from_mins(5))
 		.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
 		.stream();
 
@@ -1198,19 +1274,85 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		)
 		.await?;
 	}
-	message
-		.edit(
-			ctx,
-			EditMessage::default()
-				.new_attachment(final_attachment)
-				.components(&[]),
-		)
-		.await?;
+
+	if let Some(mut message) = message_handle {
+		message
+			.edit(
+				ctx,
+				EditMessage::default()
+					.new_attachment(final_attachment)
+					.components(&[]),
+			)
+			.await?;
+	} else if let Some(reply) = reply_handle {
+		reply
+			.edit(
+				ctx,
+				CreateReply::default()
+					.attachment(final_attachment)
+					.components(&[]),
+			)
+			.await?;
+	}
 
 	Ok(())
 }
 
-#[poise::command(prefix_command, owners_only)]
+/// When your memory is not enough
+#[poise::command(
+	context_menu_command = "Quote",
+	install_context = "Guild|User",
+	interaction_context = "Guild|PrivateChannel"
+)]
+pub async fn quote_menu(
+	ctx: SContext<'_>,
+	#[description = "Message"] msg: Message,
+) -> Result<(), Error> {
+	if msg.content.is_empty() {
+		ctx.reply("Bruh, this message is empty").await?;
+		return Ok(());
+	}
+	quote_internal(ctx, &msg, None).await?;
+	Ok(())
+}
+
+/// When your memory is not enough
+#[poise::command(
+	prefix_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
+pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Ok(());
+	};
+	let msg = ctx
+		.channel_id()
+		.message(&ctx.http(), MessageId::new(ctx.id()))
+		.await?;
+
+	let Some(ref reply) = msg.referenced_message else {
+		ctx.reply("Bruh, reply to a message").await?;
+		return Ok(());
+	};
+
+	if reply.content.is_empty() {
+		ctx.reply("Bruh, this message is empty").await?;
+		return Ok(());
+	}
+
+	quote_internal(ctx, &msg, Some((reply, guild_id))).await?;
+
+	Ok(())
+}
+
+#[poise::command(
+	prefix_command,
+	install_context = "Guild",
+	interaction_context = "Guild",
+	owners_only
+)]
 pub async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
 	let commands = &ctx.framework().options().commands;
 	register_globally(ctx.http(), commands).await?;
@@ -1245,7 +1387,9 @@ pub async fn respond(
 /// When your users are yapping
 #[poise::command(
 	slash_command,
-	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
+	install_context = "Guild",
+	interaction_context = "Guild"
 )]
 pub async fn slow_mode(
 	ctx: SContext<'_>,
@@ -1272,7 +1416,12 @@ struct WordCount {
 }
 
 /// Count of tracked words
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -1300,7 +1449,7 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 					count: entry.count,
 				})
 				.collect();
-			result.sort_by(|a, b| b.count.cmp(&a.count));
+			result.sort_by_key(|b| Reverse(b.count));
 			result.truncate(25);
 			result
 		});

@@ -21,7 +21,7 @@ use serenity::{
 	all::{
 		ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateAttachment,
 		CreateButton, CreateComponent, CreateEmbed, CreateInteractionResponse, EditMessage, Member,
-		MessageId,
+		MessageId, User,
 	},
 	futures::StreamExt as _,
 };
@@ -66,7 +66,7 @@ struct ImageRequest {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn ai_image(
 	ctx: SContext<'_>,
@@ -143,7 +143,7 @@ fn chunk_string(s: &str, max_bytes: usize) -> Vec<&str> {
 #[poise::command(
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn ai_text(
 	ctx: SContext<'_>,
@@ -247,7 +247,7 @@ struct AniMangaGenres {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn anime(
 	ctx: SContext<'_>,
@@ -347,7 +347,7 @@ pub async fn anime(
 				let ctx_id_str = ctx.id().to_string();
 				let mut collector_stream =
 					ComponentInteractionCollector::new(ctx.serenity_context())
-						.timeout(Duration::from_secs(60))
+						.timeout(Duration::from_mins(1))
 						.filter(move |interaction| {
 							interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 						})
@@ -502,7 +502,7 @@ impl Display for AnimeTitle {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn anime_scene(
 	ctx: SContext<'_>,
@@ -567,7 +567,7 @@ struct EightBallResponse {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn eightball(
 	ctx: SContext<'_>,
@@ -607,7 +607,7 @@ pub async fn eightball(
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn gif(
 	ctx: SContext<'_>,
@@ -648,7 +648,7 @@ pub async fn gif(
 
 		let ctx_id_str = ctx.id().to_string();
 		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_secs(60))
+			.timeout(Duration::from_mins(1))
 			.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
 			.stream();
 
@@ -728,7 +728,7 @@ struct JokeResponse {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
 	let request_url =
@@ -757,7 +757,7 @@ pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn manga(
 	ctx: SContext<'_>,
@@ -855,7 +855,7 @@ pub async fn manga(
 
 				let mut collector_stream =
 					ComponentInteractionCollector::new(ctx.serenity_context())
-						.timeout(Duration::from_secs(60))
+						.timeout(Duration::from_mins(1))
 						.filter(move |interaction| {
 							interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 						})
@@ -976,7 +976,7 @@ pub async fn manga(
 #[poise::command(
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn memegen(
 	ctx: SContext<'_>,
@@ -994,13 +994,78 @@ pub async fn memegen(
 	Ok(())
 }
 
+pub async fn roast_internel(ctx: SContext<'_>, description: &str, name: &str) -> Result<(), Error> {
+	let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no \
+	            mercy shown. the prompt will contain information of your target";
+	let utils_config = UTILS_CONFIG.get().unwrap();
+	if let Ok(resp) =
+		ai_response_simple(role, description, &utils_config.fabseserver.text_gen_model).await
+		&& !resp.is_empty()
+	{
+		let mut embed = CreateEmbed::default()
+			.title(format!("Roasting {name}"))
+			.colour(COLOUR_RED);
+		for (index, chunk) in chunk_string(&resp, 1024).iter().enumerate() {
+			let field_name = if index == 0 {
+				"Response:".to_owned()
+			} else {
+				format!("Response (cont. {}):", index + 1)
+			};
+			embed = embed.field(field_name, *chunk, false);
+		}
+		ctx.send(CreateReply::default().reply(true).embed(embed))
+			.await?;
+	} else {
+		ctx.reply(format!("{name}'s life is already roasted"))
+			.await?;
+	}
+
+	Ok(())
+}
+
 /// When someone offended you
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "User",
+	interaction_context = "PrivateChannel"
+)]
+pub async fn roast_user(
+	ctx: SContext<'_>,
+	#[description = "Target"] user: User,
+) -> Result<(), Error> {
+	ctx.defer().await?;
+	let avatar_url = user
+		.avatar_url()
+		.unwrap_or_else(|| user.default_avatar_url());
+	let banner_url = (ctx.http().get_user(user.id).await).map_or_else(
+		|_| "user has no banner".to_owned(),
+		|user| {
+			user.banner_url()
+				.unwrap_or_else(|| "user has no banner".to_owned())
+		},
+	);
+	let name = user.display_name();
+	let account_date = user.id.created_at();
+
+	let description =
+		format!("name:{name},avatar:{avatar_url},banner:{banner_url},acc_create:{account_date}");
+
+	roast_internel(ctx, &description, name).await?;
+
+	Ok(())
+}
+
+/// When someone offended you
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild|User",
+	interaction_context = "Guild"
+)]
 pub async fn roast(
 	ctx: SContext<'_>,
-	#[description = "Target"]
-	#[rest]
-	member: Member,
+	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -1092,30 +1157,8 @@ pub async fn roast(
 		 {account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:\
 		 {messages_string}"
 	);
-	let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no \
-	            mercy shown. the prompt will contain information of your target";
-	let utils_config = UTILS_CONFIG.get().unwrap();
-	if let Ok(resp) =
-		ai_response_simple(role, &description, &utils_config.fabseserver.text_gen_model).await
-		&& !resp.is_empty()
-	{
-		let mut embed = CreateEmbed::default()
-			.title(format!("Roasting {name}"))
-			.colour(COLOUR_RED);
-		for (index, chunk) in chunk_string(&resp, 1024).iter().enumerate() {
-			let field_name = if index == 0 {
-				"Response:".to_owned()
-			} else {
-				format!("Response (cont. {}):", index + 1)
-			};
-			embed = embed.field(field_name, *chunk, false);
-		}
-		ctx.send(CreateReply::default().reply(true).embed(embed))
-			.await?;
-	} else {
-		ctx.reply(format!("{name}'s life is already roasted"))
-			.await?;
-	}
+
+	roast_internel(ctx, &description, name).await?;
 
 	Ok(())
 }
@@ -1148,7 +1191,7 @@ struct TranslateRequest<'a> {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn translate(
 	ctx: SContext<'_>,
@@ -1234,7 +1277,7 @@ pub async fn translate(
 			let ctx_id_str = ctx.id().to_string();
 
 			let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-				.timeout(Duration::from_secs(60))
+				.timeout(Duration::from_mins(1))
 				.filter(move |interaction| {
 					interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 				})
@@ -1329,7 +1372,7 @@ struct UrbanDict {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn urban(
 	ctx: SContext<'_>,
@@ -1395,7 +1438,7 @@ pub async fn urban(
 			let ctx_id_str = ctx.id().to_string();
 
 			let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-				.timeout(Duration::from_secs(300))
+				.timeout(Duration::from_mins(5))
 				.filter(move |interaction| {
 					interaction.data.custom_id.starts_with(ctx_id_str.as_str())
 				})
@@ -1493,7 +1536,7 @@ pub async fn urban(
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn waifu(ctx: SContext<'_>) -> Result<(), Error> {
 	ctx.defer().await?;
@@ -1529,7 +1572,7 @@ struct WikiUrl {
 	prefix_command,
 	slash_command,
 	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	interaction_context = "Guild|PrivateChannel"
 )]
 pub async fn wiki(
 	ctx: SContext<'_>,

@@ -433,7 +433,7 @@ impl PlaybackHandler {
 			let mut history_embed: Option<CreateEmbed> = None;
 
 			let mut collector_stream = ComponentInteractionCollector::new(&self.serenity_context)
-				.timeout(Duration::from_secs(3600))
+				.timeout(Duration::from_hours(1))
 				.filter(move |interaction| {
 					interaction
 						.data
@@ -540,7 +540,12 @@ async fn add_events(ctx: &SContext<'_>, guild_id: GuildId, handler_lock: Arc<Mut
 }
 
 /// Text to voice, duh
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -578,7 +583,12 @@ pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Resu
 }
 
 /// Play all songs in a playlist from Deezer
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn add_deezer_playlist(
 	ctx: SContext<'_>,
 	#[description = "ID of the playlist in mind"]
@@ -642,7 +652,12 @@ pub async fn add_deezer_playlist(
 }
 
 /// Play all songs in a playlist from ``YouTube``
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn add_youtube_playlist(
 	ctx: SContext<'_>,
 	#[description = "Url playlist in mind"]
@@ -769,7 +784,12 @@ fn create_join_embed(is_global: bool) -> CreateEmbed<'static> {
 }
 
 /// Join the current voice channel with global music playback
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -825,7 +845,12 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// Join the current voice channel
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -856,7 +881,12 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// Leave the current voice channel with global voice call
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -896,7 +926,12 @@ pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// Leave the current voice channel
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -913,7 +948,12 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// Play song / add song to queue in the current voice channel
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn play_song(
 	ctx: SContext<'_>,
 	#[description = "YouTube link or query to search"]
@@ -959,7 +999,12 @@ pub async fn play_song(
 }
 
 /// Play song / add song to queue in the current voice channel (global)
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn play_song_global(
 	ctx: SContext<'_>,
 	#[description = "YouTube link or query to search"]
@@ -1039,7 +1084,12 @@ pub async fn play_song_global(
 }
 
 /// Seek current playing song backward
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn seek_song(
 	ctx: SContext<'_>,
 	#[description = "Seconds to seek, i.e. '-20' or '+20'"] seconds: String,

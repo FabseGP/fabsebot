@@ -12,7 +12,12 @@ use serenity::all::{
 };
 
 /// Get server information
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "User|Guild",
+	interaction_context = "Guild"
+)]
 pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 	let (
 		guild_id,
@@ -93,7 +98,12 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// Leak other users private data
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "User|Guild",
+	interaction_context = "Guild"
+)]
 pub async fn user_info(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,

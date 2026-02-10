@@ -201,7 +201,9 @@ impl SelectionState {
 /// Configure settings related to channels
 #[poise::command(
 	slash_command,
-	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
+	install_context = "Guild",
+	interaction_context = "Guild"
 )]
 pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
@@ -283,7 +285,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	let mut dead_chat_gifs_opt = None;
 
 	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-		.timeout(Duration::from_secs(600))
+		.timeout(Duration::from_mins(10))
 		.filter(move |interaction| {
 			interaction
 				.data
@@ -431,7 +433,12 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// To reset or not to reset the user, that's the question
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	let Some(guild_id) = ctx.guild_id() else {
 		ctx.reply(NOT_IN_GUILD_MSG).await?;
@@ -482,7 +489,11 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 }
 
 /// When you want to escape discord
-#[poise::command(slash_command)]
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn set_afk(
 	ctx: SContext<'_>,
 	#[description = "Reason for afk"] reason: Option<String>,
@@ -586,7 +597,11 @@ async fn set_chatbot_channel(
 
 /// Configure the chatbot to your preferences; an empty field forces the default
 /// value
-#[poise::command(slash_command)]
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn set_chatbot_options(
 	ctx: SContext<'_>,
 	#[description = "The role the bot should take; if not set, then default role"] role: Option<
@@ -694,7 +709,9 @@ struct CreateApplicationEmoji<'a> {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS"
+	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
+	install_context = "Guild",
+	interaction_context = "Guild"
 )]
 pub async fn set_prefix(
 	ctx: SContext<'_>,
@@ -769,7 +786,11 @@ async fn set_quote_channel(
 }
 
 /// Configure custom embed sent on user ping
-#[poise::command(slash_command)]
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn set_user_ping(
 	ctx: SContext<'_>,
 	#[description = "Message to send"] content: String,
@@ -884,7 +905,11 @@ async fn set_waifu_channel(
 }
 
 /// Configure words to react to with custom content
-#[poise::command(slash_command)]
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn set_word_react(
 	ctx: SContext<'_>,
 	#[description = "Word to react to"] word: String,
@@ -1029,7 +1054,11 @@ pub async fn set_word_react(
 }
 
 /// Configure words to track count of
-#[poise::command(slash_command)]
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn set_word_track(
 	ctx: SContext<'_>,
 	#[description = "Word to track count of"] word: String,

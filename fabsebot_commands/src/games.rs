@@ -60,7 +60,12 @@ impl RpsChoice {
 }
 
 /// Get rekt by another user in rps
-#[poise::command(prefix_command, slash_command)]
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn rps(
 	ctx: SContext<'_>,
 	#[description = "Target"] user: User,
@@ -106,7 +111,7 @@ pub async fn rps(
 	let ctx_id_str = ctx_id.to_string();
 	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
 		.author_id(user.id)
-		.timeout(Duration::from_secs(60))
+		.timeout(Duration::from_mins(1))
 		.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
 		.await
 	{

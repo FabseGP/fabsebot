@@ -9,7 +9,27 @@ use poise::CreateReply;
 use serenity::all::{CreateMessage, ExecuteWebhook, GenericChannelId, Member, User};
 
 /// Send an anonymous message
-#[poise::command(slash_command)]
+#[poise::command(
+	slash_command,
+	install_context = "User",
+	interaction_context = "PrivateChannel"
+)]
+pub async fn anonymous_msg(
+	ctx: SContext<'_>,
+	#[description = "Message to send"]
+	#[rest]
+	message: String,
+) -> Result<(), Error> {
+	ctx.say(message).await?;
+	Ok(())
+}
+
+/// Send an anonymous message
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn anonymous(
 	ctx: SContext<'_>,
 	#[description = "Channel to send message"] channel: GenericChannelId,
@@ -28,7 +48,12 @@ pub async fn anonymous(
 }
 
 /// Misuse other users dm
-#[poise::command(slash_command, owners_only)]
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild|",
+	owners_only
+)]
 pub async fn user_dm(
 	ctx: SContext<'_>,
 	#[description = "Target"] user: User,
@@ -47,7 +72,11 @@ pub async fn user_dm(
 }
 
 /// Send message as an another user
-#[poise::command(slash_command)]
+#[poise::command(
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild"
+)]
 pub async fn user_misuse(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,

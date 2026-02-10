@@ -77,7 +77,7 @@ async fn periodic_ping(url: &str, token: &str) -> ! {
 }
 
 async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
-	let mut interval = interval(Duration::from_secs(3600));
+	let mut interval = interval(Duration::from_hours(1));
 	loop {
 		interval.tick().await;
 		if let Ok(system_time) = SystemTime::now()
@@ -202,7 +202,7 @@ pub async fn bot_start(
 		global_chats: Cache::new(1000),
 		channel_webhooks: Cache::builder()
 			.max_capacity(100)
-			.time_to_idle(Duration::from_secs(3600))
+			.time_to_idle(Duration::from_hours(1))
 			.build(),
 		guilds: Cache::new(1000),
 		user_settings: Cache::new(1000),

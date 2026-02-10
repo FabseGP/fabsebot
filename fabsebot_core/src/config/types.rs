@@ -135,7 +135,7 @@ pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
 		))
 		.zstd(true)
 		.http3_congestion_bbr()
-		.timeout(Duration::from_secs(300))
+		.timeout(Duration::from_mins(5))
 		.build()
 		.unwrap()
 });
