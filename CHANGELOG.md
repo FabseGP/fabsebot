@@ -45,6 +45,7 @@ All notable changes to this project will be documented in this file.
 - Global quote themes
 - Major refactoring!
 - Increased concurrency!
+- More user commands!
 
 ### 🐛 Bug Fixes
 
@@ -102,6 +103,7 @@ All notable changes to this project will be documented in this file.
 - Adding youtube & deezer playlists doesn't fail silently + parallize image quotes
 - Squash fields in TextLayout
 - Box large async future
+- Clippy lintx + text bounds for quote-command
 
 ### 💼 Other
 
