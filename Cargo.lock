@@ -960,9 +960,9 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "davey"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aec17a9bb3b5066dd3830d3c176224dddac7d3a8f7e693b34b2caf0ebe3284b"
+checksum = "20e05bae3e741c249912d39c6cec28d2ef3c1a196e9acac025582182a8f9fbb7"
 dependencies = [
  "aead",
  "aes",
@@ -3255,9 +3255,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openmls"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7af47d535cef7b75806a2b5fcf81ba8e68179f5923aca9bc6a4d8d563e4f8757"
+checksum = "692e9c6b7d725e53cc42d1fa870066770fd67df35cf1cfbbd047dc0355e06b67"
 dependencies = [
  "fluvio-wasm-timer",
  "getrandom 0.2.17",
