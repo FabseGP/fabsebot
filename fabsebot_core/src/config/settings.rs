@@ -5,8 +5,6 @@ pub struct BotConfig {
 	pub token: String,
 	pub cache_max_messages: usize,
 	pub username: String,
-	pub avatar: String,
-	pub banner: String,
 	pub activity: String,
 	pub ping_message: String,
 	pub ping_payload: String,

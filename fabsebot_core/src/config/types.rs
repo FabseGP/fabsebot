@@ -5,12 +5,15 @@ use std::{
 };
 
 use anyhow::Error as AError;
+use dashmap::DashMap;
 use fabsebot_db::guild::GuildData;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
 use serde::Serialize;
-use serenity::all::{Emoji, GenericChannelId, GuildId, MessageId, ShardManager, UserId, Webhook};
+use serenity::all::{
+	Emoji, GenericChannelId, GuildId, MessageId, ShardId, ShardRunnerMetadata, UserId, Webhook,
+};
 use songbird::{Songbird, input::AuxMetadata};
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
@@ -144,5 +147,5 @@ pub static SYSTEM_STATS: LazyLock<Arc<System>> = LazyLock::new(|| Arc::new(Syste
 pub static CLIENT_DATA: OnceLock<Arc<ClientData>> = OnceLock::new();
 
 pub struct ClientData {
-	pub shard_manager: ShardManager,
+	pub runners: Arc<DashMap<ShardId, ShardRunnerMetadata>>,
 }

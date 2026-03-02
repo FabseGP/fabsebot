@@ -9,7 +9,10 @@ use serenity::all::{
 };
 use tracing::warn;
 
-use crate::config::types::{HTTP_CLIENT, WebhookMap};
+use crate::{
+	config::types::{HTTP_CLIENT, WebhookMap},
+	utils::helpers::channel_counter,
+};
 
 const FABSEBOT_WEBHOOK_NAME: &str = "fabsebot";
 const FABSEBOT_WEBHOOK_PFP: &str =
@@ -24,6 +27,7 @@ pub async fn spoiler_message(
 	if let Some(spoiler_channel) = guild_data.settings.spoiler_channel
 		&& message.channel_id.get() == spoiler_channel.cast_unsigned()
 	{
+		channel_counter("spoiler".to_owned());
 		let Some(avatar_url) = message.author.avatar_url() else {
 			bail!("Avatar not found");
 		};

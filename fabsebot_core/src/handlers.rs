@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use anyhow::Result as AResult;
-use metrics::{counter, describe_counter};
+use metrics::counter;
 use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
 use tracing::{error, warn};
@@ -12,20 +12,22 @@ use crate::{
 		bot_ready::handle_ready, guild_create::handle_guild_create,
 		message_delete::handle_message_delete, message_sent::handle_message,
 	},
+	stats::counters::METRICS,
 };
-
-pub fn initialize_counters() {
-	describe_counter!("commands_counter", "Counter for commands");
-	describe_counter!("errors_counter", "Error counter for commands");
-}
 
 pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 	match error {
 		FrameworkError::Command { error, ctx, .. } => {
 			error!("Error in command `{}`: {:?}", ctx.command().name, error);
+			counter!(
+				METRICS.command_errors.clone(),
+				"command" => ctx.command().name.clone(),
+			)
+			.increment(1);
 		}
 		FrameworkError::DynamicPrefix { error, .. } => {
 			error!("Error in dynamic_prefix: {:?}", error);
+			counter!(METRICS.prefix_errors.clone()).increment(1);
 		}
 		_ => {}
 	}
@@ -37,7 +39,7 @@ pub async fn on_command(context: Context<'_, Data, Error>) {
 		Context::Prefix(PrefixContext { command, .. }) => (command.name.clone(), "prefix"),
 	};
 	counter!(
-		"commands_counter",
+		METRICS.commands.clone(),
 		"command" => command_name,
 		"type" => command_type
 	)
@@ -73,6 +75,7 @@ impl SEventHandler for EventHandler {
 			FullEvent::Ready { data_about_bot, .. } => {
 				if let Err(error) = handle_ready(ctx, data_about_bot).await {
 					warn!("Error handling connection to Discord: {error}");
+					counter!(METRICS.ready_errors.clone()).increment(1);
 				}
 			}
 			FullEvent::Message { new_message, .. } => {
@@ -81,11 +84,13 @@ impl SEventHandler for EventHandler {
 					&& let Err(error) = Box::pin(handle_message(ctx, new_message, guild_id)).await
 				{
 					warn!("Error handling sent message: {error}");
+					counter!(METRICS.message_errors.clone()).increment(1);
 				}
 			}
 			FullEvent::GuildCreate { guild, is_new, .. } => {
 				if let Err(error) = handle_guild_create(ctx.data(), guild, is_new.as_ref()).await {
 					warn!("Error handling newly created guild: {error}");
+					counter!(METRICS.new_guild_errors.clone()).increment(1);
 				}
 			}
 			FullEvent::MessageDelete {
@@ -94,10 +99,17 @@ impl SEventHandler for EventHandler {
 				guild_id,
 				..
 			} => {
-				if let Err(error) =
-					handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id).await
+				let message_author_id = ctx
+					.cache
+					.message(*channel_id, *deleted_message_id)
+					.map(|msg| msg.author.id);
+				if let (Some(author_id), Some(guild_id)) = (message_author_id, *guild_id)
+					&& author_id == ctx.cache.current_user().id
+					&& let Err(error) =
+						handle_message_delete(ctx, *channel_id, guild_id, *deleted_message_id).await
 				{
 					warn!("Error handling deleted message: {error}");
+					counter!(METRICS.messages_deleted_errors.clone()).increment(1);
 				}
 			}
 			_ => {}

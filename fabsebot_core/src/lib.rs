@@ -3,6 +3,7 @@
 pub mod config;
 mod events;
 mod handlers;
+pub mod stats;
 pub mod utils;
 
 use std::{
@@ -12,13 +13,14 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult};
+use metrics::counter;
 use mini_moka::sync::Cache;
 use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions};
 use serenity::{
 	Client,
 	all::{
-		ActivityData, CreateAllowedMentions, CreateAttachment, EditProfile, GatewayIntents,
-		GenericChannelId, Http, OnlineStatus, Settings, Token,
+		ActivityData, CreateAllowedMentions, GatewayIntents, GenericChannelId, Http, OnlineStatus,
+		Settings, Token,
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
@@ -38,7 +40,8 @@ use crate::{
 			CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, UTILS_CONFIG, UtilsConfig,
 		},
 	},
-	handlers::{EventHandler, dynamic_prefix, initialize_counters, on_command, on_error},
+	handlers::{EventHandler, dynamic_prefix, on_command, on_error},
+	stats::counters::METRICS,
 	utils::helpers::{get_gifs, get_waifu},
 };
 
@@ -94,6 +97,7 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 					&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
 					&& let Some(waifu_channel) = modified_settings.settings.waifu_channel
 				{
+					counter!(METRICS.periodic_waifu.clone()).increment(1);
 					if let Err(err) = GenericChannelId::new(waifu_channel.cast_unsigned())
 						.say(&http, get_waifu().await)
 						.await
@@ -124,6 +128,7 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 					&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
 					&& let Some(dead_chat_channel) = modified_settings.settings.dead_chat_channel
 				{
+					counter!(METRICS.periodic_dead_chat.clone()).increment(1);
 					let gifs = get_gifs("dead chat").await;
 					let index = fastrand::usize(..gifs.len());
 					if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
@@ -186,11 +191,11 @@ pub async fn bot_start(
 		error!("UTILS_CONFIG already initialized");
 	}
 
+	METRICS.describe_all();
+
 	spawn(async move {
 		periodic_ping(&bot_config.uptime_url, &bot_config.uptime_token).await;
 	});
-
-	initialize_counters();
 
 	let music_manager = Songbird::serenity();
 	music_manager.set_config(Config::default().decode_mode(DecodeMode::Decrypt));
@@ -247,36 +252,16 @@ pub async fn bot_start(
 	spawn(async move { wait_and_shutdown(shutdown_trigger).await });
 	let http_clone = client.http.clone();
 	spawn(async move { periodic_task(bot_data, http_clone).await });
-	client
-		.start_autosharded()
-		.await
-		.context("Failed to shart client")?;
 	let client_data = Arc::new(ClientData {
-		shard_manager: client.shard_manager,
+		runners: client.shard_manager.runners.clone(),
 	});
 	if CLIENT_DATA.set(client_data).is_err() {
 		error!("CLIENT_DATA already initialized");
 	}
 	client
-		.http
-		.edit_profile(
-			&EditProfile::default()
-				.avatar(
-					CreateAttachment::url(&client.http, &bot_config.avatar, "bot_avatar.gif")
-						.await?
-						.encode("image/gif")
-						.await?,
-				)
-				.banner(
-					CreateAttachment::url(&client.http, &bot_config.banner, "bot_banner.gif")
-						.await?
-						.encode("image/gif")
-						.await?,
-				)
-				.username(&bot_config.username),
-		)
+		.start_autosharded()
 		.await
-		.context("Failed to edit bot profile")?;
+		.context("Failed to shart client")?;
 
 	Ok(())
 }

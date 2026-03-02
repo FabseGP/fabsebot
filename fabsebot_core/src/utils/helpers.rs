@@ -1,6 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use anyhow::{Result as AResult, bail};
+use metrics::counter;
 use mini_moka::sync::Cache;
 use serde::Deserialize;
 use serenity::all::{Context as SContext, Emoji, EmojiId, GenericChannelId, GuildId, MessageId};
@@ -22,9 +23,12 @@ use winnow::{
 	token::take_till,
 };
 
-use crate::config::{
-	constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
-	types::{Data, HTTP_CLIENT, UTILS_CONFIG},
+use crate::{
+	config::{
+		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
+		types::{Data, HTTP_CLIENT, UTILS_CONFIG},
+	},
+	stats::counters::METRICS,
 };
 
 #[macro_export]
@@ -42,12 +46,38 @@ const DISCORD_CHANNEL_DEFAULT_PREFIX: &str = "https://discord.com/channels/";
 const DISCORD_CHANNEL_PTB_PREFIX: &str = "https://ptb.discord.com/channels/";
 const DISCORD_CHANNEL_CANARY_PREFIX: &str = "https://canary.discord.com/channels/";
 
+pub fn channel_counter(channel_name: String) {
+	counter!(
+		METRICS.channel_triggers.clone(),
+		"channel" => channel_name,
+	)
+	.increment(1);
+}
+
 pub async fn get_configured_songbird_handler(
 	handler_lock: &Arc<Mutex<Call>>,
 ) -> MutexGuard<'_, Call> {
 	let mut handler = handler_lock.lock().await;
 	handler.set_bitrate(Bitrate::Max);
 	handler
+}
+
+struct YoutubeUrl(String);
+
+impl YoutubeUrl {
+	fn new(url: String) -> Option<Self> {
+		Url::parse(&url).map_or(None, |parsed_url| {
+			parsed_url
+				.domain()
+				.filter(|d| {
+					*d == "youtube.com"
+						|| *d == "www.youtube.com"
+						|| *d == "youtu.be"
+						|| *d == "m.youtube.com"
+				})
+				.map(|_| Self(url))
+		})
+	}
 }
 
 pub async fn youtube_source(url: String) -> Option<YoutubeDl<'static>> {
@@ -285,7 +315,7 @@ fn discord_id(input: &mut &str) -> ModalResult<u64> {
 
 fn emoji_name(input: &mut &str) -> ModalResult<String> {
 	take_till(0.., |c| c == ':')
-		.map(ToString::to_string)
+		.map(ToOwned::to_owned)
 		.parse_next(input)
 }
 

@@ -1,6 +1,6 @@
 use std::{
 	borrow::Cow, cmp::Reverse, collections::HashSet, fmt::Write as _, io::Cursor, mem::take,
-	process, sync::Arc, time::Duration,
+	sync::Arc, time::Duration,
 };
 
 use ab_glyph::FontArc;
@@ -298,16 +298,13 @@ pub async fn bot_control(
 )]
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	let mut embed = CreateEmbed::default().title("Debug");
-	let latency = if let Some(shard_runner) = ctx
+
+	let latency = ctx
 		.serenity_context()
-		.runners
-		.get(&ctx.serenity_context().shard_id)
-		&& let Some(latency) = shard_runner.0.latency
-	{
-		latency.as_millis()
-	} else {
-		0
-	};
+		.runner_info
+		.read()
+		.latency
+		.map_or(0, |latency| latency.as_millis());
 	embed = embed.field("Shard ping:", format!("{latency}ms"), true);
 	embed = embed.field(
 		"Shard id:",
@@ -387,18 +384,18 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	{
 		let mut msg = interaction.message;
 
-		let response = ctx
-			.serenity_context()
+		let response = CLIENT_DATA
+			.get()
+			.unwrap()
 			.runners
 			.get(&ctx.serenity_context().shard_id)
-			.map(|entry| entry.1.clone())
 			.map_or_else(
 				|| {
 					warn!("No shard runner found in runners map");
 					"Rip, shard doesn't exist!"
 				},
 				|runner| {
-					if let Err(err) = runner.unbounded_send(ShardRunnerMessage::Restart) {
+					if let Err(err) = runner.tx.unbounded_send(ShardRunnerMessage::Restart) {
 						warn!("Failed to queue restart of shard: {:?}", err);
 						"Rip, failed to restart shard!"
 					} else {
@@ -425,30 +422,6 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 					.components(&[]),
 			)
 			.await?;
-	}
-
-	Ok(())
-}
-
-/// Ignore this command
-#[poise::command(
-	prefix_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
-	owners_only
-)]
-#[expect(clippy::unused_async)]
-pub async fn end_pgo(ctx: SContext<'_>) -> Result<(), Error> {
-	let shutdown_trigger = CLIENT_DATA
-		.get()
-		.map(|c| c.shard_manager.get_shutdown_trigger())
-		.unwrap();
-	ctx.serenity_context().shutdown_all();
-	if shutdown_trigger() {
-		warn!("Successfully triggered shutdown for all shards");
-	} else {
-		warn!("Failed to trigger shutdown, shards may have already stopped");
-		process::exit(1);
 	}
 
 	Ok(())

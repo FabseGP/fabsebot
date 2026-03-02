@@ -41,7 +41,6 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		misc::birthday_user(),
 		misc::bot_control(),
 		misc::debug(),
-		misc::end_pgo(),
 		misc::global_chat_end(),
 		misc::global_chat_start(),
 		misc::help(),

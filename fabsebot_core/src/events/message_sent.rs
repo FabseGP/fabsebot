@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{Context as _, Result as AResult};
 use fabsebot_db::guild::{GuildData, GuildSettings, WordTracking, insert_guild, insert_user};
+use metrics::counter;
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
@@ -27,9 +28,12 @@ use crate::{
 		types::{Data, UTILS_CONFIG},
 	},
 	log_errors,
+	stats::counters::METRICS,
 	utils::{
 		ai::ai_chatbot,
-		helpers::{discord_message_link, get_gifs, get_waifu, queue_song, youtube_source},
+		helpers::{
+			channel_counter, discord_message_link, get_gifs, get_waifu, queue_song, youtube_source,
+		},
 		webhook::{spoiler_message, webhook_find},
 	},
 };
@@ -38,6 +42,7 @@ async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 	if new_message.mentions_user_id(ctx.cache.current_user().id)
 		&& new_message.referenced_message.is_none()
 	{
+		counter!(METRICS.bot_pings.clone()).increment(1);
 		let (ping_message, ping_payload) = UTILS_CONFIG
 			.get()
 			.map(|u| (&u.ping_message, &u.ping_payload))
@@ -69,6 +74,7 @@ async fn easter_eggs(
 	data: Arc<Data>,
 ) -> AResult<()> {
 	if content == "floppaganda" {
+		counter!(METRICS.floppaganda.clone()).increment(1);
 		new_message
 			.channel_id
 			.send_message(
@@ -109,6 +115,7 @@ async fn queue_track(
 	music_manager: Arc<Songbird>,
 	guild_id: GuildId,
 ) -> AResult<()> {
+	channel_counter("music".to_owned());
 	if let Some(handler_lock) = music_manager.get(guild_id) {
 		let ctx_clone = ctx.clone();
 		let new_message_clone = new_message.clone();
@@ -159,6 +166,7 @@ async fn queue_track(
 }
 
 fn ai_chats(ctx: &SContext, new_message: &Message, data: &Arc<Data>, guild_id: GuildId) {
+	channel_counter("chatbot".to_owned());
 	let guild_ai_chats = {
 		let ai_chats_opt = data.ai_chats.get(&guild_id);
 		if let Some(ai_chat) = ai_chats_opt {
@@ -215,6 +223,7 @@ async fn global_chats(
 		&& new_message.channel_id.get() == global_chat_channel.cast_unsigned()
 		&& guild_data.settings.global_chat
 	{
+		channel_counter("global_chat".to_owned());
 		let guild_global_chats: Vec<_> = data
 			.guilds
 			.iter()
@@ -338,6 +347,7 @@ async fn global_chats(
 
 async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &str) -> AResult<()> {
 	if let Ok(link) = discord_message_link.parse_next(&mut content) {
+		counter!(METRICS.message_previews.clone()).increment(1);
 		let (guild_id, channel_id, message_id) = (
 			GuildId::new(link.guild),
 			GenericChannelId::new(link.channel),
@@ -416,6 +426,7 @@ async fn user_queries(
 	for target in modified_settings.iter_mut().map(|t| t.1) {
 		let user_id = UserId::new(target.user_id.cast_unsigned());
 		if target.afk {
+			counter!(METRICS.user_afks.clone()).increment(1);
 			if user_id_i64 == target.user_id {
 				let mut response = new_message
 					.reply(
@@ -497,6 +508,7 @@ async fn user_queries(
 			&& new_message.referenced_message.is_none()
 			&& let Some(ping_content) = &target.ping_content
 		{
+			counter!(METRICS.custom_user_pings.clone()).increment(1);
 			let message = {
 				let base = CreateMessage::default()
 					.reference_message(new_message)
@@ -569,6 +581,7 @@ async fn guild_queries(
 		.iter()
 		.filter(|r| content.contains(&r.word))
 	{
+		counter!(METRICS.words_tracked.clone()).increment(1);
 		query!(
 			"UPDATE guild_word_tracking
                                  SET count = count + 1 
@@ -597,6 +610,7 @@ async fn guild_queries(
 		.iter()
 		.filter(|r| content.contains(&r.word))
 	{
+		counter!(METRICS.word_reactions.clone()).increment(1);
 		if let Some(content) = &record.content {
 			let message = {
 				let base = CreateMessage::default()
