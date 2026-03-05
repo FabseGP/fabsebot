@@ -675,10 +675,10 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 		let capacity = user_settings.len();
 		let mut result = Vec::with_capacity(capacity);
 
-		for entry in user_settings {
+		for (id, entry) in user_settings {
 			result.push(UserCount {
-				id: entry.1.user_id,
-				count: entry.1.message_count,
+				id: id.get().cast_signed(),
+				count: entry.message_count,
 			});
 		}
 

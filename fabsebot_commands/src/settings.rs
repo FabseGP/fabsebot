@@ -8,12 +8,12 @@ use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
 		constants::{COLOUR_RED, NOT_IN_GUILD_MSG},
-		settings::UserSettings,
+		settings::UserSettingsInternal,
 		types::{Error, GuildCache, HTTP_CLIENT, SContext},
 	},
 	utils::helpers::{get_gifs, get_waifu},
 };
-use fabsebot_db::guild::{GuildData, GuildSettings, WordReactions, WordTracking};
+use fabsebot_db::guild::{WordReactionsInternal, WordTrackingInternal};
 use poise::CreateReply;
 use serde::Serialize;
 use serenity::{
@@ -39,19 +39,9 @@ async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(
 	if let Some(guild_data) = ctx.data().guilds.get(&guild_id) {
 		guild_data.shared.reset(guild_id_i64, tx).await?;
 	}
-	ctx.data().guilds.insert(
-		guild_id,
-		Arc::new(GuildCache {
-			shared: GuildData {
-				settings: GuildSettings {
-					guild_id: guild_id_i64,
-					..Default::default()
-				},
-				..Default::default()
-			},
-			..Default::default()
-		}),
-	);
+	ctx.data()
+		.guilds
+		.insert(guild_id, Arc::new(GuildCache::default()));
 
 	Ok(())
 }
@@ -478,14 +468,9 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		.unwrap_or_default()
 		.as_ref()
 		.clone();
-	modified_settings.user_settings.insert(
-		ctx.author().id,
-		UserSettings {
-			guild_id: i64::from(guild_id),
-			user_id: i64::from(ctx.author().id),
-			..Default::default()
-		},
-	);
+	modified_settings
+		.user_settings
+		.insert(ctx.author().id, UserSettingsInternal::default());
 	ctx.data()
 		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
@@ -556,9 +541,7 @@ pub async fn set_afk(
 	} else {
 		modified_settings.user_settings.insert(
 			ctx.author().id,
-			UserSettings {
-				guild_id: guild_id_i64,
-				user_id: user_id_i64,
+			UserSettingsInternal {
 				afk: true,
 				afk_reason: reason,
 				..Default::default()
@@ -657,9 +640,7 @@ pub async fn set_chatbot_options(
 	} else {
 		modified_settings.user_settings.insert(
 			ctx.author().id,
-			UserSettings {
-				guild_id: guild_id_i64,
-				user_id: user_id_i64,
+			UserSettingsInternal {
 				chatbot_role: final_role,
 				chatbot_internet_search: internet_search,
 				..Default::default()
@@ -859,9 +840,7 @@ pub async fn set_user_ping(
 		} else {
 			modified_settings.user_settings.insert(
 				ctx.author().id,
-				UserSettings {
-					guild_id: guild_id_i64,
-					user_id: user_id_i64,
+				UserSettingsInternal {
 					ping_content: Some(content),
 					ping_media: media,
 					..Default::default()
@@ -1039,8 +1018,7 @@ pub async fn set_word_react(
 		modified_settings
 			.shared
 			.word_reactions
-			.insert(WordReactions {
-				guild_id: guild_id_i64,
+			.insert(WordReactionsInternal {
 				word,
 				content,
 				media,
@@ -1101,11 +1079,10 @@ pub async fn set_word_track(
 		.get_or_insert_default()
 		.as_ref()
 		.clone();
-	modified_settings.shared.word_tracking.insert(WordTracking {
-		guild_id: guild_id_i64,
-		word,
-		count: 0,
-	});
+	modified_settings
+		.shared
+		.word_tracking
+		.insert(WordTrackingInternal { word, count: 0 });
 	ctx.data()
 		.guilds
 		.insert(guild_id, Arc::new(modified_settings));

@@ -20,7 +20,7 @@ use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::config::settings::{APIConfig, HTTPAgent, ServerConfig, UserSettings};
+use crate::config::settings::{APIConfig, HTTPAgent, ServerConfig, UserSettingsInternal};
 
 pub type WebhookMap = Cache<GenericChannelId, Webhook>;
 
@@ -29,7 +29,7 @@ pub struct GuildCache {
 	pub ai_chats: Arc<Mutex<AIChatContext>>,
 	pub global_chats: HashMap<GuildId, MessageId>,
 	pub shared: GuildData,
-	pub user_settings: HashMap<UserId, UserSettings>,
+	pub user_settings: HashMap<UserId, UserSettingsInternal>,
 }
 
 #[derive(Default)]

@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use anyhow::{Context as _, Result as AResult};
 use sqlx::{PgConnection, Postgres, Transaction, query};
 
-#[derive(Default, Clone)]
 pub struct GuildSettings {
 	pub guild_id: i64,
 	pub dead_chat_channel: Option<i64>,
@@ -23,7 +22,48 @@ pub struct GuildSettings {
 	pub last_waifu: Option<i64>,
 }
 
-impl GuildSettings {
+#[derive(Default, Clone)]
+pub struct GuildSettingsInternal {
+	pub dead_chat_channel: Option<i64>,
+	pub dead_chat_rate: Option<i64>,
+	pub last_dead_chat: Option<i64>,
+	pub quotes_channel: Option<i64>,
+	pub spoiler_channel: Option<i64>,
+	pub prefix: Option<String>,
+	pub ai_chat_channel: Option<i64>,
+	pub global_chat_channel: Option<i64>,
+	pub global_chat: bool,
+	pub global_music: bool,
+	pub global_call: bool,
+	pub music_channel: Option<i64>,
+	pub waifu_channel: Option<i64>,
+	pub waifu_rate: Option<i64>,
+	pub last_waifu: Option<i64>,
+}
+
+impl From<GuildSettings> for GuildSettingsInternal {
+	fn from(db: GuildSettings) -> Self {
+		Self {
+			dead_chat_channel: db.dead_chat_channel,
+			dead_chat_rate: db.dead_chat_rate,
+			last_dead_chat: db.last_dead_chat,
+			quotes_channel: db.quotes_channel,
+			spoiler_channel: db.spoiler_channel,
+			prefix: db.prefix,
+			ai_chat_channel: db.ai_chat_channel,
+			global_chat_channel: db.global_chat_channel,
+			global_chat: db.global_chat,
+			global_music: db.global_music,
+			global_call: db.global_call,
+			music_channel: db.music_channel,
+			waifu_channel: db.waifu_channel,
+			waifu_rate: db.waifu_rate,
+			last_waifu: db.last_waifu,
+		}
+	}
+}
+
+impl GuildSettingsInternal {
 	pub async fn set_music_channel(
 		&self,
 		guild_id: i64,
@@ -69,7 +109,6 @@ impl GuildSettings {
 	}
 }
 
-#[derive(Default, Eq, Hash, PartialEq, Clone)]
 pub struct WordReactions {
 	pub guild_id: i64,
 	pub word: String,
@@ -80,6 +119,26 @@ pub struct WordReactions {
 }
 
 #[derive(Default, Eq, Hash, PartialEq, Clone)]
+pub struct WordReactionsInternal {
+	pub word: String,
+	pub content: Option<String>,
+	pub media: Option<String>,
+	pub emoji_id: Option<i64>,
+	pub guild_emoji: bool,
+}
+
+impl From<WordReactions> for WordReactionsInternal {
+	fn from(db: WordReactions) -> Self {
+		Self {
+			word: db.word,
+			content: db.content,
+			media: db.media,
+			emoji_id: db.emoji_id,
+			guild_emoji: db.guild_emoji,
+		}
+	}
+}
+
 pub struct WordTracking {
 	pub guild_id: i64,
 	pub word: String,
@@ -87,19 +146,25 @@ pub struct WordTracking {
 }
 
 #[derive(Default, Eq, Hash, PartialEq, Clone)]
-pub struct EmojiReplies {
-	pub guild_id: i64,
-	pub emoji_id: i64,
-	pub content_reaction: String,
-	pub guild_emoji: bool,
+pub struct WordTrackingInternal {
+	pub word: String,
+	pub count: i64,
+}
+
+impl From<WordTracking> for WordTrackingInternal {
+	fn from(db: WordTracking) -> Self {
+		Self {
+			word: db.word,
+			count: db.count,
+		}
+	}
 }
 
 #[derive(Clone, Default)]
 pub struct GuildData {
-	pub settings: GuildSettings,
-	pub word_reactions: HashSet<WordReactions>,
-	pub word_tracking: HashSet<WordTracking>,
-	pub emoji_replies: HashSet<EmojiReplies>,
+	pub settings: GuildSettingsInternal,
+	pub word_reactions: HashSet<WordReactionsInternal>,
+	pub word_tracking: HashSet<WordTrackingInternal>,
 }
 
 impl GuildData {

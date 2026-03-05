@@ -4,13 +4,16 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult};
-use fabsebot_db::guild::{EmojiReplies, GuildData, GuildSettings, WordReactions, WordTracking};
+use fabsebot_db::guild::{
+	GuildData, GuildSettings, GuildSettingsInternal, WordReactions, WordReactionsInternal,
+	WordTracking, WordTrackingInternal,
+};
 use serenity::all::{Context as SContext, GuildId, Ready, UserId};
 use sqlx::query_as;
 use tracing::info;
 
 use crate::config::{
-	settings::UserSettings,
+	settings::{UserSettings, UserSettingsInternal},
 	types::{Data, GuildCache},
 };
 
@@ -37,32 +40,33 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 		.await
 		.context("Failed to commit sql-transaction")?;
 
-	let mut grouped_word_reactions: HashMap<i64, HashSet<WordReactions>> = HashMap::default();
-	let mut grouped_word_tracking: HashMap<i64, HashSet<WordTracking>> = HashMap::default();
-	let mut grouped_emoji_replies: HashMap<i64, HashSet<EmojiReplies>> = HashMap::default();
+	let mut grouped_word_reactions: HashMap<i64, HashSet<WordReactionsInternal>> =
+		HashMap::default();
+	let mut grouped_word_tracking: HashMap<i64, HashSet<WordTrackingInternal>> = HashMap::default();
 
 	for reaction in word_reactions {
 		grouped_word_reactions
 			.entry(reaction.guild_id)
 			.or_default()
-			.insert(reaction);
+			.insert(WordReactionsInternal::from(reaction));
 	}
 
 	for tracking in word_tracking {
 		grouped_word_tracking
 			.entry(tracking.guild_id)
 			.or_default()
-			.insert(tracking);
+			.insert(WordTrackingInternal::from(tracking));
 	}
 
-	let mut guild_maps: HashMap<GuildId, HashMap<UserId, UserSettings>> = HashMap::default();
+	let mut guild_maps: HashMap<GuildId, HashMap<UserId, UserSettingsInternal>> =
+		HashMap::default();
 	for settings in user_settings {
 		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
 		let user_id = UserId::new(settings.user_id.cast_unsigned());
 		guild_maps
 			.entry(guild_id)
 			.or_default()
-			.insert(user_id, settings);
+			.insert(user_id, UserSettingsInternal::from(settings));
 	}
 
 	for settings in guild_settings {
@@ -70,14 +74,11 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 		let settings_guild_id = settings.guild_id;
 		let guild_cache = GuildCache {
 			shared: GuildData {
-				settings,
+				settings: GuildSettingsInternal::from(settings),
 				word_reactions: grouped_word_reactions
 					.remove(&settings_guild_id)
 					.unwrap_or_default(),
 				word_tracking: grouped_word_tracking
-					.remove(&settings_guild_id)
-					.unwrap_or_default(),
-				emoji_replies: grouped_emoji_replies
 					.remove(&settings_guild_id)
 					.unwrap_or_default(),
 			},

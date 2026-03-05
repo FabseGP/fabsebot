@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result as AResult;
-use fabsebot_db::guild::{GuildData, GuildSettings, insert_guild};
+use fabsebot_db::guild::insert_guild;
 use serenity::all::Guild;
 
 use crate::config::types::{Data, GuildCache};
@@ -14,22 +14,9 @@ pub async fn handle_guild_create(
 	if let Some(new_guild) = is_new
 		&& *new_guild
 	{
-		let guild_id_i64 = i64::from(guild.id);
-		insert_guild(guild_id_i64, &mut *data.db.acquire().await?).await?;
-		let default_settings = GuildSettings {
-			guild_id: guild_id_i64,
-			..Default::default()
-		};
-		data.guilds.insert(
-			guild.id,
-			Arc::new(GuildCache {
-				shared: GuildData {
-					settings: default_settings,
-					..Default::default()
-				},
-				..Default::default()
-			}),
-		);
+		insert_guild(i64::from(guild.id), &mut *data.db.acquire().await?).await?;
+		data.guilds
+			.insert(guild.id, Arc::new(GuildCache::default()));
 	}
 
 	Ok(())

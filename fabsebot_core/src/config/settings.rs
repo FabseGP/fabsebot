@@ -55,3 +55,30 @@ pub struct UserSettings {
 	pub ping_content: Option<String>,
 	pub ping_media: Option<String>,
 }
+
+#[derive(Default, Clone)]
+pub struct UserSettingsInternal {
+	pub message_count: i32,
+	pub chatbot_role: Option<String>,
+	pub chatbot_internet_search: bool,
+	pub afk: bool,
+	pub afk_reason: Option<String>,
+	pub pinged_links: Option<String>,
+	pub ping_content: Option<String>,
+	pub ping_media: Option<String>,
+}
+
+impl From<UserSettings> for UserSettingsInternal {
+	fn from(db: UserSettings) -> Self {
+		Self {
+			message_count: db.message_count,
+			chatbot_role: db.chatbot_role,
+			chatbot_internet_search: db.chatbot_internet_search,
+			afk: db.afk,
+			afk_reason: db.afk_reason,
+			pinged_links: db.pinged_links,
+			ping_content: db.ping_content,
+			ping_media: db.ping_media,
+		}
+	}
+}

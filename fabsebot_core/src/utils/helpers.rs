@@ -62,6 +62,7 @@ pub async fn get_configured_songbird_handler(
 	handler
 }
 
+/*
 struct YoutubeUrl(String);
 
 impl YoutubeUrl {
@@ -79,6 +80,7 @@ impl YoutubeUrl {
 		})
 	}
 }
+*/
 
 pub async fn youtube_source(url: String) -> Option<YoutubeDl<'static>> {
 	match Url::parse(&url) {
@@ -93,10 +95,6 @@ pub async fn youtube_source(url: String) -> Option<YoutubeDl<'static>> {
 			.map(|_| YoutubeDl::new(HTTP_CLIENT.clone(), url)),
 		Err(_) => Some(YoutubeDl::new_search(HTTP_CLIENT.clone(), url)),
 	}
-}
-
-pub struct MusicData {
-	pub duration: u64,
 }
 
 pub async fn queue_song(

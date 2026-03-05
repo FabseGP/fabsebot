@@ -1,12 +1,12 @@
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use anyhow::{Context as _, Result as AResult};
-use fabsebot_db::guild::{GuildData, GuildSettings, WordTracking, insert_guild, insert_user};
+use fabsebot_db::guild::{WordTrackingInternal, insert_guild, insert_user};
 use metrics::counter;
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
-	GuildId, Message, MessageId, ReactionType, UserId,
+	GuildId, Message, MessageId, ReactionType,
 };
 use songbird::{Call, Songbird, input::Compose as _};
 use sqlx::{Postgres, Transaction, query};
@@ -175,7 +175,14 @@ fn ai_chats(
 	let (chatbot_role, chatbot_internet_search) = data
 		.user_settings
 		.get(&new_message.author.id)
-		.map(|a| (a.chatbot_role.clone(), a.chatbot_internet_search))
+		.map(|a| {
+			(
+				a.chatbot_role
+					.clone()
+					.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
+				a.chatbot_internet_search,
+			)
+		})
 		.unwrap_or_default();
 	let ctx_clone = ctx.clone();
 	let new_message_clone = new_message.clone();
@@ -185,7 +192,7 @@ fn ai_chats(
 		if let Err(err) = ai_chatbot(
 			&ctx_clone,
 			&new_message_clone,
-			chatbot_role.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
+			chatbot_role,
 			chatbot_internet_search,
 			guild_id,
 			guild_ai_chats,
@@ -222,7 +229,7 @@ async fn global_chats(
 			.map(|entry| {
 				let settings = &entry.value().shared.settings;
 				(
-					GuildId::new(settings.guild_id.cast_unsigned()),
+					GuildId::new(entry.key().get()),
 					settings.global_chat_channel,
 				)
 			})
@@ -407,11 +414,11 @@ async fn user_queries(
 	let mut modified_settings = guild_data.user_settings.clone();
 	let user_id_i64 = i64::from(new_message.author.id);
 
-	for target in modified_settings.iter_mut().map(|t| t.1) {
-		let user_id = UserId::new(target.user_id.cast_unsigned());
+	for (user_id, target) in &mut modified_settings {
+		let target_id_i64 = user_id.get().cast_signed();
 		if target.afk {
 			counter!(METRICS.user_afks.clone()).increment(1);
-			if user_id_i64 == target.user_id {
+			if user_id_i64 == target_id_i64 {
 				let mut response = new_message
 					.reply(
 						&ctx.http,
@@ -440,14 +447,14 @@ async fn user_queries(
 					"UPDATE user_settings SET afk = FALSE, afk_reason = NULL, pinged_links = NULL \
 					 WHERE guild_id = $1 AND user_id = $2",
 					guild_id_i64,
-					target.user_id,
+					target_id_i64,
 				)
 				.execute(tx.as_mut())
 				.await?;
 				target.afk = false;
 				target.afk_reason = None;
 				target.pinged_links = None;
-			} else if new_message.mentions_user_id(user_id)
+			} else if new_message.mentions_user_id(*user_id)
 				&& new_message.referenced_message.is_none()
 			{
 				let pinged_link = format!(
@@ -461,7 +468,7 @@ async fn user_queries(
                             WHERE guild_id = $2 AND user_id = $3",
 					pinged_link,
 					guild_id_i64,
-					target.user_id,
+					target_id_i64,
 				)
 				.execute(tx.as_mut())
 				.await?;
@@ -488,7 +495,7 @@ async fn user_queries(
 					.await?;
 			}
 		}
-		if new_message.mentions_user_id(user_id)
+		if new_message.mentions_user_id(*user_id)
 			&& new_message.referenced_message.is_none()
 			&& let Some(ping_content) = &target.ping_content
 		{
@@ -528,7 +535,7 @@ async fn user_queries(
 				.send_message(&ctx.http, message)
 				.await?;
 		}
-		if user_id_i64 == target.user_id {
+		if user_id_i64 == target_id_i64 {
 			target.message_count = target.message_count.saturating_add(1);
 		}
 	}
@@ -560,7 +567,8 @@ async fn guild_queries(
 	tx: &mut Transaction<'static, Postgres>,
 	content: &str,
 ) -> AResult<()> {
-	let mut word_tracking_updates: HashSet<WordTracking> = guild_data.shared.word_tracking.clone();
+	let mut word_tracking_updates: HashSet<WordTrackingInternal> =
+		guild_data.shared.word_tracking.clone();
 	for record in guild_data
 		.shared
 		.word_tracking
@@ -707,24 +715,15 @@ pub async fn handle_message(
 		.context("Failed to acquire savepoint")?;
 
 	let guild_id_i64 = i64::from(guild_id);
-	if !data.guilds.contains_key(&guild_id) {
+
+	let guild_data = if let Some(data) = data.guilds.get(&guild_id) {
+		data
+	} else {
 		insert_guild(guild_id_i64, &mut tx).await?;
-		let default_settings = GuildSettings {
-			guild_id: guild_id_i64,
-			..Default::default()
-		};
-		data.guilds.insert(
-			guild_id,
-			Arc::new(GuildCache {
-				shared: GuildData {
-					settings: default_settings,
-					..Default::default()
-				},
-				..Default::default()
-			}),
-		);
-	}
-	let guild_data = data.guilds.get(&guild_id).unwrap();
+		let new_data = Arc::new(GuildCache::default());
+		data.guilds.insert(guild_id, new_data.clone());
+		new_data
+	};
 
 	if !guild_data
 		.user_settings
