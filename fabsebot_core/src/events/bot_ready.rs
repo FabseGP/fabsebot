@@ -81,7 +81,7 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 					.remove(&settings_guild_id)
 					.unwrap_or_default(),
 			},
-			user_settings: guild_maps.get(&guild_id).unwrap().clone(),
+			user_settings: guild_maps.remove(&guild_id).unwrap_or_default(),
 			..Default::default()
 		};
 		data.guilds.insert(guild_id, Arc::new(guild_cache));
