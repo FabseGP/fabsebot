@@ -22,11 +22,15 @@ use uuid::Uuid;
 
 use crate::config::settings::{APIConfig, HTTPAgent, ServerConfig, UserSettings};
 
-pub type AIChatMap = Cache<GuildId, Arc<Mutex<AIChatContext>>>;
-type GlobalChatMap = Cache<GuildId, Arc<HashMap<GuildId, MessageId>>>;
 pub type WebhookMap = Cache<GenericChannelId, Webhook>;
-pub type GuildMap = Cache<GuildId, Arc<GuildData>>;
-type UserSettingsMap = Cache<GuildId, Arc<HashMap<UserId, UserSettings>>>;
+
+#[derive(Default, Clone)]
+pub struct GuildCache {
+	pub ai_chats: Arc<Mutex<AIChatContext>>,
+	pub global_chats: HashMap<GuildId, MessageId>,
+	pub shared: GuildData,
+	pub user_settings: HashMap<UserId, UserSettings>,
+}
 
 #[derive(Default)]
 pub struct AIChatContext {
@@ -106,11 +110,8 @@ pub type Metadata = Arc<(
 pub struct Data {
 	pub db: PgPool,
 	pub music_manager: Arc<Songbird>,
-	pub ai_chats: AIChatMap,
-	pub global_chats: GlobalChatMap,
 	pub channel_webhooks: WebhookMap,
-	pub guilds: GuildMap,
-	pub user_settings: UserSettingsMap,
+	pub guilds: Cache<GuildId, Arc<GuildCache>>,
 	pub track_metadata: Cache<Uuid, Metadata>,
 	pub app_emojis: Cache<u64, Arc<Emoji>>,
 }
@@ -128,9 +129,16 @@ pub struct UtilsConfig {
 	pub bot_name: String,
 }
 
-pub static UTILS_CONFIG: OnceLock<Arc<UtilsConfig>> = OnceLock::new();
+pub static UTILS_CONFIG: OnceLock<UtilsConfig> = OnceLock::new();
+
+pub fn utils_config() -> &'static UtilsConfig {
+	#[expect(clippy::expect_used)]
+	UTILS_CONFIG.get().expect("UTILS_CONFIG not initialized!")
+}
+
 pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
-	let http_agent = &UTILS_CONFIG.get().unwrap().http_agent;
+	let http_agent = &utils_config().http_agent;
+	#[expect(clippy::expect_used)]
 	Client::builder()
 		.user_agent(format!(
 			"{} ({}; {})",
@@ -140,12 +148,17 @@ pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
 		.http3_congestion_bbr()
 		.timeout(Duration::from_mins(5))
 		.build()
-		.unwrap()
+		.expect("Failed to build HTTP-client!")
 });
-pub static SYSTEM_STATS: LazyLock<Arc<System>> = LazyLock::new(|| Arc::new(System::new()));
+pub static SYSTEM_STATS: LazyLock<System> = LazyLock::new(System::new);
 
-pub static CLIENT_DATA: OnceLock<Arc<ClientData>> = OnceLock::new();
+pub static CLIENT_DATA: OnceLock<ClientData> = OnceLock::new();
 
 pub struct ClientData {
 	pub runners: Arc<DashMap<ShardId, ShardRunnerMetadata>>,
+}
+
+pub fn client_data() -> &'static ClientData {
+	#[expect(clippy::expect_used)]
+	CLIENT_DATA.get().expect("CLIENT_DATA not initialized!")
 }

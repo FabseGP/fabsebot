@@ -20,7 +20,7 @@ use serenity::{
 	Client,
 	all::{
 		ActivityData, CreateAllowedMentions, GatewayIntents, GenericChannelId, Http, OnlineStatus,
-		Settings, Token,
+		Settings, Token, TransportCompression,
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
@@ -35,10 +35,8 @@ use tracing::{error, warn};
 
 use crate::{
 	config::{
-		settings::{APIConfig, BotConfig, HTTPAgent, ServerConfig},
-		types::{
-			CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, UTILS_CONFIG, UtilsConfig,
-		},
+		settings::BotConfig,
+		types::{CLIENT_DATA, ClientData, Data, Error as SError, GuildCache, HTTP_CLIENT},
 	},
 	handlers::{EventHandler, dynamic_prefix, on_command, on_error},
 	stats::counters::METRICS,
@@ -91,7 +89,7 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 			let mut needs_update = false;
 			for guild in &data.guilds {
 				let guild_id_i64 = i64::from(*guild.key());
-				let mut modified_settings = guild.as_ref().clone();
+				let mut modified_settings = guild.as_ref().clone().shared;
 				if let Some(last_waifu) = modified_settings.settings.last_waifu
 					&& let Some(waifu_rate) = modified_settings.settings.waifu_rate
 					&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
@@ -159,8 +157,16 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 					}
 				}
 				if needs_update {
-					data.guilds
-						.insert(*guild.key(), Arc::new(modified_settings));
+					let cache = data.guilds.get(guild.key()).unwrap();
+					data.guilds.insert(
+						*guild.key(),
+						Arc::new(GuildCache {
+							ai_chats: cache.ai_chats.clone(),
+							global_chats: cache.global_chats.clone(),
+							shared: modified_settings,
+							user_settings: cache.user_settings.clone(),
+						}),
+					);
 					needs_update = false;
 				}
 			}
@@ -170,27 +176,9 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 
 pub async fn bot_start(
 	bot_config: BotConfig,
-	server_config: ServerConfig,
-	api_config: APIConfig,
-	http_agent: HTTPAgent,
 	postgres_pool: Pool<Postgres>,
 	commands: Vec<Command<Data, SError>>,
 ) -> AResult<()> {
-	if UTILS_CONFIG
-		.set(Arc::new(UtilsConfig {
-			owner_id: bot_config.owner_id,
-			ping_message: bot_config.ping_message,
-			ping_payload: bot_config.ping_payload,
-			fabseserver: server_config,
-			api: api_config,
-			http_agent,
-			bot_name: bot_config.username.clone(),
-		}))
-		.is_err()
-	{
-		error!("UTILS_CONFIG already initialized");
-	}
-
 	METRICS.describe_all();
 
 	spawn(async move {
@@ -203,14 +191,11 @@ pub async fn bot_start(
 	let bot_data = Arc::new(Data {
 		db: postgres_pool,
 		music_manager: music_manager.clone(),
-		ai_chats: Cache::new(1000),
-		global_chats: Cache::new(1000),
 		channel_webhooks: Cache::builder()
 			.max_capacity(100)
 			.time_to_idle(Duration::from_hours(1))
 			.build(),
 		guilds: Cache::new(1000),
-		user_settings: Cache::new(1000),
 		track_metadata: Cache::new(1000),
 		app_emojis: Cache::new(1000),
 	});
@@ -239,6 +224,7 @@ pub async fn bot_start(
 	cache_settings.max_messages = bot_config.cache_max_messages;
 	let activity = ActivityData::listening(&bot_config.activity);
 	let mut client = Client::builder(Token::from_str(&bot_config.token)?, intents)
+		.compression(TransportCompression::Zstd)
 		.framework(Box::new(framework))
 		.voice_manager(music_manager)
 		.cache_settings(cache_settings)
@@ -252,9 +238,9 @@ pub async fn bot_start(
 	spawn(async move { wait_and_shutdown(shutdown_trigger).await });
 	let http_clone = client.http.clone();
 	spawn(async move { periodic_task(bot_data, http_clone).await });
-	let client_data = Arc::new(ClientData {
+	let client_data = ClientData {
 		runners: client.shard_manager.runners.clone(),
-	});
+	};
 	if CLIENT_DATA.set(client_data).is_err() {
 		error!("CLIENT_DATA already initialized");
 	}

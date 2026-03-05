@@ -829,8 +829,8 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
-		modified_settings.settings.global_call = true;
-		modified_settings.settings.global_music = true;
+		modified_settings.shared.settings.global_call = true;
+		modified_settings.shared.settings.global_music = true;
 		ctx.data()
 			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
@@ -916,8 +916,8 @@ pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 		.get_or_insert_default()
 		.as_ref()
 		.clone();
-	modified_settings.settings.global_music = false;
-	modified_settings.settings.global_call = false;
+	modified_settings.shared.settings.global_music = false;
+	modified_settings.shared.settings.global_call = false;
 	ctx.data()
 		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
@@ -1043,7 +1043,7 @@ pub async fn play_song_global(
 		.await;
 
 		for global_guild in ctx.data().guilds.iter().filter(|entry| {
-			let settings = &entry.value().settings;
+			let settings = &entry.value().shared.settings;
 			entry.key() != &guild_id && settings.global_music
 		}) {
 			let Some(global_handler_lock) = ctx.data().music_manager.get(*global_guild.key())

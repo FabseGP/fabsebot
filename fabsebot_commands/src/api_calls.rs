@@ -1,5 +1,5 @@
 use core::fmt::{Display, Formatter, Result as FmtResult};
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
@@ -7,8 +7,7 @@ use fabsebot_core::{
 		constants::{
 			COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, NOT_IN_GUILD_MSG,
 		},
-		settings::UserSettings,
-		types::{Error, HTTP_CLIENT, SContext, UTILS_CONFIG},
+		types::{Error, HTTP_CLIENT, SContext, utils_config},
 	},
 	utils::{
 		ai::ai_response_simple,
@@ -78,7 +77,7 @@ pub async fn ai_image(
 	let request = ImageRequest {
 		prompt: format!("{prompt} {}", fastrand::usize(..1024)),
 	};
-	let utils_config = UTILS_CONFIG.get().unwrap();
+	let utils_config = utils_config();
 
 	let resp = if let Ok(response) = HTTP_CLIENT
 		.post(&utils_config.api.cloudflare_image_gen)
@@ -153,10 +152,9 @@ pub async fn ai_text(
 	prompt: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let utils_config = UTILS_CONFIG.get().unwrap();
 
 	if let Ok(resp) =
-		ai_response_simple(&role, &prompt, &utils_config.fabseserver.text_gen_model).await
+		ai_response_simple(&role, &prompt, &utils_config().fabseserver.text_gen_model).await
 		&& !resp.is_empty()
 	{
 		let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
@@ -997,10 +995,12 @@ pub async fn memegen(
 pub async fn roast_internel(ctx: SContext<'_>, description: &str, name: &str) -> Result<(), Error> {
 	let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no \
 	            mercy shown. the prompt will contain information of your target";
-	let utils_config = UTILS_CONFIG.get().unwrap();
-	if let Ok(resp) =
-		ai_response_simple(role, description, &utils_config.fabseserver.text_gen_model).await
-		&& !resp.is_empty()
+	if let Ok(resp) = ai_response_simple(
+		role,
+		description,
+		&utils_config().fabseserver.text_gen_model,
+	)
+	.await && !resp.is_empty()
 	{
 		let mut embed = CreateEmbed::default()
 			.title(format!("Roasting {name}"))
@@ -1098,28 +1098,14 @@ pub async fn roast(
 	let name = member.display_name();
 	let account_date = member.user.id.created_at();
 	let join_date = member.joined_at.unwrap_or_default();
-	let message_count = {
-		let mut user_settings_opt = ctx.data().user_settings.get(&guild_id);
-		if let Some(settings) = user_settings_opt {
-			settings
-				.get(&member.user.id)
-				.map_or(0, |count| count.message_count)
-		} else {
-			let mut modified_settings = user_settings_opt.get_or_insert_default().as_ref().clone();
-			modified_settings.insert(
-				member.user.id,
-				UserSettings {
-					guild_id: i64::from(guild_id),
-					user_id: i64::from(member.user.id),
-					..Default::default()
-				},
-			);
-			ctx.data()
-				.user_settings
-				.insert(guild_id, Arc::new(modified_settings));
-			0
-		}
-	};
+	let message_count = ctx
+		.data()
+		.guilds
+		.get(&guild_id)
+		.unwrap()
+		.user_settings
+		.get(&member.user.id)
+		.map_or(0, |count| count.message_count);
 	let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
 	let messages_string = {
@@ -1229,10 +1215,7 @@ pub async fn translate(
 		target: &target_lang,
 		alternatives: 3,
 	};
-	let translate_server = UTILS_CONFIG
-		.get()
-		.map(|u| u.fabseserver.translate.as_str())
-		.unwrap();
+	let translate_server = utils_config().fabseserver.translate.as_str();
 
 	if let Ok(response) = HTTP_CLIENT
 		.post(translate_server)

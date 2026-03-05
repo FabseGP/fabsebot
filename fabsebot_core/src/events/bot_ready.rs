@@ -9,7 +9,10 @@ use serenity::all::{Context as SContext, GuildId, Ready, UserId};
 use sqlx::query_as;
 use tracing::info;
 
-use crate::config::{settings::UserSettings, types::Data};
+use crate::config::{
+	settings::UserSettings,
+	types::{Data, GuildCache},
+};
 
 pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()> {
 	let data: Arc<Data> = ctx.data();
@@ -52,24 +55,6 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 			.insert(tracking);
 	}
 
-	for settings in guild_settings {
-		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
-		let settings_guild_id = settings.guild_id;
-		let guild_data = GuildData {
-			settings,
-			word_reactions: grouped_word_reactions
-				.remove(&settings_guild_id)
-				.unwrap_or_default(),
-			word_tracking: grouped_word_tracking
-				.remove(&settings_guild_id)
-				.unwrap_or_default(),
-			emoji_replies: grouped_emoji_replies
-				.remove(&settings_guild_id)
-				.unwrap_or_default(),
-		};
-		data.guilds.insert(guild_id, Arc::new(guild_data));
-	}
-
 	let mut guild_maps: HashMap<GuildId, HashMap<UserId, UserSettings>> = HashMap::default();
 	for settings in user_settings {
 		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
@@ -79,8 +64,27 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 			.or_default()
 			.insert(user_id, settings);
 	}
-	for (guild_id, map) in guild_maps {
-		data.user_settings.insert(guild_id, Arc::new(map));
+
+	for settings in guild_settings {
+		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
+		let settings_guild_id = settings.guild_id;
+		let guild_cache = GuildCache {
+			shared: GuildData {
+				settings,
+				word_reactions: grouped_word_reactions
+					.remove(&settings_guild_id)
+					.unwrap_or_default(),
+				word_tracking: grouped_word_tracking
+					.remove(&settings_guild_id)
+					.unwrap_or_default(),
+				emoji_replies: grouped_emoji_replies
+					.remove(&settings_guild_id)
+					.unwrap_or_default(),
+			},
+			user_settings: guild_maps.get(&guild_id).unwrap().clone(),
+			..Default::default()
+		};
+		data.guilds.insert(guild_id, Arc::new(guild_cache));
 	}
 
 	if let Ok(app_emojis) = ctx.get_application_emojis().await {

@@ -56,6 +56,7 @@ pub async fn dynamic_prefix(
 			.get(&id)
 			.map_or(Cow::Borrowed("!"), |guild_data| {
 				guild_data
+					.shared
 					.settings
 					.prefix
 					.clone()

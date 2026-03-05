@@ -1,8 +1,4 @@
-use std::{
-	borrow::Cow,
-	collections::{HashMap, HashSet},
-	sync::Arc,
-};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use anyhow::{Context as _, Result as AResult};
 use fabsebot_db::guild::{GuildData, GuildSettings, WordTracking, insert_guild, insert_user};
@@ -12,9 +8,9 @@ use serenity::all::{
 	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
 	GuildId, Message, MessageId, ReactionType, UserId,
 };
-use songbird::{Songbird, input::Compose as _};
+use songbird::{Call, Songbird, input::Compose as _};
 use sqlx::{Postgres, Transaction, query};
-use tokio::{join, task::spawn};
+use tokio::{join, sync::Mutex, task::spawn};
 use tracing::error;
 use winnow::Parser as _;
 
@@ -25,7 +21,7 @@ use crate::{
 			FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FLOPPAGANDA_GIF,
 			INVALID_TRACK_SOURCE, MISSING_METADATA_MSG, NOT_IN_VOICE_CHAN_MSG, QUEUE_MSG,
 		},
-		types::{Data, UTILS_CONFIG},
+		types::{Data, GuildCache, WebhookMap, utils_config},
 	},
 	log_errors,
 	stats::counters::METRICS,
@@ -43,11 +39,13 @@ async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 		&& new_message.referenced_message.is_none()
 	{
 		counter!(METRICS.bot_pings.clone()).increment(1);
-		let (ping_message, ping_payload) = UTILS_CONFIG
-			.get()
-			.map(|u| (&u.ping_message, &u.ping_payload))
-			.unwrap();
-
+		let (ping_message, ping_payload) = {
+			let utils_config = utils_config();
+			(
+				utils_config.ping_message.as_str(),
+				utils_config.ping_payload.as_str(),
+			)
+		};
 		new_message
 			.channel_id
 			.send_message(
@@ -71,7 +69,7 @@ async fn easter_eggs(
 	ctx: &SContext,
 	new_message: &Message,
 	content: &str,
-	data: Arc<Data>,
+	webhooks: &WebhookMap,
 ) -> AResult<()> {
 	if content == "floppaganda" {
 		counter!(METRICS.floppaganda.clone()).increment(1);
@@ -90,7 +88,7 @@ async fn easter_eggs(
 			ctx,
 			new_message.guild_id,
 			new_message.channel_id,
-			data.channel_webhooks.clone(),
+			webhooks.clone(),
 		)
 		.await
 	{
@@ -165,35 +163,23 @@ async fn queue_track(
 	Ok(())
 }
 
-fn ai_chats(ctx: &SContext, new_message: &Message, data: &Arc<Data>, guild_id: GuildId) {
+fn ai_chats(
+	ctx: &SContext,
+	new_message: &Message,
+	data: &GuildCache,
+	music_manager: Option<Arc<Mutex<Call>>>,
+	guild_id: GuildId,
+) {
 	channel_counter("chatbot".to_owned());
-	let guild_ai_chats = {
-		let ai_chats_opt = data.ai_chats.get(&guild_id);
-		if let Some(ai_chat) = ai_chats_opt {
-			ai_chat
-		} else {
-			let modified_settings = ai_chats_opt.unwrap_or_default();
-			data.ai_chats.insert(guild_id, modified_settings.clone());
-			modified_settings
-		}
-	};
-	let (chatbot_role, chatbot_internet_search) = {
-		let user_settings_opt = data.user_settings.get(&guild_id);
-		let user_settings = if let Some(settings) = user_settings_opt {
-			settings
-		} else {
-			let new_settings = user_settings_opt.unwrap_or_default();
-			data.user_settings.insert(guild_id, new_settings.clone());
-			new_settings
-		};
-		user_settings
-			.get(&new_message.author.id)
-			.map(|a| (a.chatbot_role.clone(), a.chatbot_internet_search))
-			.unwrap_or_default()
-	};
+	let guild_ai_chats = data.ai_chats.clone();
+	let (chatbot_role, chatbot_internet_search) = data
+		.user_settings
+		.get(&new_message.author.id)
+		.map(|a| (a.chatbot_role.clone(), a.chatbot_internet_search))
+		.unwrap_or_default();
 	let ctx_clone = ctx.clone();
 	let new_message_clone = new_message.clone();
-	let music_manager_clone = data.music_manager.get(guild_id);
+	let music_manager_clone = music_manager;
 
 	spawn(async move {
 		if let Err(err) = ai_chatbot(
@@ -216,41 +202,38 @@ async fn global_chats(
 	ctx: &SContext,
 	new_message: &Message,
 	data: Arc<Data>,
-	guild_data: &Arc<GuildData>,
+	guild_data: Arc<GuildCache>,
 	guild_id: GuildId,
 ) -> AResult<()> {
-	if let Some(global_chat_channel) = guild_data.settings.global_chat_channel
+	if let Some(global_chat_channel) = guild_data.shared.settings.global_chat_channel
 		&& new_message.channel_id.get() == global_chat_channel.cast_unsigned()
-		&& guild_data.settings.global_chat
+		&& guild_data.shared.settings.global_chat
 	{
 		channel_counter("global_chat".to_owned());
 		let guild_global_chats: Vec<_> = data
 			.guilds
 			.iter()
 			.filter(|entry| {
-				let settings = &entry.value().settings;
+				let settings = &entry.value().shared.settings;
 				entry.key() != &guild_id
 					&& settings.global_chat_channel.is_some()
 					&& settings.global_chat
 			})
 			.map(|entry| {
-				let settings = &entry.value().settings;
+				let settings = &entry.value().shared.settings;
 				(
 					GuildId::new(settings.guild_id.cast_unsigned()),
 					settings.global_chat_channel,
 				)
 			})
 			.collect();
-		let mut chat_history = data
-			.global_chats
-			.get(&guild_id)
-			.unwrap_or_default()
-			.as_ref()
-			.clone();
+		let mut data_clone = guild_data.as_ref().clone();
 		for (target_guild_id, _) in &guild_global_chats {
-			chat_history.insert(*target_guild_id, new_message.id);
+			data_clone
+				.global_chats
+				.insert(*target_guild_id, new_message.id);
 		}
-		data.global_chats.insert(guild_id, Arc::new(chat_history));
+		data.guilds.insert(guild_id, Arc::new(data_clone));
 		for (guild_id, guild_channel_id) in
 			guild_global_chats
 				.iter()
@@ -416,11 +399,12 @@ async fn user_queries(
 	ctx: &SContext,
 	new_message: &Message,
 	data: Arc<Data>,
+	guild_data: Arc<GuildCache>,
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	tx: &mut Transaction<'static, Postgres>,
 ) -> AResult<()> {
-	let mut modified_settings = data.user_settings.get(&guild_id).unwrap().as_ref().clone();
+	let mut modified_settings = guild_data.user_settings.clone();
 	let user_id_i64 = i64::from(new_message.author.id);
 
 	for target in modified_settings.iter_mut().map(|t| t.1) {
@@ -548,8 +532,9 @@ async fn user_queries(
 			target.message_count = target.message_count.saturating_add(1);
 		}
 	}
-	data.user_settings
-		.insert(guild_id, Arc::new(modified_settings));
+	let mut guild_cache = guild_data.as_ref().clone();
+	guild_cache.user_settings = modified_settings;
+	data.guilds.insert(guild_id, Arc::new(guild_cache));
 
 	query!(
 		"INSERT INTO user_settings (guild_id, user_id, message_count) VALUES ($1, $2, 1)
@@ -569,14 +554,15 @@ async fn guild_queries(
 	ctx: &SContext,
 	new_message: &Message,
 	data: Arc<Data>,
-	guild_data: Arc<GuildData>,
+	guild_data: Arc<GuildCache>,
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	tx: &mut Transaction<'static, Postgres>,
 	content: &str,
 ) -> AResult<()> {
-	let mut word_tracking_updates: HashSet<WordTracking> = guild_data.word_tracking.clone();
+	let mut word_tracking_updates: HashSet<WordTracking> = guild_data.shared.word_tracking.clone();
 	for record in guild_data
+		.shared
 		.word_tracking
 		.iter()
 		.filter(|r| content.contains(&r.word))
@@ -597,15 +583,11 @@ async fn guild_queries(
 			word_tracking_updates.insert(updated_record);
 		}
 	}
-	let mut modified_settings = data
-		.guilds
-		.get(&guild_id)
-		.get_or_insert_default()
-		.as_ref()
-		.clone();
-	modified_settings.word_tracking = word_tracking_updates;
+	let mut modified_settings = guild_data.as_ref().clone();
+	modified_settings.shared.word_tracking = word_tracking_updates;
 	data.guilds.insert(guild_id, Arc::new(modified_settings));
 	for record in guild_data
+		.shared
 		.word_reactions
 		.iter()
 		.filter(|r| content.contains(&r.word))
@@ -676,7 +658,7 @@ async fn db_queries(
 	ctx: &SContext,
 	new_message: &Message,
 	data: Arc<Data>,
-	guild_data: Arc<GuildData>,
+	guild_data: Arc<GuildCache>,
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	mut tx: Transaction<'static, Postgres>,
@@ -686,6 +668,7 @@ async fn db_queries(
 		ctx,
 		new_message,
 		data.clone(),
+		guild_data.clone(),
 		guild_id,
 		guild_id_i64,
 		&mut tx,
@@ -695,7 +678,7 @@ async fn db_queries(
 	guild_queries(
 		ctx,
 		new_message,
-		data.clone(),
+		data,
 		guild_data,
 		guild_id,
 		guild_id_i64,
@@ -732,45 +715,55 @@ pub async fn handle_message(
 		};
 		data.guilds.insert(
 			guild_id,
-			Arc::new(GuildData {
-				settings: default_settings,
+			Arc::new(GuildCache {
+				shared: GuildData {
+					settings: default_settings,
+					..Default::default()
+				},
 				..Default::default()
 			}),
 		);
 	}
-	if !data.user_settings.contains_key(&guild_id) {
-		data.user_settings
-			.insert(guild_id, Arc::new(HashMap::default()));
-	}
+	let guild_data = data.guilds.get(&guild_id).unwrap();
 
-	if let Some(guild_user_settings) = data.user_settings.get(&guild_id)
-		&& !guild_user_settings.contains_key(&new_message.author.id)
+	if !guild_data
+		.user_settings
+		.contains_key(&new_message.author.id)
 	{
 		insert_user(i64::from(new_message.author.id), &mut tx).await?;
 	}
 
-	let guild_data = data.guilds.get(&guild_id).unwrap();
-
 	if !new_message.content.starts_with('#') {
-		if let Some(music_channel) = guild_data.settings.music_channel
+		if let Some(music_channel) = guild_data.shared.settings.music_channel
 			&& new_message.channel_id.get() == music_channel.cast_unsigned()
 		{
 			queue_track(ctx, new_message, data.music_manager.clone(), guild_id).await?;
 		}
-		if let Some(ai_chat_channel) = guild_data.settings.ai_chat_channel
+		if let Some(ai_chat_channel) = guild_data.shared.settings.ai_chat_channel
 			&& new_message.channel_id.get() == ai_chat_channel.cast_unsigned()
 		{
-			ai_chats(ctx, new_message, &data, guild_id);
+			ai_chats(
+				ctx,
+				new_message,
+				&guild_data,
+				data.music_manager.get(guild_id),
+				guild_id,
+			);
 		}
 	}
 
 	let content = new_message.content.to_lowercase();
 	let (bot_ping, easter_eggs, message_preview, spoiler_message, global_chat) = join!(
 		check_bot_ping(ctx, new_message),
-		easter_eggs(ctx, new_message, &content, data.clone()),
+		easter_eggs(ctx, new_message, &content, &data.channel_webhooks),
 		message_preview(ctx, new_message, &content),
-		spoiler_message(ctx, new_message, &guild_data, data.channel_webhooks.clone()),
-		global_chats(ctx, new_message, data.clone(), &guild_data, guild_id)
+		spoiler_message(
+			ctx,
+			new_message,
+			&guild_data.shared,
+			data.channel_webhooks.clone()
+		),
+		global_chats(ctx, new_message, data.clone(), guild_data.clone(), guild_id)
 	);
 
 	log_errors!(

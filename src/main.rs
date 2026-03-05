@@ -7,13 +7,16 @@ use config::MainConfig;
 use fabsebot_commands::commands;
 use fabsebot_core::{
 	bot_start,
-	config::settings::{APIConfig, BotConfig, HTTPAgent, ServerConfig},
+	config::{
+		settings::{APIConfig, BotConfig, HTTPAgent, ServerConfig},
+		types::{UTILS_CONFIG, UtilsConfig},
+	},
 };
 use fabsebot_db::{PostgresConfig, PostgresConn};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use mimalloc::MiMalloc;
 use toml::{Table, Value};
-use tracing::{Level, subscriber::set_global_default};
+use tracing::{Level, error, subscriber::set_global_default};
 use tracing_subscriber::{filter::LevelFilter, fmt};
 
 #[global_allocator]
@@ -79,15 +82,22 @@ async fn main() -> AResult<()> {
 
 	let postgres_pool = PostgresConn::new(postgres_config).await?;
 
-	bot_start(
-		bot_config,
-		server_config,
-		api_config,
-		http_agent,
-		postgres_pool.pool,
-		commands(),
-	)
-	.await?;
+	if UTILS_CONFIG
+		.set(UtilsConfig {
+			owner_id: bot_config.owner_id,
+			ping_message: bot_config.ping_message.clone(),
+			ping_payload: bot_config.ping_payload.clone(),
+			fabseserver: server_config,
+			api: api_config,
+			http_agent,
+			bot_name: bot_config.username.clone(),
+		})
+		.is_err()
+	{
+		error!("UTILS_CONFIG already initialized");
+	}
+
+	bot_start(bot_config, postgres_pool.pool, commands()).await?;
 
 	Ok(())
 }

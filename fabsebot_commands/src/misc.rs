@@ -12,7 +12,7 @@ use fabsebot_core::{
 			DEFAULT_THEME, FONTS, NOT_IN_GUILD_MSG, QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME,
 			RANDOM_THEME, STATIC_QUOTE_VEC, THEMES,
 		},
-		types::{CLIENT_DATA, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, UTILS_CONFIG},
+		types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, client_data, utils_config},
 	},
 	utils::{
 		ai::ai_response_simple,
@@ -278,10 +278,7 @@ pub async fn bot_control(
 
 	ctx.send(
 		CreateReply::default()
-			.content(format!(
-				"{} rebranded!",
-				UTILS_CONFIG.get().unwrap().bot_name
-			))
+			.content(format!("{} rebranded!", utils_config().bot_name))
 			.ephemeral(true),
 	)
 	.await?;
@@ -355,7 +352,7 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let mut reply = CreateReply::default().embed(embed.clone()).reply(true);
 
-	let owner_id = UTILS_CONFIG.get().unwrap().owner_id;
+	let owner_id = utils_config().owner_id;
 
 	if ctx.author().id != owner_id {
 		ctx.send(reply).await?;
@@ -384,9 +381,7 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	{
 		let mut msg = interaction.message;
 
-		let response = CLIENT_DATA
-			.get()
-			.unwrap()
+		let response = client_data()
 			.runners
 			.get(&ctx.serenity_context().shard_id)
 			.map_or_else(
@@ -449,7 +444,6 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	)
 	.execute(&mut *ctx.data().db.acquire().await?)
 	.await?;
-	ctx.data().global_chats.invalidate(&guild_id);
 	let mut modified_settings = ctx
 		.data()
 		.guilds
@@ -457,8 +451,9 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 		.get_or_insert_default()
 		.as_ref()
 		.clone();
-	modified_settings.settings.global_chat = false;
-	modified_settings.settings.global_chat_channel = None;
+	modified_settings.shared.settings.global_chat = false;
+	modified_settings.shared.settings.global_chat_channel = None;
+	modified_settings.global_chats.remove(&guild_id).unwrap();
 	ctx.data()
 		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
@@ -501,8 +496,8 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		.get_or_insert_default()
 		.as_ref()
 		.clone();
-	modified_settings.settings.global_chat = true;
-	modified_settings.settings.global_chat_channel = Some(channel_id_i64);
+	modified_settings.shared.settings.global_chat = true;
+	modified_settings.shared.settings.global_chat_channel = Some(channel_id_i64);
 	ctx.data()
 		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
@@ -511,8 +506,8 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		loop {
 			let has_other_calls = ctx.data().guilds.iter().any(|entry| {
 				entry.key() != &guild_id
-					&& entry.value().settings.global_chat
-					&& entry.value().settings.global_chat_channel.is_some()
+					&& entry.value().shared.settings.global_chat
+					&& entry.value().shared.settings.global_chat_channel.is_some()
 			});
 			if has_other_calls {
 				return Ok::<_, Error>(true);
@@ -538,8 +533,8 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
-		modified_settings.settings.global_chat = false;
-		modified_settings.settings.global_chat_channel = None;
+		modified_settings.shared.settings.global_chat = false;
+		modified_settings.shared.settings.global_chat_channel = None;
 		ctx.data()
 			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
@@ -675,23 +670,20 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 	};
 	ctx.defer().await?;
 
-	let mut users =
-		ctx.data()
-			.user_settings
-			.get(&guild_id)
-			.map_or_else(Vec::new, |user_settings| {
-				let capacity = user_settings.len();
-				let mut result = Vec::with_capacity(capacity);
+	let mut users = {
+		let user_settings = &ctx.data().guilds.get(&guild_id).unwrap().user_settings;
+		let capacity = user_settings.len();
+		let mut result = Vec::with_capacity(capacity);
 
-				for entry in user_settings.iter() {
-					result.push(UserCount {
-						id: entry.1.user_id,
-						count: entry.1.message_count,
-					});
-				}
-
-				result
+		for entry in user_settings {
+			result.push(UserCount {
+				id: entry.1.user_id,
+				count: entry.1.message_count,
 			});
+		}
+
+		result
+	};
 
 	users.sort_by_key(|b| Reverse(b.count));
 	users.truncate(25);
@@ -729,12 +721,10 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 	ctx.defer().await?;
-	let utils_config = UTILS_CONFIG.get().unwrap();
-
 	if let Ok(resp) = ai_response_simple(
 		"you're a tsundere",
 		"generate a one-line love-hate greeting",
-		&utils_config.fabseserver.text_gen_model,
+		&utils_config().fabseserver.text_gen_model,
 	)
 	.await && !resp.is_empty()
 	{
@@ -1145,7 +1135,7 @@ pub async fn quote_internal(
 		&& let Some(guild_data) = ctx.data().guilds.get(&guild_id)
 	{
 		let message_url = reply.link().to_string();
-		if let Some(channel) = guild_data.settings.quotes_channel {
+		if let Some(channel) = guild_data.shared.settings.quotes_channel {
 			let quote_channel = GenericChannelId::new(channel.cast_unsigned());
 			quote_channel
 				.send_message(
@@ -1329,12 +1319,10 @@ pub async fn respond(
 	#[description = "Message"] message: Message,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let utils_config = UTILS_CONFIG.get().unwrap();
-
 	if let Ok(resp) = ai_response_simple(
 		"Mock this Discord message someone posted. Just give the roast, nothing else.",
 		&message.content,
-		&utils_config.fabseserver.text_gen_model,
+		&utils_config().fabseserver.text_gen_model,
 	)
 	.await && !resp.is_empty()
 	{
@@ -1403,6 +1391,7 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 		.get(&guild_id)
 		.map_or_else(Vec::new, |guild_data| {
 			let mut result: Vec<_> = guild_data
+				.shared
 				.word_tracking
 				.iter()
 				.map(|entry| WordCount {

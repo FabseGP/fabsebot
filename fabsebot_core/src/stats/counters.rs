@@ -2,7 +2,7 @@ use std::sync::{Arc, LazyLock};
 
 use metrics::describe_counter;
 
-use crate::config::types::UTILS_CONFIG;
+use crate::config::types::utils_config;
 
 pub static METRICS: LazyLock<Arc<Metrics>> = LazyLock::new(|| Arc::new(Metrics::new()));
 
@@ -28,7 +28,7 @@ pub struct Metrics {
 
 impl Metrics {
 	fn new() -> Self {
-		let bot_name = UTILS_CONFIG.get().unwrap().bot_name.as_str();
+		let bot_name = utils_config().bot_name.as_str();
 		Self {
 			commands: format!("{bot_name}_commands_total"),
 			command_errors: format!("{bot_name}_command_errors_total"),

@@ -9,7 +9,7 @@ use fabsebot_core::{
 	config::{
 		constants::{COLOUR_RED, NOT_IN_GUILD_MSG},
 		settings::UserSettings,
-		types::{Error, HTTP_CLIENT, SContext},
+		types::{Error, GuildCache, HTTP_CLIENT, SContext},
 	},
 	utils::helpers::{get_gifs, get_waifu},
 };
@@ -37,13 +37,16 @@ async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(
 		.await
 		.context("Failed to acquire savepoint")?;
 	if let Some(guild_data) = ctx.data().guilds.get(&guild_id) {
-		guild_data.reset(guild_id_i64, tx).await?;
+		guild_data.shared.reset(guild_id_i64, tx).await?;
 	}
 	ctx.data().guilds.insert(
 		guild_id,
-		Arc::new(GuildData {
-			settings: GuildSettings {
-				guild_id: guild_id_i64,
+		Arc::new(GuildCache {
+			shared: GuildData {
+				settings: GuildSettings {
+					guild_id: guild_id_i64,
+					..Default::default()
+				},
 				..Default::default()
 			},
 			..Default::default()
@@ -85,6 +88,7 @@ async fn configure_channels(
 	if let Some(music_channel) = music_channel_opt {
 		let music_channel_id_i64 = i64::from(music_channel.id());
 		modified_settings
+			.shared
 			.settings
 			.set_music_channel(guild_id_i64, music_channel_id_i64, conn)
 			.await?;
@@ -96,11 +100,12 @@ async fn configure_channels(
 				 requests!\nMessages prefixed with # will be ignored",
 			)
 			.await?;
-		modified_settings.settings.music_channel = Some(music_channel_id_i64);
+		modified_settings.shared.settings.music_channel = Some(music_channel_id_i64);
 	}
 	if let Some(spoiler_channel) = spoiler_channel_opt {
 		let spoiler_channel_id_i64 = i64::from(spoiler_channel.id());
 		modified_settings
+			.shared
 			.settings
 			.set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, conn)
 			.await?;
@@ -111,17 +116,17 @@ async fn configure_channels(
 				"Every attachment sent here will now be spoilered",
 			)
 			.await?;
-		modified_settings.settings.spoiler_channel = Some(spoiler_channel_id_i64);
+		modified_settings.shared.settings.spoiler_channel = Some(spoiler_channel_id_i64);
 	}
 	if let Some(quote_channel) = quote_channel_opt {
 		let quote_channel_id_i64 = i64::from(quote_channel.id());
 		set_quote_channel(ctx, quote_channel, guild_id_i64, quote_channel_id_i64).await?;
-		modified_settings.settings.quotes_channel = Some(quote_channel_id_i64);
+		modified_settings.shared.settings.quotes_channel = Some(quote_channel_id_i64);
 	}
 	if let Some(chatbot_channel) = chatbot_channel_opt {
 		let chatbot_channel_id_i64 = i64::from(chatbot_channel.id());
 		set_chatbot_channel(ctx, chatbot_channel, guild_id_i64, chatbot_channel_id_i64).await?;
-		modified_settings.settings.ai_chat_channel = Some(chatbot_channel_id_i64);
+		modified_settings.shared.settings.ai_chat_channel = Some(chatbot_channel_id_i64);
 	}
 	if let Some((waifu_channel, waifu_occurrence)) = waifu_channel_opt {
 		let waifu_channel_id_i64 = i64::from(waifu_channel.id());
@@ -134,9 +139,9 @@ async fn configure_channels(
 			system_time,
 		)
 		.await?;
-		modified_settings.settings.waifu_channel = Some(waifu_channel_id_i64);
-		modified_settings.settings.waifu_rate = Some(waifu_occurrence);
-		modified_settings.settings.last_waifu = Some(system_time);
+		modified_settings.shared.settings.waifu_channel = Some(waifu_channel_id_i64);
+		modified_settings.shared.settings.waifu_rate = Some(waifu_occurrence);
+		modified_settings.shared.settings.last_waifu = Some(system_time);
 	}
 	if let Some((dead_chat_channel, dead_chat_occurrence)) = dead_chat_gifs_opt {
 		let dead_chat_channel_id_i64 = i64::from(dead_chat_channel.id());
@@ -149,9 +154,9 @@ async fn configure_channels(
 			system_time,
 		)
 		.await?;
-		modified_settings.settings.dead_chat_channel = Some(dead_chat_channel_id_i64);
-		modified_settings.settings.dead_chat_rate = Some(dead_chat_occurrence);
-		modified_settings.settings.last_dead_chat = Some(system_time);
+		modified_settings.shared.settings.dead_chat_channel = Some(dead_chat_channel_id_i64);
+		modified_settings.shared.settings.dead_chat_rate = Some(dead_chat_occurrence);
+		modified_settings.shared.settings.last_dead_chat = Some(system_time);
 	}
 	ctx.data()
 		.guilds
@@ -468,12 +473,12 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	.await?;
 	let mut modified_settings = ctx
 		.data()
-		.user_settings
+		.guilds
 		.get(&guild_id)
 		.unwrap_or_default()
 		.as_ref()
 		.clone();
-	modified_settings.insert(
+	modified_settings.user_settings.insert(
 		ctx.author().id,
 		UserSettings {
 			guild_id: i64::from(guild_id),
@@ -482,7 +487,7 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		},
 	);
 	ctx.data()
-		.user_settings
+		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
@@ -540,16 +545,16 @@ pub async fn set_afk(
 	.await?;
 	let mut modified_settings = ctx
 		.data()
-		.user_settings
+		.guilds
 		.get(&guild_id)
 		.unwrap_or_default()
 		.as_ref()
 		.clone();
-	if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+	if let Some(user_settings) = modified_settings.user_settings.get_mut(&ctx.author().id) {
 		user_settings.afk = true;
 		user_settings.afk_reason = reason;
 	} else {
-		modified_settings.insert(
+		modified_settings.user_settings.insert(
 			ctx.author().id,
 			UserSettings {
 				guild_id: guild_id_i64,
@@ -561,7 +566,7 @@ pub async fn set_afk(
 		);
 	}
 	ctx.data()
-		.user_settings
+		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
@@ -641,16 +646,16 @@ pub async fn set_chatbot_options(
 	.await?;
 	let mut modified_settings = ctx
 		.data()
-		.user_settings
+		.guilds
 		.get(&guild_id)
 		.unwrap_or_default()
 		.as_ref()
 		.clone();
-	if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+	if let Some(user_settings) = modified_settings.user_settings.get_mut(&ctx.author().id) {
 		user_settings.chatbot_role = final_role;
 		user_settings.chatbot_internet_search = internet_search;
 	} else {
-		modified_settings.insert(
+		modified_settings.user_settings.insert(
 			ctx.author().id,
 			UserSettings {
 				guild_id: guild_id_i64,
@@ -662,7 +667,7 @@ pub async fn set_chatbot_options(
 		);
 	}
 	ctx.data()
-		.user_settings
+		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
@@ -749,7 +754,7 @@ pub async fn set_prefix(
 		.get_or_insert_default()
 		.as_ref()
 		.clone();
-	modified_settings.settings.prefix = Some(characters);
+	modified_settings.shared.settings.prefix = Some(characters);
 	ctx.data()
 		.guilds
 		.insert(guild_id, Arc::new(modified_settings));
@@ -843,16 +848,16 @@ pub async fn set_user_ping(
 		.await?;
 		let mut modified_settings = ctx
 			.data()
-			.user_settings
+			.guilds
 			.get(&guild_id)
 			.unwrap_or_default()
 			.as_ref()
 			.clone();
-		if let Some(user_settings) = modified_settings.get_mut(&ctx.author().id) {
+		if let Some(user_settings) = modified_settings.user_settings.get_mut(&ctx.author().id) {
 			user_settings.ping_content = Some(content);
 			user_settings.ping_media = media;
 		} else {
-			modified_settings.insert(
+			modified_settings.user_settings.insert(
 				ctx.author().id,
 				UserSettings {
 					guild_id: guild_id_i64,
@@ -864,7 +869,7 @@ pub async fn set_user_ping(
 			);
 		}
 		ctx.data()
-			.user_settings
+			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
 		"Custom user ping created... probably"
 	} else {
@@ -1031,14 +1036,17 @@ pub async fn set_word_react(
 			.get_or_insert_default()
 			.as_ref()
 			.clone();
-		modified_settings.word_reactions.insert(WordReactions {
-			guild_id: guild_id_i64,
-			word,
-			content,
-			media,
-			emoji_id,
-			guild_emoji,
-		});
+		modified_settings
+			.shared
+			.word_reactions
+			.insert(WordReactions {
+				guild_id: guild_id_i64,
+				word,
+				content,
+				media,
+				emoji_id,
+				guild_emoji,
+			});
 		ctx.data()
 			.guilds
 			.insert(guild_id, Arc::new(modified_settings));
@@ -1093,7 +1101,7 @@ pub async fn set_word_track(
 		.get_or_insert_default()
 		.as_ref()
 		.clone();
-	modified_settings.word_tracking.insert(WordTracking {
+	modified_settings.shared.word_tracking.insert(WordTracking {
 		guild_id: guild_id_i64,
 		word,
 		count: 0,

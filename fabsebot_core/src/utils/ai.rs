@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use winnow::Parser as _;
 
 use crate::{
-	config::types::{AIChatContext, AIChatMessage, HTTP_CLIENT, UTILS_CONFIG},
+	config::types::{AIChatContext, AIChatMessage, HTTP_CLIENT, utils_config},
 	utils::helpers::{discord_message_link, get_configured_songbird_handler},
 };
 
@@ -95,7 +95,7 @@ pub async fn ai_chatbot(
 
 	let mut conversations = conversations.lock().await;
 
-	let utils_config = UTILS_CONFIG.get().unwrap();
+	let utils_config = utils_config();
 
 	let typing = message
 		.channel_id
@@ -410,7 +410,7 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> AResul
 		base64_image
 	);
 
-	let utils_config = UTILS_CONFIG.get().unwrap();
+	let utils_config = utils_config();
 
 	let request = ImageDesc {
 		model: &utils_config.fabseserver.image_to_text_model,
@@ -451,11 +451,7 @@ pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> AResul
 		model,
 	};
 
-	ai_request_internal(
-		&UTILS_CONFIG.get().unwrap().fabseserver.llm_host_text,
-		&request,
-	)
-	.await
+	ai_request_internal(&utils_config().fabseserver.llm_host_text, &request).await
 }
 
 #[derive(Serialize)]
@@ -465,7 +461,7 @@ struct ChatRequest<'a> {
 }
 
 pub async fn ai_response(messages: &[AIChatMessage]) -> AResult<String> {
-	let utils_config = UTILS_CONFIG.get().unwrap();
+	let utils_config = utils_config();
 	let request = ChatRequest {
 		model: &utils_config.fabseserver.text_gen_model,
 		messages,
@@ -492,7 +488,7 @@ struct NormalizationOptions {
 }
 
 pub async fn ai_voice(prompt: &str) -> AResult<Bytes> {
-	let utils_config = UTILS_CONFIG.get().unwrap();
+	let utils_config = utils_config();
 	let request = AIVoiceRequest {
 		input: &prompt.replace('\'', ""),
 		model: &utils_config.fabseserver.text_to_speech_model,

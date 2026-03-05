@@ -131,7 +131,7 @@ pub async fn user_info(
 		))),
 	))];
 
-	let separator = CreateContainerComponent::Separator(CreateSeparator::new(true));
+	let separator = CreateContainerComponent::Separator(CreateSeparator::new());
 
 	let premium_type = match member.user.premium_type {
 		PremiumType::NitroBasic => "Basic nitro",

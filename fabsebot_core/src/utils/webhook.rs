@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::{Result as AResult, bail};
 use fabsebot_db::guild::GuildData;
 use serde::Serialize;
@@ -21,7 +19,7 @@ const FABSEBOT_WEBHOOK_PFP: &str =
 pub async fn spoiler_message(
 	ctx: &SContext,
 	message: &Message,
-	guild_data: &Arc<GuildData>,
+	guild_data: &GuildData,
 	data: WebhookMap,
 ) -> AResult<()> {
 	if let Some(spoiler_channel) = guild_data.settings.spoiler_channel

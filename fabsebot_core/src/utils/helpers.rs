@@ -26,7 +26,7 @@ use winnow::{
 use crate::{
 	config::{
 		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
-		types::{Data, HTTP_CLIENT, UTILS_CONFIG},
+		types::{Data, HTTP_CLIENT, utils_config},
 	},
 	stats::counters::METRICS,
 };
@@ -162,15 +162,11 @@ struct GifObject {
 }
 
 pub async fn get_gifs(input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
-	let key = UTILS_CONFIG
-		.get()
-		.map(|u| u.api.gif_token.as_str())
-		.unwrap();
 	if let Ok(response) = HTTP_CLIENT
 		.get("https://tenor.googleapis.com/v2/search")
 		.query(&[
 			("q", input),
-			("key", key),
+			("key", utils_config().api.gif_token.as_str()),
 			("contentfilter", "medium"),
 			("limit", "40"),
 			("media_filter", "minimal"),
