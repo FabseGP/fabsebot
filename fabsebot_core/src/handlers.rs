@@ -4,7 +4,7 @@ use anyhow::Result as AResult;
 use metrics::counter;
 use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
-use tracing::{error, warn};
+use tracing::error;
 
 use crate::{
 	config::types::{Data, Error},
@@ -75,7 +75,7 @@ impl SEventHandler for EventHandler {
 		match event {
 			FullEvent::Ready { data_about_bot, .. } => {
 				if let Err(error) = handle_ready(ctx, data_about_bot).await {
-					warn!("Error handling connection to Discord: {error}");
+					error!("Error handling connection to Discord: {error}");
 					counter!(METRICS.ready_errors.clone()).increment(1);
 				}
 			}
@@ -84,13 +84,13 @@ impl SEventHandler for EventHandler {
 					&& let Some(guild_id) = new_message.guild_id
 					&& let Err(error) = Box::pin(handle_message(ctx, new_message, guild_id)).await
 				{
-					warn!("Error handling sent message: {error}");
+					error!("Error handling sent message: {error}");
 					counter!(METRICS.message_errors.clone()).increment(1);
 				}
 			}
 			FullEvent::GuildCreate { guild, is_new, .. } => {
 				if let Err(error) = handle_guild_create(ctx.data(), guild, is_new.as_ref()).await {
-					warn!("Error handling newly created guild: {error}");
+					error!("Error handling newly created guild: {error}");
 					counter!(METRICS.new_guild_errors.clone()).increment(1);
 				}
 			}
@@ -109,7 +109,7 @@ impl SEventHandler for EventHandler {
 					&& let Err(error) =
 						handle_message_delete(ctx, *channel_id, guild_id, *deleted_message_id).await
 				{
-					warn!("Error handling deleted message: {error}");
+					error!("Error handling deleted message: {error}");
 					counter!(METRICS.messages_deleted_errors.clone()).increment(1);
 				}
 			}

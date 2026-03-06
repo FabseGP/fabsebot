@@ -42,8 +42,6 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 
 	let mut grouped_word_reactions: HashMap<i64, HashSet<WordReactionsInternal>> =
 		HashMap::default();
-	let mut grouped_word_tracking: HashMap<i64, HashSet<WordTrackingInternal>> = HashMap::default();
-
 	for reaction in word_reactions {
 		grouped_word_reactions
 			.entry(reaction.guild_id)
@@ -51,6 +49,7 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 			.insert(WordReactionsInternal::from(reaction));
 	}
 
+	let mut grouped_word_tracking: HashMap<i64, HashSet<WordTrackingInternal>> = HashMap::default();
 	for tracking in word_tracking {
 		grouped_word_tracking
 			.entry(tracking.guild_id)

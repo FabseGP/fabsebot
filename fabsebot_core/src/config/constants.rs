@@ -19,6 +19,11 @@ pub const NOT_IN_VOICE_CHAN_MSG: &str =
 pub const INVALID_TRACK_SOURCE: &str = "Only YouTube-links are supported";
 pub const QUEUE_MSG: &str = "Song added to queue";
 pub const MISSING_METADATA_MSG: &str = "Nothing is known about this song";
+pub const FAILED_SONG_FETCH: &str = "Failed to fetch song from YouTube :/";
+pub const TSUNDERE_REPLY: &str = "Ugh, fine. It's nice to see you again, I suppose... for now, \
+                                  don't get any ideas thinking this means I actually like you or \
+                                  anything";
+pub const AI_CHAT_ERROR: &str = "Go out and touch some grass...";
 
 pub const DEFAULT_BOT_ROLE: &str = "
 	The current user wants you to act as: You're fabsebot, a crude, uncensored and confident Discord \

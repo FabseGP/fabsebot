@@ -12,6 +12,7 @@ use serenity::all::{
 };
 use songbird::{Call, input::Input};
 use tokio::sync::Mutex;
+use tracing::{error, warn};
 use winnow::Parser as _;
 
 use crate::{
@@ -69,7 +70,10 @@ async fn user_roles_pfp(roles: &[Role], member: &Member) -> AResult<(String, Str
 	let pfp_desc = match HTTP_CLIENT.get(avatar_url).send().await {
 		Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
 			.unwrap_or_else(|_| "Unable to describe".to_owned()),
-		Err(_) => "Unable to describe".to_owned(),
+		Err(err) => {
+			warn!("Failed to describe pfp: {err}");
+			"Unable to describe".to_owned()
+		}
 	};
 
 	Ok((roles_joined, pfp_desc))
@@ -126,10 +130,15 @@ pub async fn ai_chatbot(
 		for attachment in &message.attachments {
 			if let Some(content_type) = attachment.content_type.as_deref()
 				&& content_type.starts_with("image")
-				&& let Ok(desc) =
-					ai_image_desc(&attachment.download().await?, Some(&message.content)).await
 			{
-				writeln!(system_content, "{desc}")?;
+				match ai_image_desc(&attachment.download().await?, Some(&message.content)).await {
+					Ok(desc) => {
+						writeln!(system_content, "{desc}")?;
+					}
+					Err(err) => {
+						warn!("Failed to describe image: {err}");
+					}
+				}
 			}
 		}
 	}
@@ -305,26 +314,32 @@ pub async fn ai_chatbot(
 			} else {
 				message.reply(&ctx.http, response.as_str()).await?;
 			}
-			if let Some(handler_lock) = voice_handle
-				&& let Ok(bytes) = ai_voice(&response).await
-			{
-				get_configured_songbird_handler(&handler_lock)
-					.await
-					.enqueue_input(Input::from(bytes))
-					.await;
+			if let Some(handler_lock) = voice_handle {
+				match ai_voice(&response).await {
+					Ok(bytes) => {
+						get_configured_songbird_handler(&handler_lock)
+							.await
+							.enqueue_input(Input::from(bytes))
+							.await;
+					}
+					Err(err) => {
+						warn!("Failed to transcribe text: {err}");
+					}
+				}
 			}
 			conversations
 				.messages
 				.push(AIChatMessage::assistant(response));
 		}
 		Err(err) => {
+			error!("Failed to get AI-response: {err}");
+
 			*conversations = AIChatContext::default();
 			drop(conversations);
 
 			message
 				.reply(&ctx.http, "Sorry, I had to forget our convo, too boring!")
 				.await?;
-			bail!(err);
 		}
 	}
 

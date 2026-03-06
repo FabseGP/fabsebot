@@ -67,14 +67,14 @@ async fn configure_channels(
 		.as_ref()
 		.clone();
 	let guild_id_i64 = i64::from(guild_id);
-	let system_time = if let Ok(system_time) = SystemTime::now()
+	let system_time = match SystemTime::now()
 		.duration_since(UNIX_EPOCH)
 		.map(|t| t.as_secs())
 	{
-		system_time.cast_signed()
-	} else {
-		warn!("Failed to get system time");
-		return Err(InternalError::MissingSystemTime.into());
+		Ok(time) => time.cast_signed(),
+		Err(err) => {
+			return Err(InternalError::MissingSystemTime(err).into());
+		}
 	};
 
 	let conn = &mut *ctx.data().db.acquire().await?;
@@ -940,15 +940,19 @@ pub async fn set_word_react(
 						name: &emoji_name,
 						image: &image_data,
 					};
-					if let Ok(http_emoji) = ctx.http().create_application_emoji(&params).await {
-						emoji_id = Some(http_emoji.id.get().cast_signed());
-						ctx.data()
-							.app_emojis
-							.insert(http_emoji.id.get(), Arc::new(http_emoji));
+					match ctx.http().create_application_emoji(&params).await {
+						Ok(http_emoji) => {
+							emoji_id = Some(http_emoji.id.get().cast_signed());
+							ctx.data()
+								.app_emojis
+								.insert(http_emoji.id.get(), Arc::new(http_emoji));
 
-						true
-					} else {
-						false
+							true
+						}
+						Err(err) => {
+							warn!("Failed to get app emojis: {err}");
+							false
+						}
 					}
 				} else {
 					false

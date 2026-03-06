@@ -1,4 +1,4 @@
-use anyhow::Result as AResult;
+use anyhow::{Result as AResult, anyhow};
 use serenity::all::{
 	Context as SContext, CreateEmbed, CreateMessage, GenericChannelId, GuildId, MessageId,
 	audit_log,
@@ -63,6 +63,8 @@ pub async fn handle_message_delete(
 			}
 			channel_id.send_message(&ctx.http, message).await?;
 		}
+	} else {
+		return Err(anyhow!("Failed to access audit"));
 	}
 	Ok(())
 }

@@ -1,6 +1,5 @@
 use std::{borrow::Cow, sync::Arc};
 
-use anyhow::{Result as AResult, bail};
 use metrics::counter;
 use mini_moka::sync::Cache;
 use serde::Deserialize;
@@ -13,6 +12,7 @@ use songbird::{
 };
 use symphonia::core::io::MediaSource;
 use tokio::sync::{Mutex, MutexGuard};
+use tracing::error;
 use url::Url;
 use uuid::Uuid;
 use winnow::{
@@ -28,6 +28,7 @@ use crate::{
 		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
 		types::{Data, HTTP_CLIENT, utils_config},
 	},
+	errors::commands::{EmojiError, HTTPError},
 	stats::counters::METRICS,
 };
 
@@ -159,8 +160,10 @@ struct GifObject {
 	url: String,
 }
 
-pub async fn get_gifs(input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
-	if let Ok(response) = HTTP_CLIENT
+async fn fetch_gifs_internal(
+	input: &str,
+) -> Result<Vec<(Cow<'static, str>, Cow<'static, str>)>, HTTPError> {
+	let response = HTTP_CLIENT
 		.get("https://tenor.googleapis.com/v2/search")
 		.query(&[
 			("q", input),
@@ -170,24 +173,34 @@ pub async fn get_gifs(input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)
 			("media_filter", "minimal"),
 		])
 		.send()
-		.await && let Ok(urls) = response.json::<GifResponse>().await
-	{
-		urls.results
-			.into_iter()
-			.filter_map(|result| {
-				result.media_formats.gif.map(|media| {
-					(
-						Cow::Owned(media.url),
-						Cow::Owned(result.content_description),
-					)
-				})
+		.await?;
+
+	let urls = response.json::<GifResponse>().await?;
+
+	Ok(urls
+		.results
+		.into_iter()
+		.filter_map(|result| {
+			result.media_formats.gif.map(|media| {
+				(
+					Cow::Owned(media.url),
+					Cow::Owned(result.content_description),
+				)
 			})
-			.collect()
-	} else {
-		vec![(
-			Cow::Borrowed(FALLBACK_GIF),
-			Cow::Borrowed(FALLBACK_GIF_TITLE),
-		)]
+		})
+		.collect())
+}
+
+pub async fn get_gifs(input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
+	match fetch_gifs_internal(input).await {
+		Ok(gifs) => gifs,
+		Err(err) => {
+			error!("{}", err);
+			vec![(
+				Cow::Borrowed(FALLBACK_GIF),
+				Cow::Borrowed(FALLBACK_GIF_TITLE),
+			)]
+		}
 	}
 }
 
@@ -197,23 +210,16 @@ struct LyricsResponse {
 	plain_lyrics: String,
 }
 
-pub async fn get_lyrics(artist_name: &str, track_name: &str) -> AResult<String> {
-	match HTTP_CLIENT
+pub async fn get_lyrics(artist_name: &str, track_name: &str) -> Result<String, HTTPError> {
+	let response = HTTP_CLIENT
 		.get("https://lrclib.net/api/get")
 		.query(&[("artist_name", artist_name), ("track_name", track_name)])
 		.send()
-		.await
-	{
-		Ok(response) => match response.json::<LyricsResponse>().await {
-			Ok(json) => Ok(json.plain_lyrics),
-			Err(err) => {
-				bail!("Failed to parse to json: {err}");
-			}
-		},
-		Err(err) => {
-			bail!("Failed to fetch lyrics: {err}");
-		}
-	}
+		.await?;
+
+	let json = response.json::<LyricsResponse>().await?;
+
+	Ok(json.plain_lyrics)
 }
 
 #[derive(Deserialize)]
@@ -225,17 +231,24 @@ struct WaifuImage {
 	url: String,
 }
 
-pub async fn get_waifu() -> Cow<'static, str> {
-	if let Ok(response) = HTTP_CLIENT
+async fn fetch_waifu_internal() -> Result<Option<String>, HTTPError> {
+	let response = HTTP_CLIENT
 		.get("https://api.waifu.im/search?height=>=2000&is_nsfw=false")
 		.send()
-		.await && let Ok(waifu_response) = response.json::<WaifuResponse>().await
-		&& let Some(image) = waifu_response.images.into_iter().next()
-	{
-		return Cow::Owned(image.url);
-	}
+		.await?;
+	let waifu_response = response.json::<WaifuResponse>().await?;
 
-	Cow::Borrowed(FALLBACK_WAIFU)
+	Ok(waifu_response.images.into_iter().next().map(|w| w.url))
+}
+
+pub async fn get_waifu() -> Cow<'static, str> {
+	match fetch_waifu_internal().await {
+		Ok(waifu_opt) => waifu_opt.map_or(Cow::Borrowed(FALLBACK_WAIFU), Cow::Owned),
+		Err(err) => {
+			error!("{}", err);
+			Cow::Borrowed(FALLBACK_WAIFU)
+		}
+	}
 }
 
 pub async fn send_emoji(
@@ -243,11 +256,20 @@ pub async fn send_emoji(
 	content: &str,
 	emojis: &Cache<u64, Arc<Emoji>>,
 	target_emoji: u64,
-) -> AResult<String> {
-	let (emoji_name, emoji_id, is_animated) = match get_app_emoji(ctx, emojis, target_emoji).await {
-		Ok(emoji) => emoji,
-		Err(err) => {
-			bail!(err);
+) -> Option<String> {
+	let (emoji_name, emoji_id, is_animated) = if let Some(app_emoji) = emojis.get(&target_emoji) {
+		(
+			app_emoji.name.to_string(),
+			app_emoji.id,
+			app_emoji.animated(),
+		)
+	} else {
+		match get_app_emoji(ctx, target_emoji).await {
+			Ok(emoji) => emoji,
+			Err(err) => {
+				error!("{}", err);
+				return None;
+			}
 		}
 	};
 	let emoji_string = format!(
@@ -257,39 +279,27 @@ pub async fn send_emoji(
 		emoji_id
 	);
 	let count = content.matches(&emoji_name).count();
-	Ok(emoji_string.repeat(count))
+	Some(emoji_string.repeat(count))
 }
 
 async fn get_app_emoji(
 	ctx: &SContext,
-	emojis: &Cache<u64, Arc<Emoji>>,
 	target_emoji: u64,
-) -> AResult<(String, EmojiId, bool)> {
-	if let Some(app_emoji) = emojis.get(&target_emoji) {
-		return Ok((
-			app_emoji.name.to_string(),
-			app_emoji.id,
-			app_emoji.animated(),
-		));
-	}
-	match ctx.get_application_emojis().await {
-		Ok(app_emojis) => {
-			if let Some(app_emoji) = app_emojis
-				.iter()
-				.find(|emoji| emoji.id.get() == target_emoji)
-			{
-				return Ok((
-					app_emoji.name.to_string(),
-					app_emoji.id,
-					app_emoji.animated(),
-				));
-			}
-			bail!("Couldn't find application emoji");
-		}
-		Err(err) => {
-			bail!("Failed to fetch application emojis: {err}");
-		}
-	}
+) -> Result<(String, EmojiId, bool), EmojiError> {
+	let app_emojis = ctx.get_application_emojis().await?;
+
+	let Some(app_emoji) = app_emojis
+		.iter()
+		.find(|emoji| emoji.id.get() == target_emoji)
+	else {
+		return Err(EmojiError::MissingEmoji);
+	};
+
+	Ok((
+		app_emoji.name.to_string(),
+		app_emoji.id,
+		app_emoji.animated(),
+	))
 }
 
 pub struct DiscordMessageLink {
@@ -332,6 +342,7 @@ pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink>
 		separated_pair(discord_id, '/', separated_pair(discord_id, '/', discord_id)),
 	)
 	.parse_next(input)?;
+
 	Ok(DiscordMessageLink {
 		guild,
 		channel,

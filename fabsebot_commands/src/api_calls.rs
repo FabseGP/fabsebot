@@ -1,13 +1,14 @@
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use std::time::Duration;
 
+use anyhow::anyhow;
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
 		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
 		types::{Error, HTTP_CLIENT, SContext, utils_config},
 	},
-	errors::commands::{AIError, InteractionError},
+	errors::commands::{Base64Error, HTTPError, InteractionError},
 	utils::{
 		ai::ai_response_simple,
 		helpers::{get_gifs, get_waifu},
@@ -80,42 +81,48 @@ pub async fn ai_image(
 	};
 	let utils_config = utils_config();
 
-	let resp = if let Ok(response) = HTTP_CLIENT
+	let resp = match HTTP_CLIENT
 		.post(&utils_config.api.cloudflare_image_gen)
 		.bearer_auth(&utils_config.api.cloudflare_token)
 		.json(&request)
 		.send()
 		.await
 	{
-		response
-	} else if let Ok(response) = HTTP_CLIENT
-		.post(&utils_config.api.cloudflare_image_gen_fallback)
-		.bearer_auth(&utils_config.api.cloudflare_token_fallback)
-		.json(&request)
-		.send()
-		.await
-	{
-		response
-	} else {
-		ctx.reply("Servers too overworked :/").await?;
-		return Err(AIError::ServersBusy.into());
+		Ok(response) => response,
+		Err(err) => {
+			ctx.reply("Servers too overworked :/").await?;
+			return Err(HTTPError::Request(err).into());
+		}
 	};
 
-	let image = if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
-		&& resp_parsed.success
-		&& let Ok(img_dec) = general_purpose::STANDARD.decode(resp_parsed.result.image)
-	{
-		Some(CreateAttachment::bytes(img_dec, "output.png"))
-	} else {
-		None
+	let resp_parsed = match resp.json::<FabseAIImage>().await {
+		Ok(resp_parsed) if resp_parsed.success => resp_parsed,
+		Ok(_) => {
+			ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
+				.await?;
+			return Err(anyhow!("Unsuccessful generation"));
+		}
+		Err(err) => {
+			ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
+				.await?;
+			return Err(HTTPError::Request(err).into());
+		}
 	};
 
-	if let Some(image) = image {
-		ctx.send(CreateReply::default().reply(true).attachment(image))
+	match general_purpose::STANDARD.decode(resp_parsed.result.image) {
+		Ok(img_dec) => {
+			ctx.send(
+				CreateReply::default()
+					.reply(true)
+					.attachment(CreateAttachment::bytes(img_dec, "output.png")),
+			)
 			.await?;
-	} else {
-		ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
-			.await?;
+		}
+		Err(err) => {
+			ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
+				.await?;
+			return Err(Base64Error::FailedBytesDecode(err).into());
+		}
 	}
 
 	Ok(())
@@ -154,25 +161,32 @@ pub async fn ai_text(
 ) -> Result<(), Error> {
 	ctx.defer().await?;
 
-	if let Ok(resp) =
-		ai_response_simple(&role, &prompt, &utils_config().fabseserver.text_gen_model).await
-		&& !resp.is_empty()
+	let resp = match ai_response_simple(&role, &prompt, &utils_config().fabseserver.text_gen_model)
+		.await
 	{
-		let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
-		for (index, chunk) in chunk_string(&resp, 1024).iter().enumerate() {
-			let field_name = if index == 0 {
-				"Response:".to_owned()
-			} else {
-				format!("Response (cont. {}):", index.saturating_add(1))
-			};
-			embed = embed.field(field_name, *chunk, false);
+		Ok(resp) if !resp.is_empty() => resp,
+		Ok(_) => {
+			ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
+				.await?;
+			return Err(anyhow!("Empty response"));
 		}
-		ctx.send(CreateReply::default().embed(embed).reply(true))
-			.await?;
-	} else {
-		ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
-			.await?;
+		Err(err) => {
+			ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
+				.await?;
+			return Err(err);
+		}
+	};
+	let mut embed = CreateEmbed::default().title(prompt).colour(COLOUR_RED);
+	for (index, chunk) in chunk_string(&resp, 1024).iter().enumerate() {
+		let field_name = if index == 0 {
+			"Response:".to_owned()
+		} else {
+			format!("Response (cont. {}):", index.saturating_add(1))
+		};
+		embed = embed.field(field_name, *chunk, false);
 	}
+	ctx.send(CreateReply::default().embed(embed).reply(true))
+		.await?;
 
 	Ok(())
 }
@@ -255,210 +269,216 @@ pub async fn anime(
 	anime: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Ok(resp) = HTTP_CLIENT
+	let resp = match HTTP_CLIENT
 		.get("https://api.jikan.moe/v4/anime")
 		.query(&[("q", anime.as_str()), ("limit", "5")])
 		.send()
 		.await
 	{
-		if let Ok(data) = resp.json::<AniMangaResponse<AnimeSpecific>>().await
-			&& let Some(first_entry) = data.data.first()
-		{
-			let empty = String::new();
-			let mut japanese_title = first_entry
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply("API down, get a life!").await?;
+			return Err(HTTPError::Request(err).into());
+		}
+	};
+	let json = match resp.json::<AniMangaResponse<AnimeSpecific>>().await {
+		Ok(json) => json,
+		Err(err) => {
+			ctx.reply("Not worthy of looking up").await?;
+			return Err(HTTPError::Request(err).into());
+		}
+	};
+	let Some(first_entry) = json.data.first() else {
+		ctx.reply("Not worthy of looking up").await?;
+		return Err(anyhow!("Empty response"));
+	};
+
+	let empty = String::new();
+	let mut japanese_title = first_entry
+		.titles
+		.iter()
+		.find(|t| t.title_type == "Japanese")
+		.map_or("No japanese title available", |t| t.title.as_str());
+	let mut embed = CreateEmbed::default()
+		.title(japanese_title)
+		.image(&first_entry.images.webp.image_url)
+		.url(&first_entry.url)
+		.colour(COLOUR_ORANGE);
+
+	if let Some(synopsis) = &first_entry.synopsis {
+		embed = embed.description(format!("*{synopsis}*"));
+	}
+
+	embed = embed.field("Format", &first_entry.anime_type, true);
+	embed = embed.field("Status", &first_entry.status, true);
+
+	if let Some(english_title) = first_entry
+		.titles
+		.iter()
+		.find(|t| t.title_type == "English")
+		.map(|t| t.title.as_str())
+	{
+		embed = embed.field("English title", english_title, true);
+	}
+	embed = embed.field("", &empty, false);
+	if let Some(score) = first_entry.score {
+		embed = embed.field("Score", score.to_string(), true);
+	}
+	if let Some(popularity) = first_entry.popularity {
+		embed = embed.field("Popularity", popularity.to_string(), true);
+	}
+	if let Some(favorites) = first_entry.favorites {
+		embed = embed.field("Favorites", favorites.to_string(), true);
+	}
+	embed = embed.field("", &empty, false);
+	if let Some(episodes) = first_entry.specific.episodes {
+		embed = embed.field("Episodes", episodes.to_string(), true);
+	}
+	if let Some(duration) = &first_entry.specific.duration {
+		embed = embed.field("Duration", duration, true);
+	}
+	if let Some(aired) = &first_entry.specific.aired.aired_string {
+		embed = embed.field("Aired", aired, true);
+	}
+	let mut genres_string = first_entry
+		.genres
+		.iter()
+		.map(|genre| genre.name.as_str())
+		.intersperse(" - ")
+		.collect::<String>();
+	embed = embed.field("Genres", genres_string, false);
+	let len = json.data.len();
+	if ctx.guild_id().is_some() && len > 1 {
+		let mut state = State::new(ctx.id(), len);
+		let mut final_embed = embed.clone();
+		let buttons = [
+			CreateButton::new(&state.prev_id)
+				.style(ButtonStyle::Primary)
+				.label("⬅️"),
+			CreateButton::new(&state.next_id)
+				.style(ButtonStyle::Primary)
+				.label("➡️"),
+		];
+		let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
+			&buttons[1..],
+		))];
+
+		let message = ctx
+			.send(
+				CreateReply::default()
+					.reply(true)
+					.embed(embed)
+					.components(&action_row),
+			)
+			.await?;
+
+		let ctx_id_str = ctx.id().to_string();
+		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
+			.timeout(Duration::from_mins(1))
+			.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
+			.stream();
+
+		while let Some(interaction) = collector_stream.next().await {
+			interaction
+				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+				.await?;
+
+			if interaction.data.custom_id.ends_with('n')
+				&& state.index < state.len.saturating_sub(1)
+			{
+				state.index = state.index.saturating_add(1);
+			} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
+				state.index = state.index.saturating_sub(1);
+			}
+
+			let Some(current_entry) = json.data.get(state.index) else {
+				warn!("Invalid anime index: {}", state.index);
+				continue;
+			};
+
+			japanese_title = current_entry
 				.titles
 				.iter()
 				.find(|t| t.title_type == "Japanese")
 				.map_or("No japanese title available", |t| t.title.as_str());
-			let mut embed = CreateEmbed::default()
+			embed = CreateEmbed::default()
 				.title(japanese_title)
-				.image(&first_entry.images.webp.image_url)
-				.url(&first_entry.url)
+				.thumbnail(&current_entry.images.webp.image_url)
+				.url(&current_entry.url)
 				.colour(COLOUR_ORANGE);
 
-			if let Some(synopsis) = &first_entry.synopsis {
+			if let Some(synopsis) = &current_entry.synopsis {
 				embed = embed.description(format!("*{synopsis}*"));
 			}
-
-			embed = embed.field("Format", &first_entry.anime_type, true);
-			embed = embed.field("Status", &first_entry.status, true);
-
-			if let Some(english_title) = first_entry
+			embed = embed.field("Format", &current_entry.anime_type, true);
+			embed = embed.field("Status", &current_entry.status, true);
+			if let Some(english_title) = current_entry
 				.titles
 				.iter()
 				.find(|t| t.title_type == "English")
-				.map(|t| t.title.as_str())
+				.map(|t| &t.title)
 			{
 				embed = embed.field("English title", english_title, true);
 			}
 			embed = embed.field("", &empty, false);
-			if let Some(score) = first_entry.score {
+			if let Some(score) = current_entry.score {
 				embed = embed.field("Score", score.to_string(), true);
 			}
-			if let Some(popularity) = first_entry.popularity {
+			if let Some(popularity) = current_entry.popularity {
 				embed = embed.field("Popularity", popularity.to_string(), true);
 			}
-			if let Some(favorites) = first_entry.favorites {
+			if let Some(favorites) = current_entry.favorites {
 				embed = embed.field("Favorites", favorites.to_string(), true);
 			}
 			embed = embed.field("", &empty, false);
-			if let Some(episodes) = first_entry.specific.episodes {
+			if let Some(episodes) = current_entry.specific.episodes {
 				embed = embed.field("Episodes", episodes.to_string(), true);
 			}
-			if let Some(duration) = &first_entry.specific.duration {
+			if let Some(duration) = &current_entry.specific.duration {
 				embed = embed.field("Duration", duration, true);
 			}
-			if let Some(aired) = &first_entry.specific.aired.aired_string {
+			if let Some(aired) = &current_entry.specific.aired.aired_string {
 				embed = embed.field("Aired", aired, true);
 			}
-			let mut genres_string = first_entry
+			genres_string = current_entry
 				.genres
 				.iter()
 				.map(|genre| genre.name.as_str())
 				.intersperse(" - ")
 				.collect::<String>();
 			embed = embed.field("Genres", genres_string, false);
-			let len = data.data.len();
-			if ctx.guild_id().is_some() && len > 1 {
-				let mut state = State::new(ctx.id(), len);
-				let mut final_embed = embed.clone();
-				let buttons = [
-					CreateButton::new(&state.prev_id)
-						.style(ButtonStyle::Primary)
-						.label("⬅️"),
-					CreateButton::new(&state.next_id)
-						.style(ButtonStyle::Primary)
-						.label("➡️"),
-				];
-				let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-					&buttons[1..],
-				))];
+			final_embed = embed.clone();
 
-				let message = ctx
-					.send(
-						CreateReply::default()
-							.reply(true)
-							.embed(embed)
-							.components(&action_row),
-					)
-					.await?;
-
-				let ctx_id_str = ctx.id().to_string();
-				let mut collector_stream =
-					ComponentInteractionCollector::new(ctx.serenity_context())
-						.timeout(Duration::from_mins(1))
-						.filter(move |interaction| {
-							interaction.data.custom_id.starts_with(ctx_id_str.as_str())
-						})
-						.stream();
-
-				while let Some(interaction) = collector_stream.next().await {
-					interaction
-						.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-						.await?;
-
-					if interaction.data.custom_id.ends_with('n')
-						&& state.index < state.len.saturating_sub(1)
-					{
-						state.index = state.index.saturating_add(1);
-					} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-						state.index = state.index.saturating_sub(1);
-					}
-
-					let Some(current_entry) = data.data.get(state.index) else {
-						warn!("Invalid anime index: {}", state.index);
-						continue;
-					};
-
-					japanese_title = current_entry
-						.titles
-						.iter()
-						.find(|t| t.title_type == "Japanese")
-						.map_or("No japanese title available", |t| t.title.as_str());
-					embed = CreateEmbed::default()
-						.title(japanese_title)
-						.thumbnail(&current_entry.images.webp.image_url)
-						.url(&current_entry.url)
-						.colour(COLOUR_ORANGE);
-
-					if let Some(synopsis) = &current_entry.synopsis {
-						embed = embed.description(format!("*{synopsis}*"));
-					}
-					embed = embed.field("Format", &current_entry.anime_type, true);
-					embed = embed.field("Status", &current_entry.status, true);
-					if let Some(english_title) = current_entry
-						.titles
-						.iter()
-						.find(|t| t.title_type == "English")
-						.map(|t| &t.title)
-					{
-						embed = embed.field("English title", english_title, true);
-					}
-					embed = embed.field("", &empty, false);
-					if let Some(score) = current_entry.score {
-						embed = embed.field("Score", score.to_string(), true);
-					}
-					if let Some(popularity) = current_entry.popularity {
-						embed = embed.field("Popularity", popularity.to_string(), true);
-					}
-					if let Some(favorites) = current_entry.favorites {
-						embed = embed.field("Favorites", favorites.to_string(), true);
-					}
-					embed = embed.field("", &empty, false);
-					if let Some(episodes) = current_entry.specific.episodes {
-						embed = embed.field("Episodes", episodes.to_string(), true);
-					}
-					if let Some(duration) = &current_entry.specific.duration {
-						embed = embed.field("Duration", duration, true);
-					}
-					if let Some(aired) = &current_entry.specific.aired.aired_string {
-						embed = embed.field("Aired", aired, true);
-					}
-					genres_string = current_entry
-						.genres
-						.iter()
-						.map(|genre| genre.name.as_str())
-						.intersperse(" - ")
-						.collect::<String>();
-					embed = embed.field("Genres", genres_string, false);
-					final_embed = embed.clone();
-
-					action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
-						if state.index == 0 {
-							Cow::Borrowed(&buttons[1..])
-						} else if state.index == len.saturating_sub(1) {
-							Cow::Borrowed(&buttons[..1])
-						} else {
-							Cow::Borrowed(&buttons)
-						}
-					}))];
-
-					let mut msg = interaction.message;
-
-					msg.edit(
-						ctx.http(),
-						EditMessage::default().embed(embed).components(&action_row),
-					)
-					.await?;
+			action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
+				if state.index == 0 {
+					Cow::Borrowed(&buttons[1..])
+				} else if state.index == len.saturating_sub(1) {
+					Cow::Borrowed(&buttons[..1])
+				} else {
+					Cow::Borrowed(&buttons)
 				}
-				message
-					.edit(
-						ctx,
-						CreateReply::default()
-							.reply(true)
-							.embed(final_embed)
-							.components(&[]),
-					)
-					.await?;
-			} else {
-				ctx.send(CreateReply::default().reply(true).embed(embed))
-					.await?;
-			}
-		} else {
-			ctx.reply("Not worthy of looking up").await?;
+			}))];
+
+			let mut msg = interaction.message;
+
+			msg.edit(
+				ctx.http(),
+				EditMessage::default().embed(embed).components(&action_row),
+			)
+			.await?;
 		}
+		message
+			.edit(
+				ctx,
+				CreateReply::default()
+					.reply(true)
+					.embed(final_embed)
+					.components(&[]),
+			)
+			.await?;
 	} else {
-		ctx.reply("API down, get a life!").await?;
+		ctx.send(CreateReply::default().reply(true).embed(embed))
+			.await?;
 	}
 	Ok(())
 }

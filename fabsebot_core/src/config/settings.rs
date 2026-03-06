@@ -30,9 +30,7 @@ pub struct ServerConfig {
 pub struct APIConfig {
 	pub gif_token: String,
 	pub cloudflare_token: String,
-	pub cloudflare_token_fallback: String,
 	pub cloudflare_image_gen: String,
-	pub cloudflare_image_gen_fallback: String,
 }
 
 #[derive(Deserialize)]

@@ -31,8 +31,8 @@ pub async fn spoiler_message(
 		};
 		let webhook = match webhook_find(ctx, message.guild_id, message.channel_id, data).await {
 			Ok(webhook) => webhook,
-			Err(e) => {
-				bail!(e);
+			Err(err) => {
+				bail!(err);
 			}
 		};
 		let username = message.author.display_name();
@@ -45,8 +45,8 @@ pub async fn spoiler_message(
 				.await
 			{
 				Ok(bytes) => bytes,
-				Err(e) => {
-					warn!("Couldn't download attachment: {e}");
+				Err(err) => {
+					warn!("Couldn't download attachment: {err}");
 					continue;
 				}
 			};
@@ -85,36 +85,48 @@ pub async fn webhook_find(
 	cached_webhooks: WebhookMap,
 ) -> AResult<Webhook> {
 	if let Some(webhook) = cached_webhooks.get(&channel_id) {
-		Ok(webhook)
-	} else if let Ok(Some(guild_channel)) = channel_id
+		return Ok(webhook);
+	}
+	let guild_channel = match channel_id
 		.to_channel(&ctx.http, guild_id)
 		.await
 		.map(Channel::guild)
 	{
-		let Ok(existing_webhooks) = guild_channel.id.webhooks(&ctx.http).await else {
-			bail!("Couldn't fetch existing webhooks");
-		};
-		if existing_webhooks.len() >= 15
-			&& let Some(first_webhook_id) = existing_webhooks.first().map(|w| w.id)
-			&& let Err(e) = ctx.http.delete_webhook(first_webhook_id, None).await
-		{
-			warn!("Failed to delete webhook: {e}");
+		Ok(channel_opt) => {
+			if let Some(channel) = channel_opt {
+				channel
+			} else {
+				bail!("Not in a guild channel");
+			}
 		}
-		let webhook_info = WebhookInfo {
-			name: FABSEBOT_WEBHOOK_NAME,
-			avatar: FABSEBOT_WEBHOOK_PFP,
-		};
-		ctx.http
-			.create_webhook(guild_channel.id, &webhook_info, None)
-			.await
-			.map_or_else(
-				|err| bail!("Failed to create webhook: {err}"),
-				|webhook| {
-					cached_webhooks.insert(channel_id, webhook.clone());
-					Ok(webhook)
-				},
-			)
-	} else {
-		bail!("Failed to fetch guild channel");
+		Err(err) => {
+			bail!("Failed to fetch guild channel: {err}");
+		}
+	};
+	let existing_webhooks = match guild_channel.id.webhooks(&ctx.http).await {
+		Ok(webhooks) => webhooks,
+		Err(err) => {
+			bail!("Failed to fetch existing webhooks: {err}");
+		}
+	};
+	if existing_webhooks.len() >= 15
+		&& let Some(first_webhook_id) = existing_webhooks.first().map(|w| w.id)
+		&& let Err(err) = ctx.http.delete_webhook(first_webhook_id, None).await
+	{
+		warn!("Failed to delete webhook: {err}");
 	}
+	let webhook_info = WebhookInfo {
+		name: FABSEBOT_WEBHOOK_NAME,
+		avatar: FABSEBOT_WEBHOOK_PFP,
+	};
+	ctx.http
+		.create_webhook(guild_channel.id, &webhook_info, None)
+		.await
+		.map_or_else(
+			|err| bail!("Failed to create webhook: {err}"),
+			|webhook| {
+				cached_webhooks.insert(channel_id, webhook.clone());
+				Ok(webhook)
+			},
+		)
 }

@@ -17,13 +17,14 @@ use winnow::Parser as _;
 use crate::{
 	config::{
 		constants::{
-			COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE,
-			FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FLOPPAGANDA_GIF,
-			INVALID_TRACK_SOURCE, MISSING_METADATA_MSG, NOT_IN_VOICE_CHAN_MSG, QUEUE_MSG,
+			AI_CHAT_ERROR, COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE,
+			FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP,
+			FAILED_SONG_FETCH, FLOPPAGANDA_GIF, INVALID_TRACK_SOURCE, MISSING_METADATA_MSG,
+			NOT_IN_VOICE_CHAN_MSG, QUEUE_MSG,
 		},
 		types::{Data, GuildCache, WebhookMap, utils_config},
 	},
-	errors::commands::WebhookError,
+	errors::commands::{MusicError, WebhookError},
 	log_errors,
 	stats::counters::METRICS,
 	utils::{
@@ -133,34 +134,51 @@ async fn queue_track(
 				}
 				return;
 			};
-			if let Ok(audio) = src.create_async().await
-				&& let Ok(metadata) = src.aux_metadata().await
-			{
-				let msg = match new_message_clone.reply(&ctx_clone.http, QUEUE_MSG).await {
-					Ok(msg) => msg,
-					Err(err) => {
+			let audio = match src.create_async().await {
+				Ok(audio) => audio,
+				Err(err) => {
+					error!("{}", MusicError::FailedFetch(err));
+					if let Err(err) = new_message_clone
+						.reply(&ctx_clone.http, FAILED_SONG_FETCH)
+						.await
+					{
 						error!("Failed to send message: {err}");
-						return;
 					}
-				};
-				queue_song(
-					metadata,
-					audio,
-					src,
-					handler_lock.clone(),
-					guild_id,
-					ctx_clone.data(),
-					msg.id,
-					msg.channel_id,
-					new_message_clone.author.display_name().to_owned(),
-				)
-				.await;
-			} else if let Err(err) = new_message_clone
-				.reply(&ctx_clone.http, MISSING_METADATA_MSG)
-				.await
-			{
-				error!("Failed to send message: {err}");
-			}
+					return;
+				}
+			};
+			let metadata = match src.aux_metadata().await {
+				Ok(metadata) => metadata,
+				Err(err) => {
+					error!("{}", MusicError::MissingMetadata(err));
+					if let Err(err) = new_message_clone
+						.reply(&ctx_clone.http, MISSING_METADATA_MSG)
+						.await
+					{
+						error!("Failed to send message: {err}");
+					}
+					return;
+				}
+			};
+			let msg = match new_message_clone.reply(&ctx_clone.http, QUEUE_MSG).await {
+				Ok(msg) => msg,
+				Err(err) => {
+					error!("Failed to send message: {err}");
+					return;
+				}
+			};
+			queue_song(
+				metadata,
+				audio,
+				src,
+				handler_lock.clone(),
+				guild_id,
+				ctx_clone.data(),
+				msg.id,
+				msg.channel_id,
+				new_message_clone.author.display_name().to_owned(),
+			)
+			.await;
 		});
 	} else {
 		new_message.reply(&ctx.http, NOT_IN_VOICE_CHAN_MSG).await?;
@@ -207,6 +225,12 @@ fn ai_chats(
 		.await
 		{
 			error!("Failed to send AI-chat: {err}");
+			if let Err(err) = new_message_clone
+				.reply(&ctx_clone.http, AI_CHAT_ERROR)
+				.await
+			{
+				error!("Failed to send message: {err}");
+			}
 		}
 	});
 }
@@ -255,7 +279,7 @@ async fn global_chats(
 				}) {
 			let channel_id_type = GenericChannelId::new(guild_channel_id.cast_unsigned());
 			if let Ok(chat_channel) = channel_id_type.to_channel(&ctx.http, Some(guild_id)).await {
-				if let Ok(webhook) = webhook_find(
+				let webhook = match webhook_find(
 					ctx,
 					new_message.guild_id,
 					chat_channel.id(),
@@ -263,52 +287,9 @@ async fn global_chats(
 				)
 				.await
 				{
-					let content = if new_message.content.is_empty() {
-						""
-					} else {
-						new_message.content.as_str()
-					};
-					let mut message = ExecuteWebhook::default()
-						.username(new_message.author.display_name())
-						.avatar_url(new_message.author.avatar_url().unwrap_or_else(|| {
-							new_message
-								.author
-								.static_avatar_url()
-								.unwrap_or_else(|| new_message.author.default_avatar_url())
-						}))
-						.content(content);
-					if !new_message.attachments.is_empty() {
-						for attachment in new_message
-							.attachments
-							.iter()
-							.filter(|a| a.dimensions().is_some())
-						{
-							message = message.add_file(
-								CreateAttachment::url(
-									&ctx.http,
-									attachment.url.as_str(),
-									attachment.filename.clone(),
-								)
-								.await?,
-							);
-						}
-					}
-					if let Some(replied_message) = &new_message.referenced_message {
-						let mut embed = CreateEmbed::default()
-							.description(replied_message.content.as_str())
-							.author(
-								CreateEmbedAuthor::new(replied_message.author.display_name())
-									.icon_url(replied_message.author.avatar_url().unwrap_or_else(
-										|| replied_message.author.default_avatar_url(),
-									)),
-							)
-							.timestamp(new_message.timestamp);
-						if let Some(attachment) = replied_message.attachments.first() {
-							embed = embed.image(attachment.url.as_str());
-						}
-						message = message.embed(embed);
-					}
-					if webhook.execute(&ctx.http, false, message).await.is_err() {
+					Ok(webhook) => webhook,
+					Err(err) => {
+						error!("Failed to find webhook: {err}");
 						chat_channel
 							.id()
 							.say(
@@ -320,8 +301,57 @@ async fn global_chats(
 								),
 							)
 							.await?;
+						return Ok(());
 					}
+				};
+				let content = if new_message.content.is_empty() {
+					""
 				} else {
+					new_message.content.as_str()
+				};
+				let mut message = ExecuteWebhook::default()
+					.username(new_message.author.display_name())
+					.avatar_url(new_message.author.avatar_url().unwrap_or_else(|| {
+						new_message
+							.author
+							.static_avatar_url()
+							.unwrap_or_else(|| new_message.author.default_avatar_url())
+					}))
+					.content(content);
+				if !new_message.attachments.is_empty() {
+					for attachment in new_message
+						.attachments
+						.iter()
+						.filter(|a| a.dimensions().is_some())
+					{
+						message = message.add_file(
+							CreateAttachment::url(
+								&ctx.http,
+								attachment.url.as_str(),
+								attachment.filename.clone(),
+							)
+							.await?,
+						);
+					}
+				}
+				if let Some(replied_message) = &new_message.referenced_message {
+					let mut embed =
+						CreateEmbed::default()
+							.description(replied_message.content.as_str())
+							.author(
+								CreateEmbedAuthor::new(replied_message.author.display_name())
+									.icon_url(replied_message.author.avatar_url().unwrap_or_else(
+										|| replied_message.author.default_avatar_url(),
+									)),
+							)
+							.timestamp(new_message.timestamp);
+					if let Some(attachment) = replied_message.attachments.first() {
+						embed = embed.image(attachment.url.as_str());
+					}
+					message = message.embed(embed);
+				}
+				if let Err(err) = webhook.execute(&ctx.http, false, message).await {
+					error!("Failed to execute webhook: {err}");
 					chat_channel
 						.id()
 						.say(
@@ -651,10 +681,14 @@ async fn guild_queries(
 					cache_emoji.id,
 					cache_emoji.name.clone(),
 				)
-			} else if let Ok(http_emoji) = ctx.get_application_emoji(emoji_id_typed).await {
-				(http_emoji.animated(), http_emoji.id, http_emoji.name)
 			} else {
-				continue;
+				match ctx.get_application_emoji(emoji_id_typed).await {
+					Ok(http_emoji) => (http_emoji.animated(), http_emoji.id, http_emoji.name),
+					Err(err) => {
+						error!("Failed to get app emojis: {err}");
+						continue;
+					}
+				}
 			};
 			let reaction = ReactionType::Custom {
 				animated: is_animated,

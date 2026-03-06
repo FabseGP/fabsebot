@@ -1,16 +1,16 @@
 use core::time::Duration;
 use std::sync::Arc;
 
-use anyhow::Result as AResult;
+use anyhow::{Result as AResult, anyhow};
 use fabsebot_core::{
 	config::{
 		constants::{
-			COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED, COLOUR_YELLOW, INVALID_TRACK_SOURCE,
-			MISSING_METADATA_MSG, MISSING_REPLY_MSG, QUEUE_MSG,
+			COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED, COLOUR_YELLOW, FAILED_SONG_FETCH,
+			INVALID_TRACK_SOURCE, MISSING_METADATA_MSG, MISSING_REPLY_MSG, QUEUE_MSG,
 		},
 		types::{Data, Error, HTTP_CLIENT, Metadata, SContext},
 	},
-	errors::commands::{InteractionError, MusicError},
+	errors::commands::{AIError, HTTPError, InteractionError, MusicError},
 	utils::{
 		ai::ai_voice,
 		helpers::{get_configured_songbird_handler, get_lyrics, queue_song, youtube_source},
@@ -112,14 +112,20 @@ impl VoiceEventHandler for ClientDisconnectHandler {
 	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
 		if let EventContext::ClientDisconnect(client_data) = ctx {
 			let user_id = UserId::new(client_data.user_id.0);
-			if let Ok(user) = user_id.to_user(&self.serenity_context.http).await {
-				self.channel_id
-					.send_message(
-						&self.serenity_context.http,
-						CreateMessage::default().content(format!("Bye {}", user.display_name())),
-					)
-					.await
-					.ok()?;
+			match user_id.to_user(&self.serenity_context.http).await {
+				Ok(user) => {
+					self.channel_id
+						.send_message(
+							&self.serenity_context.http,
+							CreateMessage::default()
+								.content(format!("Bye {}", user.display_name())),
+						)
+						.await
+						.ok()?;
+				}
+				Err(err) => {
+					warn!("Failed to fetch user: {err}");
+				}
 			}
 		}
 		None
@@ -259,17 +265,20 @@ impl PlaybackHandler {
 		} else if interaction.data.custom_id.ends_with('p') {
 			let handler = get_configured_songbird_handler(&handler_lock).await;
 			let queue = handler.queue();
-			if let Some(current_track) = queue.current()
-				&& let Ok(track_state) = current_track.get_info().await.map(|t| t.playing)
-			{
-				match track_state {
-					PlayMode::Pause => {
-						current_track.play()?;
+			if let Some(current_track) = queue.current() {
+				match current_track.get_info().await.map(|t| t.playing) {
+					Ok(state) => match state {
+						PlayMode::Pause => {
+							current_track.play()?;
+						}
+						PlayMode::Play => {
+							current_track.pause()?;
+						}
+						_ => {}
+					},
+					Err(err) => {
+						warn!("Failed to get track state. {err}");
 					}
-					PlayMode::Play => {
-						current_track.pause()?;
-					}
-					_ => {}
 				}
 			}
 			drop(handler);
@@ -287,8 +296,12 @@ impl PlaybackHandler {
 					continue;
 				};
 
-				let Ok(track_state) = current_track.get_info().await.map(|t| t.playing) else {
-					continue;
+				let track_state = match current_track.get_info().await.map(|t| t.playing) {
+					Ok(state) => state,
+					Err(err) => {
+						error!("Failed to get track info: {err}");
+						continue;
+					}
 				};
 
 				match track_state {
@@ -343,9 +356,14 @@ impl PlaybackHandler {
 				} else {
 					let lyrics = if let Some(artist_name) = &guild_tracks.0.artist
 						&& let Some(track_name) = &guild_tracks.0.title
-						&& let Ok(lyrics) = get_lyrics(artist_name, track_name).await
 					{
-						lyrics
+						match get_lyrics(artist_name, track_name).await {
+							Ok(lyrics) => lyrics,
+							Err(err) => {
+								error!("Failed to fetch lyrics: {err}");
+								"Not found :(".to_owned()
+							}
+						}
 					} else {
 						"Not found :(".to_owned()
 					};
@@ -566,15 +584,20 @@ pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Resu
 		return Err(InteractionError::EmptyMessage.into());
 	};
 
-	if let Ok(bytes) = ai_voice(&payload).await {
-		get_configured_songbird_handler(&handler_lock)
-			.await
-			.enqueue_input(Input::from(bytes))
-			.await;
-		ctx.reply("Here we go").await?;
-	} else {
-		ctx.reply("I don't wanna speak now").await?;
-	}
+	let bytes = match ai_voice(&payload).await {
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply("I don't wanna speak now").await?;
+			return Err(AIError::TTSFailed(err).into());
+		}
+	};
+
+	get_configured_songbird_handler(&handler_lock)
+		.await
+		.enqueue_input(Input::from(bytes))
+		.await;
+	ctx.reply("Here we go").await?;
+
 	Ok(())
 }
 
@@ -593,49 +616,71 @@ pub async fn add_deezer_playlist(
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	let handler_lock = require_handler(ctx, guild_id).await?;
-	if let Ok(request) = HTTP_CLIENT
+	let request = match HTTP_CLIENT
 		.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
 		.send()
-		.await && let Some(payload) = request
-		.json::<DeezerResponse>()
 		.await
-		.ok()
-		.filter(|output| !output.tracks.data.is_empty())
 	{
-		ctx.defer().await?;
-		let reply = ctx.reply(QUEUE_MSG).await?;
-		let msg = reply.message().await?;
-		let mut failed_songs: u32 = 0;
-		for track in payload.tracks.data {
-			let search = format!("{} {}", track.title, track.artist.name);
-			let mut src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
-			if let Ok(audio) = src.create_async().await
-				&& let Ok(metadata) = src.aux_metadata().await
-			{
-				queue_song(
-					metadata,
-					audio,
-					src,
-					handler_lock.clone(),
-					guild_id,
-					ctx.data(),
-					msg.id,
-					msg.channel_id,
-					ctx.author().display_name().to_owned(),
-				)
-				.await;
-			} else {
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply("Deezer bailed out :/").await?;
+			return Err(HTTPError::Request(err).into());
+		}
+	};
+
+	let payload = match request.json::<DeezerResponse>().await {
+		Ok(parsed) if !parsed.tracks.data.is_empty() => parsed,
+		Ok(_) => {
+			ctx.reply("Invalid playlist-id for Deezer playlist").await?;
+			return Err(anyhow!("Empty response from Deezer"));
+		}
+		Err(err) => {
+			ctx.reply("Invalid playlist-id for Deezer playlist").await?;
+			return Err(HTTPError::Request(err).into());
+		}
+	};
+
+	ctx.defer().await?;
+	let reply = ctx.reply(QUEUE_MSG).await?;
+	let msg = reply.message().await?;
+	let mut failed_songs: u32 = 0;
+	for track in payload.tracks.data {
+		let search = format!("{} {}", track.title, track.artist.name);
+		let mut src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
+		let audio = match src.create_async().await {
+			Ok(audio) => audio,
+			Err(err) => {
+				warn!("Failed to fetch song: {err}");
 				failed_songs = failed_songs.saturating_add(1);
+				continue;
 			}
-		}
-		if failed_songs != 0 {
-			ctx.reply(format!(
-				"Couldn't queue {failed_songs} because of YouTube :/"
-			))
-			.await?;
-		}
-	} else {
-		ctx.reply("Invalid playlist-id for Deezer playlist").await?;
+		};
+		let metadata = match src.aux_metadata().await {
+			Ok(metadata) => metadata,
+			Err(err) => {
+				warn!("Missing metadata for song: {err}");
+				failed_songs = failed_songs.saturating_add(1);
+				continue;
+			}
+		};
+		queue_song(
+			metadata,
+			audio,
+			src,
+			handler_lock.clone(),
+			guild_id,
+			ctx.data(),
+			msg.id,
+			msg.channel_id,
+			ctx.author().display_name().to_owned(),
+		)
+		.await;
+	}
+	if failed_songs != 0 {
+		ctx.reply(format!(
+			"Couldn't queue {failed_songs} because of YouTube :/"
+		))
+		.await?;
 	}
 
 	Ok(())
@@ -671,8 +716,7 @@ pub async fn add_youtube_playlist(
 		Ok(res) => res,
 		Err(err) => {
 			ctx.reply("YouTube bailed out :/").await?;
-			warn!("Failed to get YouTube playlist: {err}");
-			return Err(MusicError::FailedFetchPlaylist.into());
+			return Err(MusicError::FailedFetchPlaylist(err).into());
 		}
 	};
 
@@ -689,24 +733,35 @@ pub async fn add_youtube_playlist(
 
 	for url in urls {
 		let mut src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
-		if let Ok(audio) = src.create_async().await
-			&& let Ok(metadata) = src.aux_metadata().await
-		{
-			queue_song(
-				metadata,
-				audio,
-				src,
-				handler_lock.clone(),
-				guild_id,
-				ctx.data(),
-				msg.id,
-				msg.channel_id,
-				ctx.author().display_name().to_owned(),
-			)
-			.await;
-		} else {
-			failed_songs = failed_songs.saturating_add(1);
-		}
+		let audio = match src.create_async().await {
+			Ok(audio) => audio,
+			Err(err) => {
+				warn!("Failed to fetch song: {err}");
+				failed_songs = failed_songs.saturating_add(1);
+				continue;
+			}
+		};
+		let metadata = match src.aux_metadata().await {
+			Ok(metadata) => metadata,
+			Err(err) => {
+				warn!("Missing metadata for song: {err}");
+				failed_songs = failed_songs.saturating_add(1);
+				continue;
+			}
+		};
+
+		queue_song(
+			metadata,
+			audio,
+			src,
+			handler_lock.clone(),
+			guild_id,
+			ctx.data(),
+			msg.id,
+			msg.channel_id,
+			ctx.author().display_name().to_owned(),
+		)
+		.await;
 	}
 
 	if failed_songs != 0 {
@@ -913,6 +968,48 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 
+async fn play_song_inner(
+	ctx: SContext<'_>,
+	url: String,
+	guild_id: GuildId,
+	handler_lock: Arc<Mutex<Call>>,
+) -> AResult<()> {
+	let Some(mut src) = youtube_source(url).await else {
+		ctx.reply(INVALID_TRACK_SOURCE).await?;
+		return Err(MusicError::UnknownSource.into());
+	};
+	let audio = match src.create_async().await {
+		Ok(audio) => audio,
+		Err(err) => {
+			ctx.reply(FAILED_SONG_FETCH).await?;
+			return Err(MusicError::FailedFetch(err).into());
+		}
+	};
+	let metadata = match src.aux_metadata().await {
+		Ok(metadata) => metadata,
+		Err(err) => {
+			ctx.reply(MISSING_METADATA_MSG).await?;
+			return Err(MusicError::MissingMetadata(err).into());
+		}
+	};
+	let reply = ctx.reply(QUEUE_MSG).await?;
+	let msg = reply.message().await?;
+	queue_song(
+		metadata,
+		audio,
+		src,
+		handler_lock.clone(),
+		guild_id,
+		ctx.data(),
+		msg.id,
+		msg.channel_id,
+		ctx.author().display_name().to_owned(),
+	)
+	.await;
+
+	Ok(())
+}
+
 /// Play song / add song to queue in the current voice channel
 #[poise::command(
 	prefix_command,
@@ -930,31 +1027,7 @@ pub async fn play_song(
 	let handler_lock = require_handler(ctx, guild_id).await?;
 
 	ctx.defer().await?;
-	let Some(mut src) = youtube_source(url).await else {
-		ctx.reply(INVALID_TRACK_SOURCE).await?;
-		return Err(MusicError::UnknownSource.into());
-	};
-	if let Ok(audio) = src.create_async().await
-		&& let Ok(metadata) = src.aux_metadata().await
-	{
-		let reply = ctx.reply(QUEUE_MSG).await?;
-		let msg = reply.message().await?;
-		queue_song(
-			metadata,
-			audio,
-			src,
-			handler_lock.clone(),
-			guild_id,
-			ctx.data(),
-			msg.id,
-			msg.channel_id,
-			ctx.author().display_name().to_owned(),
-		)
-		.await;
-	} else {
-		ctx.reply(MISSING_METADATA_MSG).await?;
-		return Err(MusicError::MissingMetadata.into());
-	}
+	play_song_inner(ctx, url, guild_id, handler_lock).await?;
 
 	Ok(())
 }
@@ -979,63 +1052,69 @@ pub async fn play_song_global(
 		ctx.reply(INVALID_TRACK_SOURCE).await?;
 		return Err(MusicError::UnknownSource.into());
 	};
-	if let Ok(audio) = src.create_async().await
-		&& let Ok(metadata) = src.aux_metadata().await
-	{
-		let reply = ctx.reply(QUEUE_MSG).await?;
-		let msg = reply.message().await?;
-		queue_song(
-			metadata.clone(),
-			audio,
-			src.clone(),
-			handler_lock.clone(),
-			guild_id,
-			ctx.data(),
-			msg.id,
-			msg.channel_id,
-			ctx.author().display_name().to_owned(),
-		)
-		.await;
-
-		for global_guild in ctx.data().guilds.iter().filter(|entry| {
-			let settings = &entry.value().shared.settings;
-			entry.key() != &guild_id && settings.global_music
-		}) {
-			let Some(global_handler_lock) = ctx.data().music_manager.get(*global_guild.key())
-			else {
-				continue;
-			};
-			if let Some(id) = get_configured_songbird_handler(&handler_lock)
-				.await
-				.current_channel()
-				&& let Ok(channel) = ctx
-					.http()
-					.get_channel(GenericChannelId::new(id.get()))
-					.await && let Some(guild_channel) = channel.guild()
-				&& let Ok(global_audio) = src.create_async().await
-			{
-				let msg = guild_channel
-					.send_message(ctx.http(), CreateMessage::default().content(QUEUE_MSG))
-					.await?;
-				queue_song(
-					metadata.clone(),
-					global_audio,
-					src.clone(),
-					global_handler_lock.clone(),
-					guild_id,
-					ctx.data(),
-					msg.id,
-					msg.channel_id,
-					ctx.author().display_name().to_owned(),
-				)
-				.await;
-			}
+	let audio = match src.create_async().await {
+		Ok(audio) => audio,
+		Err(err) => {
+			ctx.reply(FAILED_SONG_FETCH).await?;
+			return Err(MusicError::FailedFetch(err).into());
 		}
-	} else {
-		ctx.reply(MISSING_METADATA_MSG).await?;
-		return Err(MusicError::MissingMetadata.into());
-	}
+	};
 
+	let metadata = match src.aux_metadata().await {
+		Ok(metadata) => metadata,
+		Err(err) => {
+			ctx.reply(MISSING_METADATA_MSG).await?;
+			return Err(MusicError::MissingMetadata(err).into());
+		}
+	};
+	let reply = ctx.reply(QUEUE_MSG).await?;
+	let msg = reply.message().await?;
+	queue_song(
+		metadata.clone(),
+		audio,
+		src.clone(),
+		handler_lock.clone(),
+		guild_id,
+		ctx.data(),
+		msg.id,
+		msg.channel_id,
+		ctx.author().display_name().to_owned(),
+	)
+	.await;
+
+	for global_guild in ctx.data().guilds.iter().filter(|entry| {
+		let settings = &entry.value().shared.settings;
+		entry.key() != &guild_id && settings.global_music
+	}) {
+		let Some(global_handler_lock) = ctx.data().music_manager.get(*global_guild.key()) else {
+			continue;
+		};
+		if let Some(id) = get_configured_songbird_handler(&handler_lock)
+			.await
+			.current_channel()
+			&& let Ok(channel) = ctx
+				.http()
+				.get_channel(GenericChannelId::new(id.get()))
+				.await && let Some(guild_channel) = channel.guild()
+			&& let Ok(global_audio) = src.create_async().await
+		{
+			let msg = guild_channel
+				.send_message(ctx.http(), CreateMessage::default().content(QUEUE_MSG))
+				.await?;
+			queue_song(
+				metadata.clone(),
+				global_audio,
+				src.clone(),
+				global_handler_lock.clone(),
+				guild_id,
+				ctx.data(),
+				msg.id,
+				msg.channel_id,
+				ctx.author().display_name().to_owned(),
+			)
+			.await;
+		}
+	}
 	Ok(())
 }
 
@@ -1059,43 +1138,48 @@ pub async fn seek_song(
 		.current()
 	else {
 		ctx.reply(MISSING_METADATA_MSG).await?;
-		return Err(MusicError::MissingMetadata.into());
+		return Err(MusicError::UnknownQueueTrack.into());
 	};
-	if let Ok(current_playback_info) = current_playback.get_info().await {
-		let current_position = current_playback_info.position;
-		let Ok(seconds_value) = seconds.parse::<i64>() else {
+	let current_playback_info = match current_playback.get_info().await {
+		Ok(info) => info,
+		Err(err) => {
+			ctx.reply("No info about current song :/").await?;
+			return Err(MusicError::MissingTrackData(err).into());
+		}
+	};
+	let current_position = current_playback_info.position;
+	let seconds_value = match seconds.parse::<i64>() {
+		Ok(value) => value,
+		Err(err) => {
 			ctx.reply("Bruh, provide a valid number with a sign (e.g. '+20' or '-20')!")
 				.await?;
-			return Err(MusicError::InvalidSeek.into());
-		};
-		let current_secs = current_position.as_secs().cast_signed();
-		if seconds_value.is_negative() {
-			let new_position = current_secs.saturating_add(seconds_value).cast_unsigned();
-			let seek = Duration::from_secs(new_position);
-			if seek.is_zero() {
-				ctx.reply("Bruh, wanting to seek more seconds back than what have been played")
-					.await?;
-			} else if let Err(err) = current_playback.seek_async(seek).await {
-				ctx.reply("Failed to seek song backwards").await?;
-				warn!("Error seeking song backwards: {:?}", err);
-			} else {
-				ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
-					.await?;
-			}
-		} else {
-			let seconds_to_add = seconds_value.cast_unsigned();
-			let seek = current_position.saturating_add(Duration::from_secs(seconds_to_add));
-			if let Err(err) = current_playback.seek_async(seek).await {
-				ctx.reply(
-					"Bruh, you seeked more forward than the length of the song! I'm bailing out",
-				)
-				.await?;
-				warn!("Error seeking song forward: {:?}", err);
-			} else {
-				ctx.reply(format!("Seeked {seconds_value}s forward"))
-					.await?;
-			}
+			return Err(MusicError::InvalidSeek(err).into());
 		}
+	};
+	let current_secs = current_position.as_secs().cast_signed();
+	if seconds_value.is_negative() {
+		let new_position = current_secs.saturating_add(seconds_value).cast_unsigned();
+		let seek = Duration::from_secs(new_position);
+		if seek.is_zero() {
+			ctx.reply("Bruh, wanting to seek more seconds back than what have been played")
+				.await?;
+		} else if let Err(err) = current_playback.seek_async(seek).await {
+			ctx.reply("Failed to seek song backwards").await?;
+			return Err(MusicError::FailedSeek(err).into());
+		} else {
+			ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
+				.await?;
+		}
+	} else {
+		let seconds_to_add = seconds_value.cast_unsigned();
+		let seek = current_position.saturating_add(Duration::from_secs(seconds_to_add));
+		if let Err(err) = current_playback.seek_async(seek).await {
+			ctx.reply("Bruh, you seeked more forward than the length of the song! I'm bailing out")
+				.await?;
+			return Err(MusicError::FailedSeek(err).into());
+		}
+		ctx.reply(format!("Seeked {seconds_value}s forward"))
+			.await?;
 	}
 
 	Ok(())

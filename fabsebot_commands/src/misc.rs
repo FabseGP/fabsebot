@@ -4,17 +4,17 @@ use std::{
 };
 
 use ab_glyph::FontArc;
-use anyhow::Context as _;
+use anyhow::{Context as _, anyhow};
 use fabsebot_core::{
 	config::{
 		constants::{
 			ANIMATED_QUOTE_VEC, AUTHOR_FONT, COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, CONTENT_FONT,
 			DEFAULT_THEME, FONTS, QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME, RANDOM_THEME,
-			STATIC_QUOTE_VEC, THEMES,
+			STATIC_QUOTE_VEC, THEMES, TSUNDERE_REPLY,
 		},
 		types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, client_data, utils_config},
 	},
-	errors::commands::{GuildError, InteractionError},
+	errors::commands::{AIError, GuildError, InteractionError},
 	utils::{
 		ai::ai_response_simple,
 		image::{
@@ -314,43 +314,69 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	embed = embed.field("", "", false);
 	let cpu_load = SYSTEM_STATS.cpu_load_aggregate();
 	sleep(Duration::from_secs(1)).await;
-	if let Ok(cpu_load) = cpu_load.and_then(|f| f.done()) {
-		embed = embed.field("System load:", format!("{}%", cpu_load.system), true);
+	match cpu_load.and_then(|f| f.done()) {
+		Ok(cpu_load) => {
+			embed = embed.field("System load:", format!("{}%", cpu_load.system), true);
+		}
+		Err(err) => {
+			warn!("Failed to get system load: {err}");
+		}
 	}
-	if let Ok(avg_lod) = SYSTEM_STATS.load_average() {
-		embed = embed.field(
-			"Average system load (15m):",
-			avg_lod.fifteen.to_string(),
-			true,
-		);
-	}
-	embed = embed.field("", "", false);
-	if let Ok((mem, swap)) = SYSTEM_STATS.memory_and_swap() {
-		embed = embed.field(
-			"System memory:",
-			format!(
-				"{} / {} used",
-				saturating_sub_bytes(mem.total, mem.free),
-				mem.total
-			),
-			true,
-		);
-		embed = embed.field(
-			"System swap:",
-			format!(
-				"{} / {} used",
-				saturating_sub_bytes(swap.total, swap.free),
-				swap.total
-			),
-			true,
-		);
+	match SYSTEM_STATS.load_average() {
+		Ok(avg_load) => {
+			embed = embed.field(
+				"Average system load (15m):",
+				avg_load.fifteen.to_string(),
+				true,
+			);
+		}
+		Err(err) => {
+			warn!("Failed to get average load: {err}");
+		}
 	}
 	embed = embed.field("", "", false);
-	if let Ok(temp) = SYSTEM_STATS.cpu_temp() {
-		embed = embed.field("System temperature:", format!("{temp} ℃"), true);
+
+	match SYSTEM_STATS.memory_and_swap() {
+		Ok((mem, swap)) => {
+			embed = embed.field(
+				"System memory:",
+				format!(
+					"{} / {} used",
+					saturating_sub_bytes(mem.total, mem.free),
+					mem.total
+				),
+				true,
+			);
+			embed = embed.field(
+				"System swap:",
+				format!(
+					"{} / {} used",
+					saturating_sub_bytes(swap.total, swap.free),
+					swap.total
+				),
+				true,
+			);
+		}
+		Err(err) => {
+			warn!("Failed to get system memory usage: {err}");
+		}
 	}
-	if let Ok(uptime) = SYSTEM_STATS.uptime() {
-		embed = embed.field("System uptime:", format!("{}s", uptime.as_secs()), true);
+	embed = embed.field("", "", false);
+	match SYSTEM_STATS.cpu_temp() {
+		Ok(temp) => {
+			embed = embed.field("System temperature:", format!("{temp} ℃"), true);
+		}
+		Err(err) => {
+			warn!("Failed to get system temperature: {err}");
+		}
+	}
+	match SYSTEM_STATS.uptime() {
+		Ok(uptime) => {
+			embed = embed.field("System uptime:", format!("{}s", uptime.as_secs()), true);
+		}
+		Err(err) => {
+			warn!("Failed to get system uptime: {err}");
+		}
 	}
 
 	let mut reply = CreateReply::default().embed(embed.clone()).reply(true);
@@ -715,21 +741,24 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Ok(resp) = ai_response_simple(
+	let resp = match ai_response_simple(
 		"you're a tsundere",
 		"generate a one-line love-hate greeting",
 		&utils_config().fabseserver.text_gen_model,
 	)
-	.await && !resp.is_empty()
+	.await
 	{
-		ctx.reply(resp).await?;
-	} else {
-		ctx.reply(
-			"Ugh, fine. It's nice to see you again, I suppose... 
-                for now, don't get any ideas thinking this means I actually like you or anything",
-		)
-		.await?;
-	}
+		Ok(resp) if !resp.is_empty() => resp,
+		Ok(_) => {
+			ctx.reply(TSUNDERE_REPLY).await?;
+			return Err(AIError::UnexpectedResponse(anyhow!("Empty response")).into());
+		}
+		Err(err) => {
+			ctx.reply(TSUNDERE_REPLY).await?;
+			return Err(AIError::UnexpectedResponse(err).into());
+		}
+	};
+	ctx.reply(resp).await?;
 	Ok(())
 }
 
@@ -1310,17 +1339,24 @@ pub async fn respond(
 	#[description = "Message"] message: Message,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	if let Ok(resp) = ai_response_simple(
+	let resp = match ai_response_simple(
 		"Mock this Discord message someone posted. Just give the roast, nothing else.",
 		&message.content,
 		&utils_config().fabseserver.text_gen_model,
 	)
-	.await && !resp.is_empty()
+	.await
 	{
-		ctx.say(resp).await?;
-	} else {
-		ctx.say("stfu").await?;
-	}
+		Ok(resp) if !resp.is_empty() => resp,
+		Ok(_) => {
+			ctx.reply("stfu").await?;
+			return Err(AIError::UnexpectedResponse(anyhow!("Empty response")).into());
+		}
+		Err(err) => {
+			ctx.reply("stfu").await?;
+			return Err(AIError::UnexpectedResponse(err).into());
+		}
+	};
+	ctx.say(resp).await?;
 	Ok(())
 }
 
