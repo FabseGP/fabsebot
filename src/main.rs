@@ -3,6 +3,7 @@ mod config;
 use std::fs::read_to_string;
 
 use anyhow::{Context as _, Result as AResult};
+use bc_mimalloc::MiMalloc;
 use config::MainConfig;
 use fabsebot_commands::commands;
 use fabsebot_core::{
@@ -14,7 +15,6 @@ use fabsebot_core::{
 };
 use fabsebot_db::{PostgresConfig, PostgresConn};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use mimalloc::MiMalloc;
 use toml::{Table, Value};
 use tracing::{Level, error, subscriber::set_global_default};
 use tracing_subscriber::{filter::LevelFilter, fmt};

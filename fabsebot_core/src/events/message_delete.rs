@@ -4,6 +4,8 @@ use serenity::all::{
 	audit_log,
 };
 
+use crate::errors::commands::GuildError;
+
 pub async fn handle_message_delete(
 	ctx: &SContext,
 	channel_id: GenericChannelId,
@@ -42,7 +44,7 @@ pub async fn handle_message_delete(
 					user_perms.administrator() || user_perms.moderate_members(),
 				)
 			} else {
-				return Ok(());
+				return Err(GuildError::FailedFetch.into());
 			}
 		};
 		if evil_person_id != guild_owner_id && !neccessary_perms {

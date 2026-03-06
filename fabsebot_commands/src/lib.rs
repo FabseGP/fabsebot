@@ -1,7 +1,19 @@
 #![feature(iter_intersperse)]
 
-use fabsebot_core::config::types::{Data, Error};
+use std::{convert::Infallible, sync::Arc};
+
+use anyhow::Result as AResult;
+use fabsebot_core::{
+	config::{
+		constants::{HUMAN_ONLY_MSG, NOT_IN_GUILD_MSG, NOT_IN_VOICE_CHAN_MSG},
+		types::{Data, Error, SContext},
+	},
+	errors::commands::{GuildError, InteractionError, MusicError},
+};
 use poise::Command;
+use serenity::all::{CacheRef, Guild, GuildId, User};
+use songbird::Call;
+use tokio::sync::Mutex;
 
 mod api_calls;
 mod funny;
@@ -71,4 +83,44 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		settings::set_word_react(),
 		settings::set_word_track(),
 	]
+}
+
+pub async fn require_guild(ctx: SContext<'_>) -> AResult<CacheRef<'_, GuildId, Guild, Infallible>> {
+	let Some(guild) = ctx.guild() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Err(GuildError::NotInGuild.into());
+	};
+	Ok(guild)
+}
+
+pub async fn require_guild_id(ctx: SContext<'_>) -> AResult<GuildId> {
+	let Some(guild_id) = ctx.guild_id() else {
+		ctx.reply(NOT_IN_GUILD_MSG).await?;
+		return Err(GuildError::NotInGuild.into());
+	};
+	Ok(guild_id)
+}
+
+pub async fn require_human(ctx: SContext<'_>, user: &User) -> AResult<()> {
+	if user.bot() {
+		ctx.reply(HUMAN_ONLY_MSG).await?;
+		return Err(InteractionError::NotHuman.into());
+	}
+	Ok(())
+}
+
+pub async fn require_handler(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
+	let Some(handler_lock) = ctx.data().music_manager.get(guild_id) else {
+		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
+		return Err(MusicError::NotInVoiceChan.into());
+	};
+	Ok(handler_lock)
+}
+
+pub async fn remove_handler(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()> {
+	if ctx.data().music_manager.remove(guild_id).await.is_err() {
+		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
+		return Err(MusicError::NotInVoiceChan.into());
+	}
+	Ok(())
 }

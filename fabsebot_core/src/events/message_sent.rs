@@ -23,6 +23,7 @@ use crate::{
 		},
 		types::{Data, GuildCache, WebhookMap, utils_config},
 	},
+	errors::commands::WebhookError,
 	log_errors,
 	stats::counters::METRICS,
 	utils::{
@@ -83,15 +84,20 @@ async fn easter_eggs(
 					.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
 			)
 			.await?;
-	} else if (content == "fabse" || content == "fabseman")
-		&& let Ok(webhook) = webhook_find(
+	} else if content == "fabse" || content == "fabseman" {
+		let webhook = match webhook_find(
 			ctx,
 			new_message.guild_id,
 			new_message.channel_id,
 			webhooks.clone(),
 		)
 		.await
-	{
+		{
+			Ok(webhook) => webhook,
+			Err(err) => {
+				return Err(WebhookError::NotFound(err).into());
+			}
+		};
 		webhook
 			.execute(
 				&ctx.http,

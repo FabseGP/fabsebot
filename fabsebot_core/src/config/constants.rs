@@ -12,6 +12,7 @@ pub const COLOUR_RED: u32 = 0x00ED_333B;
 pub const COLOUR_YELLOW: u32 = 0x00F8_E45C;
 
 pub const NOT_IN_GUILD_MSG: &str = "Why you not in a guild?";
+pub const HUMAN_ONLY_MSG: &str = "**Invalid target, get some friends**";
 pub const MISSING_REPLY_MSG: &str = "Bruh, reply to a message";
 pub const NOT_IN_VOICE_CHAN_MSG: &str =
 	"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel first";

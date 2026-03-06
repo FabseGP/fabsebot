@@ -77,6 +77,7 @@ sqlx = { version = "*", default-features = false, features = ["macros", "postgre
 symphonia = { version = "*", default-features = false, features = ["aac", "mkv", "pcm", "wav"] }
 systemstat = "*"
 textwrap = "*"
+thiserror = "*"
 tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
 tracing = "*"
 url = "*"
@@ -92,7 +93,7 @@ fabsebot_core = { path = "fabsebot_core", default-features = false }
 fabsebot_db = { path = "fabsebot_db" }
 anyhow = { workspace = true }
 metrics-exporter-prometheus = { version = "*", default-features = false, features = ["http-listener"] }
-mimalloc = "*"
+bc-mimalloc = { version = "*", features = ["v3"] }
 serde = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tokio-metrics = { version = "*" }

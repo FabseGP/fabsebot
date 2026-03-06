@@ -9,11 +9,12 @@ use fabsebot_core::{
 	config::{
 		constants::{
 			ANIMATED_QUOTE_VEC, AUTHOR_FONT, COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, CONTENT_FONT,
-			DEFAULT_THEME, FONTS, NOT_IN_GUILD_MSG, QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME,
-			RANDOM_THEME, STATIC_QUOTE_VEC, THEMES,
+			DEFAULT_THEME, FONTS, QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME, RANDOM_THEME,
+			STATIC_QUOTE_VEC, THEMES,
 		},
 		types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, client_data, utils_config},
 	},
+	errors::commands::{GuildError, InteractionError},
 	utils::{
 		ai::ai_response_simple,
 		image::{
@@ -45,6 +46,8 @@ use tokio::{
 };
 use tracing::warn;
 
+use crate::require_guild_id;
+
 /// When you want to find the imposter
 #[poise::command(
 	slash_command,
@@ -68,7 +71,7 @@ pub async fn anony_poll(
 	if options_count < 1 {
 		ctx.say("Bruh, no options ain't gonna cut it for a poll!")
 			.await?;
-		return Ok(());
+		return Err(InteractionError::MissingOptions.into());
 	}
 
 	let mut embed = CreateEmbed::default()
@@ -430,10 +433,7 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	interaction_context = "Guild"
 )]
 pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	query!(
 		"INSERT INTO guild_settings (guild_id, global_chat)
             VALUES ($1, FALSE)
@@ -470,10 +470,7 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	interaction_context = "Guild"
 )]
 pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let guild_id_i64 = i64::from(guild_id);
 	let channel_id_i64 = i64::from(ctx.channel_id());
 	let mut tx = ctx.data().db.begin().await?;
@@ -654,10 +651,7 @@ struct UserCount {
 	interaction_context = "Guild"
 )]
 pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let thumbnail = match ctx.guild() {
 		Some(guild) => guild.banner_url().unwrap_or_else(|| {
 			guild
@@ -665,7 +659,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 				.unwrap_or_else(|| "https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif".to_owned())
 		}),
 		None => {
-			return Ok(());
+			return Err(GuildError::NotInGuild.into());
 		}
 	};
 	ctx.defer().await?;
@@ -1261,7 +1255,7 @@ pub async fn quote_menu(
 ) -> Result<(), Error> {
 	if msg.content.is_empty() {
 		ctx.reply("Bruh, this message is empty").await?;
-		return Ok(());
+		return Err(InteractionError::EmptyMessage.into());
 	}
 	quote_internal(ctx, &msg, None).await?;
 	Ok(())
@@ -1274,10 +1268,7 @@ pub async fn quote_menu(
 	interaction_context = "Guild"
 )]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let msg = ctx
 		.channel_id()
 		.message(&ctx.http(), MessageId::new(ctx.id()))
@@ -1285,12 +1276,12 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let Some(ref reply) = msg.referenced_message else {
 		ctx.reply("Bruh, reply to a message").await?;
-		return Ok(());
+		return Err(InteractionError::MissingReply.into());
 	};
 
 	if reply.content.is_empty() {
 		ctx.reply("Bruh, this message is empty").await?;
-		return Ok(());
+		return Err(InteractionError::EmptyMessage.into());
 	}
 
 	quote_internal(ctx, &msg, Some((reply, guild_id))).await?;
@@ -1372,10 +1363,7 @@ struct WordCount {
 	interaction_context = "Guild"
 )]
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let thumbnail = {
 		let guild = ctx.guild().unwrap();
 		guild.banner_url().unwrap_or_else(|| {

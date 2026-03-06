@@ -6,11 +6,11 @@ use fabsebot_core::{
 	config::{
 		constants::{
 			COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED, COLOUR_YELLOW, INVALID_TRACK_SOURCE,
-			MISSING_METADATA_MSG, MISSING_REPLY_MSG, NOT_IN_GUILD_MSG, NOT_IN_VOICE_CHAN_MSG,
-			QUEUE_MSG,
+			MISSING_METADATA_MSG, MISSING_REPLY_MSG, QUEUE_MSG,
 		},
 		types::{Data, Error, HTTP_CLIENT, Metadata, SContext},
 	},
+	errors::commands::{InteractionError, MusicError},
 	utils::{
 		ai::ai_voice,
 		helpers::{get_configured_songbird_handler, get_lyrics, queue_song, youtube_source},
@@ -41,6 +41,8 @@ use tokio::{
 };
 use tracing::{error, warn};
 use url::Url;
+
+use crate::{remove_handler, require_guild_id, require_handler};
 
 const ALREADY_IN_VOICE_CHAN_MSG: &str = "I don't wanna join";
 
@@ -547,14 +549,8 @@ async fn add_events(ctx: &SContext<'_>, guild_id: GuildId, handler_lock: Arc<Mut
 	interaction_context = "Guild"
 )]
 pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	let Some(handler_lock) = ctx.data().music_manager.get(guild_id) else {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
+	let handler_lock = require_handler(ctx, guild_id).await?;
 	ctx.defer().await?;
 
 	let payload = if let Some(input) = input_opt {
@@ -567,7 +563,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Resu
 		reply.into_string()
 	} else {
 		ctx.reply(MISSING_REPLY_MSG).await?;
-		return Ok(());
+		return Err(InteractionError::EmptyMessage.into());
 	};
 
 	if let Ok(bytes) = ai_voice(&payload).await {
@@ -595,14 +591,8 @@ pub async fn add_deezer_playlist(
 	#[rest]
 	playlist_id: String,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	let Some(handler_lock) = ctx.data().music_manager.get(guild_id) else {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
+	let handler_lock = require_handler(ctx, guild_id).await?;
 	if let Ok(request) = HTTP_CLIENT
 		.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
 		.send()
@@ -664,14 +654,8 @@ pub async fn add_youtube_playlist(
 	#[rest]
 	playlist_url: String,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	let Some(handler_lock) = ctx.data().music_manager.get(guild_id) else {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
+	let handler_lock = require_handler(ctx, guild_id).await?;
 	ctx.defer().await?;
 	let yt_dlp_output = match Command::new("yt-dlp")
 		.args([
@@ -688,7 +672,7 @@ pub async fn add_youtube_playlist(
 		Err(err) => {
 			ctx.reply("YouTube bailed out :/").await?;
 			warn!("Failed to get YouTube playlist: {err}");
-			return Ok(());
+			return Err(MusicError::FailedFetchPlaylist.into());
 		}
 	};
 
@@ -791,10 +775,7 @@ fn create_join_embed(is_global: bool) -> CreateEmbed<'static> {
 	interaction_context = "Guild"
 )]
 pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	if ctx.data().music_manager.get(guild_id).is_some() {
 		ctx.reply(
 			"Bruh, I'm already in a voice channel! Use /leave_voice_global to drop the connection",
@@ -852,10 +833,7 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 	interaction_context = "Guild"
 )]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	if ctx.data().music_manager.get(guild_id).is_some() {
 		ctx.reply("Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection")
 			.await?;
@@ -888,14 +866,8 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	interaction_context = "Guild"
 )]
 pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	if ctx.data().music_manager.remove(guild_id).await.is_err() {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	}
+	let guild_id = require_guild_id(ctx).await?;
+	remove_handler(ctx, guild_id).await?;
 
 	ctx.reply("Left voice channel, don't forget me").await?;
 	query!(
@@ -933,14 +905,8 @@ pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 	interaction_context = "Guild"
 )]
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	if ctx.data().music_manager.remove(guild_id).await.is_err() {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	}
+	let guild_id = require_guild_id(ctx).await?;
+	remove_handler(ctx, guild_id).await?;
 
 	ctx.reply("Left voice channel, don't forget me").await?;
 
@@ -960,19 +926,13 @@ pub async fn play_song(
 	#[rest]
 	url: String,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	let Some(handler_lock) = ctx.data().music_manager.get(guild_id) else {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
+	let handler_lock = require_handler(ctx, guild_id).await?;
 
 	ctx.defer().await?;
 	let Some(mut src) = youtube_source(url).await else {
 		ctx.reply(INVALID_TRACK_SOURCE).await?;
-		return Ok(());
+		return Err(MusicError::UnknownSource.into());
 	};
 	if let Ok(audio) = src.create_async().await
 		&& let Ok(metadata) = src.aux_metadata().await
@@ -993,6 +953,7 @@ pub async fn play_song(
 		.await;
 	} else {
 		ctx.reply(MISSING_METADATA_MSG).await?;
+		return Err(MusicError::MissingMetadata.into());
 	}
 
 	Ok(())
@@ -1011,18 +972,12 @@ pub async fn play_song_global(
 	#[rest]
 	url: String,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	let Some(handler_lock) = ctx.data().music_manager.get(guild_id) else {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
+	let handler_lock = require_handler(ctx, guild_id).await?;
 	ctx.defer().await?;
 	let Some(mut src) = youtube_source(url).await else {
 		ctx.reply(INVALID_TRACK_SOURCE).await?;
-		return Ok(());
+		return Err(MusicError::UnknownSource.into());
 	};
 	if let Ok(audio) = src.create_async().await
 		&& let Ok(metadata) = src.aux_metadata().await
@@ -1078,6 +1033,7 @@ pub async fn play_song_global(
 		}
 	} else {
 		ctx.reply(MISSING_METADATA_MSG).await?;
+		return Err(MusicError::MissingMetadata.into());
 	}
 
 	Ok(())
@@ -1094,14 +1050,8 @@ pub async fn seek_song(
 	ctx: SContext<'_>,
 	#[description = "Seconds to seek, i.e. '-20' or '+20'"] seconds: String,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	let Some(handler_lock) = ctx.data().music_manager.get(guild_id) else {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
+	let handler_lock = require_handler(ctx, guild_id).await?;
 	ctx.defer_ephemeral().await?;
 	let Some(current_playback) = get_configured_songbird_handler(&handler_lock)
 		.await
@@ -1109,14 +1059,14 @@ pub async fn seek_song(
 		.current()
 	else {
 		ctx.reply(MISSING_METADATA_MSG).await?;
-		return Ok(());
+		return Err(MusicError::MissingMetadata.into());
 	};
 	if let Ok(current_playback_info) = current_playback.get_info().await {
 		let current_position = current_playback_info.position;
 		let Ok(seconds_value) = seconds.parse::<i64>() else {
 			ctx.reply("Bruh, provide a valid number with a sign (e.g. '+20' or '-20')!")
 				.await?;
-			return Ok(());
+			return Err(MusicError::InvalidSeek.into());
 		};
 		let current_secs = current_position.as_secs().cast_signed();
 		if seconds_value.is_negative() {

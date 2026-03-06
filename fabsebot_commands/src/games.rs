@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use fabsebot_core::config::{
-	constants::{COLOUR_ORANGE, NOT_IN_GUILD_MSG},
+	constants::COLOUR_ORANGE,
 	types::{Error, SContext},
 };
 use poise::{ChoiceParameter, CreateReply};
@@ -9,6 +9,8 @@ use serenity::all::{
 	ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton, CreateComponent,
 	CreateEmbed, CreateInteractionResponse, EditMessage, User,
 };
+
+use crate::{require_guild_id, require_human};
 
 #[derive(PartialEq, Eq, ChoiceParameter)]
 pub enum RpsChoice {
@@ -71,14 +73,8 @@ pub async fn rps(
 	#[description = "Target"] user: User,
 	#[description = "Your choice: rock, paper, or scissors"] author_choice: RpsChoice,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
-	if user.bot() {
-		ctx.reply("**Invalid target, get some friends**").await?;
-		return Ok(());
-	}
+	let guild_id = require_guild_id(ctx).await?;
+	require_human(ctx, &user).await?;
 
 	let ctx_id = ctx.id();
 	let buttons = [

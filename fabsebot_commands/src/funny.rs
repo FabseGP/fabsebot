@@ -1,8 +1,6 @@
 use fabsebot_core::{
-	config::{
-		constants::NOT_IN_GUILD_MSG,
-		types::{Error, SContext},
-	},
+	config::types::{Error, SContext},
+	errors::commands::WebhookError,
 	utils::webhook::webhook_find,
 };
 use poise::CreateReply;
@@ -84,11 +82,7 @@ pub async fn user_misuse(
 	#[rest]
 	message: String,
 ) -> Result<(), Error> {
-	if ctx.guild_id().is_none() {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	}
-	if let Ok(webhook) = webhook_find(
+	let webhook = match webhook_find(
 		ctx.serenity_context(),
 		ctx.guild_id(),
 		ctx.channel_id(),
@@ -96,36 +90,39 @@ pub async fn user_misuse(
 	)
 	.await
 	{
-		ctx.send(
-			CreateReply::default()
-				.content("you're going to hell")
-				.ephemeral(true),
-		)
-		.await?;
-		let avatar_url = member.avatar_url().unwrap_or_else(|| {
-			member
-				.user
-				.avatar_url()
-				.unwrap_or_else(|| member.user.default_avatar_url())
-		});
-		webhook
-			.execute(
-				ctx.http(),
-				false,
-				ExecuteWebhook::default()
-					.username(member.display_name())
-					.avatar_url(avatar_url)
-					.content(message),
+		Ok(webhook) => webhook,
+		Err(err) => {
+			ctx.send(
+				CreateReply::default()
+					.content("No misuse for now")
+					.ephemeral(true),
 			)
 			.await?;
-	} else {
-		ctx.send(
-			CreateReply::default()
-				.content("No misuse for now")
-				.ephemeral(true),
+			return Err(WebhookError::NotFound(err).into());
+		}
+	};
+	ctx.send(
+		CreateReply::default()
+			.content("you're going to hell")
+			.ephemeral(true),
+	)
+	.await?;
+	let avatar_url = member.avatar_url().unwrap_or_else(|| {
+		member
+			.user
+			.avatar_url()
+			.unwrap_or_else(|| member.user.default_avatar_url())
+	});
+	webhook
+		.execute(
+			ctx.http(),
+			false,
+			ExecuteWebhook::default()
+				.username(member.display_name())
+				.avatar_url(avatar_url)
+				.content(message),
 		)
 		.await?;
-	}
 
 	Ok(())
 }

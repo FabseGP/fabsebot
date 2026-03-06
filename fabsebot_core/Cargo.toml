@@ -30,6 +30,7 @@ sqlx = { workspace = true, default-features = false, features = ["macros", "post
 symphonia = { workspace = true, default-features = false, features = ["aac", "mkv", "pcm", "wav"] }
 systemstat = { workspace = true }
 textwrap = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 tracing = { workspace = true }
 url = { workspace = true }

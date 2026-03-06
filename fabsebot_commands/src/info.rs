@@ -1,15 +1,14 @@
 use std::string::ToString;
 
-use fabsebot_core::config::{
-	constants::NOT_IN_GUILD_MSG,
-	types::{Error, SContext},
-};
+use fabsebot_core::config::types::{Error, SContext};
 use poise::CreateReply;
 use serenity::all::{
 	CreateComponent, CreateContainer, CreateContainerComponent, CreateEmbed, CreateSection,
 	CreateSectionAccessory, CreateSectionComponent, CreateSeparator, CreateTextDisplay,
 	CreateThumbnail, CreateUnfurledMediaItem, Member, MessageFlags, PremiumType,
 };
+
+use crate::require_guild;
 
 /// Get server information
 #[poise::command(
@@ -34,10 +33,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 		guild_roles,
 		guild_channels,
 	) = {
-		let Some(guild) = ctx.guild() else {
-			ctx.reply(NOT_IN_GUILD_MSG).await?;
-			return Ok(());
-		};
+		let guild = require_guild(ctx).await?;
 		let id = guild.id;
 		(
 			id.to_string(),

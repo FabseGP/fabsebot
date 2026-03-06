@@ -7,10 +7,11 @@ use anyhow::Context as _;
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
-		constants::{COLOUR_RED, NOT_IN_GUILD_MSG},
+		constants::COLOUR_RED,
 		settings::UserSettingsInternal,
 		types::{Error, GuildCache, HTTP_CLIENT, SContext},
 	},
+	errors::commands::InternalError,
 	utils::helpers::{get_gifs, get_waifu},
 };
 use fabsebot_db::guild::{WordReactionsInternal, WordTrackingInternal};
@@ -27,6 +28,8 @@ use serenity::{
 use sqlx::query;
 use tracing::warn;
 use url::Url;
+
+use crate::require_guild_id;
 
 async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(guild_id);
@@ -71,7 +74,7 @@ async fn configure_channels(
 		system_time.cast_signed()
 	} else {
 		warn!("Failed to get system time");
-		return Ok(());
+		return Err(InternalError::MissingSystemTime.into());
 	};
 
 	let conn = &mut *ctx.data().db.acquire().await?;
@@ -201,10 +204,7 @@ impl SelectionState {
 	interaction_context = "Guild"
 )]
 pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 
 	let mut current_state = SelectionState::MainMenu;
 
@@ -435,10 +435,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	interaction_context = "Guild"
 )]
 pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	ctx.send(
 		CreateReply::default()
 			.content("User settings resetted... probably")
@@ -488,10 +485,7 @@ pub async fn set_afk(
 	ctx: SContext<'_>,
 	#[description = "Reason for afk"] reason: Option<String>,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let guild_id_i64 = i64::from(guild_id);
 	let user_id_i64 = i64::from(ctx.author().id);
 	query!(
@@ -599,10 +593,7 @@ pub async fn set_chatbot_options(
 	#[flag]
 	internet_search: bool,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let guild_id_i64 = i64::from(guild_id);
 	let user_id_i64 = i64::from(ctx.author().id);
 	let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
@@ -705,10 +696,7 @@ pub async fn set_prefix(
 	#[rest]
 	characters: String,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	query!(
 		"INSERT INTO guild_settings (guild_id, prefix)
             VALUES ($1, $2)
@@ -784,10 +772,7 @@ pub async fn set_user_ping(
 	                 query"]
 	media: Option<String>,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let valid = if let Some(user_media) = &media {
 		if user_media.starts_with("https") {
 			ctx.defer().await?;
@@ -905,10 +890,7 @@ pub async fn set_word_react(
 		String,
 	>,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let mut emoji_id = None;
 	let mut guild_emoji = false;
 	let valid = if content.is_some() {
@@ -1049,10 +1031,7 @@ pub async fn set_word_track(
 	ctx: SContext<'_>,
 	#[description = "Word to track count of"] word: String,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	let guild_id_i64 = i64::from(guild_id);
 	query!(
 		"INSERT INTO guild_word_tracking (guild_id, word)

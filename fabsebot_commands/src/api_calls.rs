@@ -4,11 +4,10 @@ use std::time::Duration;
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
-		constants::{
-			COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, NOT_IN_GUILD_MSG,
-		},
+		constants::{COLOUR_BLUE, COLOUR_GREEN, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW},
 		types::{Error, HTTP_CLIENT, SContext, utils_config},
 	},
+	errors::commands::{AIError, InteractionError},
 	utils::{
 		ai::ai_response_simple,
 		helpers::{get_gifs, get_waifu},
@@ -26,6 +25,8 @@ use serenity::{
 };
 use tracing::warn;
 use url::form_urlencoded::byte_serialize;
+
+use crate::require_guild_id;
 
 struct State {
 	next_id: String,
@@ -97,7 +98,7 @@ pub async fn ai_image(
 		response
 	} else {
 		ctx.reply("Servers too overworked :/").await?;
-		return Ok(());
+		return Err(AIError::ServersBusy.into());
 	};
 
 	let image = if let Ok(resp_parsed) = resp.json::<FabseAIImage>().await
@@ -1067,10 +1068,7 @@ pub async fn roast(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Ok(());
-	};
+	let guild_id = require_guild_id(ctx).await?;
 	ctx.defer().await?;
 	let avatar_url = member.avatar_url().unwrap_or_else(|| {
 		member
@@ -1196,11 +1194,11 @@ pub async fn translate(
 			ref_msg.content.into_string()
 		} else {
 			ctx.reply("Bruh, give me smth to translate").await?;
-			return Ok(());
+			return Err(InteractionError::EmptyMessage.into());
 		}
 	} else {
 		ctx.reply("Bruh, give me smth to translate").await?;
-		return Ok(());
+		return Err(InteractionError::EmptyMessage.into());
 	};
 	let target_lang = target.map_or_else(
 		|| "en".to_owned(),
