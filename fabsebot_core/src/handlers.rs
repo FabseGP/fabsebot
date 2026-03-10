@@ -1,16 +1,18 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 use anyhow::Result as AResult;
 use metrics::counter;
 use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
+use sqlx::query;
 use tracing::error;
 
 use crate::{
 	config::types::{Data, Error},
 	events::{
 		bot_ready::handle_ready, guild_create::handle_guild_create,
-		message_delete::handle_message_delete, message_sent::handle_message,
+		member_addition::handle_member_addition, message_delete::handle_message_delete,
+		message_sent::handle_message,
 	},
 	stats::counters::METRICS,
 };
@@ -49,20 +51,21 @@ pub async fn on_command(context: Context<'_, Data, Error>) {
 pub async fn dynamic_prefix(
 	ctx: PartialContext<'_, Data, Error>,
 ) -> AResult<Option<Cow<'static, str>>> {
-	let prefix = ctx.guild_id.map_or(Cow::Borrowed("!"), |id| {
-		ctx.framework
-			.user_data()
-			.guilds
-			.get(&id)
-			.map_or(Cow::Borrowed("!"), |guild_data| {
-				guild_data
-					.shared
-					.settings
-					.prefix
-					.clone()
-					.map_or(Cow::Borrowed("!"), Cow::Owned)
-			})
-	});
+	let Some(guild_id) = ctx.guild_id else {
+		return Ok(Some(Cow::Borrowed("!")));
+	};
+	let data: Arc<Data> = ctx.framework.serenity_context.data();
+	let record = query!(
+		r#"
+			SELECT prefix FROM guild_settings
+			WHERE guild_id = $1
+			"#,
+		guild_id.get().cast_signed()
+	)
+	.fetch_one(&mut *data.db.acquire().await?)
+	.await?;
+
+	let prefix = record.prefix.map_or(Cow::Borrowed("!"), Cow::Owned);
 
 	Ok(Some(prefix))
 }
@@ -111,6 +114,12 @@ impl SEventHandler for EventHandler {
 				{
 					error!("Error handling deleted message: {error}");
 					counter!(METRICS.messages_deleted_errors.clone()).increment(1);
+				}
+			}
+			FullEvent::GuildMemberAddition { new_member, .. } => {
+				if let Err(error) = handle_member_addition(ctx.data(), new_member).await {
+					error!("Error handling new member to guild: {error}");
+					counter!(METRICS.member_addition_errors.clone()).increment(1);
 				}
 			}
 			_ => {}

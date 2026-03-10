@@ -1,5 +1,4 @@
 use anyhow::{Result as AResult, bail};
-use fabsebot_db::guild::GuildData;
 use serde::Serialize;
 use serenity::all::{
 	Channel, Context as SContext, CreateAttachment, ExecuteWebhook, GenericChannelId, GuildId,
@@ -19,10 +18,10 @@ const FABSEBOT_WEBHOOK_PFP: &str =
 pub async fn spoiler_message(
 	ctx: &SContext,
 	message: &Message,
-	guild_data: &GuildData,
+	channel_id: Option<i64>,
 	data: WebhookMap,
 ) -> AResult<()> {
-	if let Some(spoiler_channel) = guild_data.settings.spoiler_channel
+	if let Some(spoiler_channel) = channel_id
 		&& message.channel_id.get() == spoiler_channel.cast_unsigned()
 	{
 		channel_counter("spoiler".to_owned());

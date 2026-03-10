@@ -14,6 +14,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult};
+use fabsebot_db::guild::GuildSettings;
 use metrics::counter;
 use mini_moka::sync::Cache;
 use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions};
@@ -25,7 +26,7 @@ use serenity::{
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
-use sqlx::{Pool, Postgres, query};
+use sqlx::{Pool, Postgres, query, query_as};
 use tokio::{
 	select,
 	signal::unix::{SignalKind, signal},
@@ -37,7 +38,7 @@ use tracing::{error, warn};
 use crate::{
 	config::{
 		settings::BotConfig,
-		types::{CLIENT_DATA, ClientData, Data, Error as SError, GuildCache, HTTP_CLIENT},
+		types::{CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT},
 	},
 	handlers::{EventHandler, dynamic_prefix, on_command, on_error},
 	stats::counters::METRICS,
@@ -82,95 +83,106 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 	let mut interval = interval(Duration::from_hours(1));
 	loop {
 		interval.tick().await;
-		if let Ok(system_time) = SystemTime::now()
+		let system_time = match SystemTime::now()
 			.duration_since(UNIX_EPOCH)
 			.map(|t| t.as_secs())
 		{
-			let now_timestamp = system_time.cast_signed();
-			let mut needs_update = false;
-			for guild in &data.guilds {
-				let guild_id_i64 = i64::from(*guild.key());
-				let mut modified_settings = guild.as_ref().clone().shared;
-				if let Some(last_waifu) = modified_settings.settings.last_waifu
-					&& let Some(waifu_rate) = modified_settings.settings.waifu_rate
-					&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
-					&& let Some(waifu_channel) = modified_settings.settings.waifu_channel
+			Ok(time) => time,
+			Err(err) => {
+				error!("Failed to get system time: {err}");
+				continue;
+			}
+		};
+		let now_timestamp = system_time.cast_signed();
+
+		let mut tx = match data.db.begin().await {
+			Ok(tx) => tx,
+			Err(err) => {
+				error!("Failed to start SQL-transaction: {err}");
+				continue;
+			}
+		};
+
+		let guilds = match query_as!(
+			GuildSettings,
+			r#"
+			SELECT * FROM guild_settings
+			WHERE waifu_channel IS NOT NULL
+			OR dead_chat_channel IS NOT NULL
+			"#
+		)
+		.fetch_all(&mut *tx)
+		.await
+		{
+			Ok(guilds) => guilds,
+			Err(err) => {
+				error!("Failed to fetch guild settings: {err}");
+				continue;
+			}
+		};
+
+		for guild in guilds {
+			if let Some(last_waifu) = guild.last_waifu
+				&& let Some(waifu_rate) = guild.waifu_rate
+				&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
+				&& let Some(waifu_channel) = guild.waifu_channel
+			{
+				counter!(METRICS.periodic_waifu.clone()).increment(1);
+				if let Err(err) = GenericChannelId::new(waifu_channel.cast_unsigned())
+					.say(&http, get_waifu().await)
+					.await
 				{
-					counter!(METRICS.periodic_waifu.clone()).increment(1);
-					if let Err(err) = GenericChannelId::new(waifu_channel.cast_unsigned())
-						.say(&http, get_waifu().await)
-						.await
-					{
-						error!("Failed to send waifu: {:?}", &err);
-					} else {
-						modified_settings.settings.last_waifu = Some(now_timestamp);
-						needs_update = true;
-						if let Ok(mut db_conn) = data.db.acquire().await
-							&& let Err(err) = query!(
-								"INSERT INTO guild_settings (guild_id, last_waifu)
-            					VALUES ($1, $2)
-            					ON CONFLICT(guild_id)
-            					DO UPDATE SET
-                       				last_waifu = $2",
-								guild_id_i64,
-								now_timestamp
-							)
-							.execute(&mut *db_conn)
-							.await
-						{
-							error!("Failed to update last_waifu in db: {:?}", &err);
-						}
-					}
-				}
-				if let Some(last_dead_chat) = modified_settings.settings.last_dead_chat
-					&& let Some(dead_chat_rate) = modified_settings.settings.dead_chat_rate
-					&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
-					&& let Some(dead_chat_channel) = modified_settings.settings.dead_chat_channel
+					error!("Failed to send waifu: {:?}", &err);
+				} else if let Err(err) = query!(
+					r#"
+					INSERT INTO guild_settings (guild_id, last_waifu)
+            		VALUES ($1, $2)
+            		ON CONFLICT (guild_id)
+            		DO UPDATE SET last_waifu = $2
+                    "#,
+					guild.guild_id,
+					now_timestamp
+				)
+				.execute(&mut *tx)
+				.await
 				{
-					counter!(METRICS.periodic_dead_chat.clone()).increment(1);
-					let gifs = get_gifs("dead chat").await;
-					let index = fastrand::usize(..gifs.len());
-					if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
-						if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
-							.say(&http, gif)
-							.await
-						{
-							error!("Failed to send dead chat gif: {:?}", &err);
-						} else {
-							modified_settings.settings.last_dead_chat = Some(now_timestamp);
-							needs_update = true;
-							if let Ok(mut db_conn) = data.db.acquire().await
-								&& let Err(err) = query!(
-									"INSERT INTO guild_settings (guild_id, last_dead_chat)
-            						VALUES ($1, $2)
-            						ON CONFLICT(guild_id)
-            						DO UPDATE SET
-                       					last_dead_chat = $2",
-									guild_id_i64,
-									now_timestamp
-								)
-								.execute(&mut *db_conn)
-								.await
-							{
-								error!("Failed to update last_dead_chat in db: {:?}", &err);
-							}
-						}
-					}
-				}
-				if needs_update {
-					let cache = data.guilds.get(guild.key()).unwrap();
-					data.guilds.insert(
-						*guild.key(),
-						Arc::new(GuildCache {
-							ai_chats: cache.ai_chats.clone(),
-							global_chats: cache.global_chats.clone(),
-							shared: modified_settings,
-							user_settings: cache.user_settings.clone(),
-						}),
-					);
-					needs_update = false;
+					error!("Failed to update last_waifu in db: {:?}", &err);
 				}
 			}
+			if let Some(last_dead_chat) = guild.last_dead_chat
+				&& let Some(dead_chat_rate) = guild.dead_chat_rate
+				&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
+				&& let Some(dead_chat_channel) = guild.dead_chat_channel
+			{
+				counter!(METRICS.periodic_dead_chat.clone()).increment(1);
+				let gifs = get_gifs("dead chat").await;
+				let index = fastrand::usize(..gifs.len());
+				if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
+					if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
+						.say(&http, gif)
+						.await
+					{
+						error!("Failed to send dead chat gif: {:?}", &err);
+					} else if let Err(err) = query!(
+						r#"
+						INSERT INTO guild_settings (guild_id, last_dead_chat)
+            			VALUES ($1, $2)
+            			ON CONFLICT (guild_id)
+            			DO UPDATE SET last_dead_chat = $2
+            			"#,
+						guild.guild_id,
+						now_timestamp
+					)
+					.execute(&mut *tx)
+					.await
+					{
+						error!("Failed to update last_dead_chat in db: {:?}", &err);
+					}
+				}
+			}
+		}
+		if let Err(err) = tx.commit().await {
+			error!("Failed to commit SQL-transaction: {err}");
 		}
 	}
 }
@@ -194,11 +206,20 @@ pub async fn bot_start(
 		music_manager: music_manager.clone(),
 		channel_webhooks: Cache::builder()
 			.max_capacity(100)
-			.time_to_idle(Duration::from_hours(1))
+			.time_to_idle(Duration::from_hours(12))
 			.build(),
-		guilds: Cache::new(1000),
-		track_metadata: Cache::new(1000),
-		app_emojis: Cache::new(1000),
+		guilds: Cache::builder()
+			.max_capacity(1000)
+			.time_to_idle(Duration::from_hours(12))
+			.build(),
+		track_metadata: Cache::builder()
+			.max_capacity(1000)
+			.time_to_idle(Duration::from_hours(12))
+			.build(),
+		app_emojis: Cache::builder()
+			.max_capacity(1000)
+			.time_to_idle(Duration::from_hours(12))
+			.build(),
 	});
 	let additional_prefix: &'static str =
 		Box::leak(format!("hey {}", &bot_config.username).into_boxed_str());

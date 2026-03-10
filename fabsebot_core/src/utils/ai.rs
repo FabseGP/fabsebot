@@ -16,7 +16,7 @@ use tracing::{error, warn};
 use winnow::Parser as _;
 
 use crate::{
-	config::types::{AIChatContext, AIChatMessage, HTTP_CLIENT, utils_config},
+	config::types::{AIChatContext, AIChatMessage, AIChats, HTTP_CLIENT, utils_config},
 	utils::helpers::{discord_message_link, get_configured_songbird_handler},
 };
 
@@ -85,7 +85,7 @@ pub async fn ai_chatbot(
 	chatbot_role: String,
 	chatbot_internet_search: bool,
 	guild_id: GuildId,
-	conversations: Arc<Mutex<AIChatContext>>,
+	conversations: AIChats,
 	voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> AResult<()> {
 	if message.content.eq_ignore_ascii_case("clear") {
@@ -176,7 +176,7 @@ pub async fn ai_chatbot(
 	if conversations.static_info.chatbot_role != chatbot_role {
 		conversations.static_info.chatbot_role = chatbot_role;
 	}
-	if !conversations.static_info.is_set
+	if !conversations.static_info.is_set()
 		&& let Some(guild) = message.guild(&ctx.cache)
 	{
 		conversations.static_info.guild_desc = format!(
@@ -204,7 +204,6 @@ pub async fn ai_chatbot(
 				"But you're not talking to this guild's owner"
 			}
 		);
-		conversations.static_info.is_set = true;
 	}
 
 	if !conversations.static_info.users.contains_key(&author_id_u64)
@@ -231,7 +230,7 @@ pub async fn ai_chatbot(
 		)?;
 		for target in &message.mentions {
 			if let Some(target_info) = conversations.static_info.users.get(&target.id.get()) {
-				writeln!(system_content, "{target_info}",)?;
+				writeln!(system_content, "{target_info}")?;
 			} else if let Ok(target_member) = guild_id.member(&ctx.http, target.id).await
 				&& let Some(roles) = target_member.roles(&ctx.cache)
 			{
@@ -279,15 +278,11 @@ pub async fn ai_chatbot(
 			internet_search,
 			system_content
 		);
-		let index = conversations.system_msg_index;
-		if !conversations.messages.is_empty()
-			&& let Some(system_message) = conversations.messages.get_mut(index)
-		{
+		if let Some(system_message) = conversations.messages.first_mut() {
 			system_message.content = bot_context;
 		} else {
 			let system_msg = AIChatMessage::system(bot_context);
 			conversations.messages.push(system_msg);
-			conversations.system_msg_index = conversations.messages.len().saturating_sub(1);
 		}
 		conversations.messages.push(AIChatMessage::user(format!(
 			"Message sent at: {} by user: {author_name}: {content_safe}",

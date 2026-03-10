@@ -2,8 +2,8 @@ cargo-features = ["panic-immediate-abort"]
 
 [package]
 name = "fabsebot"
-version = "0.6.0"
-edition = "2024"
+edition.workspace = true
+version.workspace = true
 
 [workspace]
 members = [
@@ -12,6 +12,8 @@ members = [
     "fabsebot_db",
 ]
 resolver = "3"
+package.edition = "2024"
+package.version = "0.6.0"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -56,7 +58,7 @@ anyhow = "*"
 base64 = "*"
 bytes = "*"
 criterion = { version = "*", features = ["async_tokio", "html_reports"] }
-dashmap = { version = "*", features = ["inline"] }
+dashmap = "*"
 emojis = "*"
 fastrand = "*"
 image = { version = "*", default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
@@ -116,7 +118,7 @@ debug = "line-tables-only"
 panic = "unwind"
 
 [profile.dev.package."*"]
-opt-level = 3
+opt-level = 1
 
 [package.metadata.cargo-machete]
 ignored = [

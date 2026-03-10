@@ -1,93 +1,14 @@
-use std::{
-	collections::{HashMap, HashSet},
-	sync::Arc,
-};
+use std::{self, sync::Arc};
 
-use anyhow::{Context as _, Result as AResult};
-use fabsebot_db::guild::{
-	GuildData, GuildSettings, GuildSettingsInternal, WordReactions, WordReactionsInternal,
-	WordTracking, WordTrackingInternal,
-};
-use serenity::all::{Context as SContext, GuildId, Ready, UserId};
-use sqlx::query_as;
+use anyhow::Result as AResult;
+use serenity::all::{Context as SContext, Ready};
 use tracing::info;
 
-use crate::config::{
-	settings::{UserSettings, UserSettingsInternal},
-	types::{Data, GuildCache},
-};
+use crate::config::types::Data;
 
 pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()> {
-	let data: Arc<Data> = ctx.data();
-	let mut tx = data
-		.db
-		.begin()
-		.await
-		.context("Failed to acquire savepoint")?;
-	let guild_settings = query_as!(GuildSettings, "SELECT * FROM guild_settings")
-		.fetch_all(&mut *tx)
-		.await?;
-	let user_settings = query_as!(UserSettings, "SELECT * FROM user_settings")
-		.fetch_all(&mut *tx)
-		.await?;
-	let word_reactions = query_as!(WordReactions, "SELECT * FROM guild_word_reaction")
-		.fetch_all(&mut *tx)
-		.await?;
-	let word_tracking = query_as!(WordTracking, "SELECT * FROM guild_word_tracking")
-		.fetch_all(&mut *tx)
-		.await?;
-	tx.commit()
-		.await
-		.context("Failed to commit sql-transaction")?;
-
-	let mut grouped_word_reactions: HashMap<i64, HashSet<WordReactionsInternal>> =
-		HashMap::default();
-	for reaction in word_reactions {
-		grouped_word_reactions
-			.entry(reaction.guild_id)
-			.or_default()
-			.insert(WordReactionsInternal::from(reaction));
-	}
-
-	let mut grouped_word_tracking: HashMap<i64, HashSet<WordTrackingInternal>> = HashMap::default();
-	for tracking in word_tracking {
-		grouped_word_tracking
-			.entry(tracking.guild_id)
-			.or_default()
-			.insert(WordTrackingInternal::from(tracking));
-	}
-
-	let mut guild_maps: HashMap<GuildId, HashMap<UserId, UserSettingsInternal>> =
-		HashMap::default();
-	for settings in user_settings {
-		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
-		let user_id = UserId::new(settings.user_id.cast_unsigned());
-		guild_maps
-			.entry(guild_id)
-			.or_default()
-			.insert(user_id, UserSettingsInternal::from(settings));
-	}
-
-	for settings in guild_settings {
-		let guild_id = GuildId::new(settings.guild_id.cast_unsigned());
-		let settings_guild_id = settings.guild_id;
-		let guild_cache = GuildCache {
-			shared: GuildData {
-				settings: GuildSettingsInternal::from(settings),
-				word_reactions: grouped_word_reactions
-					.remove(&settings_guild_id)
-					.unwrap_or_default(),
-				word_tracking: grouped_word_tracking
-					.remove(&settings_guild_id)
-					.unwrap_or_default(),
-			},
-			user_settings: guild_maps.remove(&guild_id).unwrap_or_default(),
-			..Default::default()
-		};
-		data.guilds.insert(guild_id, Arc::new(guild_cache));
-	}
-
 	if let Ok(app_emojis) = ctx.get_application_emojis().await {
+		let data: Arc<Data> = ctx.data();
 		for emoji in app_emojis {
 			data.app_emojis.insert(emoji.id.get(), Arc::new(emoji));
 		}

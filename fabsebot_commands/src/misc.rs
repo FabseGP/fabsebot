@@ -1,6 +1,5 @@
 use std::{
-	borrow::Cow, cmp::Reverse, collections::HashSet, fmt::Write as _, io::Cursor, mem::take,
-	sync::Arc, time::Duration,
+	borrow::Cow, collections::HashSet, fmt::Write as _, io::Cursor, mem::take, time::Duration,
 };
 
 use ab_glyph::FontArc;
@@ -38,7 +37,7 @@ use serenity::{
 	futures::StreamExt as _,
 	nonmax::NonMaxU16,
 };
-use sqlx::query;
+use sqlx::{query, query_as, query_scalar};
 use systemstat::{Platform as _, saturating_sub_bytes};
 use tokio::{
 	sync::oneshot,
@@ -461,28 +460,16 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	query!(
-		"INSERT INTO guild_settings (guild_id, global_chat)
-            VALUES ($1, FALSE)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                global_chat = FALSE",
+		r#"
+		INSERT INTO guild_settings (guild_id, global_chat)
+		VALUES ($1, FALSE)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET global_chat = FALSE
+        "#,
 		i64::from(guild_id),
 	)
 	.execute(&mut *ctx.data().db.acquire().await?)
 	.await?;
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.get_or_insert_default()
-		.as_ref()
-		.clone();
-	modified_settings.shared.settings.global_chat = false;
-	modified_settings.shared.settings.global_chat_channel = None;
-	modified_settings.global_chats.remove(&guild_id).unwrap();
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
 	ctx.reply("Call ended...").await?;
 
 	Ok(())
@@ -501,37 +488,32 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	let channel_id_i64 = i64::from(ctx.channel_id());
 	let mut tx = ctx.data().db.begin().await?;
 	query!(
-		"INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
-            VALUES ($1, TRUE, $2)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                global_chat = TRUE,
-                global_chat_channel = $2",
+		r#"
+		INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
+        VALUES ($1, TRUE, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET global_chat = TRUE,
+        global_chat_channel = $2
+        "#,
 		guild_id_i64,
 		channel_id_i64,
 	)
 	.execute(&mut *tx)
 	.await?;
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.get_or_insert_default()
-		.as_ref()
-		.clone();
-	modified_settings.shared.settings.global_chat = true;
-	modified_settings.shared.settings.global_chat_channel = Some(channel_id_i64);
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
 	let message = ctx.reply("Calling...").await?;
 	let result = timeout(Duration::from_mins(1), async {
 		loop {
-			let has_other_calls = ctx.data().guilds.iter().any(|entry| {
-				entry.key() != &guild_id
-					&& entry.value().shared.settings.global_chat
-					&& entry.value().shared.settings.global_chat_channel.is_some()
-			});
+			let has_other_calls: bool = query_scalar!(
+				r#"
+				SELECT EXISTS(SELECT 1 FROM guild_settings
+				WHERE guild_id != $1
+				AND global_chat IS TRUE)
+				"#,
+				guild_id_i64
+			)
+			.fetch_one(&mut *tx)
+			.await?
+			.unwrap_or(false);
 			if has_other_calls {
 				return Ok::<_, Error>(true);
 			}
@@ -543,24 +525,15 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		"Connected to global call!"
 	} else {
 		query!(
-			"UPDATE guild_settings SET global_chat = FALSE, global_chat_channel = NULL WHERE \
-			 guild_id = $1",
+			r#"
+			UPDATE guild_settings SET global_chat = FALSE,
+			global_chat_channel = NULL
+			WHERE guild_id = $1
+			"#,
 			guild_id_i64
 		)
 		.execute(&mut *tx)
 		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.guilds
-			.get(&guild_id)
-			.get_or_insert_default()
-			.as_ref()
-			.clone();
-		modified_settings.shared.settings.global_chat = false;
-		modified_settings.shared.settings.global_chat_channel = None;
-		ctx.data()
-			.guilds
-			.insert(guild_id, Arc::new(modified_settings));
 		"No one joined the call within 1 minute 😢"
 	};
 
@@ -665,8 +638,8 @@ pub async fn help(
 }
 
 struct UserCount {
-	id: i64,
-	count: i32,
+	user_id: i64,
+	message_count: i32,
 }
 
 /// Leaderboard of lifeless ppl
@@ -690,23 +663,19 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 	};
 	ctx.defer().await?;
 
-	let mut users = {
-		let user_settings = &ctx.data().guilds.get(&guild_id).unwrap().user_settings;
-		let capacity = user_settings.len();
-		let mut result = Vec::with_capacity(capacity);
-
-		for (id, entry) in user_settings {
-			result.push(UserCount {
-				id: id.get().cast_signed(),
-				count: entry.message_count,
-			});
-		}
-
-		result
-	};
-
-	users.sort_by_key(|b| Reverse(b.count));
-	users.truncate(25);
+	let users = query_as!(
+		UserCount,
+		r#"
+		SELECT user_id, message_count
+		FROM user_settings
+		WHERE guild_id = $1
+		ORDER BY message_count
+		DESC LIMIT 25
+		"#,
+		guild_id.get().cast_signed()
+	)
+	.fetch_all(&mut *ctx.data().db.acquire().await?)
+	.await?;
 
 	let mut embed = CreateEmbed::default()
 		.title(format!("Top {} users by message count", users.len()))
@@ -715,12 +684,12 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 
 	for (index, user) in users.iter().enumerate() {
 		if let Ok(target) = guild_id
-			.member(&ctx.http(), UserId::new(user.id.cast_unsigned()))
+			.member(&ctx.http(), UserId::new(user.user_id.cast_unsigned()))
 			.await
 		{
 			embed = embed.field(
 				format!("#{} {}", index.saturating_add(1), target.display_name()),
-				user.count.to_string(),
+				user.message_count.to_string(),
 				false,
 			);
 		}
@@ -1154,11 +1123,17 @@ pub async fn quote_internal(
 
 	let allowed_mentions = CreateAllowedMentions::default().replied_user(false);
 
-	let (message_handle, reply_handle) = if let Some((reply, guild_id)) = reply
-		&& let Some(guild_data) = ctx.data().guilds.get(&guild_id)
-	{
+	let (message_handle, reply_handle) = if let Some((reply, guild_id)) = reply {
 		let message_url = reply.link().to_string();
-		if let Some(channel) = guild_data.shared.settings.quotes_channel {
+
+		let spoiler_channel_opt: Option<i64> = query_scalar!(
+			"SELECT spoiler_channel FROM guild_settings WHERE guild_id = $1",
+			guild_id.get().cast_signed()
+		)
+		.fetch_one(&mut *ctx.data().db.acquire().await?)
+		.await?;
+
+		if let Some(channel) = spoiler_channel_opt {
 			let quote_channel = GenericChannelId::new(channel.cast_unsigned());
 			quote_channel
 				.send_message(
@@ -1409,24 +1384,19 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 		})
 	};
 
-	let words: Vec<_> = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.map_or_else(Vec::new, |guild_data| {
-			let mut result: Vec<_> = guild_data
-				.shared
-				.word_tracking
-				.iter()
-				.map(|entry| WordCount {
-					word: entry.word.clone(),
-					count: entry.count,
-				})
-				.collect();
-			result.sort_by_key(|b| Reverse(b.count));
-			result.truncate(25);
-			result
-		});
+	let words = query_as!(
+		WordCount,
+		r#"
+		SELECT word, count
+		FROM guild_word_tracking
+		WHERE guild_id = $1
+		ORDER BY count
+		DESC LIMIT 25
+		"#,
+		guild_id.get().cast_signed()
+	)
+	.fetch_all(&mut *ctx.data().db.acquire().await?)
+	.await?;
 
 	let mut embed = CreateEmbed::default()
 		.title(format!("Top {} word tracked by count", words.len()))

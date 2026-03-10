@@ -24,6 +24,7 @@ use serenity::{
 	},
 	futures::StreamExt as _,
 };
+use sqlx::query_scalar;
 use tracing::warn;
 use url::form_urlencoded::byte_serialize;
 
@@ -1116,14 +1117,20 @@ pub async fn roast(
 	let name = member.display_name();
 	let account_date = member.user.id.created_at();
 	let join_date = member.joined_at.unwrap_or_default();
-	let message_count = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.unwrap()
-		.user_settings
-		.get(&member.user.id)
-		.map_or(0, |count| count.message_count);
+
+	let message_count = query_scalar!(
+		r#"
+		SELECT message_count
+		FROM user_settings
+		WHERE guild_id = $1
+		AND user_id = $2
+		"#,
+		guild_id.get().cast_signed(),
+		ctx.author().id.get().cast_signed()
+	)
+	.fetch_one(&mut *ctx.data().db.acquire().await?)
+	.await?;
+
 	let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
 	let messages_string = {

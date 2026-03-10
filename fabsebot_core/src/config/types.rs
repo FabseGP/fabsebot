@@ -6,13 +6,12 @@ use std::{
 
 use anyhow::Error as AError;
 use dashmap::DashMap;
-use fabsebot_db::guild::GuildData;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
 use serde::Serialize;
 use serenity::all::{
-	Emoji, GenericChannelId, GuildId, MessageId, ShardId, ShardRunnerMetadata, UserId, Webhook,
+	Emoji, GenericChannelId, GuildId, MessageId, ShardId, ShardRunnerMetadata, Webhook,
 };
 use songbird::{Songbird, input::AuxMetadata};
 use sqlx::PgPool;
@@ -20,41 +19,42 @@ use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::config::settings::{APIConfig, HTTPAgent, ServerConfig, UserSettingsInternal};
+use crate::config::settings::{APIConfig, HTTPAgent, ServerConfig};
 
 pub type WebhookMap = Cache<GenericChannelId, Webhook>;
+pub type AIChats = Arc<Mutex<AIChatContext>>;
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct GuildCache {
-	pub ai_chats: Arc<Mutex<AIChatContext>>,
-	pub global_chats: HashMap<GuildId, MessageId>,
-	pub shared: GuildData,
-	pub user_settings: HashMap<UserId, UserSettingsInternal>,
+	pub ai_chats: AIChats,
 }
 
 #[derive(Default)]
 pub struct AIChatContext {
 	pub messages: Vec<AIChatMessage>,
 	pub static_info: AIChatStatic,
-	pub system_msg_index: usize,
 }
 
 #[derive(Default)]
 pub struct AIChatStatic {
-	pub is_set: bool,
 	pub chatbot_role: String,
 	pub guild_desc: String,
 	pub users: HashMap<u64, String>,
 }
 
-#[derive(Serialize, Clone, Default)]
+impl AIChatStatic {
+	#[must_use]
+	pub const fn is_set(&self) -> bool {
+		!self.guild_desc.is_empty()
+	}
+}
+
+#[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
-	#[default]
 	System,
 	User,
 	Assistant,
-	Model,
 }
 
 impl Role {
@@ -69,7 +69,7 @@ impl Role {
 	}
 }
 
-#[derive(Serialize, Clone, Default)]
+#[derive(Serialize)]
 pub struct AIChatMessage {
 	pub role: Role,
 	pub content: String,
@@ -94,11 +94,6 @@ impl AIChatMessage {
 	#[must_use]
 	pub const fn assistant(content: String) -> Self {
 		Self::new(Role::Assistant, content)
-	}
-
-	#[must_use]
-	pub const fn model(content: String) -> Self {
-		Self::new(Role::Model, content)
 	}
 }
 

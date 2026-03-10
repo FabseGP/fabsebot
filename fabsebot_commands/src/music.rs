@@ -848,28 +848,16 @@ pub async fn join_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 		&& let Ok(handler_lock) = ctx.data().music_manager.join(guild_id, channel_id).await
 	{
 		query!(
-			"INSERT INTO guild_settings (guild_id, global_call)
-                        VALUES ($1, TRUE)
-                        ON CONFLICT(guild_id)
-                        DO UPDATE SET
-                            global_call = TRUE,
-                            global_music = TRUE",
+			r#"
+			INSERT INTO guild_settings (guild_id, global_call)
+            VALUES ($1, TRUE)
+            ON CONFLICT (guild_id)
+            DO UPDATE SET global_call = TRUE, global_music = TRUE
+            "#,
 			i64::from(guild_id),
 		)
 		.execute(&mut *ctx.data().db.acquire().await?)
 		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.guilds
-			.get(&guild_id)
-			.get_or_insert_default()
-			.as_ref()
-			.clone();
-		modified_settings.shared.settings.global_call = true;
-		modified_settings.shared.settings.global_music = true;
-		ctx.data()
-			.guilds
-			.insert(guild_id, Arc::new(modified_settings));
 		ctx.send(CreateReply::default().embed(create_join_embed(true)))
 			.await?;
 		add_events(&ctx, guild_id, handler_lock).await;
@@ -926,28 +914,16 @@ pub async fn leave_voice_global(ctx: SContext<'_>) -> Result<(), Error> {
 
 	ctx.reply("Left voice channel, don't forget me").await?;
 	query!(
-		"INSERT INTO guild_settings (guild_id, global_music, global_call)
-                    VALUES ($1, FALSE, FALSE)
-                    ON CONFLICT(guild_id)
-                    DO UPDATE SET
-                        global_music = FALSE,
-                        global_call = FALSE",
+		r#"
+		INSERT INTO guild_settings (guild_id, global_music, global_call)
+        VALUES ($1, FALSE, FALSE)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET global_music = FALSE, global_call = FALSE
+        "#,
 		i64::from(guild_id),
 	)
 	.execute(&mut *ctx.data().db.acquire().await?)
 	.await?;
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.get_or_insert_default()
-		.as_ref()
-		.clone();
-	modified_settings.shared.settings.global_music = false;
-	modified_settings.shared.settings.global_call = false;
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
 }
@@ -1082,11 +1058,23 @@ pub async fn play_song_global(
 	)
 	.await;
 
-	for global_guild in ctx.data().guilds.iter().filter(|entry| {
-		let settings = &entry.value().shared.settings;
-		entry.key() != &guild_id && settings.global_music
-	}) {
-		let Some(global_handler_lock) = ctx.data().music_manager.get(*global_guild.key()) else {
+	let guild_global_playback = query!(
+		r#"
+		SELECT guild_id FROM guild_settings
+		WHERE global_music IS TRUE
+		AND guild_id != $1
+		"#,
+		guild_id.get().cast_signed()
+	)
+	.fetch_all(&mut *ctx.data().db.acquire().await?)
+	.await?;
+
+	for global_guild in guild_global_playback {
+		let Some(global_handler_lock) = ctx
+			.data()
+			.music_manager
+			.get(GuildId::new(global_guild.guild_id.cast_unsigned()))
+		else {
 			continue;
 		};
 		if let Some(id) = get_configured_songbird_handler(&handler_lock)

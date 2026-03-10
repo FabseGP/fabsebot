@@ -1371,7 +1371,7 @@ dependencies = [
 
 [[package]]
 name = "fabsebot_commands"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -1394,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "fabsebot_core"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -1430,7 +1430,7 @@ dependencies = [
 
 [[package]]
 name = "fabsebot_db"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -2592,9 +2592,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "libc"
-version = "0.2.182"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libcrux-chacha20poly1305"
@@ -3074,12 +3074,6 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
-
-[[package]]
-name = "no-std-compat"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df270209a7f04d62459240d890ecb792714d5db12c92937823574a09930276b4"
 
 [[package]]
 name = "no-std-net"
@@ -3655,7 +3649,7 @@ dependencies = [
 [[package]]
 name = "poise"
 version = "0.6.1"
-source = "git+https://github.com/FabseGP/poise.git?branch=update-deps#91574a511f41093db62904e6327b23b70650a518"
+source = "git+https://github.com/FabseGP/poise.git?branch=update-deps#adfdd99d564ae2c2d03955b423fa1533bf4d2e76"
 dependencies = [
  "async-trait",
  "derivative",
@@ -3673,7 +3667,7 @@ dependencies = [
 [[package]]
 name = "poise_macros"
 version = "0.6.1"
-source = "git+https://github.com/FabseGP/poise.git?branch=update-deps#91574a511f41093db62904e6327b23b70650a518"
+source = "git+https://github.com/FabseGP/poise.git?branch=update-deps#adfdd99d564ae2c2d03955b423fa1533bf4d2e76"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -4689,7 +4683,7 @@ dependencies = [
 [[package]]
 name = "serenity"
 version = "0.12.5"
-source = "git+https://github.com/serenity-rs/serenity.git?branch=next#6c266b0d6c802deb04946a34516300cf02558dfe"
+source = "git+https://github.com/serenity-rs/serenity.git?branch=next#a5593775e1bf4e894e8b49dfc5ba4d6e409de902"
 dependencies = [
  "aformat",
  "arrayvec",
@@ -4912,7 +4906,7 @@ dependencies = [
 [[package]]
 name = "songbird"
 version = "0.5.0"
-source = "git+https://github.com/FabseGP/songbird.git?branch=update-davey#2c74777b7c0d04658eeff076d3204c8f17732bfd"
+source = "git+https://github.com/FabseGP/songbird.git?branch=update-davey#dd1904419b25f10bb85a8c95e1e5421dd174f003"
 dependencies = [
  "aead",
  "aes-gcm",
@@ -5099,12 +5093,9 @@ dependencies = [
 
 [[package]]
 name = "stable-vec"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1dff32a2ce087283bec878419027cebd888760d8760b2941ad0843531dc9ec8"
-dependencies = [
- "no-std-compat",
-]
+checksum = "6dac7bc0f7d0d44329b200020effbc25a534d89fa142af95e3ddf76113412a5e"
 
 [[package]]
 name = "stable_deref_trait"
@@ -5115,7 +5106,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "stream_lib"
 version = "0.5.2"
-source = "git+https://github.com/FabseGP/rsget.git?branch=update-reqwest#5f17a6371ee3f2202018060683724a7f2bec3932"
+source = "git+https://github.com/FabseGP/rsget.git?branch=update-reqwest#c725a88f32bafe05f78ebad26eef175fd6b4e35b"
 dependencies = [
  "bytes",
  "futures-core",
@@ -5678,9 +5669,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "1.0.4+spec-1.1.0"
+version = "1.0.6+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c94c3321114413476740df133f0d8862c61d87c8d26f04c6841e033c8c80db47"
+checksum = "399b1124a3c9e16766831c6bba21e50192572cdd98706ea114f9502509686ffc"
 dependencies = [
  "indexmap",
  "serde_core",

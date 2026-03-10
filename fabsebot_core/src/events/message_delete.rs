@@ -1,7 +1,7 @@
 use anyhow::{Result as AResult, anyhow};
 use serenity::all::{
 	Context as SContext, CreateEmbed, CreateMessage, GenericChannelId, GuildId, MessageId,
-	audit_log,
+	audit_log::{Action::Message, MessageAction::Delete},
 };
 
 use crate::errors::commands::GuildError;
@@ -13,14 +13,7 @@ pub async fn handle_message_delete(
 	deleted_message_id: MessageId,
 ) -> AResult<()> {
 	let audit = guild_id
-		.audit_logs(
-			&ctx.http,
-			Some(audit_log::Action::Message(audit_log::MessageAction::Delete)),
-			None,
-			None,
-			None,
-			None,
-		)
+		.audit_logs(&ctx.http, Some(Message(Delete)), None, None, None, None)
 		.await?;
 	let deleted_content = ctx
 		.cache

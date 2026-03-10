@@ -8,13 +8,12 @@ use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
 		constants::COLOUR_RED,
-		settings::UserSettingsInternal,
-		types::{Error, GuildCache, HTTP_CLIENT, SContext},
+		types::{Error, HTTP_CLIENT, SContext},
 	},
 	errors::commands::InternalError,
 	utils::helpers::{get_gifs, get_waifu},
 };
-use fabsebot_db::guild::{WordReactionsInternal, WordTrackingInternal};
+use fabsebot_db::guild::{reset_guild, set_music_channel, set_spoiler_channel};
 use poise::CreateReply;
 use serde::Serialize;
 use serenity::{
@@ -25,7 +24,7 @@ use serenity::{
 	},
 	futures::StreamExt as _,
 };
-use sqlx::query;
+use sqlx::{PgConnection, query};
 use tracing::warn;
 use url::Url;
 
@@ -33,18 +32,18 @@ use crate::require_guild_id;
 
 async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(guild_id);
-	let tx = ctx
+	let mut tx = ctx
 		.data()
 		.db
 		.begin()
 		.await
 		.context("Failed to acquire savepoint")?;
-	if let Some(guild_data) = ctx.data().guilds.get(&guild_id) {
-		guild_data.shared.reset(guild_id_i64, tx).await?;
-	}
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(GuildCache::default()));
+
+	reset_guild(guild_id_i64, &mut tx).await?;
+
+	tx.commit()
+		.await
+		.context("Failed to commit sql-transaction")?;
 
 	Ok(())
 }
@@ -59,13 +58,6 @@ async fn configure_channels(
 	ctx: SContext<'_>,
 	guild_id: GuildId,
 ) -> Result<(), Error> {
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.get_or_insert_default()
-		.as_ref()
-		.clone();
 	let guild_id_i64 = i64::from(guild_id);
 	let system_time = match SystemTime::now()
 		.duration_since(UNIX_EPOCH)
@@ -77,14 +69,15 @@ async fn configure_channels(
 		}
 	};
 
-	let conn = &mut *ctx.data().db.acquire().await?;
+	let mut tx = ctx
+		.data()
+		.db
+		.begin()
+		.await
+		.context("Failed to acquire savepoint")?;
 	if let Some(music_channel) = music_channel_opt {
 		let music_channel_id_i64 = i64::from(music_channel.id());
-		modified_settings
-			.shared
-			.settings
-			.set_music_channel(guild_id_i64, music_channel_id_i64, conn)
-			.await?;
+		set_music_channel(guild_id_i64, music_channel_id_i64, &mut tx).await?;
 		music_channel
 			.id()
 			.say(
@@ -93,15 +86,10 @@ async fn configure_channels(
 				 requests!\nMessages prefixed with # will be ignored",
 			)
 			.await?;
-		modified_settings.shared.settings.music_channel = Some(music_channel_id_i64);
 	}
 	if let Some(spoiler_channel) = spoiler_channel_opt {
 		let spoiler_channel_id_i64 = i64::from(spoiler_channel.id());
-		modified_settings
-			.shared
-			.settings
-			.set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, conn)
-			.await?;
+		set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, &mut tx).await?;
 		spoiler_channel
 			.id()
 			.say(
@@ -109,17 +97,28 @@ async fn configure_channels(
 				"Every attachment sent here will now be spoilered",
 			)
 			.await?;
-		modified_settings.shared.settings.spoiler_channel = Some(spoiler_channel_id_i64);
 	}
 	if let Some(quote_channel) = quote_channel_opt {
 		let quote_channel_id_i64 = i64::from(quote_channel.id());
-		set_quote_channel(ctx, quote_channel, guild_id_i64, quote_channel_id_i64).await?;
-		modified_settings.shared.settings.quotes_channel = Some(quote_channel_id_i64);
+		set_quote_channel(
+			ctx,
+			quote_channel,
+			guild_id_i64,
+			quote_channel_id_i64,
+			&mut tx,
+		)
+		.await?;
 	}
 	if let Some(chatbot_channel) = chatbot_channel_opt {
 		let chatbot_channel_id_i64 = i64::from(chatbot_channel.id());
-		set_chatbot_channel(ctx, chatbot_channel, guild_id_i64, chatbot_channel_id_i64).await?;
-		modified_settings.shared.settings.ai_chat_channel = Some(chatbot_channel_id_i64);
+		set_chatbot_channel(
+			ctx,
+			chatbot_channel,
+			guild_id_i64,
+			chatbot_channel_id_i64,
+			&mut tx,
+		)
+		.await?;
 	}
 	if let Some((waifu_channel, waifu_occurrence)) = waifu_channel_opt {
 		let waifu_channel_id_i64 = i64::from(waifu_channel.id());
@@ -130,11 +129,9 @@ async fn configure_channels(
 			waifu_channel_id_i64,
 			waifu_occurrence,
 			system_time,
+			&mut tx,
 		)
 		.await?;
-		modified_settings.shared.settings.waifu_channel = Some(waifu_channel_id_i64);
-		modified_settings.shared.settings.waifu_rate = Some(waifu_occurrence);
-		modified_settings.shared.settings.last_waifu = Some(system_time);
 	}
 	if let Some((dead_chat_channel, dead_chat_occurrence)) = dead_chat_gifs_opt {
 		let dead_chat_channel_id_i64 = i64::from(dead_chat_channel.id());
@@ -145,15 +142,14 @@ async fn configure_channels(
 			dead_chat_channel_id_i64,
 			dead_chat_occurrence,
 			system_time,
+			&mut tx,
 		)
 		.await?;
-		modified_settings.shared.settings.dead_chat_channel = Some(dead_chat_channel_id_i64);
-		modified_settings.shared.settings.dead_chat_rate = Some(dead_chat_occurrence);
-		modified_settings.shared.settings.last_dead_chat = Some(system_time);
 	}
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
+
+	tx.commit()
+		.await
+		.context("Failed to commit sql-transaction")?;
 
 	Ok(())
 }
@@ -443,34 +439,17 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	)
 	.await?;
 	query!(
-		"UPDATE user_settings
-            SET chatbot_role = NULL,
-                chatbot_internet_search = NULL,
-                afk = FALSE,
-                afk_reason = NULL,
-                pinged_links = NULL,
-                ping_content = NULL,
-                ping_media = NULL
-            WHERE guild_id = $1
-            AND user_id = $2",
+		r#"
+		UPDATE user_settings
+        SET chatbot_role = NULL, chatbot_internet_search = NULL, afk = FALSE,
+        afk_reason = NULL, pinged_links = NULL, ping_content = NULL, ping_media = NULL
+    	WHERE guild_id = $1 AND user_id = $2
+    	"#,
 		i64::from(guild_id),
 		i64::from(ctx.author().id)
 	)
 	.execute(&mut *ctx.data().db.acquire().await?)
 	.await?;
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.unwrap_or_default()
-		.as_ref()
-		.clone();
-	modified_settings
-		.user_settings
-		.insert(ctx.author().id, UserSettingsInternal::default());
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
 }
@@ -489,13 +468,14 @@ pub async fn set_afk(
 	let guild_id_i64 = i64::from(guild_id);
 	let user_id_i64 = i64::from(ctx.author().id);
 	query!(
-		"INSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)
-            VALUES ($1, $2, TRUE, $3, NULL)
-            ON CONFLICT(guild_id, user_id)
-            DO UPDATE SET
-                afk = TRUE,
-                afk_reason = $3,
-                pinged_links = NULL",
+		r#"
+		INSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)
+    	VALUES ($1, $2, TRUE, $3, NULL)
+        ON CONFLICT (guild_id, user_id)
+        DO UPDATE SET afk = TRUE,
+        afk_reason = $3,
+        pinged_links = NULL
+        "#,
 		guild_id_i64,
 		user_id_i64,
 		reason,
@@ -522,29 +502,6 @@ pub async fn set_afk(
 			.reply(true),
 	)
 	.await?;
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.unwrap_or_default()
-		.as_ref()
-		.clone();
-	if let Some(user_settings) = modified_settings.user_settings.get_mut(&ctx.author().id) {
-		user_settings.afk = true;
-		user_settings.afk_reason = reason;
-	} else {
-		modified_settings.user_settings.insert(
-			ctx.author().id,
-			UserSettingsInternal {
-				afk: true,
-				afk_reason: reason,
-				..Default::default()
-			},
-		);
-	}
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
 }
@@ -554,17 +511,19 @@ async fn set_chatbot_channel(
 	channel: Channel,
 	guild_id_i64: i64,
 	channel_id_i64: i64,
+	conn: &mut PgConnection,
 ) -> Result<(), Error> {
 	query!(
-		"INSERT INTO guild_settings (guild_id, ai_chat_channel)
-            VALUES ($1, $2)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                ai_chat_channel = $2",
+		r#"
+		INSERT INTO guild_settings (guild_id, ai_chat_channel)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET ai_chat_channel = $2
+        "#,
 		guild_id_i64,
 		channel_id_i64,
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(conn)
 	.await?;
 	channel
 		.id()
@@ -598,13 +557,14 @@ pub async fn set_chatbot_options(
 	let user_id_i64 = i64::from(ctx.author().id);
 	let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
 	query!(
-		"INSERT INTO user_settings 
-            (guild_id, user_id, chatbot_role, chatbot_internet_search)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT(guild_id, user_id)
-            DO UPDATE SET
-                chatbot_role = $3,
-                chatbot_internet_search = $4",
+		r#"
+		INSERT INTO user_settings
+		(guild_id, user_id, chatbot_role, chatbot_internet_search)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (guild_id, user_id)
+        DO UPDATE SET chatbot_role = $3,
+        chatbot_internet_search = $4
+        "#,
 		guild_id_i64,
 		user_id_i64,
 		final_role,
@@ -618,29 +578,6 @@ pub async fn set_chatbot_options(
 			.ephemeral(true),
 	)
 	.await?;
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.unwrap_or_default()
-		.as_ref()
-		.clone();
-	if let Some(user_settings) = modified_settings.user_settings.get_mut(&ctx.author().id) {
-		user_settings.chatbot_role = final_role;
-		user_settings.chatbot_internet_search = internet_search;
-	} else {
-		modified_settings.user_settings.insert(
-			ctx.author().id,
-			UserSettingsInternal {
-				chatbot_role: final_role,
-				chatbot_internet_search: internet_search,
-				..Default::default()
-			},
-		);
-	}
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
 }
@@ -652,21 +589,23 @@ async fn set_dead_chat(
 	channel_id_i64: i64,
 	occurrence: i64,
 	system_time: i64,
+	conn: &mut PgConnection,
 ) -> Result<(), Error> {
 	query!(
-		"INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, last_dead_chat)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                dead_chat_rate = $2, 
-                dead_chat_channel = $3,
-                last_dead_chat = $4",
+		r#"
+		INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, last_dead_chat)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET dead_chat_rate = $2, 
+        dead_chat_channel = $3,
+        last_dead_chat = $4
+        "#,
 		guild_id_i64,
 		occurrence,
 		channel_id_i64,
 		system_time
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(conn)
 	.await?;
 	let gifs = get_gifs("dead chat").await;
 	let index = fastrand::usize(..gifs.len());
@@ -698,11 +637,12 @@ pub async fn set_prefix(
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	query!(
-		"INSERT INTO guild_settings (guild_id, prefix)
-            VALUES ($1, $2)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                prefix = $2",
+		r#"
+		INSERT INTO guild_settings (guild_id, prefix)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET prefix = $2
+        "#,
 		i64::from(guild_id),
 		characters,
 	)
@@ -716,17 +656,6 @@ pub async fn set_prefix(
 			.ephemeral(true),
 	)
 	.await?;
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.get_or_insert_default()
-		.as_ref()
-		.clone();
-	modified_settings.shared.settings.prefix = Some(characters);
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
 }
@@ -736,17 +665,19 @@ async fn set_quote_channel(
 	channel: Channel,
 	guild_id_i64: i64,
 	channel_id_i64: i64,
+	conn: &mut PgConnection,
 ) -> Result<(), Error> {
 	query!(
-		"INSERT INTO guild_settings (guild_id, quotes_channel)
-            VALUES ($1, $2)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                quotes_channel = $2",
+		r#"
+		INSERT INTO guild_settings (guild_id, quotes_channel)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET quotes_channel = $2
+        "#,
 		guild_id_i64,
 		channel_id_i64,
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(conn)
 	.await?;
 	channel
 		.id()
@@ -799,12 +730,13 @@ pub async fn set_user_ping(
 		let guild_id_i64 = i64::from(guild_id);
 		let user_id_i64 = i64::from(ctx.author().id);
 		query!(
-			"INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT(guild_id, user_id)
-                DO UPDATE SET 
-                    ping_content = $3, 
-                    ping_media = $4",
+			r#"
+			INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (guild_id, user_id)
+            DO UPDATE SET ping_content = $3, 
+            ping_media = $4
+            "#,
 			guild_id_i64,
 			user_id_i64,
 			content,
@@ -812,29 +744,6 @@ pub async fn set_user_ping(
 		)
 		.execute(&mut *ctx.data().db.acquire().await?)
 		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.guilds
-			.get(&guild_id)
-			.unwrap_or_default()
-			.as_ref()
-			.clone();
-		if let Some(user_settings) = modified_settings.user_settings.get_mut(&ctx.author().id) {
-			user_settings.ping_content = Some(content);
-			user_settings.ping_media = media;
-		} else {
-			modified_settings.user_settings.insert(
-				ctx.author().id,
-				UserSettingsInternal {
-					ping_content: Some(content),
-					ping_media: media,
-					..Default::default()
-				},
-			);
-		}
-		ctx.data()
-			.guilds
-			.insert(guild_id, Arc::new(modified_settings));
 		"Custom user ping created... probably"
 	} else {
 		"Invalid media given... really bro?"
@@ -853,21 +762,23 @@ async fn set_waifu_channel(
 	channel_id_i64: i64,
 	occurrence: i64,
 	system_time: i64,
+	conn: &mut PgConnection,
 ) -> Result<(), Error> {
 	query!(
-		"INSERT INTO guild_settings (guild_id, waifu_channel, waifu_rate, last_waifu)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT(guild_id)
-            DO UPDATE SET
-                waifu_channel = $2,
-                waifu_rate = $3,
-                last_waifu = $4",
+		r#"
+		INSERT INTO guild_settings (guild_id, waifu_channel, waifu_rate, last_waifu)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET waifu_channel = $2,
+        waifu_rate = $3,
+        last_waifu = $4
+        "#,
 		guild_id_i64,
 		channel_id_i64,
 		occurrence,
 		system_time
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(conn)
 	.await?;
 	channel.id().say(ctx.http(), get_waifu().await).await?;
 	Ok(())
@@ -969,16 +880,12 @@ pub async fn set_word_react(
 	if valid {
 		let guild_id_i64 = i64::from(guild_id);
 		query!(
-			"INSERT INTO guild_word_reaction (guild_id, word, content, media, emoji_id, \
-			 guild_emoji)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT(guild_id, word)
-                DO UPDATE SET
-                    word = $2,
-                    content = $3,
-                    media = $4,
-                    emoji_id = $5,
-                    guild_emoji = $6",
+			r#"
+			INSERT INTO guild_word_reaction (guild_id, word, content, media, emoji_id, guild_emoji)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (guild_id, word)
+            DO UPDATE SET word = $2, content = $3, media = $4, emoji_id = $5, guild_emoji = $6
+            "#,
 			guild_id_i64,
 			word,
 			content,
@@ -994,26 +901,6 @@ pub async fn set_word_react(
 				.ephemeral(true),
 		)
 		.await?;
-		let mut modified_settings = ctx
-			.data()
-			.guilds
-			.get(&guild_id)
-			.get_or_insert_default()
-			.as_ref()
-			.clone();
-		modified_settings
-			.shared
-			.word_reactions
-			.insert(WordReactionsInternal {
-				word,
-				content,
-				media,
-				emoji_id,
-				guild_emoji,
-			});
-		ctx.data()
-			.guilds
-			.insert(guild_id, Arc::new(modified_settings));
 	} else {
 		ctx.send(
 			CreateReply::default()
@@ -1038,12 +925,12 @@ pub async fn set_word_track(
 	let guild_id = require_guild_id(ctx).await?;
 	let guild_id_i64 = i64::from(guild_id);
 	query!(
-		"INSERT INTO guild_word_tracking (guild_id, word)
-            VALUES ($1, $2)
-            ON CONFLICT(guild_id, word)
-            DO UPDATE SET
-                word = $2, 
-                count = 0",
+		r#"
+		INSERT INTO guild_word_tracking (guild_id, word)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id, word)
+        DO UPDATE SET word = $2, count = 0
+        "#,
 		guild_id_i64,
 		word,
 	)
@@ -1055,20 +942,6 @@ pub async fn set_word_track(
 			.ephemeral(true),
 	)
 	.await?;
-	let mut modified_settings = ctx
-		.data()
-		.guilds
-		.get(&guild_id)
-		.get_or_insert_default()
-		.as_ref()
-		.clone();
-	modified_settings
-		.shared
-		.word_tracking
-		.insert(WordTrackingInternal { word, count: 0 });
-	ctx.data()
-		.guilds
-		.insert(guild_id, Arc::new(modified_settings));
 
 	Ok(())
 }
