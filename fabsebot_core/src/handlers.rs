@@ -55,15 +55,18 @@ pub async fn dynamic_prefix(
 		return Ok(Some(Cow::Borrowed("!")));
 	};
 	let data: Arc<Data> = ctx.framework.serenity_context.data();
-	let record = query!(
+	let Some(record) = query!(
 		r#"
 			SELECT prefix FROM guild_settings
 			WHERE guild_id = $1
 			"#,
-		guild_id.get().cast_signed()
+		i64::from(guild_id)
 	)
-	.fetch_one(&mut *data.db.acquire().await?)
-	.await?;
+	.fetch_optional(&mut *data.db.acquire().await?)
+	.await?
+	else {
+		return Ok(Some(Cow::Borrowed("!")));
+	};
 
 	let prefix = record.prefix.map_or(Cow::Borrowed("!"), Cow::Owned);
 
