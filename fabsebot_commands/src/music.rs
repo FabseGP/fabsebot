@@ -11,11 +11,13 @@ use fabsebot_core::{
 		types::{Data, Error, HTTP_CLIENT, Metadata, SContext},
 	},
 	errors::commands::{AIError, HTTPError, InteractionError, MusicError},
+	stats::counters::METRICS,
 	utils::{
 		ai::ai_voice,
 		helpers::{get_configured_songbird_handler, get_lyrics, queue_song, youtube_source},
 	},
 };
+use metrics::counter;
 use poise::{CreateReply, async_trait};
 use serde::Deserialize;
 use serenity::{
@@ -315,10 +317,10 @@ impl PlaybackHandler {
 				}
 			}
 		} else if interaction.data.custom_id.ends_with('c') {
-			let handler = get_configured_songbird_handler(&handler_lock).await;
-			let queue = handler.queue();
-			queue.stop();
-			drop(handler);
+			get_configured_songbird_handler(&handler_lock)
+				.await
+				.queue()
+				.stop();
 			for guild in &guild_tracks.1 {
 				if guild.0 == &self.guild_id {
 					continue;
@@ -395,16 +397,10 @@ impl PlaybackHandler {
 						.description("Current session")
 						.colour(COLOUR_GREEN);
 					for track in &self.bot_data.track_metadata {
-						if let Some(guild_track) = track.1.get(&self.guild_id) {
-							embed = embed.field(
-								track
-									.0
-									.title
-									.clone()
-									.unwrap_or_else(|| "Unknown".to_owned()),
-								format!("Added by {}", guild_track.0),
-								false,
-							);
+						if let Some(guild_track) = track.1.get(&self.guild_id)
+							&& let Some(title) = track.0.title.clone()
+						{
+							embed = embed.field(title, guild_track.0.clone(), false);
 						}
 					}
 					*history_embed = Some(embed.clone());
@@ -501,29 +497,39 @@ impl PlaybackHandler {
 #[async_trait]
 impl VoiceEventHandler for PlaybackHandler {
 	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
-		if let EventContext::Track(track_list) = ctx {
-			for (state, handle) in *track_list {
-				if state.playing == PlayMode::Play
-					&& let Some(guild_tracks) = self.bot_data.track_metadata.get(&handle.uuid())
+		if let EventContext::Track([(state, handle)]) = ctx {
+			if state.playing == PlayMode::Play
+				&& let Some(guild_tracks) = self.bot_data.track_metadata.get(&handle.uuid())
+			{
+				let self_clone = self.clone();
+				let notifier_clone = self.notifier.clone();
+				spawn(async move {
+					if let Err(err) = self_clone.update_info(guild_tracks, notifier_clone).await {
+						error!("Failed to update song info: {err}");
+					}
+				});
+			} else if state.playing == PlayMode::End {
+				self.notifier.notify_one();
+			} else if let PlayMode::Errored(error) = &state.playing {
+				error!("Failed to play track: {error}");
+				counter!(METRICS.prefix_errors.clone()).increment(1);
+				if let Some(guild_tracks) = self.bot_data.track_metadata.get(&handle.uuid())
+					&& let Some(guild_data) = guild_tracks.1.get(&self.guild_id)
+					&& let Err(err) = guild_data
+						.2
+						.edit_message(
+							&self.serenity_context.http,
+							guild_data.1,
+							EditMessage::default()
+								.content("Track errored on playback, try a different source :/"),
+						)
+						.await
 				{
-					let self_clone = self.clone();
-					let guild_tracks_clone = guild_tracks.clone();
-					let notifier_clone = self.notifier.clone();
-					spawn(async move {
-						if let Err(err) = self_clone
-							.update_info(guild_tracks_clone, notifier_clone)
-							.await
-						{
-							error!("Failed to update song info: {:?}", &err);
-						}
-					});
-				} else if state.playing == PlayMode::End {
-					self.notifier.notify_one();
+					error!("Failed to notify user about track error: {err}");
 				}
 			}
-			return None;
 		}
-		None
+		return None;
 	}
 }
 
@@ -542,6 +548,15 @@ async fn add_events(ctx: &SContext<'_>, guild_id: GuildId, handler_lock: Arc<Mut
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::End),
+		PlaybackHandler::new(
+			ctx.serenity_context().clone(),
+			ctx.data(),
+			guild_id,
+			track_notify.clone(),
+		),
+	);
+	handler.add_global_event(
+		SongBirdEvent::Track(TrackEvent::Error),
 		PlaybackHandler::new(
 			ctx.serenity_context().clone(),
 			ctx.data(),
@@ -672,7 +687,7 @@ pub async fn add_deezer_playlist(
 			ctx.data(),
 			msg.id,
 			msg.channel_id,
-			ctx.author().display_name().to_owned(),
+			ctx.author().display_name(),
 		)
 		.await;
 	}
@@ -759,7 +774,7 @@ pub async fn add_youtube_playlist(
 			ctx.data(),
 			msg.id,
 			msg.channel_id,
-			ctx.author().display_name().to_owned(),
+			ctx.author().display_name(),
 		)
 		.await;
 	}
@@ -979,7 +994,7 @@ async fn play_song_inner(
 		ctx.data(),
 		msg.id,
 		msg.channel_id,
-		ctx.author().display_name().to_owned(),
+		ctx.author().display_name(),
 	)
 	.await;
 
@@ -1054,7 +1069,7 @@ pub async fn play_song_global(
 		ctx.data(),
 		msg.id,
 		msg.channel_id,
-		ctx.author().display_name().to_owned(),
+		ctx.author().display_name(),
 	)
 	.await;
 
@@ -1098,7 +1113,7 @@ pub async fn play_song_global(
 				ctx.data(),
 				msg.id,
 				msg.channel_id,
-				ctx.author().display_name().to_owned(),
+				ctx.author().display_name(),
 			)
 			.await;
 		}

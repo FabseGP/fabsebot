@@ -177,7 +177,7 @@ async fn queue_track(
 				ctx_clone.data(),
 				msg.id,
 				msg.channel_id,
-				new_message_clone.author.display_name().to_owned(),
+				new_message_clone.author.display_name(),
 			)
 			.await;
 		});

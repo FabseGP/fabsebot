@@ -25,6 +25,7 @@ pub struct Metrics {
 	pub member_addition_errors: String,
 	pub ready_errors: String,
 	pub messages_deleted_errors: String,
+	pub playback_errors: String,
 }
 
 impl Metrics {
@@ -49,6 +50,7 @@ impl Metrics {
 			member_addition_errors: format!("{bot_name}_member_addition_errors_total"),
 			ready_errors: format!("{bot_name}_ready_errors_total"),
 			messages_deleted_errors: format!("{bot_name}_messages_deleted_errors_total"),
+			playback_errors: format!("{bot_name}_playback_errors_total"),
 		}
 	}
 
@@ -92,5 +94,6 @@ impl Metrics {
 			self.messages_deleted_errors.clone(),
 			"Counter for message deletion errors"
 		);
+		describe_counter!(self.playback_errors.clone(), "Counter for playback errors");
 	}
 }

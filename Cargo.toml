@@ -76,7 +76,7 @@ serenity = { git = "https://github.com/serenity-rs/serenity.git", branch = "next
 songbird = { git = "https://github.com/FabseGP/songbird.git", branch = "update-davey", features = ["builtin-queue", "receive"] }
 #songbird = { git = "https://github.com/jtscuba/songbird.git", branch = "davey", features = ["builtin-queue", "receive", "rustls"] }
 sqlx = { version = "*", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
-symphonia = { version = "*", default-features = false, features = ["aac", "mkv", "pcm", "wav"] }
+symphonia = { version = "*", default-features = false, features = ["aac", "isomp4", "mkv", "pcm", "wav"] }
 systemstat = "*"
 textwrap = "*"
 thiserror = "*"

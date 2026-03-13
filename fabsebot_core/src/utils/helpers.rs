@@ -107,7 +107,7 @@ pub async fn queue_song(
 	data: Arc<Data>,
 	msg_id: MessageId,
 	channel_id: GenericChannelId,
-	author_name: String,
+	author_name: &str,
 ) {
 	let uuid = metadata
 		.source_url
@@ -124,9 +124,10 @@ pub async fn queue_song(
 		.clone();
 
 	track_metadata.0 = metadata;
-	track_metadata
-		.1
-		.insert(guild_id, (author_name, msg_id, channel_id));
+	track_metadata.1.insert(
+		guild_id,
+		(format!("Added by {author_name}"), msg_id, channel_id),
+	);
 
 	data.track_metadata.insert(uuid, Arc::new(track_metadata));
 
