@@ -35,7 +35,7 @@ use songbird::{
 	input::{AuxMetadata, Compose as _, Input, YoutubeDl},
 	tracks::PlayMode,
 };
-use sqlx::query;
+use sqlx::{query, query_scalar};
 use tokio::{
 	process::Command,
 	select, spawn,
@@ -1073,7 +1073,7 @@ pub async fn play_song_global(
 	)
 	.await;
 
-	let guild_global_playback = query!(
+	let guild_global_playback = query_scalar!(
 		r#"
 		SELECT guild_id FROM guild_settings
 		WHERE global_music IS TRUE
@@ -1088,7 +1088,7 @@ pub async fn play_song_global(
 		let Some(global_handler_lock) = ctx
 			.data()
 			.music_manager
-			.get(GuildId::new(global_guild.guild_id.cast_unsigned()))
+			.get(GuildId::new(global_guild.cast_unsigned()))
 		else {
 			continue;
 		};

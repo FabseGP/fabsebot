@@ -1,7 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use anyhow::{Context as _, Result as AResult};
-use fabsebot_db::guild::{GuildSettings, WordReactions, WordTracking};
+use fabsebot_db::guild::{GuildSettings, WordReactions};
 use metrics::counter;
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
@@ -9,7 +9,7 @@ use serenity::all::{
 	GuildId, Message, MessageId, ReactionType,
 };
 use songbird::{Call, Songbird, input::Compose as _};
-use sqlx::{Postgres, Transaction, query, query_as};
+use sqlx::{Postgres, Transaction, query, query_as, query_scalar};
 use tokio::{join, sync::Mutex, task::spawn};
 use tracing::error;
 use winnow::Parser as _;
@@ -559,7 +559,7 @@ async fn guild_queries(
 	ctx: &SContext,
 	new_message: &Message,
 	data: Arc<Data>,
-	word_tracking: Vec<WordTracking>,
+	word_tracking: Vec<String>,
 	word_reactions: Vec<WordReactions>,
 	guild_id: GuildId,
 	guild_id_i64: i64,
@@ -575,7 +575,7 @@ async fn guild_queries(
             AND word = $2
             "#,
 			guild_id_i64,
-			record.word
+			record
 		)
 		.execute(tx.as_mut())
 		.await?;
@@ -682,10 +682,9 @@ async fn db_queries(
 	.fetch_all(&mut *tx)
 	.await?;
 
-	let word_tracking = query_as!(
-		WordTracking,
+	let word_tracking = query_scalar!(
 		r#"
-		SELECT * FROM guild_word_tracking
+		SELECT word FROM guild_word_tracking
 		WHERE guild_id = $1
 		AND word ILIKE ANY($2)
 		"#,
