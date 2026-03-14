@@ -15,46 +15,47 @@ pub async fn handle_message_delete(
 	let audit = guild_id
 		.audit_logs(&ctx.http, Some(Message(Delete)), None, None, None, None)
 		.await?;
-	let deleted_content = ctx
-		.cache
-		.message(channel_id, deleted_message_id)
-		.map(|msg| (msg.content.clone(), msg.embeds.first().cloned()));
 	if let Some(entry) = audit.entries.first()
 		&& let Some(user_id) = entry.user_id
-		&& let Some((content, embed_opt)) = deleted_content
 	{
-		let (guild_owner_id, evil_person_id, evil_person_name, neccessary_perms) = {
-			if let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
-				&& let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
-				&& let Some(guild_channel) = channel.guild()
-				&& let Ok(member) = guild.member(&ctx.http, user_id).await
-			{
-				let user_perms = guild.user_permissions_in(&guild_channel, &member);
-				(
-					guild.owner_id,
-					member.user.id,
-					member.display_name().to_owned(),
-					user_perms.administrator() || user_perms.moderate_members(),
-				)
-			} else {
-				return Err(GuildError::FailedFetch.into());
+		let deleted_content = ctx
+			.cache
+			.message(channel_id, deleted_message_id)
+			.map(|msg| (msg.content.clone(), msg.embeds.first().cloned()));
+		if let Some((content, embed_opt)) = deleted_content {
+			let (guild_owner_id, evil_person_id, evil_person_name, neccessary_perms) = {
+				if let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
+					&& let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
+					&& let Some(guild_channel) = channel.guild()
+					&& let Ok(member) = guild.member(&ctx.http, user_id).await
+				{
+					let user_perms = guild.user_permissions_in(&guild_channel, &member);
+					(
+						guild.owner_id,
+						member.user.id,
+						member.display_name().to_owned(),
+						user_perms.administrator() || user_perms.moderate_members(),
+					)
+				} else {
+					return Err(GuildError::FailedFetch.into());
+				}
+			};
+			if evil_person_id != guild_owner_id && !neccessary_perms {
+				channel_id
+					.send_message(
+						&ctx.http,
+						CreateMessage::default().content(format!(
+							"**Bruh, {evil_person_name} deleted my message while not being an \
+							 admin or a mod!**\nSending it again",
+						)),
+					)
+					.await?;
+				let mut message = CreateMessage::default().content(content);
+				if let Some(embed) = embed_opt {
+					message = message.embed(CreateEmbed::from(embed));
+				}
+				channel_id.send_message(&ctx.http, message).await?;
 			}
-		};
-		if evil_person_id != guild_owner_id && !neccessary_perms {
-			channel_id
-				.send_message(
-					&ctx.http,
-					CreateMessage::default().content(format!(
-						"**Bruh, {evil_person_name} deleted my message while not being an admin \
-						 or a mod!**\nSending it again",
-					)),
-				)
-				.await?;
-			let mut message = CreateMessage::default().content(content);
-			if let Some(embed) = embed_opt {
-				message = message.embed(CreateEmbed::from(embed));
-			}
-			channel_id.send_message(&ctx.http, message).await?;
 		}
 	} else {
 		return Err(anyhow!("Failed to access audit"));

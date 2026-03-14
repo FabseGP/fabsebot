@@ -4,7 +4,7 @@ use anyhow::Result as AResult;
 use metrics::counter;
 use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
-use sqlx::query;
+use sqlx::query_scalar;
 use tracing::error;
 
 use crate::{
@@ -55,7 +55,7 @@ pub async fn dynamic_prefix(
 		return Ok(Some(Cow::Borrowed("!")));
 	};
 	let data: Arc<Data> = ctx.framework.serenity_context.data();
-	let Some(record) = query!(
+	let Some(prefix) = query_scalar!(
 		r#"
 			SELECT prefix FROM guild_settings
 			WHERE guild_id = $1
@@ -68,7 +68,7 @@ pub async fn dynamic_prefix(
 		return Ok(Some(Cow::Borrowed("!")));
 	};
 
-	let prefix = record.prefix.map_or(Cow::Borrowed("!"), Cow::Owned);
+	let prefix = prefix.map_or(Cow::Borrowed("!"), Cow::Owned);
 
 	Ok(Some(prefix))
 }

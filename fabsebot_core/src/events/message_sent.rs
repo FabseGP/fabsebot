@@ -356,12 +356,9 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 			MessageId::new(link.message),
 		);
 		if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
-			&& let Some(ref_channel_name) = channel.guild().map(|g| g.base.name)
+			&& let Some(channel_name) = channel.guild().map(|g| g.base.name)
 		{
-			let (channel_name, ref_msg) = (
-				ref_channel_name,
-				channel_id.message(&ctx.http, message_id).await?,
-			);
+			let ref_msg = channel_id.message(&ctx.http, message_id).await?;
 			if ref_msg.poll.is_none() {
 				let embed = CreateEmbed::default()
 					.colour(COLOUR_ORANGE)
@@ -434,9 +431,7 @@ async fn user_queries(
 				),
 			)
 			.await?;
-		if let Some(links) = author_settings.pinged_links.as_deref()
-			&& !links.is_empty()
-		{
+		if let Some(links) = author_settings.pinged_links.as_deref() {
 			let mut e = CreateEmbed::default()
 				.colour(COLOUR_RED)
 				.title("Pings you retrieved:");
@@ -569,9 +564,8 @@ async fn guild_queries(
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	tx: &mut Transaction<'static, Postgres>,
-	content: &str,
 ) -> AResult<()> {
-	for record in word_tracking.iter().filter(|r| content.contains(&r.word)) {
+	for record in &word_tracking {
 		counter!(METRICS.words_tracked.clone()).increment(1);
 		query!(
 			r#"
@@ -586,7 +580,7 @@ async fn guild_queries(
 		.execute(tx.as_mut())
 		.await?;
 	}
-	for record in word_reactions.iter().filter(|r| content.contains(&r.word)) {
+	for record in &word_reactions {
 		counter!(METRICS.word_reactions.clone()).increment(1);
 		if let Some(content) = &record.content {
 			let message = {
@@ -661,27 +655,42 @@ async fn db_queries(
 	guild_id_i64: i64,
 	author_settings: UserSettings,
 	mut tx: Transaction<'static, Postgres>,
-	content: &str,
 ) -> AResult<()> {
 	user_queries(ctx, new_message, guild_id_i64, author_settings, &mut tx).await?;
+
+	let words: Vec<String> = new_message
+		.content
+		.split_whitespace()
+		.map(|s| {
+			s.chars()
+				.filter(|c| c.is_alphanumeric())
+				.collect::<String>()
+		})
+		.filter(|s| !s.is_empty())
+		.collect();
 
 	let word_reactions = query_as!(
 		WordReactions,
 		r#"
 		SELECT * FROM guild_word_reaction
 		WHERE guild_id = $1
+		AND word ILIKE ANY($2)
 		"#,
-		guild_id_i64
+		guild_id_i64,
+		&words
 	)
 	.fetch_all(&mut *tx)
 	.await?;
+
 	let word_tracking = query_as!(
 		WordTracking,
 		r#"
 		SELECT * FROM guild_word_tracking
 		WHERE guild_id = $1
+		AND word ILIKE ANY($2)
 		"#,
-		guild_id_i64
+		guild_id_i64,
+		&words
 	)
 	.fetch_all(&mut *tx)
 	.await?;
@@ -695,7 +704,6 @@ async fn db_queries(
 		guild_id,
 		guild_id_i64,
 		&mut tx,
-		content,
 	)
 	.await?;
 
@@ -817,7 +825,6 @@ pub async fn handle_message(
 		guild_id_i64,
 		author_settings,
 		tx,
-		&content,
 	)
 	.await?;
 
