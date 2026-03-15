@@ -22,7 +22,7 @@ use serenity::{
 	Client,
 	all::{
 		ActivityData, CreateAllowedMentions, GatewayIntents, GenericChannelId, Http, OnlineStatus,
-		Settings, Token,
+		Settings, Token, TransportCompression,
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
@@ -246,7 +246,7 @@ pub async fn bot_start(
 	cache_settings.max_messages = bot_config.cache_max_messages;
 	let activity = ActivityData::listening(&bot_config.activity);
 	let mut client = Client::builder(Token::from_str(&bot_config.token)?, intents)
-		//	.compression(TransportCompression::Zstd)
+		.compression(TransportCompression::Zstd)
 		.framework(Box::new(framework))
 		.voice_manager(music_manager)
 		.cache_settings(cache_settings)
