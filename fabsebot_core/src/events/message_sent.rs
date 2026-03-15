@@ -559,13 +559,13 @@ async fn guild_queries(
 	ctx: &SContext,
 	new_message: &Message,
 	data: Arc<Data>,
-	word_tracking: Vec<String>,
-	word_reactions: Vec<WordReactions>,
+	word_tracking: &[String],
+	word_reactions: &[WordReactions],
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	tx: &mut Transaction<'static, Postgres>,
 ) -> AResult<()> {
-	for record in &word_tracking {
+	for record in word_tracking {
 		counter!(METRICS.words_tracked.clone()).increment(1);
 		query!(
 			r#"
@@ -580,7 +580,7 @@ async fn guild_queries(
 		.execute(tx.as_mut())
 		.await?;
 	}
-	for record in &word_reactions {
+	for record in word_reactions {
 		counter!(METRICS.word_reactions.clone()).increment(1);
 		if let Some(content) = &record.content {
 			let message = {
@@ -698,8 +698,8 @@ async fn db_queries(
 		ctx,
 		new_message,
 		data,
-		word_tracking,
-		word_reactions,
+		&word_tracking,
+		&word_reactions,
 		guild_id,
 		guild_id_i64,
 		&mut tx,
