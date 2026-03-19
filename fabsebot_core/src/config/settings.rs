@@ -39,16 +39,3 @@ pub struct HTTPAgent {
 	pub repo: String,
 	pub email: String,
 }
-
-pub struct UserSettings {
-	pub guild_id: i64,
-	pub user_id: i64,
-	pub message_count: i32,
-	pub chatbot_role: Option<String>,
-	pub chatbot_internet_search: bool,
-	pub afk: bool,
-	pub afk_reason: Option<String>,
-	pub pinged_links: Option<String>,
-	pub ping_content: Option<String>,
-	pub ping_media: Option<String>,
-}

@@ -1126,14 +1126,14 @@ pub async fn quote_internal(
 	let (message_handle, reply_handle) = if let Some((reply, guild_id)) = reply {
 		let message_url = reply.link().to_string();
 
-		let spoiler_channel_opt: Option<i64> = query_scalar!(
+		let spoiler_channel_opt: Option<Option<i64>> = query_scalar!(
 			"SELECT spoiler_channel FROM guild_settings WHERE guild_id = $1",
 			guild_id.get().cast_signed()
 		)
-		.fetch_one(&mut *ctx.data().db.acquire().await?)
+		.fetch_optional(&mut *ctx.data().db.acquire().await?)
 		.await?;
 
-		if let Some(channel) = spoiler_channel_opt {
+		if let Some(Some(channel)) = spoiler_channel_opt {
 			let quote_channel = GenericChannelId::new(channel.cast_unsigned());
 			quote_channel
 				.send_message(

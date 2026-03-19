@@ -1,7 +1,10 @@
 use std::{borrow::Cow, sync::Arc};
 
 use anyhow::{Context as _, Result as AResult};
-use fabsebot_db::guild::{GuildSettings, WordReactions};
+use fabsebot_db::{
+	guild::{WordReactions, insert_guild, insert_guild_settings},
+	user::{UserSettings, insert_user, insert_user_settings},
+};
 use metrics::counter;
 use serenity::all::{
 	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
@@ -22,7 +25,6 @@ use crate::{
 			FAILED_SONG_FETCH, FLOPPAGANDA_GIF, INVALID_TRACK_SOURCE, MISSING_METADATA_MSG,
 			NOT_IN_VOICE_CHAN_MSG, QUEUE_MSG,
 		},
-		settings::UserSettings,
 		types::{AIChats, Data, GuildCache, WebhookMap, utils_config},
 	},
 	errors::commands::{MusicError, WebhookError},
@@ -734,34 +736,23 @@ pub async fn handle_message(
 		new_data
 	});
 
-	let guild_settings = query_as!(
-		GuildSettings,
-		r#"
-    	INSERT INTO guild_settings (guild_id)
-    	VALUES ($1)
-    	ON CONFLICT (guild_id) 
-    	DO UPDATE SET guild_id = guild_settings.guild_id 
-    	RETURNING *
-    	"#,
-		guild_id_i64
-	)
-	.fetch_one(&mut *tx)
-	.await?;
+	let guild_settings = match insert_guild_settings(guild_id_i64, &mut tx).await {
+		Ok(settings) => settings,
+		Err(err) => {
+			error!("Failed to fetch guild settings: {err}");
+			insert_guild(guild_id_i64, &mut tx).await?;
+			insert_guild_settings(guild_id_i64, &mut tx).await?
+		}
+	};
 
-	let author_settings = query_as!(
-		UserSettings,
-		r#"
-    	INSERT INTO user_settings (guild_id, user_id, message_count)
-   		VALUES ($1, $2, 1)
-    	ON CONFLICT (guild_id, user_id) 
-    	DO UPDATE SET message_count = user_settings.message_count + 1
-    	RETURNING *
-    	"#,
-		guild_id_i64,
-		user_id_i64
-	)
-	.fetch_one(&mut *tx)
-	.await?;
+	let author_settings = match insert_user_settings(guild_id_i64, user_id_i64, &mut tx).await {
+		Ok(settings) => settings,
+		Err(err) => {
+			error!("Failed to fetch user settings: {err}");
+			insert_user(user_id_i64, &mut tx).await?;
+			insert_user_settings(guild_id_i64, user_id_i64, &mut tx).await?
+		}
+	};
 
 	if !new_message.content.starts_with('#') {
 		if let Some(music_channel) = guild_settings.music_channel

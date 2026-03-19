@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result as AResult};
-use sqlx::{PgConnection, Postgres, Transaction, query};
+use sqlx::{PgConnection, Postgres, Transaction, query, query_as};
 
 pub struct GuildSettings {
 	pub guild_id: i64,
@@ -139,18 +139,23 @@ pub async fn insert_guild(guild_id: i64, conn: &mut PgConnection) -> AResult<()>
 	Ok(())
 }
 
-pub async fn insert_user(user_id: i64, conn: &mut PgConnection) -> AResult<()> {
-	query!(
+pub async fn insert_guild_settings(
+	guild_id: i64,
+	conn: &mut PgConnection,
+) -> AResult<GuildSettings> {
+	let guild_settings = query_as!(
+		GuildSettings,
 		r#"
-		INSERT INTO users (user_id)
-        VALUES ($1)
-        ON CONFLICT (user_id)
-        DO NOTHING
-        "#,
-		user_id
+    	INSERT INTO guild_settings (guild_id)
+    	VALUES ($1)
+    	ON CONFLICT (guild_id) 
+    	DO UPDATE SET guild_id = guild_settings.guild_id 
+    	RETURNING *
+    	"#,
+		guild_id
 	)
-	.execute(conn)
+	.fetch_one(conn)
 	.await?;
 
-	Ok(())
+	Ok(guild_settings)
 }

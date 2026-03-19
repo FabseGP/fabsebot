@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result as AResult;
-use fabsebot_db::guild::insert_user;
+use fabsebot_db::user::insert_user;
 use serenity::all::Member;
 
 use crate::config::types::Data;

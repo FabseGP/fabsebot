@@ -1,4 +1,5 @@
 pub mod guild;
+pub mod user;
 
 use anyhow::{Context as _, Result as AResult};
 use serde::Deserialize;
