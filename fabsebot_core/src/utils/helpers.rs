@@ -7,11 +7,12 @@ use poise::{CreateReply, serenity_prelude::Channel};
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serenity::{
 	all::{
-		Context, CreateActionRow, CreateButton, CreateComponent, CreateContainer,
-		CreateContainerComponent, CreateMediaGallery, CreateMediaGalleryItem, CreateMessage,
-		CreateSection, CreateSectionAccessory, CreateSectionComponent, CreateSeparator,
-		CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, Emoji, EmojiId,
-		GenericChannelId, GuildId, Message, MessageFlags, MessageId, Permissions, ReactionType,
+		Context, CreateActionRow, CreateAllowedMentions, CreateButton, CreateComponent,
+		CreateContainer, CreateContainerComponent, CreateMediaGallery, CreateMediaGalleryItem,
+		CreateMessage, CreateSection, CreateSectionAccessory, CreateSectionComponent,
+		CreateSeparator, CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, Emoji,
+		EmojiId, GenericChannelId, GuildId, Message, MessageFlags, MessageId, Permissions,
+		ReactionType,
 	},
 	small_fixed_array::FixedString,
 };
@@ -173,7 +174,9 @@ pub async fn send_container(ctx: &SContext<'_>, container: CreateContainer<'_>) 
 	ctx.send(
 		CreateReply::default()
 			.components(vec![CreateComponent::Container(container)])
-			.flags(MessageFlags::IS_COMPONENTS_V2),
+			.flags(MessageFlags::IS_COMPONENTS_V2)
+			.reply(true)
+			.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
 	)
 	.await?;
 
@@ -192,7 +195,8 @@ pub async fn event_container(
 			CreateMessage::default()
 				.components(vec![CreateComponent::Container(container)])
 				.flags(MessageFlags::IS_COMPONENTS_V2)
-				.reference_message(message),
+				.reference_message(message)
+				.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
 		)
 		.await?;
 
