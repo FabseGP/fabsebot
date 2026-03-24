@@ -50,9 +50,6 @@ use url::Url;
 
 use crate::{remove_handler, require_guild_id, require_handler};
 
-const ALREADY_IN_VOICE_CHAN_MSG: &str = "I don't wanna join";
-const MISSING_VOICE_CHAN_MSG: &str = "No voice channel with at least 1 user found :/";
-
 #[derive(Deserialize)]
 struct DeezerResponse {
 	tracks: DeezerData,
@@ -841,13 +838,14 @@ pub async fn join_voice(
 			.get(&ctx.author().id)
 			.and_then(|voice_state| voice_state.channel_id)
 	}) else {
-		ctx.reply(MISSING_VOICE_CHAN_MSG).await?;
-		bail!("User tried to join in non-voice channel");
+		ctx.reply("No voice channel with at least 1 user found :/")
+			.await?;
+		bail!("User tried to join in empty voice channel");
 	};
 	let handler_lock = match ctx.data().music_manager.join(guild_id, channel_id).await {
 		Ok(lock) => lock,
 		Err(err) => {
-			ctx.reply(ALREADY_IN_VOICE_CHAN_MSG).await?;
+			ctx.reply("I don't wanna join").await?;
 			return Err(err.into());
 		}
 	};
