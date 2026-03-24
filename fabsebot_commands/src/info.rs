@@ -1,12 +1,10 @@
 use std::string::ToString;
 
-use fabsebot_core::config::types::{Error, SContext};
-use poise::CreateReply;
-use serenity::all::{
-	CreateComponent, CreateContainer, CreateContainerComponent, CreateEmbed, CreateSection,
-	CreateSectionAccessory, CreateSectionComponent, CreateSeparator, CreateTextDisplay,
-	CreateThumbnail, CreateUnfurledMediaItem, Member, MessageFlags, PremiumType,
+use fabsebot_core::{
+	config::types::{Error, SContext},
+	utils::helpers::{send_container, separator, text_display, thumbnail_section},
 };
+use serenity::all::{Colour, CreateContainer, Member, PremiumType};
 
 use crate::require_guild;
 
@@ -14,8 +12,9 @@ use crate::require_guild;
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "User|Guild",
-	interaction_context = "Guild"
+	install_context = "Guild",
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 	let (
@@ -24,6 +23,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 		thumbnail,
 		guild_description,
 		guild_member_count,
+		guild_max_size,
 		guild_boosters,
 		guild_owner_id,
 		guild_created_at,
@@ -36,8 +36,8 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 		let guild = require_guild(ctx).await?;
 		let id = guild.id;
 		(
-			id.to_string(),
-			guild.name.clone(),
+			id,
+			format!("# {}", guild.name),
 			guild
 				.banner
 				.as_ref()
@@ -53,43 +53,36 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 				.description
 				.as_ref()
 				.map_or_else(|| "Unknown description".to_owned(), ToString::to_string),
-			format!(
-				"{}/{}",
-				guild.member_count,
-				guild.max_members.unwrap_or_default()
-			),
-			guild
-				.premium_subscription_count
-				.unwrap_or_default()
-				.to_string(),
-			guild.owner_id.to_string(),
-			id.created_at().to_string(),
+			guild.member_count,
+			guild.max_members.unwrap_or_default(),
+			guild.premium_subscription_count.unwrap_or_default(),
+			guild.owner_id,
+			id.created_at(),
 			if guild.large() { "Large" } else { "Not large" }.to_owned(),
-			guild.emojis.len().to_string(),
-			guild.stickers.len().to_string(),
-			guild.roles.len().to_string(),
-			guild.channels.len().to_string(),
+			guild.emojis.len(),
+			guild.stickers.len(),
+			guild.roles.len(),
+			guild.channels.len(),
 		)
 	};
 
-	let embed = CreateEmbed::default()
-		.title(guild_name)
-		.description(guild_description)
-		.thumbnail(thumbnail)
-		.fields(vec![
-			("Guild ID", guild_id, true),
-			("Guild boosters:", guild_boosters, false),
-			("Owner id:", guild_owner_id, true),
-			("Creation date:", guild_created_at, false),
-			("Emoji count:", guild_emojis, true),
-			("Sticker count:", guild_stickers, false),
-			("Members count:", guild_member_count, true),
-			("Role count:", guild_roles, false),
-			("Channels:", guild_channels, true),
-			("Server size:", guild_size, true),
-		]);
-	ctx.send(CreateReply::default().reply(true).embed(embed))
-		.await?;
+	let thumbnail_section = [thumbnail_section(&guild_name, &thumbnail)];
+
+	let guild_info = format!(
+		"### Guild description: {guild_description}\n### Guild ID: {guild_id}\n### Owner id: \
+		 {guild_owner_id}\n### Guild boosters: {guild_boosters}\n### Creation date: \
+		 {guild_created_at}\n### Emoji count: {guild_emojis}\n### Sticker count time boosting \
+		 server: {guild_stickers}\n### Members count: {guild_member_count}/{guild_max_size}\n### \
+		 Role count: {guild_roles}\n### Channels: {guild_channels}\n### Server size: {guild_size}",
+	);
+
+	let container = CreateContainer::new(&thumbnail_section)
+		.add_component(separator())
+		.add_component(text_display(&guild_info))
+		.accent_colour(Colour::DARK_BLUE);
+
+	send_container(&ctx, container).await?;
+
 	Ok(())
 }
 
@@ -97,37 +90,31 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "User|Guild",
-	interaction_context = "Guild"
+	install_context = "Guild",
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn user_info(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
-	let username_display = [CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
-		if let Some(nick) = member.nick.as_ref() {
-			format!(
-				"# {nick} (aká {})\n ID: {}",
-				member.user.name, member.user.id
-			)
-		} else {
-			format!("# {}\n ID: {}", member.display_name(), member.user.id)
-		},
-	))];
+	let username = if let Some(nick) = member.nick.as_ref() {
+		format!(
+			"# {nick} (aká {})\n ID: {}",
+			member.user.name, member.user.id
+		)
+	} else {
+		format!("# {}\n ID: {}", member.display_name(), member.user.id)
+	};
 
-	let thumbnail_section = [CreateContainerComponent::Section(CreateSection::new(
-		&username_display,
-		CreateSectionAccessory::Thumbnail(CreateThumbnail::new(CreateUnfurledMediaItem::new(
-			member.avatar_url().unwrap_or_else(|| {
-				member
-					.user
-					.avatar_url()
-					.unwrap_or_else(|| member.user.default_avatar_url())
-			}),
-		))),
-	))];
+	let avatar = member.avatar_url().unwrap_or_else(|| {
+		member
+			.user
+			.avatar_url()
+			.unwrap_or_else(|| member.user.default_avatar_url())
+	});
 
-	let separator = CreateContainerComponent::Separator(CreateSeparator::new());
+	let thumbnail_section = [thumbnail_section(&username, &avatar)];
 
 	let premium_type = match member.user.premium_type {
 		PremiumType::NitroBasic => "Basic nitro",
@@ -157,20 +144,12 @@ pub async fn user_info(
 		premium_type
 	);
 
-	let info_display = CreateContainerComponent::TextDisplay(CreateTextDisplay::new(user_info));
-
 	let container = CreateContainer::new(&thumbnail_section)
-		.add_component(separator.clone())
-		.add_component(info_display)
-		.accent_colour(member.user.accent_colour.unwrap_or_default())
-		.add_component(separator);
+		.add_component(separator())
+		.add_component(text_display(&user_info))
+		.accent_colour(member.user.accent_colour.unwrap_or_default());
 
-	ctx.send(
-		CreateReply::default()
-			.components(&[CreateComponent::Container(container)])
-			.flags(MessageFlags::IS_COMPONENTS_V2),
-	)
-	.await?;
+	send_container(&ctx, container).await?;
 
 	Ok(())
 }

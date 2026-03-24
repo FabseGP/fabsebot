@@ -1,47 +1,32 @@
 use fabsebot_core::{
 	config::types::{Error, SContext},
-	errors::commands::WebhookError,
 	utils::webhook::webhook_find,
 };
 use poise::CreateReply;
-use serenity::all::{CreateMessage, ExecuteWebhook, GenericChannelId, Member, User};
+use serenity::all::{CreateMessage, ExecuteWebhook, Member, User};
+
+use crate::command_permissions;
 
 /// Send an anonymous message
 #[poise::command(
 	slash_command,
-	install_context = "User",
-	interaction_context = "PrivateChannel"
-)]
-pub async fn anonymous_msg(
-	ctx: SContext<'_>,
-	#[description = "Message to send"]
-	#[rest]
-	message: String,
-) -> Result<(), Error> {
-	ctx.say(message).await?;
-	Ok(())
-}
-
-/// Send an anonymous message
-#[poise::command(
-	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild"
+	install_context = "User | Guild",
+	interaction_context = "Guild | PrivateChannel"
 )]
 pub async fn anonymous(
 	ctx: SContext<'_>,
-	#[description = "Channel to send message"] channel: GenericChannelId,
 	#[description = "Message to send"]
 	#[rest]
 	message: String,
 ) -> Result<(), Error> {
+	command_permissions(&ctx).await?;
 	ctx.send(
 		CreateReply::default()
 			.ephemeral(true)
 			.content("with big power comes big responsibility"),
 	)
 	.await?;
-	channel.say(ctx.http(), message).await?;
+	ctx.say(message).await?;
 	Ok(())
 }
 
@@ -49,7 +34,8 @@ pub async fn anonymous(
 #[poise::command(
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild|",
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS",
 	owners_only
 )]
 pub async fn user_dm(
@@ -73,7 +59,9 @@ pub async fn user_dm(
 #[poise::command(
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
+	                            MANAGE_WEBHOOKS"
 )]
 pub async fn user_misuse(
 	ctx: SContext<'_>,
@@ -98,7 +86,7 @@ pub async fn user_misuse(
 					.ephemeral(true),
 			)
 			.await?;
-			return Err(WebhookError::NotFound(err).into());
+			return Err(err);
 		}
 	};
 	ctx.send(

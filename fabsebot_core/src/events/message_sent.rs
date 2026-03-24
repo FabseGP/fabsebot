@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, fmt::Write as _, sync::Arc};
 
 use anyhow::{Context as _, Result as AResult};
 use fabsebot_db::{
@@ -7,9 +7,9 @@ use fabsebot_db::{
 };
 use metrics::counter;
 use serenity::all::{
-	Context as SContext, CreateAllowedMentions, CreateAttachment, CreateEmbed, CreateEmbedAuthor,
-	CreateEmbedFooter, CreateMessage, EditMessage, EmojiId, ExecuteWebhook, GenericChannelId,
-	GuildId, Message, MessageId, ReactionType,
+	Colour, Context as SContext, CreateAllowedMentions, CreateAttachment, CreateComponent,
+	CreateContainer, CreateEmbed, CreateEmbedAuthor, CreateMessage, EditMessage, EmojiId,
+	ExecuteWebhook, GenericChannelId, GuildId, Message, MessageFlags, MessageId, ReactionType,
 };
 use songbird::{Call, Songbird, input::Compose as _};
 use sqlx::{Postgres, Transaction, query, query_as, query_scalar};
@@ -20,20 +20,20 @@ use winnow::Parser as _;
 use crate::{
 	config::{
 		constants::{
-			AI_CHAT_ERROR, COLOUR_BLUE, COLOUR_ORANGE, COLOUR_RED, COLOUR_YELLOW, DEFAULT_BOT_ROLE,
-			FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP,
-			FAILED_SONG_FETCH, FLOPPAGANDA_GIF, INVALID_TRACK_SOURCE, MISSING_METADATA_MSG,
-			NOT_IN_VOICE_CHAN_MSG, QUEUE_MSG,
+			AI_CHAT_ERROR, DEFAULT_BOT_ROLE, FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME,
+			FABSEMAN_WEBHOOK_PFP, FAILED_SONG_FETCH, FLOPPAGANDA_GIF, INVALID_TRACK_SOURCE,
+			MISSING_METADATA_MSG, NOT_IN_VOICE_CHAN_MSG, QUEUE_MSG,
 		},
 		types::{AIChats, Data, GuildCache, WebhookMap, utils_config},
 	},
-	errors::commands::{MusicError, WebhookError},
+	errors::commands::MusicError,
 	log_errors,
 	stats::counters::METRICS,
 	utils::{
 		ai::ai_chatbot,
 		helpers::{
-			channel_counter, discord_message_link, get_gifs, get_waifu, queue_song, youtube_source,
+			channel_counter, discord_message_link, event_container, get_gifs, get_waifu,
+			media_gallery, queue_song, separator, text_display, thumbnail_section, youtube_source,
 		},
 		webhook::{spoiler_message, webhook_find},
 	},
@@ -51,22 +51,16 @@ async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 				utils_config.ping_payload.as_str(),
 			)
 		};
-		new_message
-			.channel_id
-			.send_message(
-				&ctx.http,
-				CreateMessage::default()
-					.embed(
-						CreateEmbed::default()
-							.title(ping_message)
-							.image(ping_payload)
-							.colour(COLOUR_BLUE),
-					)
-					.reference_message(new_message)
-					.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
-			)
-			.await?;
+
+		let text_display = [text_display(ping_message)];
+		let image = media_gallery(ping_payload);
+		let container = CreateContainer::new(&text_display)
+			.add_component(image)
+			.accent_colour(Colour::BLITZ_BLUE);
+
+		event_container(ctx, new_message, container).await?;
 	}
+
 	Ok(())
 }
 
@@ -89,19 +83,13 @@ async fn easter_eggs(
 			)
 			.await?;
 	} else if content == "fabse" || content == "fabseman" {
-		let webhook = match webhook_find(
+		let webhook = webhook_find(
 			ctx,
 			new_message.guild_id,
 			new_message.channel_id,
 			webhooks.clone(),
 		)
-		.await
-		{
-			Ok(webhook) => webhook,
-			Err(err) => {
-				return Err(WebhookError::NotFound(err).into());
-			}
-		};
+		.await?;
 		webhook
 			.execute(
 				&ctx.http,
@@ -362,37 +350,43 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 		{
 			let ref_msg = channel_id.message(&ctx.http, message_id).await?;
 			if ref_msg.poll.is_none() {
-				let embed = CreateEmbed::default()
-					.colour(COLOUR_ORANGE)
-					.description(ref_msg.content.as_str())
-					.author(
-						CreateEmbedAuthor::new(ref_msg.author.display_name()).icon_url(
-							ref_msg
-								.author
-								.avatar_url()
-								.unwrap_or_else(|| ref_msg.author.default_avatar_url()),
-						),
-					)
-					.footer(CreateEmbedFooter::new(channel_name))
-					.timestamp(ref_msg.timestamp);
-				let (embed, content_url) = match ref_msg.attachments.first() {
-					Some(attachment) => match attachment.content_type.as_deref() {
-						Some(content_type) => {
-							if content_type.starts_with("image") {
-								(embed.image(attachment.url.as_str()), None)
-							} else if content_type.starts_with("video") {
-								(embed, Some(attachment.url.as_str()))
-							} else {
-								(embed, None)
-							}
-						}
-						_ => (embed, None),
-					},
-					_ => (embed, None),
+				let author_avatar = ref_msg
+					.author
+					.avatar_url()
+					.unwrap_or_else(|| ref_msg.author.default_avatar_url());
+				let thumbnail_display = [thumbnail_section(
+					ref_msg.author.display_name(),
+					&author_avatar,
+				)];
+				let reply_display = text_display(&ref_msg.content);
+				let timestamp = ref_msg.timestamp.to_string();
+				let time_display = text_display(&timestamp);
+				let channel_display = text_display(&channel_name);
+				let mut container = CreateContainer::new(&thumbnail_display)
+					.add_component(separator())
+					.add_component(reply_display)
+					.add_component(separator())
+					.add_component(time_display)
+					.add_component(separator())
+					.add_component(channel_display)
+					.accent_colour(Colour::ORANGE);
+				let media_opt = if let Some(attachment) = ref_msg.attachments.first()
+					&& let Some(content_type) = &attachment.content_type
+					&& (content_type.starts_with("image") || content_type.starts_with("video"))
+				{
+					Some(attachment.url.as_str())
+				} else {
+					None
 				};
+				let media_ref = media_opt.as_ref().map(AsRef::as_ref);
+				if let Some(media) = media_ref {
+					let image = media_gallery(media);
+					container = container.add_component(image);
+				}
 				let mut preview_message = CreateMessage::default()
-					.embed(embed)
-					.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
+					.components(vec![CreateComponent::Container(container)])
+					.allowed_mentions(CreateAllowedMentions::default().replied_user(false))
+					.flags(MessageFlags::IS_COMPONENTS_V2);
 				if ref_msg.channel_id == new_message.channel_id {
 					preview_message = preview_message.reference_message(&ref_msg);
 				}
@@ -403,9 +397,6 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 					.channel_id
 					.send_message(&ctx.http, preview_message)
 					.await?;
-				if let Some(url) = content_url {
-					new_message.channel_id.say(&ctx.http, url).await?;
-				}
 			}
 		}
 	}
@@ -434,16 +425,29 @@ async fn user_queries(
 			)
 			.await?;
 		if let Some(links) = author_settings.pinged_links.as_deref() {
-			let mut e = CreateEmbed::default()
-				.colour(COLOUR_RED)
-				.title("Pings you retrieved:");
+			let title_display = [text_display("# Pings you retrieved: ")];
+
+			let mut list = String::with_capacity(links.len());
+
 			for entry in links.split(',') {
 				if let Some((name, role)) = entry.split_once(';') {
-					e = e.field(name, role, false);
+					writeln!(list, "**{name}**: {role}")?;
 				}
 			}
+			let text_display = text_display(&list);
+
+			let container = CreateContainer::new(&title_display)
+				.add_component(separator())
+				.add_component(text_display)
+				.accent_colour(Colour::BLITZ_BLUE);
+
 			response
-				.edit(&ctx.http, EditMessage::default().embed(e))
+				.edit(
+					&ctx.http,
+					EditMessage::default()
+						.components(&[CreateComponent::Container(container)])
+						.flags(MessageFlags::IS_COMPONENTS_V2),
+				)
 				.await?;
 		}
 		query!(
@@ -516,40 +520,31 @@ async fn user_queries(
 			}
 			if let Some(ping_content) = &mentioned_user_settings.ping_content {
 				counter!(METRICS.custom_user_pings.clone()).increment(1);
-				let message = {
-					let base = CreateMessage::default()
-						.reference_message(new_message)
-						.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
-					match &mentioned_user_settings.ping_media {
-						Some(ping_media) => {
-							let media = if ping_media.eq_ignore_ascii_case("waifu") {
-								Some(get_waifu().await)
-							} else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
-								let gifs = get_gifs(gif_query).await;
-								gifs.get(fastrand::usize(..gifs.len())).map(|g| g.0.clone())
-							} else if !ping_media.is_empty() {
-								Some(Cow::Borrowed(ping_media.as_str()))
-							} else {
-								None
-							};
-							if let Some(image) = media {
-								base.embed(
-									CreateEmbed::default()
-										.title(ping_content)
-										.colour(COLOUR_BLUE)
-										.image(image),
-								)
-							} else {
-								base.content(ping_content)
-							}
-						}
-						None => base.content(ping_content),
-					}
+				let title = format!("# {ping_content}");
+				let text_display = [text_display(&title)];
+				let mut container =
+					CreateContainer::new(&text_display).accent_colour(Colour::BLITZ_BLUE);
+				let media_opt = if let Some(ping_media) = &mentioned_user_settings.ping_media {
+					let media = if ping_media.eq_ignore_ascii_case("waifu") {
+						get_waifu(ctx).await
+					} else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
+						let gifs = get_gifs(ctx, gif_query).await;
+						gifs.get(fastrand::usize(..gifs.len()))
+							.map(|g| g.0.clone())
+							.map_or(Cow::Borrowed(ping_media.as_str()), |gif| gif)
+					} else {
+						Cow::Borrowed(ping_media.as_str())
+					};
+					Some(media)
+				} else {
+					None
 				};
-				new_message
-					.channel_id
-					.send_message(&ctx.http, message)
-					.await?;
+				let media_ref = media_opt.as_ref().map(AsRef::as_ref);
+				if let Some(media) = media_ref {
+					let image = media_gallery(media);
+					container = container.add_component(image);
+				}
+				event_container(ctx, new_message, container).await?;
 			}
 		}
 	}
@@ -585,37 +580,28 @@ async fn guild_queries(
 	for record in word_reactions {
 		counter!(METRICS.word_reactions.clone()).increment(1);
 		if let Some(content) = &record.content {
-			let message = {
-				let base = CreateMessage::default()
-					.reference_message(new_message)
-					.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
-				match &record.media {
-					Some(media) if !media.is_empty() => {
-						if let Some(gif_query) = media.strip_prefix("!gif") {
-							let gifs = get_gifs(gif_query).await;
-							let mut embed =
-								CreateEmbed::default().title(content).colour(COLOUR_YELLOW);
-							let index = fastrand::usize(..gifs.len());
-							if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
-								embed = embed.image(gif);
-							}
-							base.embed(embed)
-						} else {
-							base.embed(
-								CreateEmbed::default()
-									.title(content)
-									.colour(COLOUR_YELLOW)
-									.image(media),
-							)
-						}
-					}
-					_ => base.content(content),
-				}
+			let title = format!("# {content}");
+			let text_display = [text_display(&title)];
+			let mut container = CreateContainer::new(&text_display).accent_colour(Colour::GOLD);
+			let media_opt = if let Some(reaction_media) = &record.media {
+				let media = if let Some(gif_query) = reaction_media.strip_prefix("!gif") {
+					let gifs = get_gifs(ctx, gif_query).await;
+					gifs.get(fastrand::usize(..gifs.len()))
+						.map(|g| g.0.clone())
+						.map_or(Cow::Borrowed(reaction_media.as_str()), |gif| gif)
+				} else {
+					Cow::Borrowed(reaction_media.as_str())
+				};
+				Some(media)
+			} else {
+				None
 			};
-			new_message
-				.channel_id
-				.send_message(&ctx.http, message)
-				.await?;
+			let media_ref = media_opt.as_ref().map(AsRef::as_ref);
+			if let Some(media) = media_ref {
+				let image = media_gallery(media);
+				container = container.add_component(image);
+			}
+			event_container(ctx, new_message, container).await?;
 		} else if let Some(emoji_id) = &record.emoji_id {
 			let emoji_id_typed = EmojiId::new(emoji_id.cast_unsigned());
 			let (is_animated, emoji_id, emoji_name) = if record.guild_emoji

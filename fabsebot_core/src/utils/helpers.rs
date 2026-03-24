@@ -1,9 +1,20 @@
 use std::{borrow::Cow, sync::Arc};
 
+use anyhow::{Result as AResult, bail};
 use metrics::counter;
 use mini_moka::sync::Cache;
-use serde::Deserialize;
-use serenity::all::{Context as SContext, Emoji, EmojiId, GenericChannelId, GuildId, MessageId};
+use poise::{CreateReply, serenity_prelude::Channel};
+use serde::{Deserialize, Deserializer, de::Error as _};
+use serenity::{
+	all::{
+		Context, CreateActionRow, CreateButton, CreateComponent, CreateContainer,
+		CreateContainerComponent, CreateMediaGallery, CreateMediaGalleryItem, CreateMessage,
+		CreateSection, CreateSectionAccessory, CreateSectionComponent, CreateSeparator,
+		CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, Emoji, EmojiId,
+		GenericChannelId, GuildId, Message, MessageFlags, MessageId, Permissions, ReactionType,
+	},
+	small_fixed_array::FixedString,
+};
 use songbird::{
 	Call,
 	driver::Bitrate,
@@ -26,10 +37,10 @@ use winnow::{
 use crate::{
 	config::{
 		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
-		types::{Data, HTTP_CLIENT, utils_config},
+		types::{Data, HTTP_CLIENT, SContext, utils_config},
 	},
-	errors::commands::{EmojiError, HTTPError},
 	stats::counters::METRICS,
+	utils::webhook::error_hook,
 };
 
 #[macro_export]
@@ -47,12 +58,145 @@ const DISCORD_CHANNEL_DEFAULT_PREFIX: &str = "https://discord.com/channels/";
 const DISCORD_CHANNEL_PTB_PREFIX: &str = "https://ptb.discord.com/channels/";
 const DISCORD_CHANNEL_CANARY_PREFIX: &str = "https://canary.discord.com/channels/";
 
+pub async fn correct_permissions(
+	ctx: &SContext<'_>,
+	guild_id: GuildId,
+	required_permissions: Permissions,
+) -> AResult<()> {
+	let Some(Some(channel)) = ctx.channel().await.map(Channel::guild) else {
+		ctx.reply("Couldn't fetch channel :/").await?;
+		bail!("Failed to fetch channel");
+	};
+
+	let bot_member = match guild_id.member(ctx.http(), ctx.framework().bot_id()).await {
+		Ok(member) => member,
+		Err(err) => {
+			ctx.reply("Couldn't fetch bot member :/").await?;
+			bail!("Failed to fetch bot member: {err}");
+		}
+	};
+
+	let bot_permissions = ctx
+		.guild()
+		.unwrap()
+		.user_permissions_in(&channel, &bot_member);
+
+	if !bot_permissions.contains(required_permissions) {
+		let missing_permissions = (!bot_permissions) & required_permissions;
+		ctx.reply(format!(
+			"I'm missing these required permissions in this channel: {missing_permissions}"
+		))
+		.await?;
+
+		bail!("Bot doesn't have required permissions: {missing_permissions}");
+	}
+
+	Ok(())
+}
+
+pub fn non_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	let s = String::deserialize(deserializer)?;
+	if s.trim().is_empty() {
+		return Err(D::Error::custom("field cannot be empty"));
+	}
+	Ok(s)
+}
+
+pub fn non_empty_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+	D: Deserializer<'de>,
+	T: Deserialize<'de>,
+{
+	let vec = Vec::<T>::deserialize(deserializer)?;
+	if vec.is_empty() {
+		return Err(D::Error::custom("field cannot be empty"));
+	}
+	Ok(vec)
+}
+
+pub fn true_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	let boolean = bool::deserialize(deserializer)?;
+	if !boolean {
+		return Err(D::Error::custom("field cannot be false"));
+	}
+	Ok(boolean)
+}
+
 pub fn channel_counter(channel_name: String) {
 	counter!(
 		METRICS.channel_triggers.clone(),
 		"channel" => channel_name,
 	)
 	.increment(1);
+}
+
+pub fn thumbnail_section<'a>(text: &'a str, image: &'a str) -> CreateContainerComponent<'a> {
+	CreateContainerComponent::Section(CreateSection::new(
+		vec![CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
+			text,
+		))],
+		CreateSectionAccessory::Thumbnail(CreateThumbnail::new(CreateUnfurledMediaItem::new(
+			image,
+		))),
+	))
+}
+
+pub fn visit_page_button(url: &str) -> CreateContainerComponent<'_> {
+	CreateContainerComponent::ActionRow(CreateActionRow::Buttons(Cow::Owned(vec![
+		CreateButton::new_link(url)
+			.label("Visit page")
+			.emoji(ReactionType::Unicode(FixedString::from_str_trunc("🌐"))),
+	])))
+}
+
+pub fn media_gallery(url: &str) -> CreateContainerComponent<'_> {
+	CreateContainerComponent::MediaGallery(CreateMediaGallery::new(vec![
+		CreateMediaGalleryItem::new(CreateUnfurledMediaItem::new(url)),
+	]))
+}
+
+pub fn text_display(text: &str) -> CreateContainerComponent<'_> {
+	CreateContainerComponent::TextDisplay(CreateTextDisplay::new(text))
+}
+
+pub fn separator<'a>() -> CreateContainerComponent<'a> {
+	CreateContainerComponent::Separator(CreateSeparator::new())
+}
+
+pub async fn send_container(ctx: &SContext<'_>, container: CreateContainer<'_>) -> AResult<()> {
+	ctx.send(
+		CreateReply::default()
+			.components(vec![CreateComponent::Container(container)])
+			.flags(MessageFlags::IS_COMPONENTS_V2),
+	)
+	.await?;
+
+	Ok(())
+}
+
+pub async fn event_container(
+	ctx: &Context,
+	message: &Message,
+	container: CreateContainer<'_>,
+) -> AResult<()> {
+	message
+		.channel_id
+		.send_message(
+			&ctx.http,
+			CreateMessage::default()
+				.components(vec![CreateComponent::Container(container)])
+				.flags(MessageFlags::IS_COMPONENTS_V2)
+				.reference_message(message),
+		)
+		.await?;
+
+	Ok(())
 }
 
 pub async fn get_configured_songbird_handler(
@@ -62,26 +206,6 @@ pub async fn get_configured_songbird_handler(
 	handler.set_bitrate(Bitrate::Max);
 	handler
 }
-
-/*
-struct YoutubeUrl(String);
-
-impl YoutubeUrl {
-	fn new(url: String) -> Option<Self> {
-		Url::parse(&url).map_or(None, |parsed_url| {
-			parsed_url
-				.domain()
-				.filter(|d| {
-					*d == "youtube.com"
-						|| *d == "www.youtube.com"
-						|| *d == "youtu.be"
-						|| *d == "m.youtube.com"
-				})
-				.map(|_| Self(url))
-		})
-	}
-}
-*/
 
 pub async fn youtube_source(url: String) -> Option<YoutubeDl<'static>> {
 	match Url::parse(&url) {
@@ -142,6 +266,7 @@ pub async fn queue_song(
 
 #[derive(Deserialize)]
 struct GifResponse {
+	#[serde(deserialize_with = "non_empty_vec")]
 	results: Vec<GifResult>,
 }
 
@@ -161,9 +286,7 @@ struct GifObject {
 	url: String,
 }
 
-async fn fetch_gifs_internal(
-	input: &str,
-) -> Result<Vec<(Cow<'static, str>, Cow<'static, str>)>, HTTPError> {
+async fn fetch_gifs_internal(input: &str) -> AResult<Vec<(Cow<'static, str>, Cow<'static, str>)>> {
 	let response = HTTP_CLIENT
 		.get("https://tenor.googleapis.com/v2/search")
 		.query(&[
@@ -192,11 +315,15 @@ async fn fetch_gifs_internal(
 		.collect())
 }
 
-pub async fn get_gifs(input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
+pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
 	match fetch_gifs_internal(input).await {
 		Ok(gifs) => gifs,
-		Err(err) => {
-			error!("{}", err);
+		Err(error) => {
+			let error_title = "# Failed to fetch gifs";
+			error!("{error_title}: {error}");
+			if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
+				error!("Failed to send gifs error to webhook: {err}");
+			}
 			vec![(
 				Cow::Borrowed(FALLBACK_GIF),
 				Cow::Borrowed(FALLBACK_GIF_TITLE),
@@ -207,11 +334,14 @@ pub async fn get_gifs(input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)
 
 #[derive(Deserialize)]
 struct LyricsResponse {
-	#[serde(rename(deserialize = "plainLyrics"))]
+	#[serde(
+		rename(deserialize = "plainLyrics"),
+		deserialize_with = "non_empty_string"
+	)]
 	plain_lyrics: String,
 }
 
-pub async fn get_lyrics(artist_name: &str, track_name: &str) -> Result<String, HTTPError> {
+async fn get_lyrics_internal(artist_name: &str, track_name: &str) -> AResult<String> {
 	let response = HTTP_CLIENT
 		.get("https://lrclib.net/api/get")
 		.query(&[("artist_name", artist_name), ("track_name", track_name)])
@@ -223,37 +353,59 @@ pub async fn get_lyrics(artist_name: &str, track_name: &str) -> Result<String, H
 	Ok(json.plain_lyrics)
 }
 
+pub async fn get_lyrics(ctx: &Context, artist_name: &str, track_name: &str) -> Option<String> {
+	match get_lyrics_internal(artist_name, track_name).await {
+		Ok(lyrics) => Some(lyrics),
+		Err(error) => {
+			let error_title = "# Failed to fetch lyrics";
+			error!("{error_title}: {error}");
+			if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
+				error!("Failed to send lyrics error to webhook: {err}");
+			}
+			None
+		}
+	}
+}
+
 #[derive(Deserialize)]
 struct WaifuResponse {
-	images: [WaifuImage; 1],
+	#[serde(deserialize_with = "non_empty_vec")]
+	items: Vec<WaifuImage>,
 }
 #[derive(Deserialize)]
 struct WaifuImage {
 	url: String,
 }
 
-async fn fetch_waifu_internal() -> Result<Option<String>, HTTPError> {
+async fn fetch_waifu_internal() -> AResult<Cow<'static, str>> {
 	let response = HTTP_CLIENT
-		.get("https://api.waifu.im/search?height=>=2000&is_nsfw=false")
+		.get("https://api.waifu.im/images?IsNsfw=False")
 		.send()
 		.await?;
 	let waifu_response = response.json::<WaifuResponse>().await?;
 
-	Ok(waifu_response.images.into_iter().next().map(|w| w.url))
+	Ok(waifu_response.items.first().map_or_else(
+		|| Cow::Borrowed(FALLBACK_WAIFU),
+		|w| Cow::Owned(w.url.clone()),
+	))
 }
 
-pub async fn get_waifu() -> Cow<'static, str> {
+pub async fn get_waifu(ctx: &Context) -> Cow<'static, str> {
 	match fetch_waifu_internal().await {
-		Ok(waifu_opt) => waifu_opt.map_or(Cow::Borrowed(FALLBACK_WAIFU), Cow::Owned),
-		Err(err) => {
-			error!("{}", err);
+		Ok(waifu) => waifu,
+		Err(error) => {
+			let error_title = "# Failed to fetch waifu";
+			error!("{error_title}: {error}");
+			if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
+				error!("Failed to send waifu error to webhook: {err}");
+			}
 			Cow::Borrowed(FALLBACK_WAIFU)
 		}
 	}
 }
 
 pub async fn send_emoji(
-	ctx: &SContext,
+	ctx: &Context,
 	content: &str,
 	emojis: &Cache<u64, Arc<Emoji>>,
 	target_emoji: u64,
@@ -283,17 +435,14 @@ pub async fn send_emoji(
 	Some(emoji_string.repeat(count))
 }
 
-async fn get_app_emoji(
-	ctx: &SContext,
-	target_emoji: u64,
-) -> Result<(String, EmojiId, bool), EmojiError> {
+async fn get_app_emoji(ctx: &Context, target_emoji: u64) -> AResult<(String, EmojiId, bool)> {
 	let app_emojis = ctx.get_application_emojis().await?;
 
 	let Some(app_emoji) = app_emojis
 		.iter()
 		.find(|emoji| emoji.id.get() == target_emoji)
 	else {
-		return Err(EmojiError::MissingEmoji);
+		bail!("Missing emoji");
 	};
 
 	Ok((

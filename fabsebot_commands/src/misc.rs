@@ -3,7 +3,7 @@ use std::{
 };
 
 use ab_glyph::FontArc;
-use anyhow::{Context as _, anyhow};
+use anyhow::{Context as _, Result as AResult};
 use fabsebot_core::{
 	config::{
 		constants::{
@@ -16,6 +16,7 @@ use fabsebot_core::{
 	errors::commands::{AIError, GuildError, InteractionError},
 	utils::{
 		ai::ai_response_simple,
+		helpers::{media_gallery, send_container, separator, text_display, thumbnail_section},
 		image::{
 			QuoteImageConfig, TextLayout, avatar_position, get_theme, quote_animated_image,
 			quote_static_image, resize_avatar,
@@ -27,12 +28,12 @@ use poise::{ChoiceParameter, CreateReply, builtins::register_globally};
 use rayon::spawn;
 use serenity::{
 	all::{
-		ActivityData, AutocompleteChoice, ButtonStyle, ComponentInteractionCollector,
+		ActivityData, AutocompleteChoice, ButtonStyle, Colour, ComponentInteractionCollector,
 		ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
-		CreateAutocompleteResponse, CreateButton, CreateComponent, CreateEmbed, CreateEmbedFooter,
-		CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
-		CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId, GuildChannel, GuildId,
-		Member, Message, MessageId, OnlineStatus, ShardRunnerMessage, User, UserId,
+		CreateAutocompleteResponse, CreateButton, CreateComponent, CreateContainer, CreateEmbed,
+		CreateEmbedFooter, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
+		CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId,
+		GuildChannel, GuildId, Message, MessageId, OnlineStatus, ShardRunnerMessage, User, UserId,
 	},
 	futures::StreamExt as _,
 	nonmax::NonMaxU16,
@@ -45,15 +46,16 @@ use tokio::{
 };
 use tracing::warn;
 
-use crate::require_guild_id;
+use crate::{command_permissions, require_guild_id};
 
 /// When you want to find the imposter
 #[poise::command(
 	slash_command,
-	install_context = "User|Guild",
-	interaction_context = "Guild"
+	install_context = "Guild",
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
-pub async fn anony_poll(
+pub async fn poll(
 	ctx: SContext<'_>,
 	#[description = "Question"] title: String,
 	#[description = "Comma-separated options"] options: String,
@@ -161,63 +163,39 @@ pub async fn anony_poll(
 	Ok(())
 }
 
-pub async fn birthday_internal(
-	ctx: SContext<'_>,
-	avatar_url: &str,
-	name: &str,
-) -> Result<(), Error> {
-	ctx.send(
-		CreateReply::default()
-			.embed(
-				CreateEmbed::default()
-					.title(format!("HAPPY BIRTHDAY {name}!"))
-					.thumbnail(avatar_url)
-					.image("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif")
-					.colour(COLOUR_RED),
-			)
-			.reply(true),
-	)
-	.await?;
+pub async fn birthday_internal(ctx: SContext<'_>, avatar_url: &str, name: &str) -> AResult<()> {
+	let title = format!("# HAPPY BIRTHDAY {name}!");
+	let thumbnail_section = [thumbnail_section(&title, avatar_url)];
+
+	let image =
+		media_gallery("https://media.tenor.com/GiCE3Iq3_TIAAAAC/pokemon-happy-birthday.gif");
+
+	let container = CreateContainer::new(&thumbnail_section)
+		.add_component(image)
+		.accent_colour(Colour::BLITZ_BLUE);
+
+	send_container(&ctx, container).await?;
+
 	Ok(())
 }
 
-/// Send a birthday wish to a member
+/// Send a birthday wish to ań user
 #[poise::command(
 	prefix_command,
 	slash_command,
 	context_menu_command = "Birthday",
-	install_context = "User",
-	interaction_context = "PrivateChannel"
+	install_context = "Guild | User",
+	interaction_context = "Guild | PrivateChannel"
 )]
-pub async fn birthday_user(
+pub async fn birthday(
 	ctx: SContext<'_>,
 	#[description = "User to congratulate"] user: User,
 ) -> Result<(), Error> {
+	command_permissions(&ctx).await?;
 	let avatar_url = user
 		.avatar_url()
 		.unwrap_or_else(|| user.default_avatar_url());
 	birthday_internal(ctx, &avatar_url, user.display_name()).await?;
-	Ok(())
-}
-
-/// Send a birthday wish to a member
-#[poise::command(
-	prefix_command,
-	slash_command,
-	install_context = "Guild|User",
-	interaction_context = "Guild"
-)]
-pub async fn birthday(
-	ctx: SContext<'_>,
-	#[description = "Member to congratulate"] member: Member,
-) -> Result<(), Error> {
-	let avatar_url = member.avatar_url().unwrap_or_else(|| {
-		member
-			.user
-			.avatar_url()
-			.unwrap_or_else(|| member.user.default_avatar_url())
-	});
-	birthday_internal(ctx, &avatar_url, member.display_name()).await?;
 	Ok(())
 }
 
@@ -246,7 +224,9 @@ impl BotStatus {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	owners_only
+	owners_only,
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
+	                            CHANGE_NICKNAME"
 )]
 pub async fn bot_control(
 	ctx: SContext<'_>,
@@ -293,7 +273,8 @@ pub async fn bot_control(
 	prefix_command,
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	let mut embed = CreateEmbed::default().title("Debug");
@@ -455,7 +436,8 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	prefix_command,
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -480,7 +462,8 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	prefix_command,
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -570,7 +553,8 @@ async fn autocomplete_command<'a>(
 	prefix_command,
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn help(
 	ctx: SContext<'_>,
@@ -647,7 +631,8 @@ struct UserCount {
 	prefix_command,
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -661,7 +646,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 			return Err(GuildError::NotInGuild.into());
 		}
 	};
-	ctx.defer().await?;
+	let _typing = ctx.defer_or_broadcast().await;
 
 	let users = query_as!(
 		UserCount,
@@ -677,27 +662,55 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 	.fetch_all(&mut *ctx.data().db.acquire().await?)
 	.await?;
 
-	let mut embed = CreateEmbed::default()
-		.title(format!("Top {} users by message count", users.len()))
-		.thumbnail(thumbnail)
-		.colour(COLOUR_RED);
+	let title = format!("Top {} users by message count", users.len());
+	let thumbnail_section = [thumbnail_section(&title, &thumbnail)];
+
+	let mut list = String::with_capacity(users.len().saturating_mul(4));
 
 	for (index, user) in users.iter().enumerate() {
 		if let Ok(target) = guild_id
 			.member(&ctx.http(), UserId::new(user.user_id.cast_unsigned()))
 			.await
 		{
-			embed = embed.field(
-				format!("#{} {}", index.saturating_add(1), target.display_name()),
-				user.message_count.to_string(),
-				false,
-			);
+			let rank = index.saturating_add(1);
+			writeln!(
+				list,
+				"#{rank} {}: {}",
+				target.display_name(),
+				user.message_count
+			)?;
 		}
 	}
 
-	ctx.send(CreateReply::default().reply(true).embed(embed))
-		.await?;
+	let text_display = text_display(&list);
 
+	let container = CreateContainer::new(&thumbnail_section)
+		.add_component(separator())
+		.add_component(text_display)
+		.accent_colour(Colour::RED);
+
+	send_container(&ctx, container).await?;
+
+	Ok(())
+}
+
+async fn ohitsyou_internal(ctx: &SContext<'_>) -> AResult<()> {
+	let _typing = ctx.defer_or_broadcast().await;
+	let resp = match ai_response_simple(
+		"you're a tsundere",
+		"generate a one-line love-hate greeting",
+		&utils_config().fabseserver.text_gen_model,
+		None,
+	)
+	.await
+	{
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply(TSUNDERE_REPLY).await?;
+			return Err(AIError::UnexpectedResponse(err).into());
+		}
+	};
+	ctx.reply(resp).await?;
 	Ok(())
 }
 
@@ -705,29 +718,12 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild|User",
-	interaction_context = "Guild|BotDm|PrivateChannel"
+	install_context = "Guild | User",
+	interaction_context = "Guild | PrivateChannel"
 )]
 pub async fn ohitsyou(ctx: SContext<'_>) -> Result<(), Error> {
-	ctx.defer().await?;
-	let resp = match ai_response_simple(
-		"you're a tsundere",
-		"generate a one-line love-hate greeting",
-		&utils_config().fabseserver.text_gen_model,
-	)
-	.await
-	{
-		Ok(resp) if !resp.is_empty() => resp,
-		Ok(_) => {
-			ctx.reply(TSUNDERE_REPLY).await?;
-			return Err(AIError::UnexpectedResponse(anyhow!("Empty response")).into());
-		}
-		Err(err) => {
-			ctx.reply(TSUNDERE_REPLY).await?;
-			return Err(AIError::UnexpectedResponse(err).into());
-		}
-	};
-	ctx.reply(resp).await?;
+	command_permissions(&ctx).await?;
+	ohitsyou_internal(&ctx).await?;
 	Ok(())
 }
 
@@ -1018,7 +1014,7 @@ pub async fn quote_internal(
 	ctx: SContext<'_>,
 	msg: &Message,
 	reply: Option<(&Message, GuildId)>,
-) -> Result<(), Error> {
+) -> AResult<()> {
 	ctx.defer().await?;
 	let mut image_handle = {
 		let (avatar_url, author_name, text) = if let Some((reply, guild_id)) = reply {
@@ -1126,14 +1122,14 @@ pub async fn quote_internal(
 	let (message_handle, reply_handle) = if let Some((reply, guild_id)) = reply {
 		let message_url = reply.link().to_string();
 
-		let spoiler_channel_opt: Option<Option<i64>> = query_scalar!(
-			"SELECT spoiler_channel FROM guild_settings WHERE guild_id = $1",
+		let quote_channel_opt: Option<Option<i64>> = query_scalar!(
+			"SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
 			guild_id.get().cast_signed()
 		)
 		.fetch_optional(&mut *ctx.data().db.acquire().await?)
 		.await?;
 
-		if let Some(Some(channel)) = spoiler_channel_opt {
+		if let Some(Some(channel)) = quote_channel_opt {
 			let quote_channel = GenericChannelId::new(channel.cast_unsigned());
 			quote_channel
 				.send_message(
@@ -1250,8 +1246,8 @@ pub async fn quote_internal(
 /// When your memory is not enough
 #[poise::command(
 	context_menu_command = "Quote",
-	install_context = "Guild|User",
-	interaction_context = "Guild|PrivateChannel"
+	install_context = "Guild | User",
+	interaction_context = "Guild | PrivateChannel"
 )]
 pub async fn quote_menu(
 	ctx: SContext<'_>,
@@ -1269,7 +1265,8 @@ pub async fn quote_menu(
 #[poise::command(
 	prefix_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -1297,6 +1294,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 	prefix_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS",
 	owners_only
 )]
 pub async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
@@ -1318,14 +1316,11 @@ pub async fn respond(
 		"Mock this Discord message someone posted. Just give the roast, nothing else.",
 		&message.content,
 		&utils_config().fabseserver.text_gen_model,
+		None,
 	)
 	.await
 	{
-		Ok(resp) if !resp.is_empty() => resp,
-		Ok(_) => {
-			ctx.reply("stfu").await?;
-			return Err(AIError::UnexpectedResponse(anyhow!("Empty response")).into());
-		}
+		Ok(resp) => resp,
 		Err(err) => {
 			ctx.reply("stfu").await?;
 			return Err(AIError::UnexpectedResponse(err).into());
@@ -1340,7 +1335,9 @@ pub async fn respond(
 	slash_command,
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
+	                            MANAGE_CHANNELS"
 )]
 pub async fn slow_mode(
 	ctx: SContext<'_>,
@@ -1371,7 +1368,8 @@ struct WordCount {
 	prefix_command,
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -1398,20 +1396,24 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 	.fetch_all(&mut *ctx.data().db.acquire().await?)
 	.await?;
 
-	let mut embed = CreateEmbed::default()
-		.title(format!("Top {} word tracked by count", words.len()))
-		.thumbnail(thumbnail)
-		.colour(COLOUR_RED);
+	let title = format!("# Top {} words tracked by count!", words.len());
+	let thumbnail_section = [thumbnail_section(&title, &thumbnail)];
+
+	let mut list = String::with_capacity(words.len().saturating_mul(4));
+
 	for (index, word) in words.iter().enumerate() {
 		let rank = index.saturating_add(1);
-		embed = embed.field(
-			format!("#{rank} {}", word.word),
-			word.count.to_string(),
-			false,
-		);
+		writeln!(list, "#{rank} {}: {}", word.word, word.count)?;
 	}
-	ctx.send(CreateReply::default().reply(true).embed(embed))
-		.await?;
+
+	let text_display = text_display(&list);
+
+	let container = CreateContainer::new(&thumbnail_section)
+		.add_component(separator())
+		.add_component(text_display)
+		.accent_colour(Colour::RED);
+
+	send_container(&ctx, container).await?;
 
 	Ok(())
 }

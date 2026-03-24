@@ -11,7 +11,7 @@ use poise::Context as PContext;
 use reqwest::Client;
 use serde::Serialize;
 use serenity::all::{
-	Emoji, GenericChannelId, GuildId, MessageId, ShardId, ShardRunnerMetadata, Webhook,
+	Context, Emoji, GenericChannelId, GuildId, MessageId, ShardId, ShardRunnerMetadata, Webhook,
 };
 use songbird::{Songbird, input::AuxMetadata};
 use sqlx::PgPool;
@@ -122,6 +122,8 @@ pub struct UtilsConfig {
 	pub api: APIConfig,
 	pub http_agent: HTTPAgent,
 	pub bot_name: String,
+	pub error_webhook: String,
+	pub feedback_webhook: String,
 }
 
 pub static UTILS_CONFIG: OnceLock<UtilsConfig> = OnceLock::new();
@@ -156,4 +158,11 @@ pub struct ClientData {
 pub fn client_data() -> &'static ClientData {
 	#[expect(clippy::expect_used)]
 	CLIENT_DATA.get().expect("CLIENT_DATA not initialized!")
+}
+
+pub static BOT_CONTEXT: OnceLock<Context> = OnceLock::new();
+
+pub fn bot_context() -> &'static Context {
+	#[expect(clippy::expect_used)]
+	BOT_CONTEXT.get().expect("BOT_CONTEXT not initialized!")
 }

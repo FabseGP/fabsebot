@@ -102,6 +102,7 @@ tokio-metrics = { version = "*" }
 toml = "*"
 tracing = { workspace = true }
 tracing-subscriber = "*"
+fastrand = { workspace = true }
 
 [profile.release]
 codegen-units = 1

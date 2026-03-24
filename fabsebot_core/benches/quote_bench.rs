@@ -7,8 +7,8 @@ use fabsebot_core::{
 		ANIMATED_QUOTE_VEC, AUTHOR_FONT, CONTENT_FONT, DEFAULT_THEME, FONTS, STATIC_QUOTE_VEC,
 	},
 	utils::image::{
-		TextLayout, avatar_position, get_theme, quote_animated_image, quote_static_image,
-		resize_avatar,
+		QuoteImageConfig, TextLayout, avatar_position, get_theme, quote_animated_image,
+		quote_static_image, resize_avatar,
 	},
 };
 
@@ -31,7 +31,7 @@ fn load_assets(asset_type: AssetType) -> (FontArc, FontArc, &'static [u8]) {
 
 fn benchmark_static(c: &mut Criterion) {
 	let (content_font, author_font, avatar_image) = load_assets(AssetType::Static);
-	let content = "bruh bre broo ".repeat(50);
+	let content = "bruh bre broo ".repeat(20);
 	let avatar_resized = resize_avatar(&avatar_image).unwrap();
 	let (img, text_colour) = get_theme(DEFAULT_THEME);
 	let text_layout = TextLayout::default();
@@ -45,12 +45,15 @@ fn benchmark_static(c: &mut Criterion) {
 					img.clone(),
 					text_layout.clone(),
 					Cursor::new(Vec::with_capacity(STATIC_QUOTE_VEC)),
-					fastrand::bool(),
-					fastrand::bool(),
-					fastrand::bool(),
+					QuoteImageConfig {
+						bw: fastrand::bool(),
+						gradient: fastrand::bool(),
+						new_font: true,
+						reverse: fastrand::bool(),
+					},
 				)
 			},
-			|(avatar, img, mut layout, mut cursor, is_colour, is_gradient, is_reverse)| {
+			|(avatar, img, mut layout, mut cursor, quote_config)| {
 				quote_static_image(
 					black_box(avatar),
 					black_box("Author"),
@@ -61,10 +64,7 @@ fn benchmark_static(c: &mut Criterion) {
 					black_box(img),
 					black_box(&mut layout),
 					black_box(avatar_position),
-					black_box(is_colour),
-					black_box(is_gradient),
-					black_box(is_reverse),
-					black_box(true),
+					black_box(quote_config),
 					black_box(&mut cursor),
 				)
 			},
@@ -88,13 +88,16 @@ fn benchmark_animated(c: &mut Criterion) {
 					img.clone(),
 					text_layout.clone(),
 					Cursor::new(avatar_bytes.clone()),
-					fastrand::bool(),
-					fastrand::bool(),
-					fastrand::bool(),
+					QuoteImageConfig {
+						bw: fastrand::bool(),
+						gradient: fastrand::bool(),
+						new_font: true,
+						reverse: fastrand::bool(),
+					},
 					Vec::with_capacity(ANIMATED_QUOTE_VEC),
 				)
 			},
-			|(img, mut layout, mut cursor, is_colour, is_gradient, is_reverse, mut buffer)| {
+			|(img, mut layout, mut cursor, quote_config, mut buffer)| {
 				quote_animated_image(
 					black_box("Author"),
 					black_box(&content),
@@ -104,10 +107,7 @@ fn benchmark_animated(c: &mut Criterion) {
 					black_box(img),
 					black_box(&mut layout),
 					black_box(avatar_position),
-					black_box(is_colour),
-					black_box(is_gradient),
-					black_box(is_reverse),
-					black_box(true),
+					black_box(quote_config),
 					black_box(&mut cursor),
 					black_box(&mut buffer),
 				)
@@ -141,4 +141,4 @@ criterion_group! {
 	targets = benchmark_animated
 }
 
-criterion_main!(static_benches, animated_benches);
+criterion_main!(static_benches);

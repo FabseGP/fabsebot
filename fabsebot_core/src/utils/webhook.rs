@@ -1,19 +1,44 @@
 use anyhow::{Result as AResult, bail};
 use serde::Serialize;
 use serenity::all::{
-	Channel, Context as SContext, CreateAttachment, ExecuteWebhook, GenericChannelId, GuildId,
-	Message, Webhook,
+	Channel, Context as SContext, CreateAttachment, CreateComponent, CreateContainer,
+	CreateContainerComponent, CreateTextDisplay, ExecuteWebhook, GenericChannelId, GuildId,
+	Message, MessageFlags, Webhook,
 };
 use tracing::warn;
 
 use crate::{
-	config::types::{HTTP_CLIENT, WebhookMap},
+	config::types::{HTTP_CLIENT, WebhookMap, utils_config},
 	utils::helpers::channel_counter,
 };
 
 const FABSEBOT_WEBHOOK_NAME: &str = "fabsebot";
 const FABSEBOT_WEBHOOK_PFP: &str =
 	"http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png";
+
+pub async fn error_hook(ctx: &SContext, title: &str, error: String) -> AResult<()> {
+	let webhook = Webhook::from_url(&ctx.http, &utils_config().error_webhook).await?;
+
+	webhook
+		.execute(
+			&ctx.http,
+			false,
+			ExecuteWebhook::default()
+				.with_components(true)
+				.flags(MessageFlags::IS_COMPONENTS_V2)
+				.components(&[
+					CreateComponent::Container(CreateContainer::new(&[
+						CreateContainerComponent::TextDisplay(CreateTextDisplay::new(title)),
+					])),
+					CreateComponent::Container(CreateContainer::new(&[
+						CreateContainerComponent::TextDisplay(CreateTextDisplay::new(error)),
+					])),
+				]),
+		)
+		.await?;
+
+	Ok(())
+}
 
 pub async fn spoiler_message(
 	ctx: &SContext,

@@ -1,13 +1,14 @@
 use std::time::Duration;
 
-use fabsebot_core::config::{
-	constants::COLOUR_ORANGE,
-	types::{Error, SContext},
+use fabsebot_core::{
+	config::types::{Error, SContext},
+	utils::helpers::{send_container, separator, text_display},
 };
-use poise::{ChoiceParameter, CreateReply};
+use poise::ChoiceParameter;
 use serenity::all::{
-	ButtonStyle, ComponentInteractionCollector, CreateActionRow, CreateButton, CreateComponent,
-	CreateEmbed, CreateInteractionResponse, EditMessage, User,
+	ButtonStyle, Colour, ComponentInteractionCollector, CreateActionRow, CreateButton,
+	CreateComponent, CreateContainer, CreateContainerComponent, CreateInteractionResponse,
+	EditMessage, MessageFlags, User,
 };
 
 use crate::{require_guild_id, require_human};
@@ -66,7 +67,8 @@ impl RpsChoice {
 	prefix_command,
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn rps(
 	ctx: SContext<'_>,
@@ -89,20 +91,17 @@ pub async fn rps(
 			.label(RpsChoice::Scissors.emoji()),
 	];
 
-	let embed = CreateEmbed::default()
-		.title("Rock paper scissors...")
-		.colour(COLOUR_ORANGE)
-		.description("Make a choice within 60s...");
+	let display = [text_display(
+		"# Rock paper scissors...\nMake a choice within 60s...",
+	)];
+	let container = CreateContainer::new(&display)
+		.add_component(separator())
+		.add_component(CreateContainerComponent::ActionRow(
+			CreateActionRow::Buttons(Cow::Borrowed(&buttons)),
+		))
+		.accent_colour(Colour::ORANGE);
 
-	ctx.send(
-		CreateReply::default()
-			.embed(embed)
-			.reply(true)
-			.components(&[CreateComponent::ActionRow(CreateActionRow::Buttons(
-				Cow::Borrowed(&buttons),
-			))]),
-	)
-	.await?;
+	send_container(&ctx, container).await?;
 
 	let ctx_id_str = ctx_id.to_string();
 	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
@@ -117,34 +116,38 @@ pub async fn rps(
 			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 			.await?;
 
-		let response = if author_choice == target_choice {
-			"You both suck!".to_owned()
-		} else if author_choice.beats(target_choice) {
-			let mut user_name = ctx
-				.author()
-				.nick_in(ctx.http(), guild_id)
-				.await
-				.unwrap_or_else(|| ctx.author().display_name().to_owned());
-			user_name.push_str(" won!");
-			user_name
-		} else {
-			let mut user_name = user
-				.nick_in(ctx.http(), guild_id)
-				.await
-				.unwrap_or_else(|| user.display_name().to_owned());
-			user_name.push_str(" won!");
-			user_name
+		let response = {
+			let title = if author_choice == target_choice {
+				"You both suck!".to_owned()
+			} else if author_choice.beats(target_choice) {
+				let mut user_name = ctx
+					.author()
+					.nick_in(ctx.http(), guild_id)
+					.await
+					.unwrap_or_else(|| ctx.author().display_name().to_owned());
+				user_name.push_str(" won!");
+				user_name
+			} else {
+				let mut user_name = user
+					.nick_in(ctx.http(), guild_id)
+					.await
+					.unwrap_or_else(|| user.display_name().to_owned());
+				user_name.push_str(" won!");
+				user_name
+			};
+			format!("# {title}\nStill no luck getting a life")
 		};
 
 		let mut msg = interaction.message;
-		let embed = CreateEmbed::default()
-			.title(&response)
-			.colour(COLOUR_ORANGE)
-			.description("Still no luck getting a life");
+
+		let text_display = [text_display(&response)];
+		let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
 
 		msg.edit(
 			ctx.http(),
-			EditMessage::default().embed(embed).components(vec![]),
+			EditMessage::default()
+				.components(&[CreateComponent::Container(container)])
+				.flags(MessageFlags::IS_COMPONENTS_V2),
 		)
 		.await?;
 	}

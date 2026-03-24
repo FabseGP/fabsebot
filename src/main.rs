@@ -91,6 +91,8 @@ async fn main() -> AResult<()> {
 			api: api_config,
 			http_agent,
 			bot_name: bot_config.username.clone(),
+			error_webhook: bot_config.error_webhook.clone(),
+			feedback_webhook: bot_config.feedback_webhook.clone(),
 		})
 		.is_err()
 	{

@@ -9,7 +9,9 @@
 #ping_url = 
 #uptime_url =
 #uptime_token =
-#owner_id = 
+#owner_id =
+#error_webhook =
+#feedback_webhook =
 
 [PostgreSQL]
 #database = 

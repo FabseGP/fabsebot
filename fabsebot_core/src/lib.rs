@@ -2,7 +2,7 @@
 
 pub mod config;
 pub mod errors;
-mod events;
+pub mod events;
 mod handlers;
 pub mod stats;
 pub mod utils;
@@ -21,7 +21,7 @@ use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions
 use serenity::{
 	Client,
 	all::{
-		ActivityData, CreateAllowedMentions, GatewayIntents, GenericChannelId, Http, OnlineStatus,
+		ActivityData, CreateAllowedMentions, GatewayIntents, GenericChannelId, OnlineStatus,
 		Settings, Token, TransportCompression,
 	},
 };
@@ -38,7 +38,7 @@ use tracing::{error, warn};
 use crate::{
 	config::{
 		settings::BotConfig,
-		types::{CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT},
+		types::{CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, bot_context},
 	},
 	handlers::{EventHandler, dynamic_prefix, on_command, on_error},
 	stats::counters::METRICS,
@@ -79,8 +79,9 @@ async fn periodic_ping(url: &str, token: &str) -> ! {
 	}
 }
 
-async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
+pub async fn periodic_task(data: Arc<Data>) -> ! {
 	let mut interval = interval(Duration::from_hours(1));
+	let bot_context = bot_context();
 	loop {
 		interval.tick().await;
 		let system_time = match SystemTime::now()
@@ -129,7 +130,7 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 			{
 				counter!(METRICS.periodic_waifu.clone()).increment(1);
 				if let Err(err) = GenericChannelId::new(waifu_channel.cast_unsigned())
-					.say(&http, get_waifu().await)
+					.say(&bot_context.http, get_waifu(bot_context).await)
 					.await
 				{
 					error!("Failed to send waifu: {:?}", &err);
@@ -155,11 +156,11 @@ async fn periodic_task(data: Arc<Data>, http: Arc<Http>) -> ! {
 				&& let Some(dead_chat_channel) = guild.dead_chat_channel
 			{
 				counter!(METRICS.periodic_dead_chat.clone()).increment(1);
-				let gifs = get_gifs("dead chat").await;
+				let gifs = get_gifs(bot_context, "dead chat").await;
 				let index = fastrand::usize(..gifs.len());
 				if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
 					if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
-						.say(&http, gif)
+						.say(&bot_context.http, gif)
 						.await
 					{
 						error!("Failed to send dead chat gif: {:?}", &err);
@@ -258,8 +259,6 @@ pub async fn bot_start(
 		.context("Failed to create client")?;
 	let shutdown_trigger = client.shard_manager.get_shutdown_trigger();
 	spawn(async move { wait_and_shutdown(shutdown_trigger).await });
-	let http_clone = client.http.clone();
-	spawn(async move { periodic_task(bot_data, http_clone).await });
 	let client_data = ClientData {
 		runners: client.shard_manager.runners.clone(),
 	};

@@ -26,6 +26,10 @@ pub struct Metrics {
 	pub ready_errors: String,
 	pub messages_deleted_errors: String,
 	pub playback_errors: String,
+	pub feedback_modal_errors: String,
+	pub feedback_reply_errors: String,
+	pub bot_permissions_error: String,
+	pub user_permissions_error: String,
 }
 
 impl Metrics {
@@ -51,6 +55,10 @@ impl Metrics {
 			ready_errors: format!("{bot_name}_ready_errors_total"),
 			messages_deleted_errors: format!("{bot_name}_messages_deleted_errors_total"),
 			playback_errors: format!("{bot_name}_playback_errors_total"),
+			feedback_modal_errors: format!("{bot_name}_feedback_modal_errors_total"),
+			feedback_reply_errors: format!("{bot_name}_feedback_reply_errors_total"),
+			bot_permissions_error: format!("{bot_name}_bot_permissions_errors_total"),
+			user_permissions_error: format!("{bot_name}_user_permissions_errors_total"),
 		}
 	}
 
@@ -95,5 +103,21 @@ impl Metrics {
 			"Counter for message deletion errors"
 		);
 		describe_counter!(self.playback_errors.clone(), "Counter for playback errors");
+		describe_counter!(
+			self.feedback_modal_errors.clone(),
+			"Counter for feedback modal errors"
+		);
+		describe_counter!(
+			self.feedback_reply_errors.clone(),
+			"Counter for feedback reply errors"
+		);
+		describe_counter!(
+			self.bot_permissions_error.clone(),
+			"Counter for bot permissions errors"
+		);
+		describe_counter!(
+			self.user_permissions_error.clone(),
+			"Counter for user permissions errors"
+		);
 	}
 }

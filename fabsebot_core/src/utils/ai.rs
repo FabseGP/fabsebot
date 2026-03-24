@@ -17,7 +17,9 @@ use winnow::Parser as _;
 
 use crate::{
 	config::types::{AIChatContext, AIChatMessage, AIChats, HTTP_CLIENT, utils_config},
-	utils::helpers::{discord_message_link, get_configured_songbird_handler},
+	utils::helpers::{
+		discord_message_link, get_configured_songbird_handler, non_empty_string, non_empty_vec,
+	},
 };
 
 async fn internet_search(message: &Message, fabseserver_search: &str) -> AResult<String> {
@@ -352,7 +354,7 @@ struct SimpleMessage<'a> {
 #[derive(Serialize)]
 struct SimpleMessageImage<'a> {
 	role: &'a str,
-	content: [ContentPart<'a>; 2],
+	content: &'a [ContentPart<'a>],
 }
 
 #[derive(Serialize)]
@@ -369,12 +371,13 @@ enum ContentPart<'a> {
 
 #[derive(Serialize)]
 struct ImageDesc<'a> {
-	messages: [SimpleMessageImage<'a>; 1],
+	messages: &'a [SimpleMessageImage<'a>],
 	model: &'a str,
 }
 
 #[derive(Deserialize)]
-struct AIReponse {
+struct AIResponse {
+	#[serde(deserialize_with = "non_empty_vec")]
 	choices: Vec<AIText>,
 }
 
@@ -385,6 +388,7 @@ struct AIText {
 
 #[derive(Deserialize)]
 struct AIMessage {
+	#[serde(deserialize_with = "non_empty_string")]
 	content: String,
 }
 
@@ -394,7 +398,7 @@ async fn ai_request_internal<T: Serialize + Send + Sync>(
 ) -> AResult<String> {
 	let resp = HTTP_CLIENT.post(endpoint).json(request).send().await?;
 
-	let ai_response = resp.json::<AIReponse>().await?;
+	let ai_response = resp.json::<AIResponse>().await?;
 	ai_response
 		.choices
 		.into_iter()
@@ -424,9 +428,9 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> AResul
 
 	let request = ImageDesc {
 		model: &utils_config.fabseserver.image_to_text_model,
-		messages: [SimpleMessageImage {
+		messages: &[SimpleMessageImage {
 			role: "user",
-			content: [
+			content: &[
 				ContentPart::Text {
 					text: user_context.map_or("What is in this image?", |context| context),
 				},
@@ -442,13 +446,20 @@ pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> AResul
 
 #[derive(Serialize)]
 struct SimpleAIRequest<'a> {
-	messages: [SimpleMessage<'a>; 2],
+	messages: &'a [SimpleMessage<'a>],
 	model: &'a str,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	max_tokens: Option<u32>,
 }
 
-pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> AResult<String> {
+pub async fn ai_response_simple(
+	role: &str,
+	prompt: &str,
+	model: &str,
+	max_tokens: Option<u32>,
+) -> AResult<String> {
 	let request = SimpleAIRequest {
-		messages: [
+		messages: &[
 			SimpleMessage {
 				role: "system",
 				content: role,
@@ -459,6 +470,7 @@ pub async fn ai_response_simple(role: &str, prompt: &str, model: &str) -> AResul
 			},
 		],
 		model,
+		max_tokens,
 	};
 
 	ai_request_internal(&utils_config().fabseserver.llm_host_text, &request).await

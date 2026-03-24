@@ -6,20 +6,18 @@ use std::{
 use anyhow::Context as _;
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
-	config::{
-		constants::COLOUR_RED,
-		types::{Error, HTTP_CLIENT, SContext},
+	config::types::{Error, HTTP_CLIENT, SContext},
+	utils::helpers::{
+		get_gifs, get_waifu, send_container, separator, text_display, thumbnail_section,
 	},
-	errors::commands::InternalError,
-	utils::helpers::{get_gifs, get_waifu},
 };
 use fabsebot_db::guild::{reset_guild, set_music_channel, set_spoiler_channel};
 use poise::CreateReply;
 use serde::Serialize;
 use serenity::{
 	all::{
-		ButtonStyle, Channel, ComponentInteractionCollector, ComponentInteractionDataKind,
-		CreateActionRow, CreateButton, CreateComponent, CreateEmbed, CreateInteractionResponse,
+		ButtonStyle, Channel, Colour, ComponentInteractionCollector, ComponentInteractionDataKind,
+		CreateActionRow, CreateButton, CreateComponent, CreateContainer, CreateInteractionResponse,
 		CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption, GuildId,
 	},
 	futures::StreamExt as _,
@@ -59,15 +57,9 @@ async fn configure_channels(
 	guild_id: GuildId,
 ) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(guild_id);
-	let system_time = match SystemTime::now()
+	let system_time = SystemTime::now()
 		.duration_since(UNIX_EPOCH)
-		.map(|t| t.as_secs())
-	{
-		Ok(time) => time.cast_signed(),
-		Err(err) => {
-			return Err(InternalError::MissingSystemTime(err).into());
-		}
-	};
+		.map(|t| t.as_secs().cast_signed())?;
 
 	let mut tx = ctx
 		.data()
@@ -197,7 +189,8 @@ impl SelectionState {
 	slash_command,
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -425,10 +418,10 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 
 /// To reset or not to reset the user, that's the question
 #[poise::command(
-	prefix_command,
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -458,7 +451,8 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_afk(
 	ctx: SContext<'_>,
@@ -486,22 +480,26 @@ pub async fn set_afk(
 		.as_deref()
 		.unwrap_or("Didn't renew life subscription");
 	let user_name = ctx.author().display_name();
-	ctx.send(
-		CreateReply::default()
-			.embed(
-				CreateEmbed::default()
-					.title(format!("{user_name} killed!"))
-					.description(format!("Reason: {embed_reason}"))
-					.thumbnail(ctx.author().avatar_url().unwrap_or_else(|| {
-						ctx.author()
-							.static_avatar_url()
-							.unwrap_or_else(|| ctx.author().default_avatar_url())
-					}))
-					.color(COLOUR_RED),
-			)
-			.reply(true),
-	)
-	.await?;
+
+	let avatar_url = ctx.author().avatar_url().unwrap_or_else(|| {
+		ctx.author()
+			.static_avatar_url()
+			.unwrap_or_else(|| ctx.author().default_avatar_url())
+	});
+
+	let title = format!("# {user_name} killed!");
+	let thumbnail_section = [thumbnail_section(&title, &avatar_url)];
+
+	let text = format!("**Reason:** {embed_reason}");
+
+	let text_display = text_display(&text);
+
+	let container = CreateContainer::new(&thumbnail_section)
+		.add_component(separator())
+		.add_component(text_display)
+		.accent_colour(Colour::RED);
+
+	send_container(&ctx, container).await?;
 
 	Ok(())
 }
@@ -541,7 +539,8 @@ async fn set_chatbot_channel(
 #[poise::command(
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_chatbot_options(
 	ctx: SContext<'_>,
@@ -607,7 +606,7 @@ async fn set_dead_chat(
 	)
 	.execute(conn)
 	.await?;
-	let gifs = get_gifs("dead chat").await;
+	let gifs = get_gifs(ctx.serenity_context(), "dead chat").await;
 	let index = fastrand::usize(..gifs.len());
 	if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
 		channel.id().say(ctx.http(), gif).await?;
@@ -627,7 +626,8 @@ struct CreateApplicationEmoji<'a> {
 	slash_command,
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_prefix(
 	ctx: SContext<'_>,
@@ -694,7 +694,8 @@ async fn set_quote_channel(
 #[poise::command(
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_user_ping(
 	ctx: SContext<'_>,
@@ -780,7 +781,10 @@ async fn set_waifu_channel(
 	)
 	.execute(conn)
 	.await?;
-	channel.id().say(ctx.http(), get_waifu().await).await?;
+	channel
+		.id()
+		.say(ctx.http(), get_waifu(ctx.serenity_context()).await)
+		.await?;
 	Ok(())
 }
 
@@ -788,7 +792,8 @@ async fn set_waifu_channel(
 #[poise::command(
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_word_react(
 	ctx: SContext<'_>,
@@ -916,7 +921,8 @@ pub async fn set_word_react(
 #[poise::command(
 	slash_command,
 	install_context = "Guild",
-	interaction_context = "Guild"
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_word_track(
 	ctx: SContext<'_>,

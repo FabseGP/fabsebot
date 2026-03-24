@@ -9,9 +9,10 @@ use fabsebot_core::{
 		types::{Data, Error, SContext},
 	},
 	errors::commands::{GuildError, InteractionError, MusicError},
+	utils::helpers::correct_permissions,
 };
 use poise::Command;
-use serenity::all::{CacheRef, Guild, GuildId, User};
+use serenity::all::{CacheRef, Guild, GuildId, Permissions, User};
 use songbird::Call;
 use tokio::sync::Mutex;
 
@@ -22,6 +23,16 @@ mod info;
 mod misc;
 mod music;
 mod settings;
+
+pub async fn command_permissions(ctx: &SContext<'_>) -> AResult<()> {
+	if let Some(guild_id) = ctx.guild_id() {
+		let required_perms = Permissions::VIEW_CHANNEL
+			| Permissions::SEND_MESSAGES
+			| Permissions::SEND_MESSAGES_IN_THREADS;
+		correct_permissions(ctx, guild_id, required_perms).await?;
+	}
+	Ok(())
+}
 
 #[must_use]
 pub fn commands() -> Vec<Command<Data, Error>> {
@@ -42,15 +53,13 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		api_calls::waifu(),
 		api_calls::wiki(),
 		funny::anonymous(),
-		funny::anonymous_msg(),
 		funny::user_dm(),
 		funny::user_misuse(),
 		games::rps(),
 		info::server_info(),
 		info::user_info(),
-		misc::anony_poll(),
+		misc::poll(),
 		misc::birthday(),
-		misc::birthday_user(),
 		misc::bot_control(),
 		misc::debug(),
 		misc::global_chat_end(),
@@ -67,11 +76,8 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		music::add_deezer_playlist(),
 		music::add_youtube_playlist(),
 		music::join_voice(),
-		music::join_voice_global(),
 		music::leave_voice(),
-		music::leave_voice_global(),
 		music::play_song(),
-		music::play_song_global(),
 		music::seek_song(),
 		music::text_to_voice(),
 		settings::configure_server_settings(),

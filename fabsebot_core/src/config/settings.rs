@@ -11,6 +11,8 @@ pub struct BotConfig {
 	pub uptime_url: String,
 	pub uptime_token: String,
 	pub owner_id: u64,
+	pub error_webhook: String,
+	pub feedback_webhook: String,
 }
 
 #[derive(Deserialize)]
