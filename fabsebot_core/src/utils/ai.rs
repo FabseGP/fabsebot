@@ -12,7 +12,7 @@ use serenity::all::{
 };
 use songbird::{Call, input::Input};
 use tokio::sync::Mutex;
-use tracing::{error, warn};
+use tracing::warn;
 use winnow::Parser as _;
 
 use crate::{
@@ -329,14 +329,9 @@ pub async fn ai_chatbot(
 				.push(AIChatMessage::assistant(response));
 		}
 		Err(err) => {
-			error!("Failed to get AI-response: {err}");
-
 			*conversations = AIChatContext::default();
 			drop(conversations);
-
-			message
-				.reply(&ctx.http, "Sorry, I had to forget our convo, too boring!")
-				.await?;
+			return Err(err);
 		}
 	}
 

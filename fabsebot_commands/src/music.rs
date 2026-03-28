@@ -581,12 +581,12 @@ async fn add_events(ctx: &SContext<'_>, guild_id: GuildId, handler_lock: Arc<Mut
 	interaction_context = "Guild",
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK"
 )]
-pub async fn text_to_voice(ctx: SContext<'_>, input_opt: Option<String>) -> Result<(), Error> {
+pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	let handler_lock = require_handler(ctx, guild_id).await?;
 	let _typing = ctx.defer_or_broadcast().await;
 
-	let payload = if let Some(input) = input_opt {
+	let payload = if let Some(input) = input {
 		input
 	} else if let Ok(msg) = ctx
 		.channel_id()
@@ -951,7 +951,7 @@ pub async fn play_song(
 	let is_global = query_scalar!(
 		r#"
 		SELECT global_music FROM guild_settings
-		WHERE 		guild_id = $1
+		WHERE guild_id = $1
 		"#,
 		guild_id.get().cast_signed()
 	)

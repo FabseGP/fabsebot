@@ -21,8 +21,8 @@ use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions
 use serenity::{
 	Client,
 	all::{
-		ActivityData, CreateAllowedMentions, GatewayIntents, GenericChannelId, OnlineStatus,
-		Settings, Token, TransportCompression,
+		ActivityData, Context as SContext, CreateAllowedMentions, GatewayIntents, GenericChannelId,
+		OnlineStatus, Settings, Token, TransportCompression,
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
@@ -42,10 +42,21 @@ use crate::{
 	},
 	handlers::{EventHandler, dynamic_prefix, on_command, on_error},
 	stats::counters::METRICS,
-	utils::helpers::{get_gifs, get_waifu},
+	utils::{
+		helpers::{get_gifs, get_waifu},
+		webhook::error_hook,
+	},
 };
 
 const PING_INTERVAL_SEC: u64 = 60;
+
+pub async fn log_error(error_title: &str, error: String, ctx: &SContext, counter: String) {
+	error!("{error_title}: {error}");
+	counter!(counter).increment(1);
+	if let Err(err) = error_hook(ctx, error_title, error).await {
+		error!("Failed to send error to webhook: {err}");
+	}
+}
 
 async fn wait_and_shutdown<F>(shutdown_trigger: F)
 where

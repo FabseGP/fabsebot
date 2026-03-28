@@ -27,7 +27,7 @@ use crate::{
 		types::{AIChats, Data, GuildCache, WebhookMap, utils_config},
 	},
 	errors::commands::MusicError,
-	log_errors,
+	log_error, log_errors,
 	stats::counters::METRICS,
 	utils::{
 		ai::ai_chatbot,
@@ -128,7 +128,13 @@ async fn queue_track(
 			let audio = match src.create_async().await {
 				Ok(audio) => audio,
 				Err(err) => {
-					error!("{}", MusicError::FailedFetch(err));
+					log_error(
+						"Failed to create source",
+						MusicError::FailedFetch(err).to_string(),
+						&ctx_clone,
+						METRICS.music_queue_errors.clone(),
+					)
+					.await;
 					if let Err(err) = new_message_clone
 						.reply(&ctx_clone.http, FAILED_SONG_FETCH)
 						.await
@@ -141,7 +147,13 @@ async fn queue_track(
 			let metadata = match src.aux_metadata().await {
 				Ok(metadata) => metadata,
 				Err(err) => {
-					error!("{}", MusicError::MissingMetadata(err));
+					log_error(
+						"# Failed to obtain metadata",
+						MusicError::MissingMetadata(err).to_string(),
+						&ctx_clone,
+						METRICS.music_queue_errors.clone(),
+					)
+					.await;
 					if let Err(err) = new_message_clone
 						.reply(&ctx_clone.http, MISSING_METADATA_MSG)
 						.await
@@ -193,7 +205,7 @@ fn ai_chats(
 	let new_message_clone = new_message.clone();
 
 	spawn(async move {
-		if let Err(err) = ai_chatbot(
+		if let Err(error) = ai_chatbot(
 			&ctx_clone,
 			&new_message_clone,
 			chatbot_role,
@@ -204,7 +216,13 @@ fn ai_chats(
 		)
 		.await
 		{
-			error!("Failed to send AI-chat: {err}");
+			log_error(
+				"# Failed to send AI-chat",
+				error.to_string(),
+				&ctx_clone,
+				METRICS.chatbot_errors.clone(),
+			)
+			.await;
 			if let Err(err) = new_message_clone
 				.reply(&ctx_clone.http, AI_CHAT_ERROR)
 				.await

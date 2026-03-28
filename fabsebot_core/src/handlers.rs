@@ -20,6 +20,7 @@ use crate::{
 		message_delete::handle_message_delete,
 		message_sent::handle_message,
 	},
+	log_error,
 	stats::counters::METRICS,
 	utils::webhook::error_hook,
 };
@@ -41,18 +42,13 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 			}
 		}
 		FrameworkError::DynamicPrefix { error, ctx, .. } => {
-			let error_title = "# Error in dynamic prefix";
-			error!("{error_title}: {error}");
-			counter!(METRICS.prefix_errors.clone()).increment(1);
-			if let Err(err) = error_hook(
-				ctx.framework.serenity_context,
-				error_title,
+			log_error(
+				"# Error in dynamic prefix",
 				error.to_string(),
+				ctx.framework.serenity_context,
+				METRICS.prefix_errors.clone(),
 			)
-			.await
-			{
-				error!("Failed to send dynamic prefix error to webhook: {err}");
-			}
+			.await;
 		}
 		FrameworkError::MissingBotPermissions {
 			missing_permissions,
@@ -63,17 +59,13 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 				"# Missing bot permissions in command {}",
 				ctx.command().name
 			);
-			error!("{error_title}: {missing_permissions}");
-			counter!(METRICS.bot_permissions_error.clone()).increment(1);
-			if let Err(err) = error_hook(
-				ctx.serenity_context(),
+			log_error(
 				&error_title,
 				missing_permissions.to_string(),
+				ctx.serenity_context(),
+				METRICS.bot_permissions_errors.clone(),
 			)
-			.await
-			{
-				error!("Failed to send bot permissions error to webhook: {err}");
-			}
+			.await;
 		}
 		FrameworkError::MissingUserPermissions {
 			missing_permissions: Some(missing_permissions),
@@ -84,17 +76,13 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 				"# Missing user permissions in command {}",
 				ctx.command().name
 			);
-			error!("{error_title}: {missing_permissions}");
-			counter!(METRICS.user_permissions_error.clone()).increment(1);
-			if let Err(err) = error_hook(
-				ctx.serenity_context(),
+			log_error(
 				&error_title,
 				missing_permissions.to_string(),
+				ctx.serenity_context(),
+				METRICS.user_permissions_errors.clone(),
 			)
-			.await
-			{
-				error!("Failed to send user permissions error to webhook: {err}");
-			}
+			.await;
 		}
 		_ => {}
 	}
@@ -141,12 +129,13 @@ impl SEventHandler for EventHandler {
 		match event {
 			FullEvent::Ready { data_about_bot, .. } => {
 				if let Err(error) = handle_ready(ctx, data_about_bot).await {
-					let error_title = "# Error handling connection to Discord";
-					error!("{error_title}: {error}");
-					counter!(METRICS.ready_errors.clone()).increment(1);
-					if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-						error!("Failed to send connection error to webhook: {err}");
-					}
+					log_error(
+						"# Error handling connection to Discord",
+						error.to_string(),
+						ctx,
+						METRICS.ready_errors.clone(),
+					)
+					.await;
 				}
 			}
 			FullEvent::Message { new_message, .. } => {
@@ -154,12 +143,13 @@ impl SEventHandler for EventHandler {
 					&& let Some(guild_id) = new_message.guild_id
 					&& let Err(error) = Box::pin(handle_message(ctx, new_message, guild_id)).await
 				{
-					let error_title = "# Error handling sent message";
-					error!("{error_title}: {error}");
-					counter!(METRICS.message_errors.clone()).increment(1);
-					if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-						error!("Failed to send message error to webhook: {err}");
-					}
+					log_error(
+						"# Error handling sent message",
+						error.to_string(),
+						ctx,
+						METRICS.message_errors.clone(),
+					)
+					.await;
 				}
 			}
 			FullEvent::GuildCreate {
@@ -168,12 +158,13 @@ impl SEventHandler for EventHandler {
 				..
 			} => {
 				if let Err(error) = handle_guild_create(ctx.data(), guild, *is_new).await {
-					let error_title = "# Error handling newly created guild";
-					error!("{error_title}: {error}");
-					counter!(METRICS.new_guild_errors.clone()).increment(1);
-					if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-						error!("Failed to send new guild error to webhook: {err}");
-					}
+					log_error(
+						"# Error handling newly created guild",
+						error.to_string(),
+						ctx,
+						METRICS.new_guild_errors.clone(),
+					)
+					.await;
 				}
 			}
 			FullEvent::MessageDelete {
@@ -192,22 +183,24 @@ impl SEventHandler for EventHandler {
 						handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id)
 							.await
 				{
-					let error_title = "# Error handling deleted message";
-					error!("{error_title}: {error}");
-					counter!(METRICS.messages_deleted_errors.clone()).increment(1);
-					if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-						error!("Failed to send deleted message error to webhook: {err}");
-					}
+					log_error(
+						"# Error handling deleted message",
+						error.to_string(),
+						ctx,
+						METRICS.messages_deleted_errors.clone(),
+					)
+					.await;
 				}
 			}
 			FullEvent::GuildMemberAddition { new_member, .. } => {
 				if let Err(error) = handle_member_addition(ctx.data(), new_member).await {
-					let error_title = "# Error handling new guild member";
-					error!("{error_title}: {error}");
-					counter!(METRICS.member_addition_errors.clone()).increment(1);
-					if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-						error!("Failed to send new guild member error to webhook: {err}");
-					}
+					log_error(
+						"# Error handling new guild member",
+						error.to_string(),
+						ctx,
+						METRICS.member_addition_errors.clone(),
+					)
+					.await;
 				}
 			}
 			FullEvent::InteractionCreate { interaction, .. } => {
@@ -216,12 +209,13 @@ impl SEventHandler for EventHandler {
 					&& let Err(error) =
 						handle_feedback_modal_button(ctx, component_interaction).await
 				{
-					let error_title = "# Error handling feedback modal";
-					error!("{error_title}: {error}");
-					counter!(METRICS.feedback_modal_errors.clone()).increment(1);
-					if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-						error!("Failed to send feedback modal error to webhook: {err}");
-					}
+					log_error(
+						"# Error handling feedback modal",
+						error.to_string(),
+						ctx,
+						METRICS.feedback_modal_errors.clone(),
+					)
+					.await;
 				}
 				if let Some(modal_interaction) = interaction.as_modal_submit()
 					&& modal_interaction.data.custom_id == FEEDBACK_MODAL_CUSTOM_ID
@@ -229,12 +223,13 @@ impl SEventHandler for EventHandler {
 					&& let Err(error) =
 						handle_feedback_modal_reply(ctx, modal_interaction, guild_id).await
 				{
-					let error_title = "# Error handling feedback reply";
-					error!("{error_title}: {error}");
-					counter!(METRICS.feedback_reply_errors.clone()).increment(1);
-					if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-						error!("Failed to send feedback reply error to webhook: {err}");
-					}
+					log_error(
+						"# Error handling feedback reply",
+						error.to_string(),
+						ctx,
+						METRICS.feedback_reply_errors.clone(),
+					)
+					.await;
 				}
 			}
 			_ => {}

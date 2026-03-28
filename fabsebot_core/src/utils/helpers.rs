@@ -40,8 +40,8 @@ use crate::{
 		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
 		types::{Data, HTTP_CLIENT, SContext, utils_config},
 	},
+	log_error,
 	stats::counters::METRICS,
-	utils::webhook::error_hook,
 };
 
 #[macro_export]
@@ -323,11 +323,13 @@ pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(Cow<'static, str>, Cow
 	match fetch_gifs_internal(input).await {
 		Ok(gifs) => gifs,
 		Err(error) => {
-			let error_title = "# Failed to fetch gifs";
-			error!("{error_title}: {error}");
-			if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-				error!("Failed to send gifs error to webhook: {err}");
-			}
+			log_error(
+				"# Failed to fetch gifs",
+				error.to_string(),
+				ctx,
+				METRICS.gifs_errors.clone(),
+			)
+			.await;
 			vec![(
 				Cow::Borrowed(FALLBACK_GIF),
 				Cow::Borrowed(FALLBACK_GIF_TITLE),
@@ -361,11 +363,13 @@ pub async fn get_lyrics(ctx: &Context, artist_name: &str, track_name: &str) -> O
 	match get_lyrics_internal(artist_name, track_name).await {
 		Ok(lyrics) => Some(lyrics),
 		Err(error) => {
-			let error_title = "# Failed to fetch lyrics";
-			error!("{error_title}: {error}");
-			if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-				error!("Failed to send lyrics error to webhook: {err}");
-			}
+			log_error(
+				"# Failed to fetch lyrics",
+				error.to_string(),
+				ctx,
+				METRICS.lyrics_errors.clone(),
+			)
+			.await;
 			None
 		}
 	}
@@ -398,11 +402,13 @@ pub async fn get_waifu(ctx: &Context) -> Cow<'static, str> {
 	match fetch_waifu_internal().await {
 		Ok(waifu) => waifu,
 		Err(error) => {
-			let error_title = "# Failed to fetch waifu";
-			error!("{error_title}: {error}");
-			if let Err(err) = error_hook(ctx, error_title, error.to_string()).await {
-				error!("Failed to send waifu error to webhook: {err}");
-			}
+			log_error(
+				"# Failed to fetch waifu",
+				error.to_string(),
+				ctx,
+				METRICS.waifu_errors.clone(),
+			)
+			.await;
 			Cow::Borrowed(FALLBACK_WAIFU)
 		}
 	}

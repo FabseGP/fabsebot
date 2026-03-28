@@ -28,8 +28,13 @@ pub struct Metrics {
 	pub playback_errors: String,
 	pub feedback_modal_errors: String,
 	pub feedback_reply_errors: String,
-	pub bot_permissions_error: String,
-	pub user_permissions_error: String,
+	pub bot_permissions_errors: String,
+	pub user_permissions_errors: String,
+	pub chatbot_errors: String,
+	pub music_queue_errors: String,
+	pub waifu_errors: String,
+	pub lyrics_errors: String,
+	pub gifs_errors: String,
 }
 
 impl Metrics {
@@ -57,8 +62,13 @@ impl Metrics {
 			playback_errors: format!("{bot_name}_playback_errors_total"),
 			feedback_modal_errors: format!("{bot_name}_feedback_modal_errors_total"),
 			feedback_reply_errors: format!("{bot_name}_feedback_reply_errors_total"),
-			bot_permissions_error: format!("{bot_name}_bot_permissions_errors_total"),
-			user_permissions_error: format!("{bot_name}_user_permissions_errors_total"),
+			bot_permissions_errors: format!("{bot_name}_bot_permissions_errors_total"),
+			user_permissions_errors: format!("{bot_name}_user_permissions_errors_total"),
+			chatbot_errors: format!("{bot_name}_chatbot_errors"),
+			music_queue_errors: format!("{bot_name}_music_queue_errors"),
+			waifu_errors: format!("{bot_name}_waifu_errors"),
+			lyrics_errors: format!("{bot_name}_lyrics_errors"),
+			gifs_errors: format!("{bot_name}_gifs_errors"),
 		}
 	}
 
@@ -112,12 +122,20 @@ impl Metrics {
 			"Counter for feedback reply errors"
 		);
 		describe_counter!(
-			self.bot_permissions_error.clone(),
+			self.bot_permissions_errors.clone(),
 			"Counter for bot permissions errors"
 		);
 		describe_counter!(
-			self.user_permissions_error.clone(),
+			self.user_permissions_errors.clone(),
 			"Counter for user permissions errors"
 		);
+		describe_counter!(self.chatbot_errors.clone(), "Counter for chatbot errors");
+		describe_counter!(
+			self.music_queue_errors.clone(),
+			"Counter for music queue errors"
+		);
+		describe_counter!(self.waifu_errors.clone(), "Counter for waifu errors");
+		describe_counter!(self.lyrics_errors.clone(), "Counter for lyrics errors");
+		describe_counter!(self.gifs_errors.clone(), "Counter for gifs errors");
 	}
 }

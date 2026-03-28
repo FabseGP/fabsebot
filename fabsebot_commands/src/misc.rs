@@ -662,7 +662,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 	.fetch_all(&mut *ctx.data().db.acquire().await?)
 	.await?;
 
-	let title = format!("Top {} users by message count", users.len());
+	let title = format!("# Top {} users by message count", users.len());
 	let thumbnail_section = [thumbnail_section(&title, &thumbnail)];
 
 	let mut list = String::with_capacity(users.len().saturating_mul(4));
@@ -675,7 +675,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 			let rank = index.saturating_add(1);
 			writeln!(
 				list,
-				"#{rank} {}: {}",
+				"**#{rank} {}:** {}",
 				target.display_name(),
 				user.message_count
 			)?;
@@ -697,7 +697,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 async fn ohitsyou_internal(ctx: &SContext<'_>) -> AResult<()> {
 	let _typing = ctx.defer_or_broadcast().await;
 	let resp = match ai_response_simple(
-		"you're a tsundere",
+		"you're a tsundere. no commentary, no alternatives, no meta-text. just the one line.",
 		"generate a one-line love-hate greeting",
 		&utils_config().fabseserver.text_gen_model,
 		None,
