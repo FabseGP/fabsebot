@@ -49,9 +49,6 @@ missing_panics_doc = "allow"
 too_many_arguments = "allow"
 too_many_lines = "allow"
 
-[patch.crates-io]
-audiopus_sys = { git = 'https://github.com/sevenc-nanashi/audiopus_sys', rev = '00e9d16' }
-
 [workspace.dependencies]
 ab_glyph = "*"
 anyhow = "*"

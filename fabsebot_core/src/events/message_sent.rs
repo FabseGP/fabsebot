@@ -660,8 +660,13 @@ async fn db_queries(
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	author_settings: UserSettings,
-	mut tx: Transaction<'static, Postgres>,
 ) -> AResult<()> {
+	let mut tx = data
+		.db
+		.begin()
+		.await
+		.context("Failed to acquire savepoint")?;
+
 	user_queries(ctx, new_message, guild_id_i64, author_settings, &mut tx).await?;
 
 	let words: Vec<String> = new_message
@@ -725,12 +730,6 @@ pub async fn handle_message(
 	guild_id: GuildId,
 ) -> AResult<()> {
 	let data: Arc<Data> = ctx.data();
-	let mut tx = data
-		.db
-		.begin()
-		.await
-		.context("Failed to acquire savepoint")?;
-
 	let guild_id_i64 = i64::from(guild_id);
 	let user_id_i64 = i64::from(new_message.author.id);
 
@@ -740,23 +739,27 @@ pub async fn handle_message(
 		new_data
 	});
 
-	let guild_settings = match insert_guild_settings(guild_id_i64, &mut tx).await {
-		Ok(settings) => settings,
-		Err(err) => {
-			error!("Failed to fetch guild settings: {err}");
-			insert_guild(guild_id_i64, &mut tx).await?;
-			insert_guild_settings(guild_id_i64, &mut tx).await?
-		}
-	};
+	let guild_settings =
+		match insert_guild_settings(guild_id_i64, &mut *data.db.acquire().await?).await {
+			Ok(settings) => settings,
+			Err(err) => {
+				error!("Failed to fetch guild settings: {err}");
+				insert_guild(guild_id_i64, &mut *data.db.acquire().await?).await?;
+				insert_guild_settings(guild_id_i64, &mut *data.db.acquire().await?).await?
+			}
+		};
 
-	let author_settings = match insert_user_settings(guild_id_i64, user_id_i64, &mut tx).await {
-		Ok(settings) => settings,
-		Err(err) => {
-			error!("Failed to fetch user settings: {err}");
-			insert_user(user_id_i64, &mut tx).await?;
-			insert_user_settings(guild_id_i64, user_id_i64, &mut tx).await?
-		}
-	};
+	let author_settings =
+		match insert_user_settings(guild_id_i64, user_id_i64, &mut *data.db.acquire().await?).await
+		{
+			Ok(settings) => settings,
+			Err(err) => {
+				error!("Failed to fetch user settings: {err}");
+				insert_user(user_id_i64, &mut *data.db.acquire().await?).await?;
+				insert_user_settings(guild_id_i64, user_id_i64, &mut *data.db.acquire().await?)
+					.await?
+			}
+		};
 
 	if !new_message.content.starts_with('#') {
 		if let Some(music_channel) = guild_settings.music_channel
@@ -818,7 +821,6 @@ pub async fn handle_message(
 		guild_id,
 		guild_id_i64,
 		author_settings,
-		tx,
 	)
 	.await?;
 
