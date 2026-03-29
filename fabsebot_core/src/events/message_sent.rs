@@ -660,13 +660,8 @@ async fn db_queries(
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	author_settings: UserSettings,
+	mut tx: Transaction<'static, Postgres>,
 ) -> AResult<()> {
-	let mut tx = data
-		.db
-		.begin()
-		.await
-		.context("Failed to acquire savepoint")?;
-
 	user_queries(ctx, new_message, guild_id_i64, author_settings, &mut tx).await?;
 
 	let words: Vec<String> = new_message
@@ -730,6 +725,12 @@ pub async fn handle_message(
 	guild_id: GuildId,
 ) -> AResult<()> {
 	let data: Arc<Data> = ctx.data();
+	let mut tx = data
+		.db
+		.begin()
+		.await
+		.context("Failed to acquire savepoint")?;
+
 	let guild_id_i64 = i64::from(guild_id);
 	let user_id_i64 = i64::from(new_message.author.id);
 
@@ -744,8 +745,8 @@ pub async fn handle_message(
 			Ok(settings) => settings,
 			Err(err) => {
 				error!("Failed to fetch guild settings: {err}");
-				insert_guild(guild_id_i64, &mut *data.db.acquire().await?).await?;
-				insert_guild_settings(guild_id_i64, &mut *data.db.acquire().await?).await?
+				insert_guild(guild_id_i64, &mut tx).await?;
+				insert_guild_settings(guild_id_i64, &mut tx).await?
 			}
 		};
 
@@ -755,9 +756,8 @@ pub async fn handle_message(
 			Ok(settings) => settings,
 			Err(err) => {
 				error!("Failed to fetch user settings: {err}");
-				insert_user(user_id_i64, &mut *data.db.acquire().await?).await?;
-				insert_user_settings(guild_id_i64, user_id_i64, &mut *data.db.acquire().await?)
-					.await?
+				insert_user(user_id_i64, &mut tx).await?;
+				insert_user_settings(guild_id_i64, user_id_i64, &mut tx).await?
 			}
 		};
 
@@ -821,6 +821,7 @@ pub async fn handle_message(
 		guild_id,
 		guild_id_i64,
 		author_settings,
+		tx,
 	)
 	.await?;
 

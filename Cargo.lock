@@ -3725,7 +3725,7 @@ dependencies = [
 [[package]]
 name = "poise"
 version = "0.6.1"
-source = "git+https://github.com/FabseGP/poise.git?branch=update-deps#adfdd99d564ae2c2d03955b423fa1533bf4d2e76"
+source = "git+https://github.com/FabseGP/poise.git?branch=update-deps#d05ccbde5ed8b5d5bc7be744077b8362da763a8a"
 dependencies = [
  "async-trait",
  "derivative",
@@ -3743,7 +3743,7 @@ dependencies = [
 [[package]]
 name = "poise_macros"
 version = "0.6.1"
-source = "git+https://github.com/FabseGP/poise.git?branch=update-deps#adfdd99d564ae2c2d03955b423fa1533bf4d2e76"
+source = "git+https://github.com/FabseGP/poise.git?branch=update-deps#d05ccbde5ed8b5d5bc7be744077b8362da763a8a"
 dependencies = [
  "darling",
  "proc-macro2",
