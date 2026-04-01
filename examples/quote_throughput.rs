@@ -13,7 +13,7 @@ const TOTAL: usize = 100_000;
 fn main() {
 	let content_font = FONTS.get(CONTENT_FONT).unwrap();
 	let author_font = FONTS.get(AUTHOR_FONT).unwrap();
-	let avatar_image = include_bytes!("../bench_assets/avatar.webp");
+	let avatar_image = include_bytes!("../bench_assets/avatar.avif");
 	let avatar_resized = resize_avatar(avatar_image).unwrap();
 	let (img, text_colour) = get_theme(DEFAULT_THEME);
 	let avatar_pos = avatar_position(false);

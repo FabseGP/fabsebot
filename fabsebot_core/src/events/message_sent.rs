@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Write as _, sync::Arc};
+use std::{fmt::Write as _, sync::Arc};
 
 use anyhow::{Context as _, Result as AResult};
 use fabsebot_db::{
@@ -32,7 +32,7 @@ use crate::{
 	utils::{
 		ai::ai_chatbot,
 		helpers::{
-			channel_counter, discord_message_link, event_container, get_gifs, get_waifu,
+			channel_counter, discord_message_link, event_container, get_gif, get_waifu,
 			media_gallery, queue_song, separator, text_display, thumbnail_section, youtube_source,
 		},
 		webhook::{spoiler_message, webhook_find},
@@ -174,7 +174,7 @@ async fn queue_track(
 				metadata,
 				audio,
 				src,
-				handler_lock.clone(),
+				handler_lock,
 				guild_id,
 				ctx_clone.data(),
 				msg.id,
@@ -546,12 +546,9 @@ async fn user_queries(
 					let media = if ping_media.eq_ignore_ascii_case("waifu") {
 						get_waifu(ctx).await
 					} else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
-						let gifs = get_gifs(ctx, gif_query).await;
-						gifs.get(fastrand::usize(..gifs.len()))
-							.map(|g| g.0.clone())
-							.map_or(Cow::Borrowed(ping_media.as_str()), |gif| gif)
+						get_gif(ctx, gif_query).await
 					} else {
-						Cow::Borrowed(ping_media.as_str())
+						ping_media.to_owned()
 					};
 					Some(media)
 				} else {
@@ -603,12 +600,9 @@ async fn guild_queries(
 			let mut container = CreateContainer::new(&text_display).accent_colour(Colour::GOLD);
 			let media_opt = if let Some(reaction_media) = &record.media {
 				let media = if let Some(gif_query) = reaction_media.strip_prefix("!gif") {
-					let gifs = get_gifs(ctx, gif_query).await;
-					gifs.get(fastrand::usize(..gifs.len()))
-						.map(|g| g.0.clone())
-						.map_or(Cow::Borrowed(reaction_media.as_str()), |gif| gif)
+					get_gif(ctx, gif_query).await
 				} else {
-					Cow::Borrowed(reaction_media.as_str())
+					reaction_media.to_owned()
 				};
 				Some(media)
 			} else {

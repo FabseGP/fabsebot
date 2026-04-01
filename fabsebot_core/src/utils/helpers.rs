@@ -1,6 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use anyhow::{Result as AResult, bail};
+use fastrand::usize;
 use metrics::counter;
 use mini_moka::sync::Cache;
 use poise::{CreateReply, serenity_prelude::Channel};
@@ -290,7 +291,7 @@ struct GifObject {
 	url: String,
 }
 
-async fn fetch_gifs_internal(input: &str) -> AResult<Vec<(Cow<'static, str>, Cow<'static, str>)>> {
+async fn fetch_gifs_internal(input: &str) -> AResult<Vec<(String, String)>> {
 	let response = HTTP_CLIENT
 		.get("https://tenor.googleapis.com/v2/search")
 		.query(&[
@@ -309,17 +310,15 @@ async fn fetch_gifs_internal(input: &str) -> AResult<Vec<(Cow<'static, str>, Cow
 		.results
 		.into_iter()
 		.filter_map(|result| {
-			result.media_formats.gif.map(|media| {
-				(
-					Cow::Owned(media.url),
-					Cow::Owned(result.content_description),
-				)
-			})
+			result
+				.media_formats
+				.gif
+				.map(|media| (media.url, result.content_description))
 		})
 		.collect())
 }
 
-pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
+pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(String, String)> {
 	match fetch_gifs_internal(input).await {
 		Ok(gifs) => gifs,
 		Err(error) => {
@@ -330,12 +329,15 @@ pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(Cow<'static, str>, Cow
 				METRICS.gifs_errors.clone(),
 			)
 			.await;
-			vec![(
-				Cow::Borrowed(FALLBACK_GIF),
-				Cow::Borrowed(FALLBACK_GIF_TITLE),
-			)]
+			vec![(FALLBACK_GIF.to_owned(), FALLBACK_GIF_TITLE.to_owned())]
 		}
 	}
+}
+
+pub async fn get_gif(ctx: &Context, input: &str) -> String {
+	let gifs = get_gifs(ctx, input).await;
+	let index = usize(..gifs.len());
+	gifs.into_iter().nth(index).map(|g| g.0).unwrap()
 }
 
 #[derive(Deserialize)]
@@ -385,20 +387,17 @@ struct WaifuImage {
 	url: String,
 }
 
-async fn fetch_waifu_internal() -> AResult<Cow<'static, str>> {
+async fn fetch_waifu_internal() -> AResult<String> {
 	let response = HTTP_CLIENT
 		.get("https://api.waifu.im/images?IsNsfw=False")
 		.send()
 		.await?;
 	let waifu_response = response.json::<WaifuResponse>().await?;
 
-	Ok(waifu_response.items.first().map_or_else(
-		|| Cow::Borrowed(FALLBACK_WAIFU),
-		|w| Cow::Owned(w.url.clone()),
-	))
+	Ok(waifu_response.items.into_iter().next().unwrap().url)
 }
 
-pub async fn get_waifu(ctx: &Context) -> Cow<'static, str> {
+pub async fn get_waifu(ctx: &Context) -> String {
 	match fetch_waifu_internal().await {
 		Ok(waifu) => waifu,
 		Err(error) => {
@@ -409,7 +408,7 @@ pub async fn get_waifu(ctx: &Context) -> Cow<'static, str> {
 				METRICS.waifu_errors.clone(),
 			)
 			.await;
-			Cow::Borrowed(FALLBACK_WAIFU)
+			FALLBACK_WAIFU.to_owned()
 		}
 	}
 }

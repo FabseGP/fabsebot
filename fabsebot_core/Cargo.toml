@@ -17,6 +17,7 @@ emojis = { workspace = true }
 fastrand = { workspace = true }
 image = { workspace = true, default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
 imageproc = { workspace = true, default-features = false, features = ["rayon", "text"] }
+#lavalink-rs = { workspace = true, default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
 metrics = { workspace = true }
 mini-moka = { workspace = true }
 poise = { workspace = true }
@@ -50,4 +51,3 @@ ignored = ["symphonia"]
 [features]
 simd-avx = ["symphonia/opt-simd-avx"]
 simd-neon = ["symphonia/opt-simd-neon"]
-quote_webp = []

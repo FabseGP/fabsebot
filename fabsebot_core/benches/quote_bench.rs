@@ -24,7 +24,7 @@ fn load_assets(asset_type: AssetType) -> (FontArc, FontArc, &'static [u8]) {
 	let avatar: &[u8] = if asset_type == AssetType::Animated {
 		include_bytes!("../../bench_assets/flopa.gif")
 	} else {
-		include_bytes!("../../bench_assets/avatar.webp")
+		include_bytes!("../../bench_assets/avatar.avif")
 	};
 	(content_font.clone(), author_font.clone(), avatar)
 }

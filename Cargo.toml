@@ -49,6 +49,14 @@ missing_panics_doc = "allow"
 too_many_arguments = "allow"
 too_many_lines = "allow"
 
+[patch.crates-io.serenity]
+git = "https://github.com/serenity-rs/serenity.git"
+branch = "next"
+
+[patch.crates-io.songbird]
+git = "https://github.com/FabseGP/songbird.git"
+branch = "update-deps"
+
 [workspace.dependencies]
 ab_glyph = "*"
 anyhow = "*"
@@ -60,6 +68,7 @@ emojis = "*"
 fastrand = "*"
 image = { version = "*", default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
 imageproc = { version = "*", default-features = false, features = ["rayon", "text"] }
+#lavalink-rs = { git = "https://gitlab.com/vicky5124/lavalink-rs/", branch = "main", default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
 metrics = { version = "*" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
 #poise = { git = "https://github.com/serenity-rs/poise.git", branch = "serenity-next" }
@@ -86,7 +95,7 @@ workspace = true
 
 [dependencies]
 fabsebot_commands = { path = "fabsebot_commands" }
-fabsebot_core = { path = "fabsebot_core", default-features = false, features = ["quote_webp"] }
+fabsebot_core = { path = "fabsebot_core" }
 fabsebot_db = { path = "fabsebot_db" }
 anyhow = { workspace = true }
 metrics-exporter-prometheus = { version = "*", default-features = false, features = ["http-listener"] }

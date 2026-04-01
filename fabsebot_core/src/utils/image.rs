@@ -2,12 +2,10 @@ use std::{clone::Clone, io::Cursor, result::Result};
 
 use ab_glyph::{FontArc, PxScale};
 use anyhow::Result as AResult;
-#[cfg(not(feature = "quote_webp"))]
-use image::ImageFormat::Avif as STATIC_FORMAT;
-#[cfg(feature = "quote_webp")]
-use image::ImageFormat::WebP as STATIC_FORMAT;
 use image::{
-	AnimationDecoder as _, Frame, ImageBuffer, Rgba, RgbaImage,
+	AnimationDecoder as _, Frame, ImageBuffer,
+	ImageFormat::Avif as STATIC_FORMAT,
+	Rgba, RgbaImage,
 	codecs::gif::{GifDecoder, GifEncoder, Repeat},
 	imageops::{FilterType, overlay, resize},
 	load_from_memory,

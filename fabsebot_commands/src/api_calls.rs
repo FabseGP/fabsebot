@@ -17,6 +17,7 @@ use fabsebot_core::{
 		},
 	},
 };
+use fastrand::usize;
 use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -654,7 +655,7 @@ async fn gif_internal(ctx: SContext<'_>, input: &str) -> AResult<()> {
 	if ctx.guild_id().is_some() && len > 1 {
 		drop(typing);
 		if let Some(gif) = gifs.first() {
-			embed = embed.image(gif.0.as_ref()).title(gif.1.as_ref());
+			embed = embed.image(&gif.0).title(&gif.1);
 		}
 		let mut state = State::new(ctx.id(), len);
 		let mut final_embed = embed.clone();
@@ -700,7 +701,7 @@ async fn gif_internal(ctx: SContext<'_>, input: &str) -> AResult<()> {
 
 			embed = CreateEmbed::default().colour(COLOUR_ORANGE);
 			if let Some(gif) = gifs.get(state.index) {
-				embed = embed.image(gif.0.as_ref()).title(gif.1.as_ref());
+				embed = embed.image(&gif.0).title(&gif.1);
 			}
 			final_embed = embed.clone();
 
@@ -732,9 +733,9 @@ async fn gif_internal(ctx: SContext<'_>, input: &str) -> AResult<()> {
 			)
 			.await?;
 	} else {
-		let index = fastrand::usize(..len);
+		let index = usize(..len);
 		if let Some(gif) = gifs.get(index) {
-			embed = embed.image(gif.0.as_ref()).title(gif.1.as_ref());
+			embed = embed.image(&gif.0).title(&gif.1);
 		}
 		ctx.send(CreateReply::default().reply(true).embed(embed))
 			.await?;

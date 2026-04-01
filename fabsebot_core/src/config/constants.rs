@@ -96,8 +96,4 @@ pub static THEMES: LazyLock<HashMap<&'static str, (RgbaImage, Rgba<u8>)>> = Lazy
 });
 
 pub const QUOTE_ANIMATED_FILENAME: &str = "quote.gif";
-
-#[cfg(feature = "quote_webp")]
-pub const QUOTE_STATIC_FILENAME: &str = "quote.webp";
-#[cfg(not(feature = "quote_webp"))]
 pub const QUOTE_STATIC_FILENAME: &str = "quote.avif";
