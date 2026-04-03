@@ -1,9 +1,9 @@
-use std::{collections::HashSet, fmt::Write as _, sync::Arc};
+use std::{collections::HashSet, fmt::Write as _, io::Cursor, sync::Arc};
 
 use anyhow::{Result as AResult, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
-use image::guess_format;
+use image::{ImageFormat, guess_format, load_from_memory};
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serenity::all::{
@@ -404,11 +404,19 @@ async fn ai_request_internal<T: Serialize + Send + Sync>(
 
 pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> AResult<String> {
 	let image_format = guess_format(content)?;
+	let base64_image = if image_format == ImageFormat::WebP {
+		let img = load_from_memory(content)?;
+		let mut png_bytes = Vec::with_capacity(content.len());
+		img.write_to(&mut Cursor::new(&mut png_bytes), ImageFormat::Jpeg)?;
+		BASE64.encode(&png_bytes)
+	} else {
+		BASE64.encode(content)
+	};
 
 	let data_uri = format!(
 		"data:{};base64,{}",
 		image_format.to_mime_type(),
-		BASE64.encode(content)
+		base64_image
 	);
 
 	let utils_config = utils_config();
