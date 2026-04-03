@@ -396,8 +396,7 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 				} else {
 					None
 				};
-				let media_ref = media_opt.as_ref().map(AsRef::as_ref);
-				if let Some(media) = media_ref {
+				if let Some(media) = &media_opt {
 					let image = media_gallery(media);
 					container = container.add_component(image);
 				}
@@ -540,23 +539,21 @@ async fn user_queries(
 				counter!(METRICS.custom_user_pings.clone()).increment(1);
 				let title = format!("# {ping_content}");
 				let text_display = [text_display(&title)];
-				let mut container =
-					CreateContainer::new(&text_display).accent_colour(Colour::BLITZ_BLUE);
-				let media_opt = if let Some(ping_media) = &mentioned_user_settings.ping_media {
-					let media = if ping_media.eq_ignore_ascii_case("waifu") {
+				let media = if let Some(ping_media) = mentioned_user_settings.ping_media {
+					Some(if ping_media.eq_ignore_ascii_case("waifu") {
 						get_waifu(ctx).await
 					} else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
 						get_gif(ctx, gif_query).await
 					} else {
-						ping_media.to_owned()
-					};
-					Some(media)
+						ping_media
+					})
 				} else {
 					None
 				};
-				let media_ref = media_opt.as_ref().map(AsRef::as_ref);
-				if let Some(media) = media_ref {
-					let image = media_gallery(media);
+				let mut container =
+					CreateContainer::new(&text_display).accent_colour(Colour::BLITZ_BLUE);
+				if let Some(media_str) = &media {
+					let image = media_gallery(media_str);
 					container = container.add_component(image);
 				}
 				event_container(ctx, new_message, container).await?;
@@ -608,8 +605,7 @@ async fn guild_queries(
 			} else {
 				None
 			};
-			let media_ref = media_opt.as_ref().map(AsRef::as_ref);
-			if let Some(media) = media_ref {
+			if let Some(media) = &media_opt {
 				let image = media_gallery(media);
 				container = container.add_component(image);
 			}
