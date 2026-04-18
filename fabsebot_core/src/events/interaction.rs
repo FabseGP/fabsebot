@@ -44,7 +44,7 @@ pub async fn handle_feedback_modal_reply(
 		.components
 		.iter()
 		.find_map(modal_component_feedback_field_predicate)
-		.and_then(|c| c.value.clone())
+		.map(|c| c.value.clone())
 	else {
 		interaction
 			.create_response(
