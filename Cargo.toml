@@ -58,37 +58,37 @@ git = "https://github.com/FabseGP/songbird.git"
 branch = "update-deps"
 
 [workspace.dependencies]
-ab_glyph = "*"
-anyhow = "*"
-base64 = "*"
-bytes = "*"
-criterion = { version = "*", features = ["async_tokio", "html_reports"] }
-dashmap = "*"
-emojis = "*"
-fastrand = "*"
-image = { version = "*", default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
-imageproc = { version = "*", default-features = false, features = ["rayon", "text"] }
+ab_glyph = "0.2.32"
+anyhow = "1.0.102"
+base64 = "0.22.1"
+bytes = "1.11.1"
+criterion = { version = "0.8.2", features = ["async_tokio", "html_reports"] }
+dashmap = "6.1.0"
+emojis = "0.8.1"
+fastrand = "2.4.1"
+image = { version = "0.25.10", default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
+imageproc = { version = "0.26.1", default-features = false, features = ["rayon", "text"] }
 #lavalink-rs = { git = "https://gitlab.com/vicky5124/lavalink-rs/", branch = "main", default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
-metrics = { version = "*" }
+metrics = { version = "0.24.3" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
 #poise = { git = "https://github.com/serenity-rs/poise.git", branch = "serenity-next" }
 poise = { git = "https://github.com/FabseGP/poise.git", branch = "update-deps" }
-rayon = "*"
-reqwest = { version = "*", default-features = false, features = ["http3", "json", "query", "rustls", "zstd"] }
-scraper = "*"
-serde = "*"
+rayon = "1.12"
+reqwest = { version = "0.13.2", default-features = false, features = ["http3", "json", "query", "rustls", "zstd"] }
+scraper = "0.26"
+serde = "1.0.228"
 serenity = { git = "https://github.com/serenity-rs/serenity.git", branch = "next", default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
 songbird = { git = "https://github.com/FabseGP/songbird.git", branch = "update-deps", features = ["builtin-queue", "receive"] }
-sqlx = { version = "*", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
-symphonia = { version = "*", default-features = false, features = ["aac", "isomp4", "mkv", "pcm", "wav"] }
-systemstat = "*"
-textwrap = "*"
-thiserror = "*"
-tokio = { version = "*", features = ["rt-multi-thread", "signal"] }
-tracing = "*"
-url = "*"
-uuid = { version = "*", features = ["v4", "v5"] }
-winnow = { version = "*", features = ["simd"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+symphonia = { version = "0.5.5", default-features = false, features = ["aac", "isomp4", "mkv", "pcm", "wav"] }
+systemstat = "0.2.6"
+textwrap = "0.16.2"
+thiserror = "2.0.18"
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "signal"] }
+tracing = "0.1.44"
+url = "2.5.8"
+uuid = { version = "1.23.1", features = ["v4", "v5"] }
+winnow = { version = "1.0.1", features = ["simd"] }
 
 [lints]
 workspace = true
@@ -98,14 +98,14 @@ fabsebot_commands = { path = "fabsebot_commands" }
 fabsebot_core = { path = "fabsebot_core" }
 fabsebot_db = { path = "fabsebot_db" }
 anyhow = { workspace = true }
-metrics-exporter-prometheus = { version = "*", default-features = false, features = ["http-listener"] }
-bc-mimalloc = { version = "*", features = ["v3"] }
+metrics-exporter-prometheus = { version = "0.18.1", default-features = false, features = ["http-listener"] }
+bc-mimalloc = { version = "0.1.48", features = ["v3"] }
 serde = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-tokio-metrics = { version = "*" }
-toml = "*"
+tokio-metrics = { version = "0.5.0" }
+toml = "1.1.2"
 tracing = { workspace = true }
-tracing-subscriber = "*"
+tracing-subscriber = "0.3.23"
 fastrand = { workspace = true }
 
 [profile.release]
