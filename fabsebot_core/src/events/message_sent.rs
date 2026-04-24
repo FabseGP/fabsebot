@@ -20,9 +20,9 @@ use winnow::Parser as _;
 use crate::{
 	config::{
 		constants::{
-			AI_CHAT_ERROR, DEFAULT_BOT_ROLE, FABSEMAN_WEBHOOK_CONTENT, FABSEMAN_WEBHOOK_NAME,
-			FABSEMAN_WEBHOOK_PFP, FAILED_SONG_FETCH, FLOPPAGANDA_GIF, INVALID_TRACK_SOURCE,
-			MISSING_METADATA_MSG, NOT_IN_VOICE_CHAN_MSG, QUEUE_MSG,
+			AI_CHAT_ERROR, DEFAULT_BOT_ROLE, EMPTY_VOICE_CHAN_MSG, FABSEMAN_WEBHOOK_CONTENT,
+			FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FAILED_SONG_FETCH, FLOPPAGANDA_GIF,
+			INVALID_TRACK_SOURCE, MISSING_METADATA_MSG, QUEUE_MSG,
 		},
 		types::{AIChats, Data, GuildCache, WebhookMap, utils_config},
 	},
@@ -33,8 +33,9 @@ use crate::{
 		ai::ai_chatbot,
 		helpers::{
 			channel_counter, discord_message_link, event_container, get_gif, get_waifu,
-			media_gallery, queue_song, separator, text_display, thumbnail_section, youtube_source,
+			media_gallery, separator, text_display, thumbnail_section,
 		},
+		voice::{add_voice_events, queue_song, youtube_source},
 		webhook::{spoiler_message, webhook_find},
 	},
 };
@@ -112,80 +113,95 @@ async fn queue_track(
 	guild_id: GuildId,
 ) -> AResult<()> {
 	channel_counter("music".to_owned());
-	if let Some(handler_lock) = music_manager.get(guild_id) {
-		let ctx_clone = ctx.clone();
-		let new_message_clone = new_message.clone();
-		spawn(async move {
-			let Some(mut src) = youtube_source(new_message_clone.content.to_string()).await else {
+	let handler_lock = if let Some(lock) = music_manager.get(guild_id) {
+		lock
+	} else if let Ok(voice_state) = guild_id
+		.get_user_voice_state(&ctx.http, new_message.author.id)
+		.await && let Some(channel_id) = voice_state.channel_id
+		&& let Ok(lock) = music_manager.join(guild_id, channel_id).await
+	{
+		add_voice_events(
+			ctx,
+			guild_id,
+			GenericChannelId::new(channel_id.get()),
+			lock.clone(),
+		)
+		.await;
+		lock
+	} else {
+		new_message.reply(&ctx.http, EMPTY_VOICE_CHAN_MSG).await?;
+		return Ok(());
+	};
+	let ctx_clone = ctx.clone();
+	let new_message_clone = new_message.clone();
+	spawn(async move {
+		let Some(mut src) = youtube_source(new_message_clone.content.to_string()).await else {
+			if let Err(err) = new_message_clone
+				.reply(&ctx_clone.http, INVALID_TRACK_SOURCE)
+				.await
+			{
+				error!("Failed to send message: {err}");
+			}
+			return;
+		};
+		let audio = match src.create_async().await {
+			Ok(audio) => audio,
+			Err(err) => {
+				log_error(
+					"Failed to create source",
+					MusicError::FailedFetch(err).to_string(),
+					&ctx_clone,
+					METRICS.music_queue_errors.clone(),
+				)
+				.await;
 				if let Err(err) = new_message_clone
-					.reply(&ctx_clone.http, INVALID_TRACK_SOURCE)
+					.reply(&ctx_clone.http, FAILED_SONG_FETCH)
 					.await
 				{
 					error!("Failed to send message: {err}");
 				}
 				return;
-			};
-			let audio = match src.create_async().await {
-				Ok(audio) => audio,
-				Err(err) => {
-					log_error(
-						"Failed to create source",
-						MusicError::FailedFetch(err).to_string(),
-						&ctx_clone,
-						METRICS.music_queue_errors.clone(),
-					)
-					.await;
-					if let Err(err) = new_message_clone
-						.reply(&ctx_clone.http, FAILED_SONG_FETCH)
-						.await
-					{
-						error!("Failed to send message: {err}");
-					}
-					return;
-				}
-			};
-			let metadata = match src.aux_metadata().await {
-				Ok(metadata) => metadata,
-				Err(err) => {
-					log_error(
-						"# Failed to obtain metadata",
-						MusicError::MissingMetadata(err).to_string(),
-						&ctx_clone,
-						METRICS.music_queue_errors.clone(),
-					)
-					.await;
-					if let Err(err) = new_message_clone
-						.reply(&ctx_clone.http, MISSING_METADATA_MSG)
-						.await
-					{
-						error!("Failed to send message: {err}");
-					}
-					return;
-				}
-			};
-			let msg = match new_message_clone.reply(&ctx_clone.http, QUEUE_MSG).await {
-				Ok(msg) => msg,
-				Err(err) => {
+			}
+		};
+		let metadata = match src.aux_metadata().await {
+			Ok(metadata) => metadata,
+			Err(err) => {
+				log_error(
+					"# Failed to obtain metadata",
+					MusicError::MissingMetadata(err).to_string(),
+					&ctx_clone,
+					METRICS.music_queue_errors.clone(),
+				)
+				.await;
+				if let Err(err) = new_message_clone
+					.reply(&ctx_clone.http, MISSING_METADATA_MSG)
+					.await
+				{
 					error!("Failed to send message: {err}");
-					return;
 				}
-			};
-			queue_song(
-				metadata,
-				audio,
-				src,
-				handler_lock,
-				guild_id,
-				ctx_clone.data(),
-				msg.id,
-				msg.channel_id,
-				new_message_clone.author.display_name(),
-			)
-			.await;
-		});
-	} else {
-		new_message.reply(&ctx.http, NOT_IN_VOICE_CHAN_MSG).await?;
-	}
+				return;
+			}
+		};
+		let msg = match new_message_clone.reply(&ctx_clone.http, QUEUE_MSG).await {
+			Ok(msg) => msg,
+			Err(err) => {
+				error!("Failed to send message: {err}");
+				return;
+			}
+		};
+		queue_song(
+			metadata,
+			audio,
+			src,
+			handler_lock,
+			guild_id,
+			ctx_clone.data(),
+			msg.id,
+			msg.channel_id,
+			new_message_clone.author.display_name(),
+		)
+		.await;
+	});
 
 	Ok(())
 }
@@ -197,7 +213,6 @@ fn ai_chats(
 	music_manager: Option<Arc<Mutex<Call>>>,
 	guild_id: GuildId,
 	chatbot_role: String,
-	chatbot_internet_search: bool,
 ) {
 	channel_counter("chatbot".to_owned());
 
@@ -209,7 +224,6 @@ fn ai_chats(
 			&ctx_clone,
 			&new_message_clone,
 			chatbot_role,
-			chatbot_internet_search,
 			guild_id,
 			ai_chats,
 			music_manager,
@@ -740,17 +754,6 @@ pub async fn handle_message(
 			}
 		};
 
-	let author_settings =
-		match insert_user_settings(guild_id_i64, user_id_i64, &mut *data.db.acquire().await?).await
-		{
-			Ok(settings) => settings,
-			Err(err) => {
-				error!("Failed to fetch user settings: {err}");
-				insert_user(user_id_i64, &mut tx).await?;
-				insert_user_settings(guild_id_i64, user_id_i64, &mut tx).await?
-			}
-		};
-
 	if !new_message.content.starts_with('#') {
 		if let Some(music_channel) = guild_settings.music_channel
 			&& new_message.channel_id.get() == music_channel.cast_unsigned()
@@ -766,11 +769,10 @@ pub async fn handle_message(
 				guild_cache.ai_chats.clone(),
 				data.music_manager.get(guild_id),
 				guild_id,
-				author_settings
+				guild_settings
 					.chatbot_role
 					.clone()
 					.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
-				author_settings.chatbot_internet_search,
 			);
 		}
 	}
@@ -803,6 +805,17 @@ pub async fn handle_message(
 		spoiler_message,
 		global_chat
 	);
+
+	let author_settings =
+		match insert_user_settings(guild_id_i64, user_id_i64, &mut *data.db.acquire().await?).await
+		{
+			Ok(settings) => settings,
+			Err(err) => {
+				error!("Failed to fetch user settings: {err}");
+				insert_user(user_id_i64, &mut tx).await?;
+				insert_user_settings(guild_id_i64, user_id_i64, &mut tx).await?
+			}
+		};
 
 	db_queries(
 		ctx,

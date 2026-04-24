@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serenity::all::{
 	Context, Emoji, GenericChannelId, GuildId, MessageId, ShardId, ShardRunnerMetadata, Webhook,
 };
@@ -19,7 +19,10 @@ use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::config::settings::{APIConfig, HTTPAgent, ServerConfig};
+use crate::{
+	config::settings::{APIConfig, HTTPAgent, ServerConfig},
+	utils::ai::ToolCall,
+};
 
 pub type WebhookMap = Cache<GenericChannelId, Webhook>;
 pub type AIChats = Arc<Mutex<AIChatContext>>;
@@ -32,32 +35,29 @@ pub struct GuildCache {
 #[derive(Default)]
 pub struct AIChatContext {
 	pub messages: Vec<AIChatMessage>,
-	pub static_info: AIChatStatic,
 }
 
-#[derive(Default)]
-pub struct AIChatStatic {
-	pub chatbot_role: String,
-	pub guild_desc: String,
-	pub users: HashMap<u64, String>,
-}
-
-impl AIChatStatic {
-	#[must_use]
-	pub const fn is_set(&self) -> bool {
-		!self.guild_desc.is_empty()
-	}
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolCalls {
+	Web,
+	Time,
+	Gif,
+	GuildInfo,
+	UserInfo,
+	Waifu,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Role {
+pub enum AIRole {
 	System,
 	User,
 	Assistant,
+	Tool,
 }
 
-impl Role {
+impl AIRole {
 	#[must_use]
 	pub const fn is_system(&self) -> bool {
 		matches!(self, Self::System)
@@ -71,29 +71,54 @@ impl Role {
 
 #[derive(Serialize)]
 pub struct AIChatMessage {
-	pub role: Role,
-	pub content: String,
+	pub role: AIRole,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub content: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub tool_call_id: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 impl AIChatMessage {
 	#[must_use]
-	pub const fn new(role: Role, content: String) -> Self {
-		Self { role, content }
+	pub const fn new(
+		role: AIRole,
+		content: Option<String>,
+		tool_call_id: Option<String>,
+		tool_calls: Option<Vec<ToolCall>>,
+	) -> Self {
+		Self {
+			role,
+			content,
+			tool_call_id,
+			tool_calls,
+		}
 	}
 
 	#[must_use]
 	pub const fn system(content: String) -> Self {
-		Self::new(Role::System, content)
+		Self::new(AIRole::System, Some(content), None, None)
 	}
 
 	#[must_use]
 	pub const fn user(content: String) -> Self {
-		Self::new(Role::User, content)
+		Self::new(AIRole::User, Some(content), None, None)
 	}
 
 	#[must_use]
 	pub const fn assistant(content: String) -> Self {
-		Self::new(Role::Assistant, content)
+		Self::new(AIRole::Assistant, Some(content), None, None)
+	}
+
+	#[must_use]
+	pub const fn assistant_with_tools(content: Option<String>, tool_calls: Vec<ToolCall>) -> Self {
+		Self::new(AIRole::Assistant, content, None, Some(tool_calls))
+	}
+
+	#[must_use]
+	pub const fn tool(content: String, call_id: String) -> Self {
+		Self::new(AIRole::Tool, Some(content), Some(call_id), None)
 	}
 }
 

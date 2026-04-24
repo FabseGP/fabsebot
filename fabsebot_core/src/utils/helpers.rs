@@ -12,22 +12,11 @@ use serenity::{
 		CreateContainer, CreateContainerComponent, CreateMediaGallery, CreateMediaGalleryItem,
 		CreateMessage, CreateSection, CreateSectionAccessory, CreateSectionComponent,
 		CreateSeparator, CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, Emoji,
-		EmojiId, GenericChannelId, GuildId, Message, MessageFlags, MessageId, Permissions,
-		ReactionType,
+		EmojiId, GuildId, Message, MessageFlags, Permissions, ReactionType,
 	},
 	small_fixed_array::FixedString,
 };
-use songbird::{
-	Call,
-	driver::Bitrate,
-	input::{AudioStream, AuxMetadata, Input, LiveInput, YoutubeDl},
-	tracks::Track,
-};
-use symphonia::core::io::MediaSource;
-use tokio::sync::{Mutex, MutexGuard};
 use tracing::error;
-use url::Url;
-use uuid::Uuid;
 use winnow::{
 	ModalResult, Parser as _,
 	ascii::digit1,
@@ -39,7 +28,7 @@ use winnow::{
 use crate::{
 	config::{
 		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
-		types::{Data, HTTP_CLIENT, SContext, utils_config},
+		types::{HTTP_CLIENT, SContext, utils_config},
 	},
 	log_error,
 	stats::counters::METRICS,
@@ -105,6 +94,19 @@ where
 		return Err(D::Error::custom("field cannot be empty"));
 	}
 	Ok(s)
+}
+
+pub fn non_empty_option_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+	D: serde::Deserializer<'de>,
+{
+	let opt = Option::<String>::deserialize(deserializer)?;
+	match opt {
+		Some(s) if s.trim().is_empty() => {
+			Err(D::Error::custom("field cannot be empty or whitespace"))
+		}
+		other => Ok(other),
+	}
 }
 
 pub fn non_empty_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
@@ -202,71 +204,6 @@ pub async fn event_container(
 		.await?;
 
 	Ok(())
-}
-
-pub async fn get_configured_songbird_handler(
-	handler_lock: &Arc<Mutex<Call>>,
-) -> MutexGuard<'_, Call> {
-	let mut handler = handler_lock.lock().await;
-	handler.set_bitrate(Bitrate::Max);
-	handler
-}
-
-pub async fn youtube_source(url: String) -> Option<YoutubeDl<'static>> {
-	match Url::parse(&url) {
-		Ok(parsed_url) => parsed_url
-			.domain()
-			.filter(|d| {
-				*d == "youtube.com"
-					|| *d == "www.youtube.com"
-					|| *d == "youtu.be"
-					|| *d == "m.youtube.com"
-			})
-			.map(|_| YoutubeDl::new(HTTP_CLIENT.clone(), url)),
-		Err(_) => Some(YoutubeDl::new_search(HTTP_CLIENT.clone(), url)),
-	}
-}
-
-pub async fn queue_song(
-	metadata: AuxMetadata,
-	audio: AudioStream<Box<dyn MediaSource>>,
-	source: YoutubeDl<'static>,
-	handler_lock: Arc<Mutex<Call>>,
-	guild_id: GuildId,
-	data: Arc<Data>,
-	msg_id: MessageId,
-	channel_id: GenericChannelId,
-	author_name: &str,
-) {
-	let uuid = metadata
-		.source_url
-		.as_ref()
-		.map_or_else(Uuid::new_v4, |url| {
-			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
-		});
-
-	let mut track_metadata = data
-		.track_metadata
-		.get(&uuid)
-		.unwrap_or_default()
-		.as_ref()
-		.clone();
-
-	track_metadata.0 = metadata;
-	track_metadata.1.insert(
-		guild_id,
-		(format!("Added by {author_name}"), msg_id, channel_id),
-	);
-
-	data.track_metadata.insert(uuid, Arc::new(track_metadata));
-
-	get_configured_songbird_handler(&handler_lock)
-		.await
-		.enqueue(Track::new_with_uuid(
-			Input::Live(LiveInput::Raw(audio), Some(Box::new(source))),
-			uuid,
-		))
-		.await;
 }
 
 #[derive(Deserialize)]

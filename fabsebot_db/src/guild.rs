@@ -18,6 +18,7 @@ pub struct GuildSettings {
 	pub waifu_channel: Option<i64>,
 	pub waifu_rate: Option<i64>,
 	pub last_waifu: Option<i64>,
+	pub chatbot_role: Option<String>,
 }
 
 pub async fn set_music_channel(
@@ -94,7 +95,8 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
         global_music = FALSE,
         global_call = FALSE,
         music_channel = NULL,
-        waifu_channel = NULL
+        waifu_channel = NULL,
+        chatbot_role = NULL
     	WHERE guild_id = $1
     	"#,
 		guild_id

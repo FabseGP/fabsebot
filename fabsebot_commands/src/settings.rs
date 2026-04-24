@@ -434,8 +434,8 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	query!(
 		r#"
 		UPDATE user_settings
-        SET chatbot_role = NULL, chatbot_internet_search = NULL, afk = FALSE,
-        afk_reason = NULL, pinged_links = NULL, ping_content = NULL, ping_media = NULL
+        SET afk = FALSE, afk_reason = NULL,
+        pinged_links = NULL, ping_content = NULL, ping_media = NULL
     	WHERE guild_id = $1 AND user_id = $2
     	"#,
 		i64::from(guild_id),
@@ -547,33 +547,29 @@ pub async fn set_chatbot_options(
 	#[description = "The role the bot should take; if not set, then default role"] role: Option<
 		String,
 	>,
-	#[description = "Enable bot to search online every message sent"]
-	#[flag]
-	internet_search: bool,
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	let guild_id_i64 = i64::from(guild_id);
-	let user_id_i64 = i64::from(ctx.author().id);
 	let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
 	query!(
 		r#"
-		INSERT INTO user_settings
-		(guild_id, user_id, chatbot_role, chatbot_internet_search)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (guild_id, user_id)
-        DO UPDATE SET chatbot_role = $3,
-        chatbot_internet_search = $4
+		INSERT INTO guild_settings
+		(guild_id, chatbot_role)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET chatbot_role = $2
         "#,
 		guild_id_i64,
-		user_id_i64,
 		final_role,
-		internet_search,
 	)
 	.execute(&mut *ctx.data().db.acquire().await?)
 	.await?;
 	ctx.send(
 		CreateReply::default()
-			.content("Options for chatbot set... probably")
+			.content(
+				"Options for chatbot set... probably\nThe new role will not take effect until the \
+				 chat history is cleared using \"clear\" in the chat channel",
+			)
 			.ephemeral(true),
 	)
 	.await?;

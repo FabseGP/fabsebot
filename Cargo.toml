@@ -68,6 +68,7 @@ emojis = "0.8.1"
 fastrand = "2.4.1"
 image = { version = "0.25.10", default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
 imageproc = { version = "0.26.1", default-features = false, features = ["rayon", "text"] }
+jiff = "0.2.24"
 #lavalink-rs = { git = "https://gitlab.com/vicky5124/lavalink-rs/", branch = "main", default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
 metrics = { version = "0.24.3" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
@@ -75,8 +76,8 @@ mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.
 poise = { git = "https://github.com/FabseGP/poise.git", branch = "update-deps" }
 rayon = "1.12"
 reqwest = { version = "0.13.2", default-features = false, features = ["http3", "json", "query", "rustls", "zstd"] }
-scraper = "0.26"
 serde = "1.0.228"
+serde_json = "1.0.149"
 serenity = { git = "https://github.com/serenity-rs/serenity.git", branch = "next", default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
 songbird = { git = "https://github.com/FabseGP/songbird.git", branch = "update-deps", features = ["builtin-queue", "receive"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
