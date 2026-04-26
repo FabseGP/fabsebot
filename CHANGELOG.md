@@ -136,6 +136,7 @@ All notable changes to this project will be documented in this file.
 - Use semver
 - Ignore rust tool
 - Add cargo rule
+- Top-level env
 
 ### 💼 Other
 
@@ -161,6 +162,7 @@ All notable changes to this project will be documented in this file.
 - Update deps
 - Update deps
 - Update renovate config
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
