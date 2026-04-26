@@ -184,7 +184,7 @@ impl SelectionState {
 	}
 }
 
-/// Configure settings related to channels
+/// Configure server settings for the bot
 #[poise::command(
 	slash_command,
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",

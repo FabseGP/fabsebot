@@ -55,7 +55,7 @@ pub async fn user_dm(
 	Ok(())
 }
 
-/// Send message as an another user
+/// Send message as another user
 #[poise::command(
 	slash_command,
 	install_context = "Guild",

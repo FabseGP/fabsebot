@@ -86,7 +86,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 
-/// Leak other users private data
+/// Leak an user's private data
 #[poise::command(
 	prefix_command,
 	slash_command,

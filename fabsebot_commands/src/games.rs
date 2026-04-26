@@ -73,7 +73,7 @@ impl RpsChoice {
 pub async fn rps(
 	ctx: SContext<'_>,
 	#[description = "Target"] user: User,
-	#[description = "Your choice: rock, paper, or scissors"] author_choice: RpsChoice,
+	#[description = "Your choice: rock, paper, or scissors"] choice: RpsChoice,
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	require_human(ctx, &user).await?;
@@ -117,9 +117,9 @@ pub async fn rps(
 			.await?;
 
 		let response = {
-			let title = if author_choice == target_choice {
+			let title = if choice == target_choice {
 				"You both suck!".to_owned()
-			} else if author_choice.beats(target_choice) {
+			} else if choice.beats(target_choice) {
 				let mut user_name = ctx
 					.author()
 					.nick_in(ctx.http(), guild_id)

@@ -32,8 +32,9 @@ use serenity::{
 		ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
 		CreateAutocompleteResponse, CreateButton, CreateComponent, CreateContainer, CreateEmbed,
 		CreateEmbedFooter, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
-		CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditMessage, GenericChannelId,
-		GuildChannel, GuildId, Message, MessageId, OnlineStatus, ShardRunnerMessage, User, UserId,
+		CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditCurrentMember, EditMessage,
+		GenericChannelId, GuildChannel, GuildId, Message, MessageId, OnlineStatus,
+		ShardRunnerMessage, User, UserId,
 	},
 	futures::StreamExt as _,
 	nonmax::NonMaxU16,
@@ -219,7 +220,7 @@ impl BotStatus {
 	}
 }
 
-/// Fabsebot control
+/// Bot control
 #[poise::command(
 	slash_command,
 	install_context = "Guild",
@@ -230,31 +231,29 @@ impl BotStatus {
 )]
 pub async fn bot_control(
 	ctx: SContext<'_>,
-	new_activity_opt: Option<String>,
-	new_status_opt: Option<BotStatus>,
-	new_nickname_opt: Option<String>,
+	#[description = "Activity"] activity: Option<String>,
+	#[description = "Status"] status: Option<BotStatus>,
+	#[description = "Nickname"] nickname: Option<String>,
+	#[description = "Bio"] bio: Option<String>,
 ) -> Result<(), Error> {
-	if let Some(new_activity) = new_activity_opt {
+	if let Some(new_activity) = activity {
 		ctx.framework()
 			.serenity_context
 			.set_activity(Some(ActivityData::listening(new_activity)));
 	}
 
-	if let Some(new_status) = new_status_opt {
+	if let Some(new_status) = status {
 		ctx.framework()
 			.serenity_context
 			.set_status(new_status.to_online_status());
 	}
 
-	if new_nickname_opt.is_some()
-		&& let Some(guild_id) = ctx.guild_id()
-	{
-		guild_id
-			.edit_nickname(
-				ctx.http(),
-				new_nickname_opt.as_deref(),
-				Some("Bot owner requested"),
-			)
+	if let Some(guild_id) = ctx.guild_id() {
+		EditCurrentMember::default()
+			.nickname(nickname.map(Cow::from))
+			.bio(bio.map(Cow::from))
+			.audit_log_reason("Requested by bot owner")
+			.execute(ctx.http(), guild_id)
 			.await?;
 	}
 
@@ -268,7 +267,7 @@ pub async fn bot_control(
 	Ok(())
 }
 
-/// Debugging fabsebot's host
+/// Debugging the bot's host
 #[poise::command(
 	prefix_command,
 	slash_command,

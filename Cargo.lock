@@ -4666,7 +4666,7 @@ dependencies = [
 [[package]]
 name = "serenity"
 version = "0.12.5"
-source = "git+https://github.com/serenity-rs/serenity.git?branch=next#6910f64e15bfb8a6ca7e9aee604c33e303fa188a"
+source = "git+https://github.com/serenity-rs/serenity.git?branch=next#edbac1e73241ffa83a8a70e7ec725d73e29bf330"
 dependencies = [
  "aformat",
  "arrayvec",
@@ -6297,7 +6297,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -440,7 +440,7 @@ pub async fn play_song(
 	Ok(())
 }
 
-/// Seek current playing song backward
+/// Seek current playing song
 #[poise::command(
 	prefix_command,
 	slash_command,
