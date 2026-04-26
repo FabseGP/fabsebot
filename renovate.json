@@ -5,8 +5,5 @@
     ":semanticCommits",
     ":semanticCommitScope(deps)"
   ],
-  "configMigration": true,
-  "env": {
-    "RUSTUP_TOOLCHAIN": "nightly"
-  }
+  "configMigration": true
 }
