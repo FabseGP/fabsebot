@@ -1,8 +1,7 @@
 name: Generate CHANGELOG.md
-
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 jobs:
   changelog:
@@ -16,7 +15,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Generate a changelog
-        uses: orhun/git-cliff-action@v4
+        uses: https://github.com/orhun/git-cliff-action@v4
         id: git-cliff
         with:
           config: cliff.toml
@@ -25,10 +24,9 @@ jobs:
           OUTPUT: CHANGELOG.md
       - name: Commit
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git config user.name 'Forgejo Action'
+          git config user.email 'action@forgejo.local'
           set +e
           git add CHANGELOG.md
-          git commit -m "Update changelog"
+          git commit -m "ci(chore): update changelog"
           git push
-
