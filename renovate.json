@@ -6,7 +6,9 @@
     ":semanticCommitScope(deps)"
   ],
   "configMigration": true,
-  "constraints": {
-    "rust": "1.97.0-nightly-2026-04-16"
+  "cargo": {
+    "ignoreTools": [
+      "rust"
+    ]
   }
 }
