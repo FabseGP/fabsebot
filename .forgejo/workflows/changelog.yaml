@@ -20,8 +20,8 @@ jobs:
         with:
           config: cliff.toml
           args: --verbose
+          github_token: ${{ secrets.GITHUB }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB }}
           OUTPUT: CHANGELOG.md
       - name: Commit
         run: |
