@@ -5,5 +5,8 @@
     ":semanticCommits",
     ":semanticCommitScope(deps)"
   ],
-  "configMigration": true
+  "configMigration": true,
+  "env": {
+    "IGNORED_TOOLS": "rust"
+  }
 }
