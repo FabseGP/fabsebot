@@ -7,6 +7,6 @@
   ],
   "configMigration": true,
   "constraints": {
-    "rust": "nightly"
+    "rust": "1.97.0-nightly-2026-04-16"
   }
 }
