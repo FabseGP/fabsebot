@@ -5,5 +5,8 @@
     ":semanticCommits",
     ":semanticCommitScope(deps)"
   ],
-  "configMigration": true
+  "configMigration": true,
+  "constraints": {
+    "rust": "nightly"
+  }
 }
