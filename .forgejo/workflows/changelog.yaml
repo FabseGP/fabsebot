@@ -20,6 +20,7 @@ jobs:
         with:
           config: cliff.toml
           args: --verbose
+          github_token: ""
         env:
           OUTPUT: CHANGELOG.md
       - name: Commit
