@@ -6,9 +6,14 @@
     ":semanticCommitScope(deps)"
   ],
   "configMigration": true,
-  "cargo": {
-    "ignoreTools": [
-      "rust"
-    ]
-  }
+  "packageRules": [
+    {
+      "matchManagers": [
+        "cargo"
+      ],
+      "env": {
+        "RUSTUP_TOOLCHAIN": "nightly"
+      }
+    }
+  ]
 }
