@@ -138,6 +138,7 @@ All notable changes to this project will be documented in this file.
 - Add cargo rule
 - Top-level env
 - Remove unused env
+- Set IGNORED_TOOLS
 
 ### 💼 Other
 
@@ -163,6 +164,7 @@ All notable changes to this project will be documented in this file.
 - Update deps
 - Update deps
 - Update renovate config
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
