@@ -10,6 +10,6 @@
     "IGNORED_TOOLS": "rust"
   },
   "schedule": [
-    "* 2 * * 6"
+    "* 2-3 * * 6"
   ]
 }
