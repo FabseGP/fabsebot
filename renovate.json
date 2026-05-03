@@ -8,8 +8,5 @@
   "configMigration": true,
   "env": {
     "IGNORED_TOOLS": "rust"
-  },
-  "schedule": [
-    "* 2-3 * * 6"
-  ]
+  }
 }
