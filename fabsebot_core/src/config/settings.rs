@@ -35,6 +35,13 @@ pub struct APIConfig {
 }
 
 #[derive(Deserialize)]
+pub struct LogConfig {
+	pub log_level: String,
+	pub host: String,
+	pub env: String,
+}
+
+#[derive(Deserialize)]
 pub struct HTTPAgent {
 	pub title: String,
 	pub repo: String,

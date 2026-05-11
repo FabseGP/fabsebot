@@ -1,29 +1,33 @@
-mod config;
-
-use std::fs::read_to_string;
+use std::{fs::read_to_string, time::Duration};
 
 use anyhow::{Context as _, Result as AResult};
 use bc_mimalloc::MiMalloc;
-use config::MainConfig;
 use fabsebot_commands::commands;
 use fabsebot_core::{
 	bot_start,
 	config::{
-		settings::{APIConfig, BotConfig, HTTPAgent, ServerConfig},
+		settings::{APIConfig, BotConfig, HTTPAgent, LogConfig, ServerConfig},
 		types::{UTILS_CONFIG, UtilsConfig},
 	},
 };
 use fabsebot_db::{PostgresConfig, PostgresConn};
 use metrics_exporter_prometheus::PrometheusBuilder;
+use rustls::crypto::aws_lc_rs;
+use tokio::{spawn, time::MissedTickBehavior};
 use toml::{Table, Value};
-use tracing::{Level, error, subscriber::set_global_default};
-use tracing_subscriber::{filter::LevelFilter, fmt};
+use tracing::{Level, error};
+use tracing_loki_but_better::LokiBuilder;
+use tracing_subscriber::{
+	Layer as _, Registry, filter::LevelFilter, fmt, layer::SubscriberExt as _,
+	util::SubscriberInitExt as _,
+};
+use url::Url;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-fn setup_tracing(log_level_str: &str) -> AResult<()> {
-	let log_level = match log_level_str {
+async fn setup_tracing(log_config: &LogConfig, service_name: &str) -> AResult<()> {
+	let log_level = match log_config.log_level.as_str() {
 		"trace" => Level::TRACE,
 		"debug" => Level::DEBUG,
 		"warn" => Level::WARN,
@@ -31,11 +35,27 @@ fn setup_tracing(log_level_str: &str) -> AResult<()> {
 		_ => Level::INFO,
 	};
 
-	let subscriber = fmt()
-		.with_max_level(LevelFilter::from_level(log_level))
-		.finish();
+	let level_filter = LevelFilter::from_level(log_level);
 
-	set_global_default(subscriber).context("Failed to set global subscriber")?;
+	let env_layer = fmt::layer().with_filter(level_filter);
+
+	let builder = LokiBuilder::new()
+		.batch_send_interval(Duration::from_secs(1))
+		.missed_tick_behavior(MissedTickBehavior::Burst)
+		.label("service_name", service_name)?
+		.label("env", &log_config.env)?
+		.add_vl_compat(true);
+
+	let (loki_layer, task) = builder
+		.build_without_strip(&Url::parse(&log_config.host)?)
+		.await?;
+
+	Registry::default()
+		.with(loki_layer.with_filter(level_filter))
+		.with(env_layer)
+		.init();
+
+	spawn(task);
 
 	PrometheusBuilder::default()
 		.install()
@@ -47,10 +67,16 @@ fn setup_tracing(log_level_str: &str) -> AResult<()> {
 #[expect(clippy::expect_used)]
 #[tokio::main]
 async fn main() -> AResult<()> {
+	aws_lc_rs::default_provider().install_default().unwrap();
+
 	let config_toml: Table = read_to_string("config.toml")?.parse()?;
 
-	let main_config: MainConfig =
-		Value::try_into(config_toml.get("Main").expect("Missing Main-field").clone())?;
+	let log_config: LogConfig = Value::try_into(
+		config_toml
+			.get("Logging")
+			.expect("Missing Logging-field")
+			.clone(),
+	)?;
 	let bot_config: BotConfig =
 		Value::try_into(config_toml.get("Bot").expect("Missing Bot-field").clone())?;
 	let postgres_config: PostgresConfig = Value::try_into(
@@ -78,7 +104,7 @@ async fn main() -> AResult<()> {
 			.clone(),
 	)?;
 
-	setup_tracing(&main_config.log_level)?;
+	setup_tracing(&log_config, &bot_config.username).await?;
 
 	let postgres_pool = PostgresConn::new(postgres_config).await?;
 

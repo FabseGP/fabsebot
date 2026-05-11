@@ -1,6 +1,3 @@
-[Main]
-#log_level =
-
 [Bot]
 #token = 
 #username = 
@@ -20,6 +17,11 @@
 #port = 
 #user = 
 #max_connections = 
+
+[Logging]
+#log_level =
+#host =
+#env =
 
 [Server]
 #translate =
