@@ -54,6 +54,7 @@ All notable changes to this project will be documented in this file.
 - HUUUUGE refactoring!
 - Forgejo action
 - Schedule renovate
+- Persistent track history + misc
 
 ### 🐛 Bug Fixes
 
@@ -178,6 +179,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Rewrite command descriptions
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
