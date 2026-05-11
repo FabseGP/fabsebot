@@ -107,14 +107,6 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 		};
 		let now_timestamp = system_time.cast_signed();
 
-		let mut tx = match data.db.begin().await {
-			Ok(tx) => tx,
-			Err(err) => {
-				error!("Failed to start SQL-transaction: {err}");
-				continue;
-			}
-		};
-
 		let guilds = match query_as!(
 			GuildSettings,
 			r#"
@@ -123,7 +115,7 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 			OR dead_chat_channel IS NOT NULL
 			"#
 		)
-		.fetch_all(&mut *tx)
+		.fetch_all(&data.db)
 		.await
 		{
 			Ok(guilds) => guilds,
@@ -155,7 +147,7 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 					guild.guild_id,
 					now_timestamp
 				)
-				.execute(&mut *tx)
+				.execute(&data.db)
 				.await
 				{
 					error!("Failed to update last_waifu in db: {:?}", &err);
@@ -185,16 +177,13 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 						guild.guild_id,
 						now_timestamp
 					)
-					.execute(&mut *tx)
+					.execute(&data.db)
 					.await
 					{
 						error!("Failed to update last_dead_chat in db: {:?}", &err);
 					}
 				}
 			}
-		}
-		if let Err(err) = tx.commit().await {
-			error!("Failed to commit SQL-transaction: {err}");
 		}
 	}
 }
@@ -221,10 +210,6 @@ pub async fn bot_start(
 			.time_to_idle(Duration::from_hours(12))
 			.build(),
 		guilds: Cache::builder()
-			.max_capacity(1000)
-			.time_to_idle(Duration::from_hours(12))
-			.build(),
-		track_metadata: Cache::builder()
 			.max_capacity(1000)
 			.time_to_idle(Duration::from_hours(12))
 			.build(),

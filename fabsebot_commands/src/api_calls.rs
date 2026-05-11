@@ -6,14 +6,15 @@ use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
 		constants::{COLOUR_GREEN, COLOUR_ORANGE},
-		types::{Error, HTTP_CLIENT, SContext, utils_config},
+		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, utils_config},
 	},
 	errors::commands::{AIError, Base64Error, HTTPError, InteractionError},
 	utils::{
-		ai::ai_response_simple,
+		ai::{ContentPart, ai_response, image_content, uri_content, user_roles_pfp},
 		helpers::{
 			get_gifs, get_waifu, media_gallery, non_empty_string, non_empty_vec, send_container,
-			separator, text_display, thumbnail_section, true_bool, visit_page_button,
+			separator, text_display, thumbnail_section, true_bool, user_banner, user_pfp,
+			visit_page_button,
 		},
 	},
 };
@@ -22,9 +23,9 @@ use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 use serenity::{
 	all::{
-		ButtonStyle, Colour, ComponentInteractionCollector, CreateActionRow, CreateAttachment,
-		CreateButton, CreateComponent, CreateContainer, CreateContainerComponent, CreateEmbed,
-		CreateInteractionResponse, EditMessage, Member, MessageFlags, MessageId, User,
+		Attachment, ButtonStyle, Colour, ComponentInteractionCollector, CreateActionRow,
+		CreateAttachment, CreateButton, CreateComponent, CreateContainer, CreateContainerComponent,
+		CreateEmbed, CreateInteractionResponse, EditMessage, Member, MessageFlags, MessageId, User,
 	},
 	futures::StreamExt as _,
 };
@@ -135,17 +136,33 @@ pub async fn ai_image(
 	Ok(())
 }
 
-async fn ai_text_internal(ctx: &SContext<'_>, prompt: &str, role: &str) -> AResult<()> {
+async fn ai_text_internal(
+	ctx: &SContext<'_>,
+	role: String,
+	attachment: Option<Attachment>,
+	prompt: String,
+) -> AResult<()> {
 	ctx.defer().await?;
 
-	let resp = match ai_response_simple(
-		role,
-		prompt,
-		&utils_config().fabseserver.text_gen_model,
-		Some(1000),
-	)
-	.await
+	let mut chat_vec = Vec::with_capacity(1);
+	if let Some(attachment) = attachment
+		&& let Some(content_type) = attachment.content_type.as_deref()
+		&& content_type.starts_with("image")
+		&& let Err(err) = image_content(&mut chat_vec, &attachment.download().await?)
 	{
+		ctx.reply("Why you give me an invalid image format >:(")
+			.await?;
+		return Err(err);
+	}
+
+	chat_vec.push(ContentPart::Text {
+		text: prompt.clone(),
+	});
+
+	let system_message = AIChatMessage::system(role);
+	let user_message = AIChatMessage::user(chat_vec);
+
+	let resp = match ai_response(&[system_message, user_message]).await {
 		Ok(resp) => resp,
 		Err(err) => {
 			ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
@@ -154,7 +171,9 @@ async fn ai_text_internal(ctx: &SContext<'_>, prompt: &str, role: &str) -> AResu
 		}
 	};
 
-	let mut text = format!("# {prompt}\n{resp}");
+	let content = resp.extract_content()?;
+
+	let mut text = format!("# {prompt}\n{content}");
 	text.truncate(4000);
 
 	let text_display = [text_display(&text)];
@@ -175,12 +194,12 @@ async fn ai_text_internal(ctx: &SContext<'_>, prompt: &str, role: &str) -> AResu
 pub async fn ai_text(
 	ctx: SContext<'_>,
 	#[description = "AI personality, e.g. *you're an evil assistant*"] role: String,
-	#[description = "Prompt"]
-	#[rest]
-	prompt: String,
+	#[description = "Prompt"] prompt: String,
+	#[description = "Optional image for context (only JPEG, WEBP and AVIF are supported)"]
+	attachment: Option<Attachment>,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	ai_text_internal(&ctx, &prompt, &role).await?;
+	ai_text_internal(&ctx, role, attachment, prompt).await?;
 	Ok(())
 }
 
@@ -1084,18 +1103,18 @@ pub async fn memegen(
 	Ok(())
 }
 
-async fn roast_internal(ctx: &SContext<'_>, description: &str, name: &str) -> AResult<()> {
+async fn roast_internal(
+	ctx: &SContext<'_>,
+	user_message: AIChatMessage,
+	name: &str,
+) -> AResult<()> {
 	let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no \
-	            mercy shown. the prompt will contain information of your target";
+	            mercy shown. the prompt will contain information of your target"
+		.to_owned();
 
-	let resp = match ai_response_simple(
-		role,
-		description,
-		&utils_config().fabseserver.text_gen_model,
-		Some(1000),
-	)
-	.await
-	{
+	let system_message = AIChatMessage::system(role);
+
+	let resp = match ai_response(&[system_message, user_message]).await {
 		Ok(resp) => resp,
 		Err(err) => {
 			ctx.reply(format!("{name}'s life is already roasted"))
@@ -1104,7 +1123,9 @@ async fn roast_internal(ctx: &SContext<'_>, description: &str, name: &str) -> AR
 		}
 	};
 
-	let mut text = format!("# Roasting {name}\n{resp}");
+	let content = resp.extract_content()?;
+
+	let mut text = format!("# Roasting {name}\n{content}");
 	text.truncate(4000);
 
 	let text_display = [text_display(&text)];
@@ -1127,23 +1148,20 @@ pub async fn roast_user(
 	#[description = "Target"] user: User,
 ) -> Result<(), Error> {
 	let _typing = ctx.defer_or_broadcast().await;
-	let avatar_url = user
-		.avatar_url()
-		.unwrap_or_else(|| user.default_avatar_url());
-	let banner_url = (ctx.http().get_user(user.id).await).map_or_else(
-		|_| "user has no banner".to_owned(),
-		|user| {
-			user.banner_url()
-				.unwrap_or_else(|| "user has no banner".to_owned())
-		},
-	);
+
+	let mut chat_vec = Vec::with_capacity(3);
+
+	uri_content(&user_pfp(&user), &mut chat_vec).await?;
+	uri_content(&user_banner(ctx.http(), user.id).await?, &mut chat_vec).await?;
+
 	let name = user.display_name();
 	let account_date = user.id.created_at();
 
-	let description =
-		format!("name:{name},avatar:{avatar_url},banner:{banner_url},acc_create:{account_date}");
+	let description = format!("name:{name},acc_create:{account_date}");
 
-	roast_internal(&ctx, &description, name).await?;
+	chat_vec.push(ContentPart::Text { text: description });
+
+	roast_internal(&ctx, AIChatMessage::user(chat_vec), name).await?;
 
 	Ok(())
 }
@@ -1163,29 +1181,21 @@ pub async fn roast(
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	let _typing = ctx.defer_or_broadcast().await;
-	let avatar_url = member.avatar_url().unwrap_or_else(|| {
-		member
-			.user
-			.avatar_url()
-			.unwrap_or_else(|| member.user.default_avatar_url())
-	});
-	let banner_url = (ctx.http().get_user(member.user.id).await).map_or_else(
-		|_| "user has no banner".to_owned(),
-		|user| {
-			user.banner_url()
-				.unwrap_or_else(|| "user has no banner".to_owned())
-		},
-	);
-	let roles = member.roles(ctx.cache()).map_or_else(
-		|| "no roles".to_owned(),
-		|member_roles| {
-			member_roles
-				.iter()
-				.map(|role| role.name.as_str())
-				.intersperse(", ")
-				.collect()
-		},
-	);
+
+	let mut chat_vec = Vec::with_capacity(3);
+
+	let roles = user_roles_pfp(
+		&member.roles(ctx.cache()).unwrap_or_default(),
+		&member,
+		&mut chat_vec,
+	)
+	.await?;
+	uri_content(
+		&user_banner(ctx.http(), member.user.id).await?,
+		&mut chat_vec,
+	)
+	.await?;
+
 	let name = member.display_name();
 	let account_date = member.user.id.created_at();
 	let join_date = member.joined_at.unwrap_or_default();
@@ -1200,7 +1210,7 @@ pub async fn roast(
 		guild_id.get().cast_signed(),
 		ctx.author().id.get().cast_signed()
 	)
-	.fetch_one(&mut *ctx.data().db.acquire().await?)
+	.fetch_one(&ctx.data().db)
 	.await?;
 
 	let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
@@ -1236,12 +1246,13 @@ pub async fn roast(
 	};
 
 	let description = format!(
-		"name:{name},avatar:{avatar_url},banner:{banner_url},roles:{roles},acc_create:\
-		 {account_date},joined_svr:{join_date},msg_count:{message_count},last_msgs:\
-		 {messages_string}"
+		"name:{name},roles:{roles},acc_create:{account_date},joined_svr:{join_date},msg_count:\
+		 {message_count},last_msgs:{messages_string}"
 	);
 
-	roast_internal(&ctx, &description, name).await?;
+	chat_vec.push(ContentPart::Text { text: description });
+
+	roast_internal(&ctx, AIChatMessage::user(chat_vec), name).await?;
 
 	Ok(())
 }

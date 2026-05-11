@@ -13,14 +13,13 @@ ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 base64 = { workspace = true }
 fastrand = { workspace = true }
-image = { workspace = true, default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
-metrics = { workspace = true }
+image = { workspace = true, default-features = false, features = ["avif", "gif", "jpeg", "nasm", "png", "rayon", "webp"] }
 poise = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
-serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
+serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "temp_cache", "transport_compression_zstd"] }
 songbird = { workspace = true, features = ["builtin-queue", "receive"] }
-sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio", "time", "uuid"] }
 systemstat = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tracing = { workspace = true }

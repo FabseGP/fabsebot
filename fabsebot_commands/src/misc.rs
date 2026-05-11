@@ -16,7 +16,10 @@ use fabsebot_core::{
 	errors::commands::{AIError, GuildError, InteractionError},
 	utils::{
 		ai::ai_response_simple,
-		helpers::{media_gallery, send_container, separator, text_display, thumbnail_section},
+		helpers::{
+			image_uri_fetch, media_gallery, member_pfp, send_container, separator, text_display,
+			thumbnail_section, user_pfp,
+		},
 		image::{
 			QuoteImageConfig, TextLayout, avatar_position, get_theme, quote_animated_image,
 			quote_static_image, resize_avatar,
@@ -32,8 +35,8 @@ use serenity::{
 		ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
 		CreateAutocompleteResponse, CreateButton, CreateComponent, CreateContainer, CreateEmbed,
 		CreateEmbedFooter, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
-		CreateSelectMenuKind, CreateSelectMenuOption, EditChannel, EditCurrentMember, EditMessage,
-		GenericChannelId, GuildChannel, GuildId, Message, MessageId, OnlineStatus,
+		CreateSelectMenuKind, CreateSelectMenuOption, DataUri, EditChannel, EditCurrentMember,
+		EditMessage, GenericChannelId, GuildChannel, GuildId, Message, MessageId, OnlineStatus,
 		ShardRunnerMessage, User, UserId,
 	},
 	futures::StreamExt as _,
@@ -193,9 +196,7 @@ pub async fn birthday(
 	#[description = "User to congratulate"] user: User,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	let avatar_url = user
-		.avatar_url()
-		.unwrap_or_else(|| user.default_avatar_url());
+	let avatar_url = user_pfp(&user);
 	birthday_internal(ctx, &avatar_url, user.display_name()).await?;
 	Ok(())
 }
@@ -226,15 +227,12 @@ impl BotStatus {
 	install_context = "Guild",
 	interaction_context = "Guild",
 	owners_only,
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
-	                            CHANGE_NICKNAME"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn bot_control(
 	ctx: SContext<'_>,
 	#[description = "Activity"] activity: Option<String>,
 	#[description = "Status"] status: Option<BotStatus>,
-	#[description = "Nickname"] nickname: Option<String>,
-	#[description = "Bio"] bio: Option<String>,
 ) -> Result<(), Error> {
 	if let Some(new_activity) = activity {
 		ctx.framework()
@@ -248,21 +246,56 @@ pub async fn bot_control(
 			.set_status(new_status.to_online_status());
 	}
 
-	if let Some(guild_id) = ctx.guild_id() {
-		EditCurrentMember::default()
-			.nickname(nickname.map(Cow::from))
-			.bio(bio.map(Cow::from))
-			.audit_log_reason("Requested by bot owner")
-			.execute(ctx.http(), guild_id)
-			.await?;
-	}
-
 	ctx.send(
 		CreateReply::default()
 			.content(format!("{} rebranded!", utils_config().bot_name))
 			.ephemeral(true),
 	)
 	.await?;
+
+	Ok(())
+}
+
+/// Personalize the bot in your server
+#[poise::command(
+	slash_command,
+	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
+	install_context = "Guild",
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
+	                            CHANGE_NICKNAME"
+)]
+pub async fn bot_personalize(
+	ctx: SContext<'_>,
+	#[description = "Nickname"] nickname: Option<String>,
+	#[description = "Bio"] bio: Option<String>,
+	#[description = "Link to avatar"] avatar: Option<String>,
+	#[description = "Link to banner"] banner: Option<String>,
+) -> Result<(), Error> {
+	let guild_id = require_guild_id(ctx).await?;
+	let mut edited_member = EditCurrentMember::default()
+		.nickname(nickname.map(Cow::from))
+		.bio(bio.map(Cow::from))
+		.audit_log_reason("Requested by either an admin or mod");
+
+	if let Some(new_avatar) = avatar {
+		let data_uri = image_uri_fetch(&new_avatar).await?;
+		let encoded_avatar = DataUri::from_base64(Cow::from(data_uri))?;
+		edited_member = edited_member.avatar(Some(encoded_avatar));
+	}
+	if let Some(new_banner) = banner {
+		let data_uri = image_uri_fetch(&new_banner).await?;
+		let encoded_banner = DataUri::from_base64(Cow::from(data_uri))?;
+		edited_member = edited_member.banner(Some(encoded_banner));
+	}
+
+	if let Err(err) = edited_member.execute(ctx.http(), guild_id).await {
+		ctx.reply("Slow down, you're changing too quickly").await?;
+		return Err(err.into());
+	}
+
+	ctx.reply(format!("{} rebranded!", utils_config().bot_name))
+		.await?;
 
 	Ok(())
 }
@@ -449,7 +482,7 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
         "#,
 		i64::from(guild_id),
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(&ctx.data().db)
 	.await?;
 	ctx.reply("Call ended...").await?;
 
@@ -468,7 +501,6 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	let guild_id_i64 = i64::from(guild_id);
 	let channel_id_i64 = i64::from(ctx.channel_id());
-	let mut tx = ctx.data().db.begin().await?;
 	query!(
 		r#"
 		INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
@@ -480,7 +512,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 		guild_id_i64,
 		channel_id_i64,
 	)
-	.execute(&mut *tx)
+	.execute(&ctx.data().db)
 	.await?;
 	let message = ctx.reply("Calling...").await?;
 	let result = timeout(Duration::from_mins(1), async {
@@ -493,7 +525,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 				"#,
 				guild_id_i64
 			)
-			.fetch_one(&mut *tx)
+			.fetch_one(&ctx.data().db)
 			.await?
 			.unwrap_or(false);
 			if has_other_calls {
@@ -514,7 +546,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 			"#,
 			guild_id_i64
 		)
-		.execute(&mut *tx)
+		.execute(&ctx.data().db)
 		.await?;
 		"No one joined the call within 1 minute 😢"
 	};
@@ -522,10 +554,6 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	message
 		.edit(ctx, CreateReply::default().reply(true).content(response))
 		.await?;
-
-	tx.commit()
-		.await
-		.context("Failed to commit sql-transaction")?;
 
 	Ok(())
 }
@@ -656,9 +684,9 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 		ORDER BY message_count
 		DESC LIMIT 25
 		"#,
-		guild_id.get().cast_signed()
+		i64::from(guild_id)
 	)
-	.fetch_all(&mut *ctx.data().db.acquire().await?)
+	.fetch_all(&ctx.data().db)
 	.await?;
 
 	let title = format!("# Top {} users by message count", users.len());
@@ -698,7 +726,6 @@ async fn ohitsyou_internal(ctx: &SContext<'_>) -> AResult<()> {
 	let resp = match ai_response_simple(
 		"you're a tsundere. no commentary, no alternatives, no meta-text. just the one line.",
 		"generate a one-line love-hate greeting",
-		&utils_config().fabseserver.text_gen_model,
 		None,
 	)
 	.await
@@ -1018,35 +1045,15 @@ pub async fn quote_internal(
 	let mut image_handle = {
 		let (avatar_url, author_name, text) = if let Some((reply, guild_id)) = reply {
 			let (url, name) = if reply.webhook_id.is_some() {
-				(
-					reply.author.avatar_url().unwrap_or_else(|| {
-						reply
-							.author
-							.static_avatar_url()
-							.unwrap_or_else(|| reply.author.default_avatar_url())
-					}),
-					reply.author.name.clone(),
-				)
+				(user_pfp(&reply.author), reply.author.name.clone())
 			} else {
 				let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-				(
-					member.avatar_url().unwrap_or_else(|| {
-						reply.author.avatar_url().unwrap_or_else(|| {
-							member
-								.user
-								.static_avatar_url()
-								.unwrap_or_else(|| member.user.default_avatar_url())
-						})
-					}),
-					member.user.name,
-				)
+				(member_pfp(&member), member.user.name)
 			};
 			(url, format!("- {name}"), reply.content.to_string())
 		} else {
 			(
-				msg.author
-					.avatar_url()
-					.unwrap_or_else(|| msg.author.default_avatar_url()),
+				user_pfp(&msg.author),
 				format!("- {}", msg.author.name),
 				msg.content.to_string(),
 			)
@@ -1123,9 +1130,9 @@ pub async fn quote_internal(
 
 		let quote_channel_opt: Option<Option<i64>> = query_scalar!(
 			"SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
-			guild_id.get().cast_signed()
+			i64::from(guild_id)
 		)
-		.fetch_optional(&mut *ctx.data().db.acquire().await?)
+		.fetch_optional(&ctx.data().db)
 		.await?;
 
 		if let Some(Some(channel)) = quote_channel_opt {
@@ -1314,7 +1321,6 @@ pub async fn respond(
 	let resp = match ai_response_simple(
 		"Mock this Discord message someone posted. Just give the roast, nothing else.",
 		&message.content,
-		&utils_config().fabseserver.text_gen_model,
 		None,
 	)
 	.await
@@ -1390,9 +1396,9 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 		ORDER BY count
 		DESC LIMIT 25
 		"#,
-		guild_id.get().cast_signed()
+		i64::from(guild_id)
 	)
-	.fetch_all(&mut *ctx.data().db.acquire().await?)
+	.fetch_all(&ctx.data().db)
 	.await?;
 
 	let title = format!("# Top {} words tracked by count!", words.len());

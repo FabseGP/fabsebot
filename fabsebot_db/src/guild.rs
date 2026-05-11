@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result as AResult};
-use sqlx::{PgConnection, Postgres, Transaction, query, query_as};
+use sqlx::{Pool, Postgres, Transaction, query, query_as};
 
 pub struct GuildSettings {
 	pub guild_id: i64,
@@ -19,12 +19,13 @@ pub struct GuildSettings {
 	pub waifu_rate: Option<i64>,
 	pub last_waifu: Option<i64>,
 	pub chatbot_role: Option<String>,
+	pub current_voice_channel: Option<i64>,
 }
 
 pub async fn set_music_channel(
 	guild_id: i64,
 	channel_id: i64,
-	conn: &mut PgConnection,
+	conn: &Pool<Postgres>,
 ) -> AResult<()> {
 	query!(
 		r#"
@@ -46,7 +47,7 @@ pub async fn set_music_channel(
 pub async fn set_spoiler_channel(
 	guild_id: i64,
 	channel_id: i64,
-	conn: &mut PgConnection,
+	conn: &Pool<Postgres>,
 ) -> AResult<()> {
 	query!(
 		r#"
@@ -61,6 +62,27 @@ pub async fn set_spoiler_channel(
 	.execute(conn)
 	.await
 	.context("Failed to set spoiler channel")?;
+
+	Ok(())
+}
+
+pub async fn set_current_voice_channel(
+	guild_id: i64,
+	channel_id: i64,
+	conn: &Pool<Postgres>,
+) -> AResult<()> {
+	query!(
+		r#"
+		UPDATE guild_settings
+		SET current_voice_channel = $2
+		WHERE guild_id = $1
+		"#,
+		guild_id,
+		channel_id,
+	)
+	.execute(conn)
+	.await
+	.context("Failed to set current voice channel")?;
 
 	Ok(())
 }
@@ -86,6 +108,7 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
 		UPDATE guild_settings
         SET dead_chat_rate = NULL,
         dead_chat_channel = NULL,
+        last_dead_chat = NULL,
         quotes_channel = NULL,
         spoiler_channel = NULL,
         prefix = NULL,
@@ -96,7 +119,10 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
         global_call = FALSE,
         music_channel = NULL,
         waifu_channel = NULL,
-        chatbot_role = NULL
+        waifu_rate = NULL,
+        last_waifu = NULL,
+        chatbot_role = NULL,
+        current_voice_channel = NULL
     	WHERE guild_id = $1
     	"#,
 		guild_id
@@ -125,7 +151,24 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
 	Ok(())
 }
 
-pub async fn insert_guild(guild_id: i64, conn: &mut PgConnection) -> AResult<()> {
+pub async fn insert_channel(guild_id: i64, channel_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
+	query!(
+		r#"
+		INSERT INTO channels (guild_id, channel_id)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id, channel_id)
+        DO NOTHING
+        "#,
+		guild_id,
+		channel_id
+	)
+	.execute(conn)
+	.await?;
+
+	Ok(())
+}
+
+pub async fn insert_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
 	query!(
 		r#"
 		INSERT INTO guilds (guild_id)
@@ -141,10 +184,21 @@ pub async fn insert_guild(guild_id: i64, conn: &mut PgConnection) -> AResult<()>
 	Ok(())
 }
 
-pub async fn insert_guild_settings(
-	guild_id: i64,
-	conn: &mut PgConnection,
-) -> AResult<GuildSettings> {
+pub async fn delete_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
+	query!(
+		r#"
+		DELETE FROM guilds
+		WHERE guild_id = $1
+        "#,
+		guild_id
+	)
+	.execute(conn)
+	.await?;
+
+	Ok(())
+}
+
+pub async fn insert_guild_settings(guild_id: i64, conn: &Pool<Postgres>) -> AResult<GuildSettings> {
 	let guild_settings = query_as!(
 		GuildSettings,
 		r#"

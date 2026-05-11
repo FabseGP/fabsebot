@@ -1,5 +1,4 @@
 use std::{
-	collections::HashMap,
 	sync::{Arc, LazyLock, OnceLock},
 	time::Duration,
 };
@@ -11,17 +10,16 @@ use poise::Context as PContext;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serenity::all::{
-	Context, Emoji, GenericChannelId, GuildId, MessageId, ShardId, ShardRunnerMetadata, Webhook,
+	Context, Emoji, GenericChannelId, GuildId, ShardId, ShardRunnerMetadata, Webhook,
 };
-use songbird::{Songbird, input::AuxMetadata};
+use songbird::Songbird;
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 use crate::{
 	config::settings::{APIConfig, HTTPAgent, ServerConfig},
-	utils::ai::ToolCall,
+	utils::ai::{ContentPart, ToolCall},
 };
 
 pub type WebhookMap = Cache<GenericChannelId, Webhook>;
@@ -73,7 +71,7 @@ impl AIRole {
 pub struct AIChatMessage {
 	pub role: AIRole,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pub content: Option<String>,
+	pub content: Option<Vec<ContentPart>>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub tool_call_id: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -84,7 +82,7 @@ impl AIChatMessage {
 	#[must_use]
 	pub const fn new(
 		role: AIRole,
-		content: Option<String>,
+		content: Option<Vec<ContentPart>>,
 		tool_call_id: Option<String>,
 		tool_calls: Option<Vec<ToolCall>>,
 	) -> Self {
@@ -97,42 +95,49 @@ impl AIChatMessage {
 	}
 
 	#[must_use]
-	pub const fn system(content: String) -> Self {
-		Self::new(AIRole::System, Some(content), None, None)
+	pub fn system(content: String) -> Self {
+		Self::new(
+			AIRole::System,
+			Some(vec![ContentPart::Text { text: content }]),
+			None,
+			None,
+		)
 	}
 
 	#[must_use]
-	pub const fn user(content: String) -> Self {
+	pub const fn user(content: Vec<ContentPart>) -> Self {
 		Self::new(AIRole::User, Some(content), None, None)
 	}
 
 	#[must_use]
-	pub const fn assistant(content: String) -> Self {
-		Self::new(AIRole::Assistant, Some(content), None, None)
+	pub fn assistant(content: String) -> Self {
+		Self::new(
+			AIRole::Assistant,
+			Some(vec![ContentPart::Text { text: content }]),
+			None,
+			None,
+		)
 	}
 
 	#[must_use]
-	pub const fn assistant_with_tools(content: Option<String>, tool_calls: Vec<ToolCall>) -> Self {
+	pub const fn assistant_with_tools(
+		content: Option<Vec<ContentPart>>,
+		tool_calls: Vec<ToolCall>,
+	) -> Self {
 		Self::new(AIRole::Assistant, content, None, Some(tool_calls))
 	}
 
 	#[must_use]
-	pub const fn tool(content: String, call_id: String) -> Self {
+	pub const fn tool(content: Vec<ContentPart>, call_id: String) -> Self {
 		Self::new(AIRole::Tool, Some(content), Some(call_id), None)
 	}
 }
-
-pub type Metadata = Arc<(
-	AuxMetadata,
-	HashMap<GuildId, (String, MessageId, GenericChannelId)>,
-)>;
 
 pub struct Data {
 	pub db: PgPool,
 	pub music_manager: Arc<Songbird>,
 	pub channel_webhooks: WebhookMap,
 	pub guilds: Cache<GuildId, Arc<GuildCache>>,
-	pub track_metadata: Cache<Uuid, Metadata>,
 	pub app_emojis: Cache<u64, Arc<Emoji>>,
 }
 
@@ -172,6 +177,7 @@ pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
 		.build()
 		.expect("Failed to build HTTP-client!")
 });
+
 pub static SYSTEM_STATS: LazyLock<System> = LazyLock::new(System::new);
 
 pub static CLIENT_DATA: OnceLock<ClientData> = OnceLock::new();

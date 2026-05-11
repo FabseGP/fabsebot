@@ -1,9 +1,8 @@
-use std::{fmt::Write as _, io::Cursor, sync::Arc};
+use std::{fmt::Write as _, sync::Arc};
 
 use anyhow::{Result as AResult, anyhow, bail};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
-use image::{ImageFormat, guess_format, load_from_memory};
+use image::{ImageFormat, guess_format};
 use jiff::{Timestamp, tz::TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
@@ -19,10 +18,13 @@ use winnow::Parser as _;
 
 use crate::{
 	config::types::{
-		AIChatContext, AIChatMessage, AIChats, HTTP_CLIENT, ToolCalls, UtilsConfig, utils_config,
+		AIChatContext, AIChatMessage, AIChats, AIRole, HTTP_CLIENT, ToolCalls, utils_config,
 	},
 	utils::{
-		helpers::{discord_message_link, get_gif, get_waifu, non_empty_vec},
+		helpers::{
+			discord_message_link, encode_image, get_gif, get_waifu, image_uri, member_pfp,
+			non_empty_vec, user_roles_joined,
+		},
 		voice::get_configured_songbird_handler,
 	},
 };
@@ -89,28 +91,48 @@ async fn internet_search(input: &str, fabseserver_search: &str) -> AResult<Strin
 	Ok(summary)
 }
 
-async fn user_roles_pfp(roles: &[Role], member: &Member) -> AResult<(String, String)> {
-	let roles_joined = roles
-		.iter()
-		.map(|role| role.name.as_str())
-		.intersperse(", ")
-		.collect::<String>();
-	let avatar_url = member.avatar_url().unwrap_or_else(|| {
-		member
-			.user
-			.avatar_url()
-			.unwrap_or_else(|| member.user.default_avatar_url())
-	});
-	let pfp_desc = match HTTP_CLIENT.get(avatar_url).send().await {
-		Ok(pfp) => (ai_image_desc(&pfp.bytes().await?, None).await)
-			.unwrap_or_else(|_| "Unable to describe".to_owned()),
+pub async fn uri_content(avatar_url: &str, chat_vec: &mut Vec<ContentPart>) -> AResult<()> {
+	match HTTP_CLIENT.get(avatar_url).send().await {
+		Ok(pfp) => image_content(chat_vec, &pfp.bytes().await?)?,
 		Err(err) => {
-			warn!("Failed to describe pfp: {err}");
-			"Unable to describe".to_owned()
+			warn!("Failed to download pfp: {err}");
+		}
+	}
+
+	Ok(())
+}
+
+pub async fn user_roles_pfp(
+	roles: &[Role],
+	member: &Member,
+	chat_vec: &mut Vec<ContentPart>,
+) -> AResult<String> {
+	uri_content(&member_pfp(member), chat_vec).await?;
+	Ok(user_roles_joined(roles))
+}
+
+pub fn image_content(chat_vec: &mut Vec<ContentPart>, content: &[u8]) -> AResult<()> {
+	let uri = {
+		let image_format = guess_format(content)?;
+		if image_format == ImageFormat::Jpeg {
+			image_uri(content, Some(image_format.to_mime_type()))
+		} else {
+			image_uri(&encode_image(content)?, Some(image_format.to_mime_type()))
 		}
 	};
+	match uri {
+		Ok(uri) => {
+			chat_vec.push(ContentPart::ImageUrl {
+				image_url: ImageUrl { url: uri },
+			});
+		}
+		Err(err) => {
+			warn!("Failed to create uri: {err}");
+			return Err(err);
+		}
+	}
 
-	Ok((roles_joined, pfp_desc))
+	Ok(())
 }
 
 pub async fn ai_chatbot(
@@ -130,16 +152,17 @@ pub async fn ai_chatbot(
 		return Ok(());
 	}
 
-	let mut conversations = conversations.lock().await;
-
-	let utils_config = utils_config();
-
 	let typing = message
 		.channel_id
 		.start_typing(Arc::<Http>::clone(&ctx.http));
 	let author_name = message.author.display_name();
 
 	let mut system_content = String::new();
+	let mut chat_vec = Vec::with_capacity(
+		(1_u32.saturating_add(message.attachments.len()))
+			.try_into()
+			.unwrap(),
+	);
 	if let Some(reply) = &message.referenced_message {
 		writeln!(
 			system_content,
@@ -148,25 +171,15 @@ pub async fn ai_chatbot(
 			reply.content
 		)?;
 	}
-	if !message.attachments.is_empty() {
-		writeln!(
-			system_content,
-			"{} attachment(s) were sent:",
-			message.attachments.len()
-		)?;
-		for attachment in &message.attachments {
-			if let Some(content_type) = attachment.content_type.as_deref()
-				&& content_type.starts_with("image")
-			{
-				match ai_image_desc(&attachment.download().await?, Some(&message.content)).await {
-					Ok(desc) => {
-						writeln!(system_content, "{desc}")?;
-					}
-					Err(err) => {
-						warn!("Failed to describe image: {err}");
-					}
-				}
-			}
+	for attachment in &message.attachments {
+		if let Some(content_type) = attachment.content_type.as_deref()
+			&& content_type.starts_with("image")
+			&& let Err(err) = image_content(&mut chat_vec, &attachment.download().await?)
+		{
+			writeln!(
+				system_content,
+				"{author_name} attached an image with an unsupported format: {err}",
+			)?;
 		}
 	}
 	if let Ok(link) = discord_message_link.parse_next(&mut message.content.as_str()) {
@@ -201,36 +214,40 @@ pub async fn ai_chatbot(
 		}
 	}
 
-	if !message.mentions.is_empty() {
-		for target in &message.mentions {
-			if let Ok(member) = guild_id.member(&ctx.http, target.id).await {
-				let username = member.display_name();
-				writeln!(
-					system_content,
-					"Mentioned user: {username}. Call UserInfo(query=\"{username}\") for details"
-				)?;
-			}
+	for target in &message.mentions {
+		if let Ok(member) = guild_id.member(&ctx.http, target.id).await {
+			let username = member.display_name();
+			writeln!(
+				system_content,
+				"Mentioned user: {username}. Call UserInfo(query=\"{username}\") for details"
+			)?;
 		}
 	}
 
+	let content_safe = message.content_safe(&ctx.cache);
+	let author_nick = if let Some(member) = &message.member
+		&& let Some(nick) = &member.nick
+	{
+		nick
+	} else {
+		&FixedString::new()
+	};
+	chat_vec.push(ContentPart::Text {
+		text: format!(
+			"[Context: {}] Message sent at {} by {author_name} (also known as {author_nick}): \
+			 {content_safe}",
+			system_content, message.timestamp,
+		),
+	});
+
+	let mut conversations = conversations.lock().await;
+
 	let response_opt = {
-		let content_safe = message.content_safe(&ctx.cache);
 		if conversations.messages.is_empty() {
 			let system_msg = AIChatMessage::system(chatbot_role);
 			conversations.messages.push(system_msg);
 		}
-		let author_nick = if let Some(member) = &message.member
-			&& let Some(nick) = &member.nick
-		{
-			nick
-		} else {
-			&FixedString::new()
-		};
-		conversations.messages.push(AIChatMessage::user(format!(
-			"[Context: {}] Message sent at {} by {author_name} (also known as {author_nick}): \
-			 {content_safe}",
-			system_content, message.timestamp,
-		)));
+		conversations.messages.push(AIChatMessage::user(chat_vec));
 		ai_response(&conversations.messages).await
 	};
 
@@ -243,7 +260,6 @@ pub async fn ai_chatbot(
 					&response,
 					tool_calls,
 					&mut conversations,
-					utils_config,
 					ctx,
 					message,
 					guild_id,
@@ -309,23 +325,27 @@ async fn tool_calling(
 	response: &AIResponse,
 	tool_calls: &[ToolCall],
 	conversations: &mut MutexGuard<'_, AIChatContext>,
-	utils_config: &UtilsConfig,
 	ctx: &SContext,
 	message: &Message,
 	guild_id: GuildId,
 ) -> AResult<String> {
+	let utils_config = utils_config();
+	let tool_content = response
+		.choices
+		.first()
+		.and_then(|c| c.message.content.clone())
+		.map(|choice| vec![ContentPart::Text { text: choice }]);
+
 	conversations
 		.messages
 		.push(AIChatMessage::assistant_with_tools(
-			response
-				.choices
-				.first()
-				.and_then(|c| c.message.content.clone()),
+			tool_content,
 			tool_calls.to_vec(),
 		));
 
 	for tool in tool_calls {
 		let args = tool.extract_args()?;
+		let mut chat_vec = Vec::with_capacity(1);
 		let tool_output = match tool.function.name {
 			ToolCalls::Web => {
 				internet_search(&args.query, &utils_config.fabseserver.search).await?
@@ -374,12 +394,11 @@ async fn tool_calling(
 					.await && let Some(member) = members.first()
 					&& let Some(roles) = member.roles(&ctx.cache)
 				{
-					let (roles_joined, pfp_desc) = user_roles_pfp(&roles, member).await?;
+					let roles_joined = user_roles_pfp(&roles, member, &mut chat_vec).await?;
 					let username = member.display_name();
 					format!(
-						"{username}'s pfp can be described as: {pfp_desc} and {username} has the \
-						 following roles: {roles_joined}. The user joined this guild on this date \
-						 {}\n",
+						"{username} has the following roles: {roles_joined}. The user joined this \
+						 guild on this date {}\n",
 						member.joined_at.unwrap_or_default()
 					)
 				} else {
@@ -388,9 +407,10 @@ async fn tool_calling(
 			}
 			ToolCalls::Waifu => get_waifu(ctx).await,
 		};
+		chat_vec.push(ContentPart::Text { text: tool_output });
 		conversations
 			.messages
-			.push(AIChatMessage::tool(tool_output, tool.id.clone()));
+			.push(AIChatMessage::tool(chat_vec, tool.id.clone()));
 	}
 
 	let final_resp = ai_response(&conversations.messages).await?;
@@ -399,36 +419,24 @@ async fn tool_calling(
 
 #[derive(Serialize)]
 struct SimpleMessage<'a> {
-	role: &'a str,
+	role: AIRole,
 	content: &'a str,
 }
 
 #[derive(Serialize)]
-struct SimpleMessageImage<'a> {
-	role: &'a str,
-	content: &'a [ContentPart<'a>],
-}
-
-#[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-enum ContentPart<'a> {
-	Text { text: &'a str },
-	ImageUrl { image_url: ImageUrl<'a> },
+pub enum ContentPart {
+	Text { text: String },
+	ImageUrl { image_url: ImageUrl },
 }
 
 #[derive(Serialize)]
-struct ImageUrl<'a> {
-	url: &'a str,
-}
-
-#[derive(Serialize)]
-struct ImageDesc<'a> {
-	messages: &'a [SimpleMessageImage<'a>],
-	model: &'a str,
+pub struct ImageUrl {
+	pub url: String,
 }
 
 #[derive(Deserialize)]
-struct AIResponse {
+pub struct AIResponse {
 	#[serde(deserialize_with = "non_empty_vec")]
 	choices: Vec<AIChoice>,
 }
@@ -477,6 +485,7 @@ impl AIResponse {
 			.ok_or_else(|| anyhow!("No content in AI response"))
 	}
 
+	#[must_use]
 	pub fn has_tool_calls(&self) -> bool {
 		self.choices
 			.first()
@@ -502,44 +511,6 @@ async fn ai_request_internal<T: Serialize + Send + Sync>(
 		.map_err(|e| anyhow!("Failed to parse AI response: {e}"))
 }
 
-pub async fn ai_image_desc(content: &[u8], user_context: Option<&str>) -> AResult<String> {
-	let image_format = guess_format(content)?;
-	let base64_image = if image_format == ImageFormat::WebP {
-		let img = load_from_memory(content)?;
-		let mut png_bytes = Vec::with_capacity(content.len());
-		img.write_to(&mut Cursor::new(&mut png_bytes), ImageFormat::Jpeg)?;
-		BASE64.encode(&png_bytes)
-	} else {
-		BASE64.encode(content)
-	};
-
-	let data_uri = format!(
-		"data:{};base64,{}",
-		image_format.to_mime_type(),
-		base64_image
-	);
-
-	let utils_config = utils_config();
-
-	let request = ImageDesc {
-		model: &utils_config.fabseserver.image_to_text_model,
-		messages: &[SimpleMessageImage {
-			role: "user",
-			content: &[
-				ContentPart::Text {
-					text: user_context.map_or("What is in this image?", |context| context),
-				},
-				ContentPart::ImageUrl {
-					image_url: ImageUrl { url: &data_uri },
-				},
-			],
-		}],
-	};
-
-	let response = ai_request_internal(&utils_config.fabseserver.llm_host_text, &request).await?;
-	response.extract_content()
-}
-
 #[derive(Serialize)]
 struct SimpleAIRequest<'a> {
 	messages: &'a [SimpleMessage<'a>],
@@ -551,25 +522,25 @@ struct SimpleAIRequest<'a> {
 pub async fn ai_response_simple(
 	role: &str,
 	prompt: &str,
-	model: &str,
 	max_tokens: Option<u32>,
 ) -> AResult<String> {
+	let utils_config = utils_config();
 	let request = SimpleAIRequest {
 		messages: &[
 			SimpleMessage {
-				role: "system",
+				role: AIRole::System,
 				content: role,
 			},
 			SimpleMessage {
-				role: "user",
+				role: AIRole::User,
 				content: prompt,
 			},
 		],
-		model,
+		model: &utils_config.fabseserver.text_gen_model,
 		max_tokens,
 	};
 
-	let response = ai_request_internal(&utils_config().fabseserver.llm_host_text, &request).await?;
+	let response = ai_request_internal(&utils_config.fabseserver.llm_host_text, &request).await?;
 	response.extract_content()
 }
 
@@ -680,10 +651,11 @@ const fn get_available_tools() -> [AITools<'static>; 6] {
 			tool_type: "function",
 			function: &AIToolsFunction {
 				name: ToolCalls::UserInfo,
-				description: "Retrieve detailed information about a mentioned user. Always call \
-				              this tool when a user is mentioned by name, ID or reference in the \
-				              conversation. The 'query' parameter should be the exact username or \
-				              display name of the mentioned user.",
+				description: "Retrieve detailed information about a mentioned user, including \
+				              their profile picture base encoded. Always call this tool when a \
+				              user is mentioned by name, ID or reference in the conversation. The \
+				              'query' parameter should be the exact username or display name of \
+				              the mentioned user.",
 				parameters: &AIToolsParameters {
 					tool_type: "object",
 					properties: &AIToolsProperties {
@@ -731,7 +703,7 @@ const fn get_available_tools() -> [AITools<'static>; 6] {
 	]
 }
 
-async fn ai_response(messages: &[AIChatMessage]) -> AResult<AIResponse> {
+pub async fn ai_response(messages: &[AIChatMessage]) -> AResult<AIResponse> {
 	let tools = get_available_tools();
 	let utils_config = utils_config();
 	let request = ChatRequest {

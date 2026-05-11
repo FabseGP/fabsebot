@@ -1,13 +1,15 @@
-use std::{self, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Result as AResult;
-use serenity::all::{Context as SContext, Ready};
+use serenity::all::{Context as SContext, GenericChannelId, GuildId, Ready};
+use sqlx::query;
 use tokio::spawn;
 use tracing::{error, info};
 
 use crate::{
 	config::types::{BOT_CONTEXT, Data},
 	periodic_task,
+	utils::voice::{add_voice_events, join_handler},
 };
 
 pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()> {
@@ -33,6 +35,24 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 
 	if BOT_CONTEXT.set(ctx.clone()).is_err() {
 		error!("BOT_CONTEXT already initialized");
+	}
+
+	let persistent_voice_channels = query!(
+		r#"
+		SELECT guild_id, current_voice_channel FROM guild_settings
+		WHERE current_voice_channel IS NOT NULL
+		"#
+	)
+	.fetch_all(&data.db)
+	.await?;
+
+	for record in persistent_voice_channels {
+		let guild_id = GuildId::new(record.guild_id.cast_unsigned());
+		let channel_id =
+			GenericChannelId::new(record.current_voice_channel.unwrap().cast_unsigned());
+		let handler_lock =
+			join_handler(&data.music_manager, guild_id, channel_id.expect_channel()).await?;
+		add_voice_events(ctx, guild_id, channel_id, handler_lock).await;
 	}
 
 	spawn(async move { periodic_task(data).await });

@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::types::{Error, HTTP_CLIENT, SContext},
 	utils::helpers::{
-		get_gifs, get_waifu, send_container, separator, text_display, thumbnail_section,
+		get_gifs, get_waifu, send_container, separator, text_display, thumbnail_section, user_pfp,
 	},
 };
 use fabsebot_db::guild::{reset_guild, set_music_channel, set_spoiler_channel};
@@ -22,7 +22,7 @@ use serenity::{
 	},
 	futures::StreamExt as _,
 };
-use sqlx::{PgConnection, query};
+use sqlx::{Pool, Postgres, query};
 use tracing::warn;
 use url::Url;
 
@@ -61,15 +61,9 @@ async fn configure_channels(
 		.duration_since(UNIX_EPOCH)
 		.map(|t| t.as_secs().cast_signed())?;
 
-	let mut tx = ctx
-		.data()
-		.db
-		.begin()
-		.await
-		.context("Failed to acquire savepoint")?;
 	if let Some(music_channel) = music_channel_opt {
 		let music_channel_id_i64 = i64::from(music_channel.id());
-		set_music_channel(guild_id_i64, music_channel_id_i64, &mut tx).await?;
+		set_music_channel(guild_id_i64, music_channel_id_i64, &ctx.data().db).await?;
 		music_channel
 			.id()
 			.say(
@@ -81,7 +75,7 @@ async fn configure_channels(
 	}
 	if let Some(spoiler_channel) = spoiler_channel_opt {
 		let spoiler_channel_id_i64 = i64::from(spoiler_channel.id());
-		set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, &mut tx).await?;
+		set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, &ctx.data().db).await?;
 		spoiler_channel
 			.id()
 			.say(
@@ -97,7 +91,7 @@ async fn configure_channels(
 			quote_channel,
 			guild_id_i64,
 			quote_channel_id_i64,
-			&mut tx,
+			&ctx.data().db,
 		)
 		.await?;
 	}
@@ -108,7 +102,7 @@ async fn configure_channels(
 			chatbot_channel,
 			guild_id_i64,
 			chatbot_channel_id_i64,
-			&mut tx,
+			&ctx.data().db,
 		)
 		.await?;
 	}
@@ -121,7 +115,7 @@ async fn configure_channels(
 			waifu_channel_id_i64,
 			waifu_occurrence,
 			system_time,
-			&mut tx,
+			&ctx.data().db,
 		)
 		.await?;
 	}
@@ -134,14 +128,10 @@ async fn configure_channels(
 			dead_chat_channel_id_i64,
 			dead_chat_occurrence,
 			system_time,
-			&mut tx,
+			&ctx.data().db,
 		)
 		.await?;
 	}
-
-	tx.commit()
-		.await
-		.context("Failed to commit sql-transaction")?;
 
 	Ok(())
 }
@@ -441,7 +431,7 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		i64::from(guild_id),
 		i64::from(ctx.author().id)
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(&ctx.data().db)
 	.await?;
 
 	Ok(())
@@ -474,18 +464,14 @@ pub async fn set_afk(
 		user_id_i64,
 		reason,
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(&ctx.data().db)
 	.await?;
 	let embed_reason = reason
 		.as_deref()
 		.unwrap_or("Didn't renew life subscription");
 	let user_name = ctx.author().display_name();
 
-	let avatar_url = ctx.author().avatar_url().unwrap_or_else(|| {
-		ctx.author()
-			.static_avatar_url()
-			.unwrap_or_else(|| ctx.author().default_avatar_url())
-	});
+	let avatar_url = user_pfp(ctx.author());
 
 	let title = format!("# {user_name} killed!");
 	let thumbnail_section = [thumbnail_section(&title, &avatar_url)];
@@ -509,7 +495,7 @@ async fn set_chatbot_channel(
 	channel: Channel,
 	guild_id_i64: i64,
 	channel_id_i64: i64,
-	conn: &mut PgConnection,
+	conn: &Pool<Postgres>,
 ) -> Result<(), Error> {
 	query!(
 		r#"
@@ -562,7 +548,7 @@ pub async fn set_chatbot_options(
 		guild_id_i64,
 		final_role,
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(&ctx.data().db)
 	.await?;
 	ctx.send(
 		CreateReply::default()
@@ -584,7 +570,7 @@ async fn set_dead_chat(
 	channel_id_i64: i64,
 	occurrence: i64,
 	system_time: i64,
-	conn: &mut PgConnection,
+	conn: &Pool<Postgres>,
 ) -> Result<(), Error> {
 	query!(
 		r#"
@@ -642,7 +628,7 @@ pub async fn set_prefix(
 		i64::from(guild_id),
 		characters,
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(&ctx.data().db)
 	.await?;
 	ctx.send(
 		CreateReply::default()
@@ -661,7 +647,7 @@ async fn set_quote_channel(
 	channel: Channel,
 	guild_id_i64: i64,
 	channel_id_i64: i64,
-	conn: &mut PgConnection,
+	conn: &Pool<Postgres>,
 ) -> Result<(), Error> {
 	query!(
 		r#"
@@ -739,7 +725,7 @@ pub async fn set_user_ping(
 			content,
 			media,
 		)
-		.execute(&mut *ctx.data().db.acquire().await?)
+		.execute(&ctx.data().db)
 		.await?;
 		"Custom user ping created... probably"
 	} else {
@@ -759,7 +745,7 @@ async fn set_waifu_channel(
 	channel_id_i64: i64,
 	occurrence: i64,
 	system_time: i64,
-	conn: &mut PgConnection,
+	conn: &Pool<Postgres>,
 ) -> Result<(), Error> {
 	query!(
 		r#"
@@ -894,7 +880,7 @@ pub async fn set_word_react(
 			emoji_id,
 			guild_emoji
 		)
-		.execute(&mut *ctx.data().db.acquire().await?)
+		.execute(&ctx.data().db)
 		.await?;
 		ctx.send(
 			CreateReply::default()
@@ -936,7 +922,7 @@ pub async fn set_word_track(
 		guild_id_i64,
 		word,
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(&ctx.data().db)
 	.await?;
 	ctx.send(
 		CreateReply::default()

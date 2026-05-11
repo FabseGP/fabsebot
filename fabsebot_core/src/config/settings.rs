@@ -23,7 +23,6 @@ pub struct ServerConfig {
 	pub llm_host_tts: String,
 	pub llm_host_stt: String,
 	pub text_gen_model: String,
-	pub image_to_text_model: String,
 	pub text_to_speech_model: String,
 	pub speech_to_text_model: String,
 }

@@ -1,6 +1,6 @@
 use std::{fmt::Write as _, sync::Arc};
 
-use anyhow::{Context as _, Result as AResult};
+use anyhow::Result as AResult;
 use fabsebot_db::{
 	guild::{WordReactions, insert_guild, insert_guild_settings},
 	user::{UserSettings, insert_user, insert_user_settings},
@@ -12,7 +12,7 @@ use serenity::all::{
 	ExecuteWebhook, GenericChannelId, GuildId, Message, MessageFlags, MessageId, ReactionType,
 };
 use songbird::{Call, Songbird, input::Compose as _};
-use sqlx::{Postgres, Transaction, query, query_as, query_scalar};
+use sqlx::{Pool, Postgres, query, query_as, query_scalar};
 use tokio::{join, sync::Mutex, task::spawn};
 use tracing::error;
 use winnow::Parser as _;
@@ -33,7 +33,7 @@ use crate::{
 		ai::ai_chatbot,
 		helpers::{
 			channel_counter, discord_message_link, event_container, get_gif, get_waifu,
-			media_gallery, separator, text_display, thumbnail_section,
+			media_gallery, separator, text_display, thumbnail_section, user_pfp,
 		},
 		voice::{add_voice_events, queue_song, youtube_source},
 		webhook::{spoiler_message, webhook_find},
@@ -189,18 +189,27 @@ async fn queue_track(
 				return;
 			}
 		};
-		queue_song(
+		if let Err(err) = queue_song(
 			metadata,
 			audio,
 			src,
 			handler_lock,
-			guild_id,
+			i64::from(guild_id),
 			ctx_clone.data(),
-			msg.id,
-			msg.channel_id,
-			new_message_clone.author.display_name(),
+			i64::from(msg.id),
+			i64::from(msg.channel_id),
+			i64::from(new_message_clone.author.id),
 		)
-		.await;
+		.await
+		{
+			log_error(
+				"# Failed to queue song",
+				err.to_string(),
+				&ctx_clone,
+				METRICS.music_queue_errors.clone(),
+			)
+			.await;
+		}
 	});
 
 	Ok(())
@@ -256,7 +265,7 @@ async fn global_chats(
 	guild_id: i64,
 ) -> AResult<()> {
 	if let Some(global_chat_channel) = channel_id
-		&& new_message.channel_id.get() == global_chat_channel.cast_unsigned()
+		&& i64::from(new_message.channel_id) == global_chat_channel
 		&& global_chat
 	{
 		channel_counter("global_chat".to_owned());
@@ -265,10 +274,11 @@ async fn global_chats(
 			SELECT guild_id, global_chat_channel FROM guild_settings
 			WHERE global_chat IS TRUE
 			AND guild_id != $1
+			LIMIT 10
 			"#,
 			guild_id
 		)
-		.fetch_all(&mut *data.db.acquire().await?)
+		.fetch_all(&data.db)
 		.await?;
 		for (guild_id, guild_channel_id) in guild_global_chats.iter().filter_map(|record| {
 			record
@@ -309,40 +319,30 @@ async fn global_chats(
 				};
 				let mut message = ExecuteWebhook::default()
 					.username(new_message.author.display_name())
-					.avatar_url(new_message.author.avatar_url().unwrap_or_else(|| {
-						new_message
-							.author
-							.static_avatar_url()
-							.unwrap_or_else(|| new_message.author.default_avatar_url())
-					}))
+					.avatar_url(user_pfp(&new_message.author))
 					.content(content);
-				if !new_message.attachments.is_empty() {
-					for attachment in new_message
-						.attachments
-						.iter()
-						.filter(|a| a.dimensions().is_some())
-					{
-						message = message.add_file(
-							CreateAttachment::url(
-								&ctx.http,
-								attachment.url.as_str(),
-								attachment.filename.clone(),
-							)
-							.await?,
-						);
-					}
+				for attachment in new_message
+					.attachments
+					.iter()
+					.filter(|a| a.dimensions().is_some())
+				{
+					message = message.add_file(
+						CreateAttachment::url(
+							&ctx.http,
+							attachment.url.as_str(),
+							attachment.filename.clone(),
+						)
+						.await?,
+					);
 				}
 				if let Some(replied_message) = &new_message.referenced_message {
-					let mut embed =
-						CreateEmbed::default()
-							.description(replied_message.content.as_str())
-							.author(
-								CreateEmbedAuthor::new(replied_message.author.display_name())
-									.icon_url(replied_message.author.avatar_url().unwrap_or_else(
-										|| replied_message.author.default_avatar_url(),
-									)),
-							)
-							.timestamp(new_message.timestamp);
+					let mut embed = CreateEmbed::default()
+						.description(replied_message.content.as_str())
+						.author(
+							CreateEmbedAuthor::new(replied_message.author.display_name())
+								.icon_url(user_pfp(&replied_message.author)),
+						)
+						.timestamp(new_message.timestamp);
 					if let Some(attachment) = replied_message.attachments.first() {
 						embed = embed.image(attachment.url.as_str());
 					}
@@ -382,10 +382,7 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 		{
 			let ref_msg = channel_id.message(&ctx.http, message_id).await?;
 			if ref_msg.poll.is_none() {
-				let author_avatar = ref_msg
-					.author
-					.avatar_url()
-					.unwrap_or_else(|| ref_msg.author.default_avatar_url());
+				let author_avatar = user_pfp(&ref_msg.author);
 				let thumbnail_display = [thumbnail_section(
 					ref_msg.author.display_name(),
 					&author_avatar,
@@ -440,7 +437,7 @@ async fn user_queries(
 	new_message: &Message,
 	guild_id: i64,
 	author_settings: UserSettings,
-	tx: &mut Transaction<'static, Postgres>,
+	conn: &Pool<Postgres>,
 ) -> AResult<()> {
 	let user_id_i64 = i64::from(new_message.author.id);
 
@@ -493,13 +490,13 @@ async fn user_queries(
 			guild_id,
 			user_id_i64,
 		)
-		.execute(tx.as_mut())
+		.execute(conn)
 		.await?;
 	}
 
 	if new_message.referenced_message.is_none() {
 		for mentioned_user in &new_message.mentions {
-			let mentioned_user_id_i64 = mentioned_user.id.get().cast_signed();
+			let mentioned_user_id_i64 = i64::from(mentioned_user.id);
 			let Some(mentioned_user_settings) = query_as!(
 				UserSettings,
 				r#"
@@ -511,7 +508,7 @@ async fn user_queries(
 				guild_id,
 				mentioned_user_id_i64
 			)
-			.fetch_optional(tx.as_mut())
+			.fetch_optional(conn)
 			.await?
 			else {
 				continue;
@@ -533,7 +530,7 @@ async fn user_queries(
 					guild_id,
 					mentioned_user_id_i64,
 				)
-				.execute(tx.as_mut())
+				.execute(conn)
 				.await?;
 				let reason = mentioned_user_settings
 					.afk_reason
@@ -586,7 +583,6 @@ async fn guild_queries(
 	word_reactions: &[WordReactions],
 	guild_id: GuildId,
 	guild_id_i64: i64,
-	tx: &mut Transaction<'static, Postgres>,
 ) -> AResult<()> {
 	for record in word_tracking {
 		counter!(METRICS.words_tracked.clone()).increment(1);
@@ -600,7 +596,7 @@ async fn guild_queries(
 			guild_id_i64,
 			record
 		)
-		.execute(tx.as_mut())
+		.execute(&data.db)
 		.await?;
 	}
 	for record in word_reactions {
@@ -664,9 +660,8 @@ async fn db_queries(
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	author_settings: UserSettings,
-	mut tx: Transaction<'static, Postgres>,
 ) -> AResult<()> {
-	user_queries(ctx, new_message, guild_id_i64, author_settings, &mut tx).await?;
+	user_queries(ctx, new_message, guild_id_i64, author_settings, &data.db).await?;
 
 	let words: Vec<String> = new_message
 		.content
@@ -689,7 +684,7 @@ async fn db_queries(
 		guild_id_i64,
 		&words
 	)
-	.fetch_all(&mut *tx)
+	.fetch_all(&data.db)
 	.await?;
 
 	let word_tracking = query_scalar!(
@@ -701,7 +696,7 @@ async fn db_queries(
 		guild_id_i64,
 		&words
 	)
-	.fetch_all(&mut *tx)
+	.fetch_all(&data.db)
 	.await?;
 
 	guild_queries(
@@ -712,13 +707,8 @@ async fn db_queries(
 		&word_reactions,
 		guild_id,
 		guild_id_i64,
-		&mut tx,
 	)
 	.await?;
-
-	tx.commit()
-		.await
-		.context("Failed to commit sql-transaction")?;
 
 	Ok(())
 }
@@ -729,14 +719,8 @@ pub async fn handle_message(
 	guild_id: GuildId,
 ) -> AResult<()> {
 	let data: Arc<Data> = ctx.data();
-	let mut tx = data
-		.db
-		.begin()
-		.await
-		.context("Failed to acquire savepoint")?;
 
 	let guild_id_i64 = i64::from(guild_id);
-	let user_id_i64 = i64::from(new_message.author.id);
 
 	let guild_cache = data.guilds.get(&guild_id).unwrap_or_else(|| {
 		let new_data = Arc::new(GuildCache::default());
@@ -744,24 +728,23 @@ pub async fn handle_message(
 		new_data
 	});
 
-	let guild_settings =
-		match insert_guild_settings(guild_id_i64, &mut *data.db.acquire().await?).await {
-			Ok(settings) => settings,
-			Err(err) => {
-				error!("Failed to fetch guild settings: {err}");
-				insert_guild(guild_id_i64, &mut tx).await?;
-				insert_guild_settings(guild_id_i64, &mut tx).await?
-			}
-		};
+	let guild_settings = match insert_guild_settings(guild_id_i64, &data.db).await {
+		Ok(settings) => settings,
+		Err(err) => {
+			error!("Failed to fetch guild settings: {err}");
+			insert_guild(guild_id_i64, &data.db).await?;
+			insert_guild_settings(guild_id_i64, &data.db).await?
+		}
+	};
 
 	if !new_message.content.starts_with('#') {
 		if let Some(music_channel) = guild_settings.music_channel
-			&& new_message.channel_id.get() == music_channel.cast_unsigned()
+			&& i64::from(new_message.channel_id) == music_channel
 		{
 			queue_track(ctx, new_message, data.music_manager.clone(), guild_id).await?;
 		}
 		if let Some(ai_chat_channel) = guild_settings.ai_chat_channel
-			&& new_message.channel_id.get() == ai_chat_channel.cast_unsigned()
+			&& i64::from(new_message.channel_id) == ai_chat_channel
 		{
 			ai_chats(
 				ctx,
@@ -806,16 +789,16 @@ pub async fn handle_message(
 		global_chat
 	);
 
-	let author_settings =
-		match insert_user_settings(guild_id_i64, user_id_i64, &mut *data.db.acquire().await?).await
-		{
-			Ok(settings) => settings,
-			Err(err) => {
-				error!("Failed to fetch user settings: {err}");
-				insert_user(user_id_i64, &mut tx).await?;
-				insert_user_settings(guild_id_i64, user_id_i64, &mut tx).await?
-			}
-		};
+	let user_id_i64 = i64::from(new_message.author.id);
+
+	let author_settings = match insert_user_settings(guild_id_i64, user_id_i64, &data.db).await {
+		Ok(settings) => settings,
+		Err(err) => {
+			error!("Failed to fetch user settings: {err}");
+			insert_user(user_id_i64, &data.db).await?;
+			insert_user_settings(guild_id_i64, user_id_i64, &data.db).await?
+		}
+	};
 
 	db_queries(
 		ctx,
@@ -824,7 +807,6 @@ pub async fn handle_message(
 		guild_id,
 		guild_id_i64,
 		author_settings,
-		tx,
 	)
 	.await?;
 

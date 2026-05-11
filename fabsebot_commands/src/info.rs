@@ -2,7 +2,7 @@ use std::string::ToString;
 
 use fabsebot_core::{
 	config::types::{Error, SContext},
-	utils::helpers::{send_container, separator, text_display, thumbnail_section},
+	utils::helpers::{member_pfp, send_container, separator, text_display, thumbnail_section},
 };
 use serenity::all::{Colour, CreateContainer, Member, PremiumType};
 
@@ -107,12 +107,7 @@ pub async fn user_info(
 		format!("# {}\n ID: {}", member.display_name(), member.user.id)
 	};
 
-	let avatar = member.avatar_url().unwrap_or_else(|| {
-		member
-			.user
-			.avatar_url()
-			.unwrap_or_else(|| member.user.default_avatar_url())
-	});
+	let avatar = member_pfp(&member);
 
 	let thumbnail_section = [thumbnail_section(&username, &avatar)];
 

@@ -1,25 +1,18 @@
 #![feature(iter_intersperse)]
 
-use std::{convert::Infallible, sync::Arc};
+use std::convert::Infallible;
 
-use anyhow::{Result as AResult, bail};
+use anyhow::Result as AResult;
 use fabsebot_core::{
 	config::{
-		constants::{
-			EMPTY_VOICE_CHAN_MSG, HUMAN_ONLY_MSG, NOT_IN_GUILD_MSG, NOT_IN_VOICE_CHAN_MSG,
-		},
+		constants::{HUMAN_ONLY_MSG, NOT_IN_GUILD_MSG},
 		types::{Data, Error, SContext},
 	},
-	errors::commands::{GuildError, InteractionError, MusicError},
-	utils::{
-		helpers::correct_permissions,
-		voice::{add_voice_events, join_container},
-	},
+	errors::commands::{GuildError, InteractionError},
+	utils::helpers::correct_permissions,
 };
 use poise::Command;
 use serenity::all::{CacheRef, Guild, GuildId, Permissions, User};
-use songbird::Call;
-use tokio::sync::Mutex;
 
 mod api_calls;
 mod funny;
@@ -66,6 +59,7 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		misc::poll(),
 		misc::birthday(),
 		misc::bot_control(),
+		misc::bot_personalize(),
 		misc::debug(),
 		misc::global_chat_end(),
 		misc::global_chat_start(),
@@ -116,59 +110,6 @@ pub async fn require_human(ctx: SContext<'_>, user: &User) -> AResult<()> {
 	if user.bot() {
 		ctx.reply(HUMAN_ONLY_MSG).await?;
 		return Err(InteractionError::NotHuman.into());
-	}
-	Ok(())
-}
-
-pub async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
-	let Some(channel_id) = ctx.guild().and_then(|guild| {
-		guild
-			.voice_states
-			.get(&ctx.author().id)
-			.and_then(|voice_state| voice_state.channel_id)
-	}) else {
-		ctx.reply(EMPTY_VOICE_CHAN_MSG).await?;
-		bail!("User tried to join in empty voice channel");
-	};
-	let handler_lock = match ctx.data().music_manager.join(guild_id, channel_id).await {
-		Ok(lock) => lock,
-		Err(err) => {
-			ctx.reply("I don't wanna join").await?;
-			return Err(err.into());
-		}
-	};
-	Ok(handler_lock)
-}
-
-pub async fn try_voice(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
-	let handler_lock = if let Some(lock) = ctx.data().music_manager.get(guild_id) {
-		lock
-	} else {
-		match voice_channel(ctx, guild_id).await {
-			Ok(lock) => {
-				join_container(&ctx).await?;
-				add_voice_events(
-					ctx.serenity_context(),
-					guild_id,
-					ctx.channel_id(),
-					lock.clone(),
-				)
-				.await;
-				lock
-			}
-			Err(voice_err) => {
-				bail!("{voice_err}");
-			}
-		}
-	};
-
-	Ok(handler_lock)
-}
-
-pub async fn remove_handler(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()> {
-	if ctx.data().music_manager.remove(guild_id).await.is_err() {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
-		return Err(MusicError::NotInVoiceChan.into());
 	}
 	Ok(())
 }

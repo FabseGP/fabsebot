@@ -9,5 +9,5 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 serde = { workspace = true }
-sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio", "time", "uuid"] }
 

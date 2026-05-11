@@ -47,7 +47,7 @@ pub async fn spoiler_message(
 	data: WebhookMap,
 ) -> AResult<()> {
 	if let Some(spoiler_channel) = channel_id
-		&& message.channel_id.get() == spoiler_channel.cast_unsigned()
+		&& i64::from(message.channel_id) == spoiler_channel
 	{
 		channel_counter("spoiler".to_owned());
 		let Some(avatar_url) = message.author.avatar_url() else {

@@ -12,7 +12,9 @@ use fabsebot_core::{
 	utils::{
 		ai::ai_voice,
 		helpers::non_empty_vec,
-		voice::{get_configured_songbird_handler, queue_song, youtube_source},
+		voice::{
+			get_configured_songbird_handler, queue_song, remove_handler, try_voice, youtube_source,
+		},
 	},
 };
 use serde::Deserialize;
@@ -23,7 +25,7 @@ use tokio::process::Command;
 use tracing::warn;
 use url::Url;
 
-use crate::{remove_handler, require_guild_id, try_voice};
+use crate::require_guild_id;
 
 #[derive(Deserialize)]
 struct DeezerResponse {
@@ -153,13 +155,13 @@ pub async fn add_deezer_playlist(
 			audio,
 			src,
 			handler_lock.clone(),
-			guild_id,
+			i64::from(guild_id),
 			ctx.data(),
-			msg.id,
-			msg.channel_id,
-			ctx.author().display_name(),
+			i64::from(msg.id),
+			i64::from(msg.channel_id),
+			i64::from(ctx.author().id),
 		)
-		.await;
+		.await?;
 	}
 	if failed_songs != 0 {
 		ctx.reply(format!(
@@ -235,19 +237,18 @@ pub async fn add_youtube_playlist(
 				continue;
 			}
 		};
-
 		queue_song(
 			metadata,
 			audio,
 			src,
 			handler_lock.clone(),
-			guild_id,
+			i64::from(guild_id),
 			ctx.data(),
-			msg.id,
-			msg.channel_id,
-			ctx.author().display_name(),
+			i64::from(msg.id),
+			i64::from(msg.channel_id),
+			i64::from(ctx.author().id),
 		)
-		.await;
+		.await?;
 	}
 
 	if failed_songs != 0 {
@@ -293,7 +294,7 @@ pub async fn join_voice(
             "#,
 			i64::from(guild_id),
 		)
-		.execute(&mut *ctx.data().db.acquire().await?)
+		.execute(&ctx.data().db)
 		.await?;
 	}
 	Ok(())
@@ -321,7 +322,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
         "#,
 		i64::from(guild_id),
 	)
-	.execute(&mut *ctx.data().db.acquire().await?)
+	.execute(&ctx.data().db)
 	.await?;
 
 	Ok(())
@@ -365,18 +366,19 @@ pub async fn play_song(
 	};
 	let reply = ctx.reply(QUEUE_MSG).await?;
 	let msg = reply.message().await?;
+	let guild_id_i64 = i64::from(guild_id);
 	queue_song(
 		metadata.clone(),
 		audio,
 		src.clone(),
 		handler_lock.clone(),
-		guild_id,
+		guild_id_i64,
 		ctx.data(),
-		msg.id,
-		msg.channel_id,
-		ctx.author().display_name(),
+		i64::from(msg.id),
+		i64::from(msg.channel_id),
+		i64::from(ctx.author().id),
 	)
-	.await;
+	.await?;
 
 	drop(typing);
 
@@ -385,21 +387,22 @@ pub async fn play_song(
 		SELECT global_music FROM guild_settings
 		WHERE guild_id = $1
 		"#,
-		guild_id.get().cast_signed()
+		guild_id_i64
 	)
-	.fetch_one(&mut *ctx.data().db.acquire().await?)
+	.fetch_one(&ctx.data().db)
 	.await?;
 
 	if is_global {
 		let guild_global_playback = query_scalar!(
 			r#"
-		SELECT guild_id FROM guild_settings
-		WHERE global_music IS TRUE
-		AND guild_id != $1
-		"#,
-			guild_id.get().cast_signed()
+			SELECT guild_id FROM guild_settings
+			WHERE global_music IS TRUE
+			AND guild_id != $1
+			LIMIT 10
+			"#,
+			guild_id_i64
 		)
-		.fetch_all(&mut *ctx.data().db.acquire().await?)
+		.fetch_all(&ctx.data().db)
 		.await?;
 
 		for global_guild in guild_global_playback {
@@ -426,14 +429,14 @@ pub async fn play_song(
 					metadata.clone(),
 					global_audio,
 					src.clone(),
-					global_handler_lock.clone(),
-					guild_id,
+					global_handler_lock,
+					i64::from(guild_id),
 					ctx.data(),
-					msg.id,
-					msg.channel_id,
-					ctx.author().display_name(),
+					i64::from(msg.id),
+					i64::from(msg.channel_id),
+					i64::from(ctx.author().id),
 				)
-				.await;
+				.await?;
 			}
 		}
 	}

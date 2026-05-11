@@ -1,7 +1,9 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, io::Cursor, sync::Arc};
 
 use anyhow::{Result as AResult, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use fastrand::usize;
+use image::{ImageFormat, guess_format, load_from_memory};
 use metrics::counter;
 use mini_moka::sync::Cache;
 use poise::{CreateReply, serenity_prelude::Channel};
@@ -12,7 +14,8 @@ use serenity::{
 		CreateContainer, CreateContainerComponent, CreateMediaGallery, CreateMediaGalleryItem,
 		CreateMessage, CreateSection, CreateSectionAccessory, CreateSectionComponent,
 		CreateSeparator, CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, Emoji,
-		EmojiId, GuildId, Message, MessageFlags, Permissions, ReactionType,
+		EmojiId, GuildId, Http, Member, Message, MessageFlags, Permissions, ReactionType, Role,
+		User, UserId,
 	},
 	small_fixed_array::FixedString,
 };
@@ -278,7 +281,10 @@ pub async fn get_gif(ctx: &Context, input: &str) -> String {
 }
 
 #[derive(Deserialize)]
-struct LyricsResponse {
+struct LyricsResponse(#[serde(deserialize_with = "non_empty_vec")] pub Vec<LyricsEntry>);
+
+#[derive(Deserialize)]
+struct LyricsEntry {
 	#[serde(
 		rename(deserialize = "plainLyrics"),
 		deserialize_with = "non_empty_string"
@@ -286,20 +292,20 @@ struct LyricsResponse {
 	plain_lyrics: String,
 }
 
-async fn get_lyrics_internal(artist_name: &str, track_name: &str) -> AResult<String> {
+async fn get_lyrics_internal(title: &str) -> AResult<String> {
 	let response = HTTP_CLIENT
-		.get("https://lrclib.net/api/get")
-		.query(&[("artist_name", artist_name), ("track_name", track_name)])
+		.get("https://lrclib.net/api/search")
+		.query(&[("q", title)])
 		.send()
 		.await?;
 
 	let json = response.json::<LyricsResponse>().await?;
 
-	Ok(json.plain_lyrics)
+	Ok(json.0.into_iter().next().unwrap().plain_lyrics)
 }
 
-pub async fn get_lyrics(ctx: &Context, artist_name: &str, track_name: &str) -> Option<String> {
-	match get_lyrics_internal(artist_name, track_name).await {
+pub async fn get_lyrics(ctx: &Context, title: &str) -> Option<String> {
+	match get_lyrics_internal(title).await {
 		Ok(lyrics) => Some(lyrics),
 		Err(error) => {
 			log_error(
@@ -454,4 +460,66 @@ pub fn discord_emoji(input: &mut &str) -> ModalResult<DiscordEmoji> {
 		emoji_name: name,
 		emoji_id: id,
 	})
+}
+
+#[must_use]
+pub fn member_pfp(member: &Member) -> String {
+	member.avatar_url().unwrap_or_else(|| {
+		member
+			.user
+			.avatar_url()
+			.unwrap_or_else(|| member.user.default_avatar_url())
+	})
+}
+
+#[must_use]
+pub fn user_pfp(user: &User) -> String {
+	user.avatar_url()
+		.unwrap_or_else(|| user.default_avatar_url())
+}
+
+pub async fn user_banner(http: &Http, user_id: UserId) -> AResult<String> {
+	let banner_url = (http.get_user(user_id).await).map_or_else(
+		|_| "user has no banner".to_owned(),
+		|user| {
+			user.banner_url()
+				.unwrap_or_else(|| "user has no banner".to_owned())
+		},
+	);
+
+	Ok(banner_url)
+}
+
+#[must_use]
+pub fn user_roles_joined(roles: &[Role]) -> String {
+	roles
+		.iter()
+		.map(|role| role.name.as_str())
+		.intersperse(", ")
+		.collect::<String>()
+}
+
+pub async fn image_uri_fetch(url: &str) -> AResult<String> {
+	let image_bytes = HTTP_CLIENT.get(url).send().await?.bytes().await?;
+	image_uri(&image_bytes, None)
+}
+
+pub fn image_uri(content: &[u8], format: Option<&str>) -> AResult<String> {
+	let mime_type = if let Some(format) = format {
+		format
+	} else {
+		guess_format(content)?.to_mime_type()
+	};
+	let base64_image = BASE64.encode(content);
+
+	let data_uri = format!("data:{mime_type};base64,{base64_image}");
+
+	Ok(data_uri)
+}
+
+pub fn encode_image(content: &[u8]) -> AResult<Vec<u8>> {
+	let img = load_from_memory(content)?;
+	let mut img_bytes = Vec::with_capacity(content.len());
+	img.write_to(&mut Cursor::new(&mut img_bytes), ImageFormat::Jpeg)?;
+	Ok(img_bytes)
 }

@@ -28,7 +28,6 @@
 #llm_host_tts =
 #llm_host_stt =
 #text_gen_model =
-#image_to_text_model =
 #text_to_speech_model = 
 #speech_to_text_model = 
 

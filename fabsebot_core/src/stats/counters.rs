@@ -22,6 +22,7 @@ pub struct Metrics {
 	pub prefix_errors: String,
 	pub message_errors: String,
 	pub new_guild_errors: String,
+	pub deleted_guild_errors: String,
 	pub member_addition_errors: String,
 	pub ready_errors: String,
 	pub messages_deleted_errors: String,
@@ -56,6 +57,7 @@ impl Metrics {
 			prefix_errors: format!("{bot_name}_prefix_errors_total"),
 			message_errors: format!("{bot_name}_message_errors_total"),
 			new_guild_errors: format!("{bot_name}_new_guild_errors_total"),
+			deleted_guild_errors: format!("{bot_name}_deleted_guild_errors_total"),
 			member_addition_errors: format!("{bot_name}_member_addition_errors_total"),
 			ready_errors: format!("{bot_name}_ready_errors_total"),
 			messages_deleted_errors: format!("{bot_name}_messages_deleted_errors_total"),
@@ -102,6 +104,10 @@ impl Metrics {
 		describe_counter!(
 			self.new_guild_errors.clone(),
 			"Counter for new guild errors"
+		);
+		describe_counter!(
+			self.deleted_guild_errors.clone(),
+			"Counter for deleted guild errors"
 		);
 		describe_counter!(
 			self.member_addition_errors.clone(),

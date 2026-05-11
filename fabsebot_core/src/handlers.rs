@@ -12,6 +12,7 @@ use crate::{
 	events::{
 		bot_ready::handle_ready,
 		guild_create::handle_guild_create,
+		guild_delete::handle_guild_delete,
 		interaction::{
 			FEEDBACK_BUTTON_CUSTOM_ID, FEEDBACK_MODAL_CUSTOM_ID, handle_feedback_modal_button,
 			handle_feedback_modal_reply,
@@ -113,7 +114,7 @@ pub async fn dynamic_prefix(
 			"#,
 			i64::from(guild_id)
 		)
-		.fetch_optional(&mut *data.db.acquire().await?)
+		.fetch_optional(&data.db)
 		.await?
 	{
 		return Ok(Some(Cow::Owned(prefix)));
@@ -157,7 +158,7 @@ impl SEventHandler for EventHandler {
 				is_new: Some(is_new),
 				..
 			} => {
-				if let Err(error) = handle_guild_create(ctx.data(), guild, *is_new).await {
+				if *is_new && let Err(error) = handle_guild_create(ctx.data(), guild.id).await {
 					log_error(
 						"# Error handling newly created guild",
 						error.to_string(),
@@ -167,6 +168,20 @@ impl SEventHandler for EventHandler {
 					.await;
 				}
 			}
+			FullEvent::GuildDelete { incomplete, .. } => {
+				if !incomplete.unavailable
+					&& let Err(error) = handle_guild_delete(ctx.data(), incomplete.id).await
+				{
+					log_error(
+						"# Error handling deleted guild",
+						error.to_string(),
+						ctx,
+						METRICS.deleted_guild_errors.clone(),
+					)
+					.await;
+				}
+			}
+
 			FullEvent::MessageDelete {
 				channel_id,
 				deleted_message_id,

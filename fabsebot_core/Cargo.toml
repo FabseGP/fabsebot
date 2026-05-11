@@ -15,7 +15,7 @@ bytes = { workspace = true }
 dashmap = { workspace = true }
 emojis = { workspace = true }
 fastrand = { workspace = true }
-image = { workspace = true, default-features = false, features = ["avif", "gif", "jpeg", "nasm", "rayon", "webp"] }
+image = { workspace = true, default-features = false, features = ["avif", "gif", "jpeg", "nasm", "png", "rayon", "webp"] }
 imageproc = { workspace = true, default-features = false, features = ["rayon", "text"] }
 jiff = { workspace = true }
 #lavalink-rs = { workspace = true, default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
@@ -26,9 +26,9 @@ rayon = { workspace = true }
 reqwest = { workspace = true, default-features = false, features = ["http3", "json", "query", "rustls", "zstd"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "transport_compression_zstd"] }
+serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "temp_cache", "transport_compression_zstd"] }
 songbird = { workspace = true, features = ["builtin-queue", "receive"] }
-sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio"] }
+sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio", "time", "uuid"] }
 symphonia = { workspace = true, default-features = false, features = ["aac", "isomp4", "mkv", "pcm", "wav"] }
 systemstat = { workspace = true }
 textwrap = { workspace = true }
@@ -45,9 +45,6 @@ criterion = { workspace = true, features = ["html_reports"] }
 [[bench]]
 name = "quote_bench"
 harness = false
-
-[package.metadata.cargo-machete]
-ignored = ["symphonia"]
 
 [features]
 simd-avx = ["symphonia/opt-simd-avx"]

@@ -1,5 +1,5 @@
 use anyhow::Result as AResult;
-use sqlx::{PgConnection, query, query_as};
+use sqlx::{Pool, Postgres, query, query_as};
 
 pub struct UserSettings {
 	pub guild_id: i64,
@@ -12,7 +12,7 @@ pub struct UserSettings {
 	pub ping_media: Option<String>,
 }
 
-pub async fn insert_user(user_id: i64, conn: &mut PgConnection) -> AResult<()> {
+pub async fn insert_user(user_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
 	query!(
 		r#"
 		INSERT INTO users (user_id)
@@ -31,7 +31,7 @@ pub async fn insert_user(user_id: i64, conn: &mut PgConnection) -> AResult<()> {
 pub async fn insert_user_settings(
 	guild_id: i64,
 	user_id: i64,
-	conn: &mut PgConnection,
+	conn: &Pool<Postgres>,
 ) -> AResult<UserSettings> {
 	let user_settings = query_as!(
 		UserSettings,
