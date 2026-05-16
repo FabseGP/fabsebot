@@ -55,6 +55,7 @@ All notable changes to this project will be documented in this file.
 - Forgejo action
 - Schedule renovate
 - Persistent track history + misc
+- Log to victoria-logs
 
 ### 🐛 Bug Fixes
 
@@ -179,6 +180,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Rewrite command descriptions
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
