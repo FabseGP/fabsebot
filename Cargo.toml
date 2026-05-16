@@ -81,7 +81,7 @@ serde_json = "1.0.149"
 serenity = { git = "https://github.com/serenity-rs/serenity.git", branch = "next", default-features = false, features = ["cache", "rustls_backend", "temp_cache", "transport_compression_zstd"] }
 songbird = { git = "https://github.com/FabseGP/songbird.git", branch = "update-deps", features = ["builtin-queue", "receive"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["macros", "postgres", "runtime-tokio", "time", "uuid"] }
-symphonia = { version = "0.5.5", default-features = false, features = ["aac", "isomp4", "mkv", "pcm", "wav"] }
+symphonia = { version = "0.6.0", default-features = false, features = ["aac", "isomp4", "mkv", "pcm", "wav"] }
 systemstat = "0.2.6"
 textwrap = "0.16.2"
 thiserror = "2.0.18"
