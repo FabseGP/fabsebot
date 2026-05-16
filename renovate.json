@@ -8,5 +8,18 @@
   "configMigration": true,
   "env": {
     "IGNORED_TOOLS": "rust"
+  },
+  "assignees": [
+    "fabseman"
+  ],
+  "labels": [
+    "renovate"
+  ],
+  "cargo": {
+    "vulnerabilityAlerts": {
+      "addLabels": [
+        "security"
+      ]
+    }
   }
 }
