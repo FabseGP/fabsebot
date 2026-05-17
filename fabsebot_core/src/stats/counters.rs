@@ -36,6 +36,7 @@ pub struct Metrics {
 	pub waifu_errors: String,
 	pub lyrics_errors: String,
 	pub gifs_errors: String,
+	pub voice_join_errors: String,
 }
 
 impl Metrics {
@@ -71,6 +72,7 @@ impl Metrics {
 			waifu_errors: format!("{bot_name}_waifu_errors"),
 			lyrics_errors: format!("{bot_name}_lyrics_errors"),
 			gifs_errors: format!("{bot_name}_gifs_errors"),
+			voice_join_errors: format!("{bot_name}_voice_join_errors"),
 		}
 	}
 
@@ -143,5 +145,9 @@ impl Metrics {
 		describe_counter!(self.waifu_errors.clone(), "Counter for waifu errors");
 		describe_counter!(self.lyrics_errors.clone(), "Counter for lyrics errors");
 		describe_counter!(self.gifs_errors.clone(), "Counter for gifs errors");
+		describe_counter!(
+			self.voice_join_errors.clone(),
+			"Counter for voice join errors"
+		);
 	}
 }

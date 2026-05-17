@@ -1,14 +1,15 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Result as AResult;
 use serenity::all::{Context as SContext, GenericChannelId, GuildId, Ready};
 use sqlx::query;
-use tokio::spawn;
+use tokio::{spawn, time::sleep};
 use tracing::{error, info};
 
 use crate::{
 	config::types::{BOT_CONTEXT, Data},
-	periodic_task,
+	log_error, periodic_task,
+	stats::counters::METRICS,
 	utils::voice::{add_voice_events, join_handler},
 };
 
@@ -46,12 +47,26 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 	.fetch_all(&data.db)
 	.await?;
 
+	sleep(Duration::from_secs(5)).await;
+
 	for record in persistent_voice_channels {
 		let guild_id = GuildId::new(record.guild_id.cast_unsigned());
 		let channel_id =
 			GenericChannelId::new(record.current_voice_channel.unwrap().cast_unsigned());
 		let handler_lock =
-			join_handler(&data.music_manager, guild_id, channel_id.expect_channel()).await?;
+			match join_handler(&data.music_manager, guild_id, channel_id.expect_channel()).await {
+				Ok(lock) => lock,
+				Err(err) => {
+					log_error(
+						"# Failed to rejoin voice channel",
+						err.to_string(),
+						ctx,
+						METRICS.voice_join_errors.clone(),
+					)
+					.await;
+					continue;
+				}
+			};
 		add_voice_events(ctx, guild_id, channel_id, handler_lock).await;
 	}
 
