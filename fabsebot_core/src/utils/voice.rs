@@ -208,8 +208,8 @@ impl PlaybackHandler {
 		history_embed: &mut Option<CreateEmbed<'a>>,
 		track: &TrackData,
 		track_guilds: &Vec<GuildPlay>,
-		queue_history: &'a Vec<ChannelPlayHistory>,
 		embed: &CreateEmbed<'_>,
+		requested_channel: i64,
 	) -> AResult<()> {
 		interaction.defer(&self.serenity_context.http).await?;
 
@@ -375,14 +375,16 @@ impl PlaybackHandler {
 				if let Some(embed) = &history_embed {
 					embed.clone()
 				} else {
+					let queue_history =
+						get_queue_history(requested_channel, &self.bot_data.db).await?;
 					let mut embed = CreateEmbed::default()
 						.title(format!(
 							"History of {} last played songs",
 							queue_history.len()
 						))
-											.colour(COLOUR_GREEN);
+						.colour(COLOUR_GREEN);
 					for track in queue_history {
-						if let Some(title) = &track.title {
+						if let Some(title) = track.title {
 							let author_name = track
 								.requested_by
 								.get_author_name(&self.serenity_context)
@@ -465,8 +467,6 @@ impl PlaybackHandler {
 			.stream();
 
 		let track_guilds = get_matching_guild_plays(track.track_uuid, &self.bot_data.db).await?;
-		let queue_history =
-			get_queue_history(song_play.requested_channel, &self.bot_data.db).await?;
 
 		loop {
 			select! {
@@ -480,8 +480,8 @@ impl PlaybackHandler {
 						&mut history_embed,
 						&track,
 						&track_guilds,
-						&queue_history,
-						&embed
+						&embed,
+						song_play.requested_channel
 					)
 					.await?;
 				},
