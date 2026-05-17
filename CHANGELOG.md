@@ -148,6 +148,7 @@ All notable changes to this project will be documented in this file.
 - Wider range for renovate schedule V2
 - Schedule useless
 - Run workflow on pi
+- Avoid always fetching voice history
 
 ### 💼 Other
 
@@ -181,6 +182,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Rewrite command descriptions
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
