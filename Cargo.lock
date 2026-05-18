@@ -976,9 +976,9 @@ dependencies = [
 
 [[package]]
 name = "dashmap"
-version = "6.1.0"
+version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+checksum = "e6361d5c062261c78a176addb82d4c821ae42bed6089de0e12603cd25de2059c"
 dependencies = [
  "cfg-if",
  "crossbeam-utils",
@@ -1369,7 +1369,7 @@ dependencies = [
  "base64",
  "bytes",
  "criterion",
- "dashmap 6.1.0",
+ "dashmap 6.2.1",
  "emojis",
  "fabsebot_db",
  "fastrand",
@@ -3134,7 +3134,7 @@ source = "git+https://github.com/moka-rs/mini-moka.git?branch=v0.11.x#a4305fa54c
 dependencies = [
  "crossbeam-channel",
  "crossbeam-utils",
- "dashmap 6.1.0",
+ "dashmap 6.2.1",
  "smallvec",
  "tagptr",
  "triomphe",
@@ -4971,7 +4971,7 @@ dependencies = [
  "bool_to_bitflags",
  "bytes",
  "chrono",
- "dashmap 6.1.0",
+ "dashmap 6.2.1",
  "extract_map",
  "flate2",
  "foldhash 0.2.0",
@@ -5205,7 +5205,7 @@ dependencies = [
  "bytes",
  "chacha20poly1305",
  "crypto-common",
- "dashmap 6.1.0",
+ "dashmap 6.2.1",
  "davey",
  "derivative",
  "discortp",
