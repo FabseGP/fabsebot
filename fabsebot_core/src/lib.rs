@@ -9,7 +9,7 @@ pub mod utils;
 
 use std::{
 	str::FromStr as _,
-	sync::Arc,
+	sync::{Arc, atomic::AtomicBool},
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -217,6 +217,7 @@ pub async fn bot_start(
 			.max_capacity(1000)
 			.time_to_idle(Duration::from_hours(12))
 			.build(),
+		state_tracker: AtomicBool::new(true),
 	});
 	let additional_prefix: &'static str =
 		Box::leak(format!("hey {}", &bot_config.username).into_boxed_str());

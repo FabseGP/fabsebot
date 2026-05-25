@@ -1,5 +1,5 @@
 use std::{
-	sync::{Arc, LazyLock, OnceLock},
+	sync::{Arc, LazyLock, OnceLock, atomic::AtomicBool},
 	time::Duration,
 };
 
@@ -139,6 +139,7 @@ pub struct Data {
 	pub channel_webhooks: WebhookMap,
 	pub guilds: Cache<GuildId, Arc<GuildCache>>,
 	pub app_emojis: Cache<u64, Arc<Emoji>>,
+	pub state_tracker: AtomicBool,
 }
 
 pub type Error = AError;

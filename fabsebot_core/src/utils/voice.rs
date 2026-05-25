@@ -28,6 +28,7 @@ use tokio::{
 		Mutex, MutexGuard,
 		watch::{self, Receiver, Sender},
 	},
+	time::sleep,
 };
 use tracing::{error, warn};
 use url::Url;
@@ -42,6 +43,7 @@ use crate::{
 	},
 	errors::commands::MusicError,
 	events::interaction::build_feedback_action_row,
+	log_error,
 	stats::counters::METRICS,
 	utils::helpers::{get_lyrics, send_container, separator, text_display},
 };
@@ -958,4 +960,44 @@ pub async fn get_queue_history(
 	.await?;
 
 	Ok(queue_history)
+}
+
+pub async fn rejoin_voice(
+	ctx: &SerenityContext,
+	conn: &Pool<Postgres>,
+	music_manager: &Arc<Songbird>,
+) -> AResult<()> {
+	let persistent_voice_channels = query!(
+		r#"
+		SELECT guild_id, current_voice_channel FROM guild_settings
+		WHERE current_voice_channel IS NOT NULL
+		"#
+	)
+	.fetch_all(conn)
+	.await?;
+
+	sleep(Duration::from_secs(5)).await;
+
+	for record in persistent_voice_channels {
+		let guild_id = GuildId::new(record.guild_id.cast_unsigned());
+		let channel_id =
+			GenericChannelId::new(record.current_voice_channel.unwrap().cast_unsigned());
+		let handler_lock =
+			match join_handler(music_manager, guild_id, channel_id.expect_channel()).await {
+				Ok(lock) => lock,
+				Err(err) => {
+					log_error(
+						"# Failed to rejoin voice channel",
+						err.to_string(),
+						ctx,
+						METRICS.voice_join_errors.clone(),
+					)
+					.await;
+					continue;
+				}
+			};
+		add_voice_events(ctx, guild_id, channel_id, handler_lock).await;
+	}
+
+	Ok(())
 }
