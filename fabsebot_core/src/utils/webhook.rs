@@ -76,7 +76,7 @@ pub async fn spoiler_message(
 			};
 
 			let attachment =
-				CreateAttachment::bytes(download_bytes, format!("SPOILER_{}", &payload.filename));
+				CreateAttachment::bytes(download_bytes, format!("SPOILER_{}", payload.filename));
 
 			let mut webhook_execute = ExecuteWebhook::default()
 				.username(username)

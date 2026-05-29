@@ -131,11 +131,11 @@ pub async fn user_info(
 	let user_info = format!(
 		"### Creation date: {}\n### Joined date: {}\n### Roles: {}\n### Verified: {}\n### Last \
 		 time boosting server: {}\n### Nitro tier: {}",
-		&member.user.id.created_at(),
-		&member.joined_at.unwrap_or_default(),
-		&roles,
-		&member.user.verified().unwrap_or_default(),
-		&member.premium_since.unwrap_or_default(),
+		member.user.id.created_at(),
+		member.joined_at.unwrap_or_default(),
+		roles,
+		member.user.verified().unwrap_or_default(),
+		member.premium_since.unwrap_or_default(),
 		premium_type
 	);
 

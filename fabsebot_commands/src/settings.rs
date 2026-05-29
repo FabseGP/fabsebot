@@ -833,7 +833,7 @@ pub async fn set_word_react(
 				if content_type.starts_with("image/") || content_type == "application/gif" {
 					let image_bytes = HTTP_CLIENT.get(&emoji_media).send().await?.bytes().await?;
 					let base64_str = general_purpose::STANDARD.encode(&image_bytes);
-					let image_data = format!("data:{};base64,{}", &content_type, base64_str);
+					let image_data = format!("data:{content_type};base64,{base64_str}");
 					let params = CreateApplicationEmoji {
 						name: &emoji_name,
 						image: &image_data,

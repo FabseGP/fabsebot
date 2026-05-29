@@ -220,7 +220,7 @@ pub async fn bot_start(
 		state_tracker: AtomicBool::new(true),
 	});
 	let additional_prefix: &'static str =
-		Box::leak(format!("hey {}", &bot_config.username).into_boxed_str());
+		Box::leak(format!("hey {}", bot_config.username).into_boxed_str());
 	let framework = Framework::builder()
 		.options(FrameworkOptions {
 			commands,

@@ -18,7 +18,7 @@ const FEEDBACK_FREEFORM_CUSTOM_ID: &str = "feedback-modal-freeform";
 pub fn build_feedback_action_row<'a>() -> CreateContainerComponent<'a> {
 	CreateContainerComponent::ActionRow(CreateActionRow::Buttons(Cow::Owned(vec![
 		CreateButton::new(FEEDBACK_BUTTON_CUSTOM_ID)
-			.label(format!("Give feedback on {}", &utils_config().bot_name))
+			.label(format!("Give feedback on {}", utils_config().bot_name))
 			.style(ButtonStyle::Secondary),
 	])))
 }
