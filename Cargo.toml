@@ -100,7 +100,7 @@ fabsebot_core = { path = "fabsebot_core" }
 fabsebot_db = { path = "fabsebot_db" }
 anyhow = { workspace = true }
 metrics-exporter-prometheus = { version = "0.18.1", default-features = false, features = ["http-listener"] }
-bc-mimalloc = { version = "0.1.48", features = ["v3"] }
+mimalloc = "0.1.52"
 serde = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 tokio-metrics = { version = "0.5.0" }

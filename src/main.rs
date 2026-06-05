@@ -1,7 +1,7 @@
 use std::{fs::read_to_string, time::Duration};
 
 use anyhow::{Context as _, Result as AResult};
-use bc_mimalloc::MiMalloc;
+use mimalloc::MiMalloc;
 use fabsebot_commands::commands;
 use fabsebot_core::{
 	bot_start,
