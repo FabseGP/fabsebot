@@ -843,7 +843,7 @@ pub async fn set_word_react(
 							emoji_id = Some(http_emoji.id.get().cast_signed());
 							ctx.data()
 								.app_emojis
-								.insert(http_emoji.id.get(), Arc::new(http_emoji));
+								.insert(http_emoji.id, Arc::new(http_emoji));
 
 							true
 						}

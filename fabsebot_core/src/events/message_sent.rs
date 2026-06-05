@@ -626,7 +626,9 @@ async fn guild_queries(
 				&& let Ok(guild_emoji) = guild_id.emoji(&ctx.http, emoji_id_typed).await
 			{
 				(guild_emoji.animated(), guild_emoji.id, guild_emoji.name)
-			} else if let Some(cache_emoji) = data.app_emojis.get(&emoji_id.cast_unsigned()) {
+			} else if let Some(cache_emoji) =
+				data.app_emojis.get(&EmojiId::new(emoji_id.cast_unsigned()))
+			{
 				(
 					cache_emoji.animated(),
 					cache_emoji.id,

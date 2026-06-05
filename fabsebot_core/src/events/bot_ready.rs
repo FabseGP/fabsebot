@@ -18,7 +18,7 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 	if first_startup {
 		if let Ok(app_emojis) = ctx.get_application_emojis().await {
 			for emoji in app_emojis {
-				data.app_emojis.insert(emoji.id.get(), Arc::new(emoji));
+				data.app_emojis.insert(emoji.id, Arc::new(emoji));
 			}
 		}
 

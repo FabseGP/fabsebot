@@ -10,7 +10,7 @@ use poise::Context as PContext;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serenity::all::{
-	Context, Emoji, GenericChannelId, GuildId, ShardId, ShardRunnerMetadata, Webhook,
+	Context, Emoji, EmojiId, GenericChannelId, GuildId, ShardId, ShardRunnerMetadata, Webhook,
 };
 use songbird::Songbird;
 use sqlx::PgPool;
@@ -138,7 +138,7 @@ pub struct Data {
 	pub music_manager: Arc<Songbird>,
 	pub channel_webhooks: WebhookMap,
 	pub guilds: Cache<GuildId, Arc<GuildCache>>,
-	pub app_emojis: Cache<u64, Arc<Emoji>>,
+	pub app_emojis: Cache<EmojiId, Arc<Emoji>>,
 	pub state_tracker: AtomicBool,
 }
 
