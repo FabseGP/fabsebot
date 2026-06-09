@@ -67,7 +67,7 @@ dashmap = "6.1.0"
 emojis = "0.8.1"
 fastrand = "2.4.1"
 image = { version = "0.25.10", default-features = false, features = ["avif", "gif", "jpeg", "nasm", "png", "rayon", "webp"] }
-imageproc = { version = "0.26.1", default-features = false, features = ["rayon", "text"] }
+imageproc = { version = "0.27.0", default-features = false, features = ["rayon", "text"] }
 jiff = "0.2.24"
 #lavalink-rs = { git = "https://gitlab.com/vicky5124/lavalink-rs/", branch = "main", default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
 metrics = { version = "0.24.3" }
