@@ -1,0 +1,31 @@
+name: Build executable
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    name: Build binary
+    runs-on: fabsearch-latest-pi
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Detect architecture
+        id: arch
+        run: |
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH="amd64" ;;
+            aarch64) ARCH="arm64" ;;
+          esac
+          echo "arch=$ARCH" >> "$FORGEJO_OUTPUT"
+      - name: Setup rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rust-src
+      - name: Build
+        run: cargo build --release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fabsebot-${{ steps.arch.outputs.arch }}
+          path: target/release/fabsebot
