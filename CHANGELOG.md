@@ -155,6 +155,7 @@ All notable changes to this project will be documented in this file.
 - Store EmojiId
 - Specify action url
 - Incorrect url
+- Codeberg fork
 
 ### 💼 Other
 
@@ -198,6 +199,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - Clippy
 - Update mimalloc
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
