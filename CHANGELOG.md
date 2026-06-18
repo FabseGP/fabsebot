@@ -153,6 +153,7 @@ All notable changes to this project will be documented in this file.
 - Warmup voice gateway
 - Track the first ready event
 - Store EmojiId
+- Specify action url
 
 ### 💼 Other
 
@@ -196,6 +197,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - Clippy
 - Update mimalloc
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
