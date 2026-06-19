@@ -158,6 +158,7 @@ All notable changes to this project will be documented in this file.
 - Codeberg fork
 - Missing ref
 - Bump ref
+- Matrix runners
 
 ### 💼 Other
 
@@ -209,6 +210,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Different fork
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
