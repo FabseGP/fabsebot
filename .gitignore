@@ -1,6 +1,5 @@
 target
 /config.toml
-.sqlx
 perf.data
 perf.data.old
 flamegraph.svg
