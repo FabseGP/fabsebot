@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tINSERT INTO guild_word_tracking (guild_id, word)\n        VALUES ($1, $2)\n        ON CONFLICT (guild_id, word)\n        DO UPDATE SET word = $2, count = 0\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "317aa730374d6ab0e6c6ee619782f4a7e2fa79971bd169c8a7e030bbc8cbca3a"
+}

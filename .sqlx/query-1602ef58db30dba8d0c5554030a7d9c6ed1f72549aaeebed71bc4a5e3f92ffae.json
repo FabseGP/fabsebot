@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\t\t\tUPDATE user_settings\n                    SET pinged_links = COALESCE(pinged_links || ',' || $1, $1) \n                    WHERE guild_id = $2\n                    AND user_id = $3\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1602ef58db30dba8d0c5554030a7d9c6ed1f72549aaeebed71bc4a5e3f92ffae"
+}

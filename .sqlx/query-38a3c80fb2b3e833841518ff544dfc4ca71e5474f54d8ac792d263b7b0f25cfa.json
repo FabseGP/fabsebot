@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tDELETE FROM guild_word_tracking\n        WHERE guild_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38a3c80fb2b3e833841518ff544dfc4ca71e5474f54d8ac792d263b7b0f25cfa"
+}

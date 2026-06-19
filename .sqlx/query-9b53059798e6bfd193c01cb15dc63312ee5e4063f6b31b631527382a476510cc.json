@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\tINSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (guild_id, user_id)\n            DO UPDATE SET ping_content = $3, \n            ping_media = $4\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9b53059798e6bfd193c01cb15dc63312ee5e4063f6b31b631527382a476510cc"
+}

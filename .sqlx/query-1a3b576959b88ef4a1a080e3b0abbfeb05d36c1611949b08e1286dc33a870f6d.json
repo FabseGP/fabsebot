@@ -1,0 +1,230 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\tSELECT * FROM guild_settings\n\t\t\tWHERE waifu_channel IS NOT NULL\n\t\t\tOR dead_chat_channel IS NOT NULL\n\t\t\t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "guild_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "guild_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "dead_chat_rate",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "dead_chat_rate"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "dead_chat_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "dead_chat_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "quotes_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "quotes_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "spoiler_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "spoiler_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "prefix",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "prefix"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "ai_chat_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "ai_chat_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "global_chat_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "global_chat_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "global_music",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "global_music"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "global_chat",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "global_chat"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "global_call",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "global_call"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "music_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "music_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "waifu_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "waifu_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "waifu_rate",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "waifu_rate"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "last_dead_chat",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "last_dead_chat"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "last_waifu",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "last_waifu"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "chatbot_role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "chatbot_role"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "current_voice_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "current_voice_channel"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "1a3b576959b88ef4a1a080e3b0abbfeb05d36c1611949b08e1286dc33a870f6d"
+}

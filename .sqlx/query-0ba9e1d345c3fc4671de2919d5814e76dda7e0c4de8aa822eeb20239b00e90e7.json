@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tSELECT global_music FROM guild_settings\n\t\tWHERE guild_id = $1\n\t\t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "global_music",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "global_music"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0ba9e1d345c3fc4671de2919d5814e76dda7e0c4de8aa822eeb20239b00e90e7"
+}

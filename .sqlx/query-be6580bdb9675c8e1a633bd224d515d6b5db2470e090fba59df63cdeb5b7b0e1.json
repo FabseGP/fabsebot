@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\tUPDATE guild_settings SET global_chat = FALSE,\n\t\t\tglobal_chat_channel = NULL\n\t\t\tWHERE guild_id = $1\n\t\t\t",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "be6580bdb9675c8e1a633bd224d515d6b5db2470e090fba59df63cdeb5b7b0e1"
+}

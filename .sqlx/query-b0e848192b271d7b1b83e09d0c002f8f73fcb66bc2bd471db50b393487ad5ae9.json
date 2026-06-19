@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tUPDATE user_settings\n        SET afk = FALSE, afk_reason = NULL,\n        pinged_links = NULL, ping_content = NULL, ping_media = NULL\n    \tWHERE guild_id = $1 AND user_id = $2\n    \t",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b0e848192b271d7b1b83e09d0c002f8f73fcb66bc2bd471db50b393487ad5ae9"
+}

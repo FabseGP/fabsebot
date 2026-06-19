@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tINSERT INTO channels (guild_id, channel_id)\n        VALUES ($1, $2)\n        ON CONFLICT (guild_id, channel_id)\n        DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ef6ad7230419aaebe94b1f64bee554485fabbff7f75e75c041c8be9e433557b7"
+}

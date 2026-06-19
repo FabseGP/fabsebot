@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\tINSERT INTO guild_word_reaction (guild_id, word, content, media, emoji_id, guild_emoji)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            ON CONFLICT (guild_id, word)\n            DO UPDATE SET word = $2, content = $3, media = $4, emoji_id = $5, guild_emoji = $6\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fae3ffad7b48311eb218f0670ffb71be8b62e7ed31823582c7096eab54c069f0"
+}

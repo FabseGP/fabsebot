@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tINSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)\n    \tVALUES ($1, $2, TRUE, $3, NULL)\n        ON CONFLICT (guild_id, user_id)\n        DO UPDATE SET afk = TRUE,\n        afk_reason = $3,\n        pinged_links = NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "64f2068c606a432e6229f6018a62a27c3d91f8b6e5ae6c83390b0131090a1fd9"
+}
