@@ -19,6 +19,8 @@ jobs:
           components: rust-src
       - name: Build
         run: cargo build --release
+        env:
+          CARGO_BUILD_RUSTC_WRAPPER: ""
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
