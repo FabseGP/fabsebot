@@ -23,7 +23,7 @@ jobs:
         env:
           CARGO_BUILD_RUSTC_WRAPPER: ""
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: fabsebot-${{ matrix.runner }}
           path: target/release/fabsebot
