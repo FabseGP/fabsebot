@@ -4,19 +4,14 @@ on:
 jobs:
   build:
     name: Build binary
-    runs-on: fabsearch-latest-pi
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        runner: [fabserunner-latest-pi]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Detect architecture
-        id: arch
-        run: |
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64) ARCH="amd64" ;;
-            aarch64) ARCH="arm64" ;;
-          esac
-          echo "arch=$ARCH" >> "$FORGEJO_OUTPUT"
       - name: Setup rust
         uses: https://codeberg.org/prjunnamed/setup-rust-toolchain@f0e3fff1ca3442708aa9fb8156820eb859d80846
         with:
@@ -27,5 +22,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: fabsebot-${{ steps.arch.outputs.arch }}
+          name: fabsebot-${{ matrix.runner }}
           path: target/release/fabsebot
