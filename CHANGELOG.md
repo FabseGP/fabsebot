@@ -164,6 +164,7 @@ All notable changes to this project will be documented in this file.
 - Use arch image
 - Don't overwrite rustflags
 - ... have to settle with upload-artifact v4
+- Use patched v4
 
 ### 💼 Other
 
@@ -222,6 +223,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Update gitignore
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
