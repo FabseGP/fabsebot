@@ -161,6 +161,7 @@ All notable changes to this project will be documented in this file.
 - Matrix runners
 - No sccache in ci
 - Use arch image
+- Don't overwrite rustflags
 
 ### 💼 Other
 
@@ -212,6 +213,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Different fork
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
