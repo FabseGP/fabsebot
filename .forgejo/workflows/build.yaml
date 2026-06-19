@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        runner: [fabserunner-latest-pi]
+        runner: [fabsearch-latest-pi]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
