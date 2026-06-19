@@ -163,6 +163,7 @@ All notable changes to this project will be documented in this file.
 - No sccache in ci
 - Use arch image
 - Don't overwrite rustflags
+- ... have to settle with upload-artifact v4
 
 ### 💼 Other
 
@@ -221,6 +222,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Update gitignore
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
