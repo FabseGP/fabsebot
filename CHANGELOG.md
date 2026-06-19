@@ -159,6 +159,7 @@ All notable changes to this project will be documented in this file.
 - Missing ref
 - Bump ref
 - Matrix runners
+- No sccache in ci
 
 ### 💼 Other
 
@@ -210,6 +211,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Different fork
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
