@@ -17,6 +17,7 @@ jobs:
         with:
           toolchain: nightly
           components: rust-src
+          rustflags: ""
       - name: Build
         run: cargo build --release
         env:
