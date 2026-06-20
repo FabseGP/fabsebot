@@ -2,6 +2,15 @@ name: Generate CHANGELOG.md
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "**.toml"
+      - "**.lock"
+      - "**.json"
+      - "**.yaml"
+      - "examples"
+      - "bench_assets"
+      - ".sqlx"
   workflow_dispatch:
 jobs:
   changelog:
