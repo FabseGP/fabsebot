@@ -11,7 +11,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        runner: [fabsearch-latest-pi, fabsearch-latest-arm]
+        include:
+          - runner: fabsearch-latest-pi
+            features: simd-neon
+          - runner: fabsearch-latest-arm
+            features: simd-neon
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -22,7 +26,7 @@ jobs:
           components: rust-src
           rustflags: ""
       - name: Build
-        run: cargo build --release
+        run: cargo build --release --features ${{ matrix.features }}
         env:
           CARGO_BUILD_RUSTC_WRAPPER: ""
       - name: Upload artifact
