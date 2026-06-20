@@ -1,6 +1,9 @@
 name: Build executable
 on:
   workflow_dispatch:
+concurrency:
+  group: deploy-${{ forgejo.ref }}
+  cancel-in-progress: false
 jobs:
   build:
     name: Build binary
