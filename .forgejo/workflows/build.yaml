@@ -20,7 +20,7 @@ jobs:
             features: simd-avx
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Setup rust
         uses: https://codeberg.org/prjunnamed/setup-rust-toolchain@f0e3fff1ca3442708aa9fb8156820eb859d80846
         with:
