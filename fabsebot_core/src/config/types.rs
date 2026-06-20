@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::Error as AError;
 use dashmap::DashMap;
+use lavalink_rs::client::LavalinkClient;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
@@ -140,6 +141,7 @@ pub struct Data {
 	pub guilds: Cache<GuildId, Arc<GuildCache>>,
 	pub app_emojis: Cache<EmojiId, Arc<Emoji>>,
 	pub state_tracker: AtomicBool,
+	pub lavalink_client: LavalinkClient,
 }
 
 pub type Error = AError;

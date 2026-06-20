@@ -2,6 +2,15 @@ use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use anyhow::{Result as AResult, bail};
 use fabsebot_db::guild::{insert_channel, set_current_voice_channel};
+use lavalink_rs::{
+	client::LavalinkClient,
+	model::{
+		UserId as LavaUserId, client::NodeDistributionStrategy, events::Events,
+		track::TrackLoadData,
+	},
+	node::NodeBuilder,
+	player_context::TrackInQueue,
+};
 use metrics::counter;
 use serenity::{
 	all::{
@@ -698,7 +707,7 @@ pub async fn join_handler(
 	Ok(handler_lock)
 }
 
-pub async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
+pub async fn voice_channel_id(ctx: SContext<'_>) -> AResult<ChannelId> {
 	let Some(channel_id) = ctx.guild().and_then(|guild| {
 		guild
 			.voice_states
@@ -708,6 +717,12 @@ pub async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<
 		ctx.reply(EMPTY_VOICE_CHAN_MSG).await?;
 		bail!("User tried to join in empty voice channel");
 	};
+
+	Ok(channel_id)
+}
+
+pub async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
+	let channel_id = voice_channel_id(ctx).await?;
 	let handler_lock = match join_handler(&ctx.data().music_manager, guild_id, channel_id).await {
 		Ok(lock) => lock,
 		Err(err) => {
@@ -997,6 +1012,83 @@ pub async fn rejoin_voice(
 				}
 			};
 		add_voice_events(ctx, guild_id, channel_id, handler_lock).await;
+	}
+
+	Ok(())
+}
+
+pub async fn setup_lavalink(host: String, password: String, bot_id: LavaUserId) -> LavalinkClient {
+	let events = Events {
+		..Default::default()
+	};
+
+	let node_local = NodeBuilder {
+		hostname: host,
+		is_ssl: false,
+		events: Events::default(),
+		password,
+		user_id: bot_id,
+		session_id: None,
+	};
+
+	LavalinkClient::new(
+		events,
+		vec![node_local],
+		NodeDistributionStrategy::round_robin(),
+	)
+	.await
+}
+
+pub async fn lavalink_join(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()> {
+	let channel_id = voice_channel_id(ctx).await?;
+	if let Ok((connection_info, _)) = ctx
+		.data()
+		.music_manager
+		.join_gateway(guild_id, channel_id)
+		.await
+	{
+		ctx.data()
+			.lavalink_client
+			.create_player_context(guild_id, connection_info)
+			.await?;
+	}
+	Ok(())
+}
+
+pub async fn lavalink_play(ctx: SContext<'_>, guild_id: GuildId, url: &str) -> AResult<()> {
+	let Some(player) = ctx.data().lavalink_client.get_player_context(guild_id) else {
+		ctx.say("Join the bot to a voice channel first.").await?;
+		return Ok(());
+	};
+	let loaded_tracks = ctx
+		.data()
+		.lavalink_client
+		.load_tracks(guild_id, &url)
+		.await?;
+
+	let mut playlist_info = None;
+
+	let mut tracks: Vec<TrackInQueue> = match loaded_tracks.data {
+		Some(TrackLoadData::Track(x)) => vec![x.into()],
+		Some(TrackLoadData::Search(x)) => vec![x[0].clone().into()],
+		Some(TrackLoadData::Playlist(x)) => {
+			playlist_info = Some(x.info);
+			x.tracks.iter().map(|x| x.clone().into()).collect()
+		}
+
+		_ => {
+			ctx.say(format!("{:?}", loaded_tracks)).await?;
+			return Ok(());
+		}
+	};
+
+	let queue = player.get_queue();
+	queue.append(tracks.into())?;
+
+	if let Ok(player_data) = player.get_player().await {
+		if player_data.track.is_none() && queue.get_track(0).await.is_ok_and(|x| x.is_some()) {
+			player.skip()?;
+		}
 	}
 
 	Ok(())

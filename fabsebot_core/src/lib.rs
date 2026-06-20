@@ -15,6 +15,7 @@ use std::{
 
 use anyhow::{Context as _, Result as AResult};
 use fabsebot_db::guild::GuildSettings;
+use lavalink_rs::model::UserId;
 use metrics::counter;
 use mini_moka::sync::Cache;
 use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions};
@@ -44,6 +45,7 @@ use crate::{
 	stats::counters::METRICS,
 	utils::{
 		helpers::{get_gifs, get_waifu},
+		voice::setup_lavalink,
 		webhook::error_hook,
 	},
 };
@@ -202,6 +204,13 @@ pub async fn bot_start(
 	let music_manager = Songbird::serenity();
 	music_manager.set_config(Config::default().decode_mode(DecodeMode::Decrypt));
 
+	let lavalink_client = setup_lavalink(
+		bot_config.lavalink_host,
+		bot_config.lavalink_password,
+		UserId::from(1147126899026448405),
+	)
+	.await;
+
 	let bot_data = Arc::new(Data {
 		db: postgres_pool,
 		music_manager: music_manager.clone(),
@@ -218,6 +227,7 @@ pub async fn bot_start(
 			.time_to_idle(Duration::from_hours(12))
 			.build(),
 		state_tracker: AtomicBool::new(true),
+		lavalink_client,
 	});
 	let additional_prefix: &'static str =
 		Box::leak(format!("hey {}", bot_config.username).into_boxed_str());

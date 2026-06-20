@@ -18,7 +18,7 @@ fastrand = { workspace = true }
 image = { workspace = true, default-features = false, features = ["avif", "gif", "jpeg", "nasm", "png", "rayon", "webp"] }
 imageproc = { workspace = true, default-features = false, features = ["rayon", "text"] }
 jiff = { workspace = true }
-#lavalink-rs = { workspace = true, default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
+lavalink-rs = { workspace = true, default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
 metrics = { workspace = true }
 mini-moka = { workspace = true }
 poise = { workspace = true }

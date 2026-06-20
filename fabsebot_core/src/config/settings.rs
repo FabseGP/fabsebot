@@ -13,6 +13,8 @@ pub struct BotConfig {
 	pub owner_id: u64,
 	pub error_webhook: String,
 	pub feedback_webhook: String,
+	pub lavalink_host: String,
+	pub lavalink_password: String,
 }
 
 #[derive(Deserialize)]

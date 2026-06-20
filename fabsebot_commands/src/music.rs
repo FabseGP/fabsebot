@@ -13,7 +13,8 @@ use fabsebot_core::{
 		ai::ai_voice,
 		helpers::non_empty_vec,
 		voice::{
-			get_configured_songbird_handler, queue_song, remove_handler, try_voice, youtube_source,
+			get_configured_songbird_handler, lavalink_join, lavalink_play, queue_song,
+			remove_handler, try_voice, youtube_source,
 		},
 	},
 };
@@ -507,6 +508,65 @@ pub async fn seek_song(
 		ctx.reply(format!("Seeked {seconds_value}s forward"))
 			.await?;
 	}
+
+	Ok(())
+}
+
+/// Join the current voice channel (lavalink)
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
+	                            CONNECT"
+)]
+pub async fn join_lavalink(
+	ctx: SContext<'_>,
+	#[description = "Allow music playback across guilds"]
+	#[flag]
+	global: bool,
+) -> Result<(), Error> {
+	let guild_id = require_guild_id(ctx).await?;
+	if ctx.data().music_manager.get(guild_id).is_some() {
+		ctx.reply("Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection")
+			.await?;
+		return Ok(());
+	}
+	let _typing = ctx.defer_or_broadcast().await;
+	lavalink_join(ctx, guild_id).await?;
+	if global {
+		query!(
+			r#"
+			INSERT INTO guild_settings (guild_id, global_call)
+            VALUES ($1, TRUE)
+            ON CONFLICT (guild_id)
+            DO UPDATE SET global_call = TRUE, global_music = TRUE
+            "#,
+			i64::from(guild_id),
+		)
+		.execute(&ctx.data().db)
+		.await?;
+	}
+	Ok(())
+}
+
+/// Play song / add song to queue in the current voice channel (lavalink)
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild",
+	interaction_context = "Guild",
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK"
+)]
+pub async fn play_song_lavalink(
+	ctx: SContext<'_>,
+	#[description = "YouTube link or query to search"]
+	#[rest]
+	url: String,
+) -> Result<(), Error> {
+	let guild_id = require_guild_id(ctx).await?;
+	lavalink_play(ctx, guild_id, &url).await?;
 
 	Ok(())
 }
