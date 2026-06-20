@@ -16,6 +16,8 @@ jobs:
             features: simd-neon
           - runner: fabsearch-latest-arm
             features: simd-neon
+          - runner: fabsearch-latest
+            features: simd-avx
     steps:
       - name: Checkout
         uses: actions/checkout@v6
