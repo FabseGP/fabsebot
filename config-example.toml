@@ -1,9 +1,11 @@
 [Bot]
-#token = 
+#token =
+#id
+#cache_max_messages
 #username = 
 #activity =
 #ping_message =
-#ping_url = 
+#ping_payload = 
 #uptime_url =
 #uptime_token =
 #owner_id =
@@ -37,6 +39,7 @@
 
 [API-Info]
 #gif_token =
+#giphy_token =
 #cloudflare_token =
 #cloudflare_image_gen = 
 

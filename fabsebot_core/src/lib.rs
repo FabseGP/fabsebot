@@ -207,7 +207,7 @@ pub async fn bot_start(
 	let lavalink_client = setup_lavalink(
 		bot_config.lavalink_host,
 		bot_config.lavalink_password,
-		UserId::from(1147126899026448405),
+		UserId::from(bot_config.bot_id),
 	)
 	.await;
 

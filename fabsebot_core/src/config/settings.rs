@@ -3,6 +3,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct BotConfig {
 	pub token: String,
+	pub bot_id: u64,
 	pub cache_max_messages: usize,
 	pub username: String,
 	pub activity: String,

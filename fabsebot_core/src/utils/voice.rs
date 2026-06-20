@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::VecDeque, sync::Arc, time::Duration};
 
 use anyhow::{Result as AResult, bail};
 use fabsebot_db::guild::{insert_channel, set_current_voice_channel};
@@ -6,7 +6,7 @@ use lavalink_rs::{
 	client::LavalinkClient,
 	model::{
 		UserId as LavaUserId, client::NodeDistributionStrategy, events::Events,
-		track::TrackLoadData,
+		search::SearchEngines, track::TrackLoadData,
 	},
 	node::NodeBuilder,
 	player_context::TrackInQueue,
@@ -46,7 +46,8 @@ use uuid::Uuid;
 use crate::{
 	config::{
 		constants::{
-			COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED, EMPTY_VOICE_CHAN_MSG, NOT_IN_VOICE_CHAN_MSG,
+			COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED, EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH,
+			INVALID_TRACK_SOURCE, NOT_IN_VOICE_CHAN_MSG,
 		},
 		types::{Data, HTTP_CLIENT, SContext},
 	},
@@ -1041,55 +1042,76 @@ pub async fn setup_lavalink(host: String, password: String, bot_id: LavaUserId) 
 
 pub async fn lavalink_join(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()> {
 	let channel_id = voice_channel_id(ctx).await?;
-	if let Ok((connection_info, _)) = ctx
+	let connection_info = ctx
 		.data()
 		.music_manager
 		.join_gateway(guild_id, channel_id)
-		.await
-	{
-		ctx.data()
-			.lavalink_client
-			.create_player_context(guild_id, connection_info)
-			.await?;
-	}
+		.await?
+		.0;
+	ctx.data()
+		.lavalink_client
+		.create_player_context(guild_id, connection_info)
+		.await?;
+	join_container(&ctx).await?;
 	Ok(())
 }
 
-pub async fn lavalink_play(ctx: SContext<'_>, guild_id: GuildId, url: &str) -> AResult<()> {
-	let Some(player) = ctx.data().lavalink_client.get_player_context(guild_id) else {
-		ctx.say("Join the bot to a voice channel first.").await?;
-		return Ok(());
+pub async fn lavalink_delete(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()> {
+	ctx.data().lavalink_client.delete_player(guild_id).await?;
+	Ok(())
+}
+
+pub async fn lavalink_play(ctx: SContext<'_>, guild_id: GuildId, input: String) -> AResult<()> {
+	let lava_client = ctx.data().lavalink_client.clone();
+	let Some(player) = lava_client.get_player_context(guild_id) else {
+		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
+		return Err(MusicError::NotInVoiceChan.into());
 	};
-	let loaded_tracks = ctx
-		.data()
-		.lavalink_client
-		.load_tracks(guild_id, &url)
-		.await?;
-
-	let mut playlist_info = None;
-
-	let mut tracks: Vec<TrackInQueue> = match loaded_tracks.data {
-		Some(TrackLoadData::Track(x)) => vec![x.into()],
-		Some(TrackLoadData::Search(x)) => vec![x[0].clone().into()],
-		Some(TrackLoadData::Playlist(x)) => {
-			playlist_info = Some(x.info);
-			x.tracks.iter().map(|x| x.clone().into()).collect()
+	let query = if input.starts_with("https") {
+		input
+	} else {
+		match SearchEngines::YouTube.to_query(&input) {
+			Ok(resp) => resp,
+			Err(err) => {
+				ctx.reply(INVALID_TRACK_SOURCE).await?;
+				bail!("{err}");
+			}
 		}
+	};
+	let loaded_tracks = lava_client.load_tracks(guild_id, &query).await?;
 
+	let tracks: Vec<TrackInQueue> = match loaded_tracks.data {
+		Some(TrackLoadData::Track(track)) => vec![TrackInQueue::from(track)],
+		Some(TrackLoadData::Search(search)) => {
+			vec![TrackInQueue::from(search.first().unwrap().clone())]
+		}
+		Some(TrackLoadData::Playlist(playlist)) => playlist
+			.tracks
+			.iter()
+			.map(|track| TrackInQueue::from(track.clone()))
+			.collect(),
+		Some(TrackLoadData::Error(err)) => {
+			bail!("{}:{}:{}", err.severity, err.message, err.cause)
+		}
 		_ => {
-			ctx.say(format!("{:?}", loaded_tracks)).await?;
-			return Ok(());
+			bail!("Failed to load track");
 		}
 	};
 
 	let queue = player.get_queue();
-	queue.append(tracks.into())?;
-
-	if let Ok(player_data) = player.get_player().await {
-		if player_data.track.is_none() && queue.get_track(0).await.is_ok_and(|x| x.is_some()) {
-			player.skip()?;
-		}
+	if let Err(err) = queue.append(VecDeque::from(tracks)) {
+		ctx.reply(FAILED_SONG_FETCH).await?;
+		bail!("{err}");
 	}
+
+	if let Ok(player_data) = player.get_player().await
+		&& player_data.track.is_none()
+		&& queue.get_track(0).await.is_ok_and(|x| x.is_some())
+	{
+		player.skip()?;
+	}
+
+	ctx.reply("Song playing").await?;
 
 	Ok(())
 }
