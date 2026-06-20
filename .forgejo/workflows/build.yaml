@@ -23,7 +23,7 @@ jobs:
         env:
           CARGO_BUILD_RUSTC_WRAPPER: ""
       - name: Upload artifact
-        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v5
         with:
           name: fabsebot-${{ matrix.runner }}
           path: target/release/fabsebot
