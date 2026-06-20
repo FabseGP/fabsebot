@@ -19,7 +19,7 @@ use serenity::{
 	},
 	small_fixed_array::FixedString,
 };
-use tracing::error;
+use tracing::{error, warn};
 use winnow::{
 	ModalResult, Parser as _,
 	ascii::digit1,
@@ -478,16 +478,14 @@ pub fn user_pfp(user: &User) -> String {
 		.unwrap_or_else(|| user.default_avatar_url())
 }
 
-pub async fn user_banner(http: &Http, user_id: UserId) -> AResult<String> {
-	let banner_url = (http.get_user(user_id).await).map_or_else(
-		|_| "user has no banner".to_owned(),
-		|user| {
-			user.banner_url()
-				.unwrap_or_else(|| "user has no banner".to_owned())
-		},
-	);
-
-	Ok(banner_url)
+pub async fn user_banner(http: &Http, user_id: UserId) -> Option<String> {
+	match http.get_user(user_id).await {
+		Ok(user) => user.banner_url(),
+		Err(err) => {
+			warn!("Failed to fetch user: {err}");
+			None
+		}
+	}
 }
 
 #[must_use]

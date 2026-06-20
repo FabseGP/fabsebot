@@ -1,4 +1,4 @@
-use std::{fmt::Write as _, sync::Arc};
+use std::{borrow::Cow, fmt::Write as _, sync::Arc};
 
 use anyhow::Result as AResult;
 use fabsebot_db::{
@@ -344,7 +344,10 @@ async fn global_chats(
 						)
 						.timestamp(new_message.timestamp);
 					if let Some(attachment) = replied_message.attachments.first() {
-						embed = embed.image(attachment.url.as_str());
+						embed = embed.image(
+							attachment.url.as_str(),
+							Some(Cow::Borrowed("Attachment from replied message")),
+						);
 					}
 					message = message.embed(embed);
 				}

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use anyhow::{Result as AResult, bail};
 use fabsebot_db::guild::{insert_channel, set_current_voice_channel};
@@ -170,7 +170,7 @@ impl PlaybackHandler {
 			}
 		}
 		if let Some(url) = &metadata.thumbnail_url {
-			e = e.image(url);
+			e = e.image(url, Some(Cow::Borrowed("Thumbnail from YouTube")));
 		}
 
 		e = e.field(

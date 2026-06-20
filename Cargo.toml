@@ -61,34 +61,34 @@ branch = "update-deps"
 ab_glyph = "0.2.32"
 anyhow = "1.0.102"
 base64 = "0.22.1"
-bytes = "1.11.1"
+bytes = "1.12.0"
 criterion = { version = "0.8.2", features = ["async_tokio", "html_reports"] }
 dashmap = "6.1.0"
 emojis = "0.8.1"
 fastrand = "2.4.1"
 image = { version = "0.25.10", default-features = false, features = ["avif", "gif", "jpeg", "nasm", "png", "rayon", "webp"] }
-imageproc = { version = "0.26.1", default-features = false, features = ["rayon", "text"] }
-jiff = "0.2.24"
+imageproc = { version = "0.27.0", default-features = false, features = ["rayon", "text"] }
+jiff = "0.2.28"
 #lavalink-rs = { git = "https://gitlab.com/vicky5124/lavalink-rs/", branch = "main", default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
 metrics = { version = "0.24.3" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
 #poise = { git = "https://github.com/serenity-rs/poise.git", branch = "serenity-next" }
 poise = { git = "https://github.com/FabseGP/poise.git", branch = "update-deps" }
 rayon = "1.12"
-reqwest = { version = "0.13.2", default-features = false, features = ["http3", "json", "query", "rustls", "zstd"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["http3", "json", "query", "rustls", "zstd"] }
 serde = "1.0.228"
 serde_json = "1.0.149"
 serenity = { git = "https://github.com/serenity-rs/serenity.git", branch = "next", default-features = false, features = ["cache", "rustls_backend", "temp_cache", "transport_compression_zstd"] }
 songbird = { git = "https://github.com/FabseGP/songbird.git", branch = "update-deps", features = ["builtin-queue", "receive"] }
 sqlx = { version = "0.9.0", default-features = false, features = ["macros", "postgres", "runtime-tokio", "time", "uuid"] }
 symphonia = { version = "0.5.5", default-features = false, features = ["aac", "isomp4", "mkv", "pcm", "wav"] }
-systemstat = "0.2.6"
+systemstat = "0.2.7"
 textwrap = "0.16.2"
 thiserror = "2.0.18"
 tokio = { version = "1.52.1", features = ["rt-multi-thread", "signal"] }
 tracing = "0.1.44"
 url = "2.5.8"
-uuid = { version = "1.23.1", features = ["v4", "v5"] }
+uuid = { version = "1.23.3", features = ["v4", "v5"] }
 winnow = { version = "1.0.1", features = ["simd"] }
 
 [lints]

@@ -300,7 +300,10 @@ async fn anime_internal(ctx: SContext<'_>, anime: &str) -> AResult<()> {
 		.map_or("No japanese title available", |t| t.title.as_str());
 	let mut embed = CreateEmbed::default()
 		.title(japanese_title)
-		.image(&first_entry.images.webp.image_url)
+		.image(
+			&first_entry.images.webp.image_url,
+			Some(Cow::Borrowed("Cover image of anime")),
+		)
 		.url(&first_entry.url)
 		.colour(COLOUR_ORANGE);
 
@@ -403,7 +406,10 @@ async fn anime_internal(ctx: SContext<'_>, anime: &str) -> AResult<()> {
 				.map_or("No japanese title available", |t| t.title.as_str());
 			embed = CreateEmbed::default()
 				.title(japanese_title)
-				.thumbnail(&current_entry.images.webp.image_url)
+				.thumbnail(
+					&current_entry.images.webp.image_url,
+					Some(Cow::Borrowed("Cover image of anime")),
+				)
 				.url(&current_entry.url)
 				.colour(COLOUR_ORANGE);
 
@@ -674,7 +680,9 @@ async fn gif_internal(ctx: SContext<'_>, input: &str) -> AResult<()> {
 	if ctx.guild_id().is_some() && len > 1 {
 		drop(typing);
 		if let Some(gif) = gifs.first() {
-			embed = embed.image(&gif.0).title(&gif.1);
+			embed = embed
+				.image(&gif.0, Some(Cow::Borrowed("The gif itself")))
+				.title(&gif.1);
 		}
 		let mut state = State::new(ctx.id(), len);
 		let mut final_embed = embed.clone();
@@ -720,7 +728,9 @@ async fn gif_internal(ctx: SContext<'_>, input: &str) -> AResult<()> {
 
 			embed = CreateEmbed::default().colour(COLOUR_ORANGE);
 			if let Some(gif) = gifs.get(state.index) {
-				embed = embed.image(&gif.0).title(&gif.1);
+				embed = embed
+					.image(&gif.0, Some(Cow::Borrowed("The gif itself")))
+					.title(&gif.1);
 			}
 			final_embed = embed.clone();
 
@@ -754,7 +764,9 @@ async fn gif_internal(ctx: SContext<'_>, input: &str) -> AResult<()> {
 	} else {
 		let index = usize(..len);
 		if let Some(gif) = gifs.get(index) {
-			embed = embed.image(&gif.0).title(&gif.1);
+			embed = embed
+				.image(&gif.0, Some(Cow::Borrowed("The gif itself")))
+				.title(&gif.1);
 		}
 		ctx.send(CreateReply::default().reply(true).embed(embed))
 			.await?;
@@ -870,7 +882,10 @@ async fn manga_internal(ctx: SContext<'_>, manga: &str) -> AResult<()> {
 		.map_or("No japanese title available", |t| t.title.as_str());
 	let mut embed = CreateEmbed::default()
 		.title(japanese_title)
-		.thumbnail(&first_entry.images.webp.image_url)
+		.thumbnail(
+			&first_entry.images.webp.image_url,
+			Some(Cow::Borrowed("Cover image of manga")),
+		)
 		.url(&first_entry.url)
 		.colour(COLOUR_ORANGE);
 	if let Some(synopsis) = &first_entry.synopsis {
@@ -971,7 +986,10 @@ async fn manga_internal(ctx: SContext<'_>, manga: &str) -> AResult<()> {
 				.map_or("No japanese title available", |t| t.title.as_str());
 			embed = CreateEmbed::default()
 				.title(japanese_title)
-				.thumbnail(&current_entry.images.webp.image_url)
+				.thumbnail(
+					&current_entry.images.webp.image_url,
+					Some(Cow::Borrowed("Cover image of manga")),
+				)
 				.url(&current_entry.url)
 				.colour(COLOUR_ORANGE);
 
@@ -1152,7 +1170,9 @@ pub async fn roast_user(
 	let mut chat_vec = Vec::with_capacity(3);
 
 	uri_content(&user_pfp(&user), &mut chat_vec).await?;
-	uri_content(&user_banner(ctx.http(), user.id).await?, &mut chat_vec).await?;
+	if let Some(banner) = &user_banner(ctx.http(), user.id).await {
+		uri_content(banner, &mut chat_vec).await?;
+	}
 
 	let name = user.display_name();
 	let account_date = user.id.created_at();
@@ -1190,11 +1210,9 @@ pub async fn roast(
 		&mut chat_vec,
 	)
 	.await?;
-	uri_content(
-		&user_banner(ctx.http(), member.user.id).await?,
-		&mut chat_vec,
-	)
-	.await?;
+	if let Some(banner) = &user_banner(ctx.http(), member.user.id).await {
+		uri_content(banner, &mut chat_vec).await?;
+	}
 
 	let name = member.display_name();
 	let account_date = member.user.id.created_at();
