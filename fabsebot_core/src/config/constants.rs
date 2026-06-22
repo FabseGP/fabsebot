@@ -5,11 +5,7 @@ use image::{Rgba, RgbaImage};
 
 use crate::utils::image::create_solid_theme;
 
-pub const COLOUR_BLUE: u32 = 0x0000_B0F4;
-pub const COLOUR_GREEN: u32 = 0x0033_D17A;
-pub const COLOUR_ORANGE: u32 = 0x00FA_6300;
-pub const COLOUR_RED: u32 = 0x00ED_333B;
-pub const COLOUR_YELLOW: u32 = 0x00F8_E45C;
+pub const MESSAGE_LIMIT: usize = 4000;
 
 pub const NOT_IN_GUILD_MSG: &str = "Why you not in a guild?";
 pub const HUMAN_ONLY_MSG: &str = "**Invalid target, get some friends**";

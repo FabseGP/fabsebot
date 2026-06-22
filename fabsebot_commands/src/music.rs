@@ -8,10 +8,10 @@ use fabsebot_core::{
 		},
 		types::{Error, HTTP_CLIENT, SContext},
 	},
-	errors::commands::{AIError, HTTPError, InteractionError, MusicError},
+	errors::commands::{AIError, InteractionError, MusicError},
 	utils::{
 		ai::ai_voice,
-		helpers::non_empty_vec,
+		helpers::{fetch_and_parse, non_empty_vec},
 		voice::{
 			get_configured_songbird_handler, lavalink_delete, lavalink_join, lavalink_play,
 			queue_song, remove_handler, try_voice, youtube_source,
@@ -56,7 +56,8 @@ struct DeezerArtist {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
+	                            CONNECT"
 )]
 pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -98,7 +99,8 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
+	                            CONNECT"
 )]
 pub async fn add_deezer_playlist(
 	ctx: SContext<'_>,
@@ -108,23 +110,18 @@ pub async fn add_deezer_playlist(
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	let handler_lock = try_voice(ctx, guild_id).await?;
-	let request = match HTTP_CLIENT
-		.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
-		.send()
-		.await
+
+	let payload: DeezerResponse = match fetch_and_parse(
+		HTTP_CLIENT
+			.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
+			.send(),
+	)
+	.await
 	{
 		Ok(resp) => resp,
 		Err(err) => {
-			ctx.reply("Deezer bailed out :/").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let payload = match request.json::<DeezerResponse>().await {
-		Ok(parsed) => parsed,
-		Err(err) => {
-			ctx.reply("Invalid playlist-id for Deezer playlist").await?;
-			return Err(HTTPError::Request(err).into());
+			ctx.reply("Invalid id for Deezer playlist").await?;
+			return Err(err);
 		}
 	};
 
@@ -180,7 +177,8 @@ pub async fn add_deezer_playlist(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
+	                            CONNECT"
 )]
 pub async fn add_youtube_playlist(
 	ctx: SContext<'_>,
@@ -307,7 +305,8 @@ pub async fn join_voice(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CONNECT"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CONNECT \
+	                            | SPEAK"
 )]
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -335,7 +334,8 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
+	                            CONNECT"
 )]
 pub async fn play_song(
 	ctx: SContext<'_>,
@@ -450,7 +450,8 @@ pub async fn play_song(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
+	                            CONNECT"
 )]
 pub async fn seek_song(
 	ctx: SContext<'_>,
@@ -555,7 +556,8 @@ pub async fn join_lavalink(
 	prefix_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CONNECT"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CONNECT \
+	                            | SPEAK"
 )]
 pub async fn leave_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -583,7 +585,8 @@ pub async fn leave_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
 	prefix_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
+	                            CONNECT"
 )]
 pub async fn play_lavalink(
 	ctx: SContext<'_>,

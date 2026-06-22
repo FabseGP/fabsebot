@@ -30,6 +30,8 @@ pub enum InteractionError {
 pub enum HTTPError {
 	#[error("Request failed: {0}")]
 	Request(#[source] RError),
+	#[error("Parsing failed: {0}")]
+	Parsing(#[source] RError),
 }
 
 #[derive(Error, Debug)]

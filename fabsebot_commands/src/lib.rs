@@ -23,10 +23,10 @@ mod music;
 mod settings;
 
 pub async fn command_permissions(ctx: &SContext<'_>) -> AResult<()> {
-	if let Some(guild_id) = ctx.guild_id() {
-		let required_perms = Permissions::VIEW_CHANNEL
-			| Permissions::SEND_MESSAGES
-			| Permissions::SEND_MESSAGES_IN_THREADS;
+	if let Some(guild_id) = ctx.guild_id()
+		&& ctx.channel().await.is_some()
+	{
+		let required_perms = Permissions::SEND_MESSAGES | Permissions::SEND_MESSAGES_IN_THREADS;
 		correct_permissions(ctx, guild_id, required_perms).await?;
 	}
 	Ok(())
@@ -56,7 +56,6 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		games::rps(),
 		info::server_info(),
 		info::user_info(),
-		misc::poll(),
 		misc::birthday(),
 		misc::bot_control(),
 		misc::bot_personalize(),

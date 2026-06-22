@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::types::{Error, HTTP_CLIENT, SContext},
 	utils::helpers::{
-		get_gifs, get_waifu, send_container, separator, text_display, thumbnail_section, user_pfp,
+		get_gifs, get_waifu, reply_container, separator, text_display, thumbnail_section, user_pfp,
 	},
 };
 use fabsebot_db::guild::{reset_guild, set_music_channel, set_spoiler_channel};
@@ -411,7 +411,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -442,7 +442,7 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_afk(
 	ctx: SContext<'_>,
@@ -485,7 +485,7 @@ pub async fn set_afk(
 		.add_component(text_display)
 		.accent_colour(Colour::RED);
 
-	send_container(&ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -526,7 +526,7 @@ async fn set_chatbot_channel(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_chatbot_options(
 	ctx: SContext<'_>,
@@ -609,7 +609,7 @@ struct CreateApplicationEmoji<'a> {
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_prefix(
 	ctx: SContext<'_>,
@@ -677,7 +677,7 @@ async fn set_quote_channel(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_user_ping(
 	ctx: SContext<'_>,
@@ -775,7 +775,7 @@ async fn set_waifu_channel(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_word_react(
 	ctx: SContext<'_>,
@@ -904,7 +904,7 @@ pub async fn set_word_react(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_word_track(
 	ctx: SContext<'_>,

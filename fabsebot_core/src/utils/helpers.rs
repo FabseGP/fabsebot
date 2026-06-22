@@ -1,4 +1,4 @@
-use std::{borrow::Cow, io::Cursor, sync::Arc};
+use std::{borrow::Cow, io::Cursor, sync::Arc, time::Duration};
 
 use anyhow::{Result as AResult, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -7,7 +7,11 @@ use image::{ImageFormat, guess_format, load_from_memory};
 use metrics::counter;
 use mini_moka::sync::Cache;
 use poise::{CreateReply, serenity_prelude::Channel};
-use serde::{Deserialize, Deserializer, de::Error as _};
+use reqwest::{Response, Result as RResult};
+use serde::{
+	Deserialize, Deserializer,
+	de::{DeserializeOwned, Error as _},
+};
 use serenity::{
 	all::{
 		Context, CreateActionRow, CreateAllowedMentions, CreateButton, CreateComponent,
@@ -17,6 +21,11 @@ use serenity::{
 		EmojiId, GuildId, Http, Member, Message, MessageFlags, Permissions, ReactionType, Role,
 		User, UserId,
 	},
+	builder::{CreateInteractionResponse, EditMessage},
+	collector::ComponentInteractionCollector,
+	futures::StreamExt as _,
+	gateway::ShardRunnerMessage,
+	model::{application::ButtonStyle, id::ShardId},
 	small_fixed_array::FixedString,
 };
 use tracing::{error, warn};
@@ -31,8 +40,9 @@ use winnow::{
 use crate::{
 	config::{
 		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
-		types::{HTTP_CLIENT, SContext, utils_config},
+		types::{Error, HTTP_CLIENT, SContext, client_data, utils_config},
 	},
+	errors::commands::HTTPError,
 	log_error,
 	stats::counters::METRICS,
 };
@@ -143,7 +153,10 @@ pub fn channel_counter(channel_name: String) {
 	.increment(1);
 }
 
-pub fn thumbnail_section<'a>(text: &'a str, image: &'a str) -> CreateContainerComponent<'a> {
+pub fn thumbnail_section<'a>(
+	text: impl Into<Cow<'a, str>>,
+	image: impl Into<Cow<'a, str>>,
+) -> CreateContainerComponent<'a> {
 	CreateContainerComponent::Section(CreateSection::new(
 		vec![CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
 			text,
@@ -154,7 +167,7 @@ pub fn thumbnail_section<'a>(text: &'a str, image: &'a str) -> CreateContainerCo
 	))
 }
 
-pub fn visit_page_button(url: &str) -> CreateContainerComponent<'_> {
+pub fn visit_page_button<'a>(url: impl Into<Cow<'a, str>>) -> CreateContainerComponent<'a> {
 	CreateContainerComponent::ActionRow(CreateActionRow::Buttons(Cow::Owned(vec![
 		CreateButton::new_link(url)
 			.label("Visit page")
@@ -162,13 +175,13 @@ pub fn visit_page_button(url: &str) -> CreateContainerComponent<'_> {
 	])))
 }
 
-pub fn media_gallery(url: &str) -> CreateContainerComponent<'_> {
+pub fn media_gallery<'a>(url: impl Into<Cow<'a, str>>) -> CreateContainerComponent<'a> {
 	CreateContainerComponent::MediaGallery(CreateMediaGallery::new(vec![
 		CreateMediaGalleryItem::new(CreateUnfurledMediaItem::new(url)),
 	]))
 }
 
-pub fn text_display(text: &str) -> CreateContainerComponent<'_> {
+pub fn text_display<'a>(text: impl Into<Cow<'a, str>>) -> CreateContainerComponent<'a> {
 	CreateContainerComponent::TextDisplay(CreateTextDisplay::new(text))
 }
 
@@ -176,37 +189,31 @@ pub fn separator<'a>() -> CreateContainerComponent<'a> {
 	CreateContainerComponent::Separator(CreateSeparator::new())
 }
 
-pub async fn send_container(ctx: &SContext<'_>, container: CreateContainer<'_>) -> AResult<()> {
-	ctx.send(
-		CreateReply::default()
-			.components(vec![CreateComponent::Container(container)])
-			.flags(MessageFlags::IS_COMPONENTS_V2)
-			.reply(true)
-			.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
-	)
-	.await?;
-
-	Ok(())
+pub fn message_container<'a>(
+	message: &Message,
+	container: CreateContainer<'a>,
+) -> CreateMessage<'a> {
+	CreateMessage::default()
+		.components(vec![CreateComponent::Container(container)])
+		.flags(MessageFlags::IS_COMPONENTS_V2)
+		.reference_message(message)
+		.allowed_mentions(CreateAllowedMentions::default().replied_user(false))
 }
 
-pub async fn event_container(
-	ctx: &Context,
-	message: &Message,
-	container: CreateContainer<'_>,
-) -> AResult<()> {
-	message
-		.channel_id
-		.send_message(
-			&ctx.http,
-			CreateMessage::default()
-				.components(vec![CreateComponent::Container(container)])
-				.flags(MessageFlags::IS_COMPONENTS_V2)
-				.reference_message(message)
-				.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
-		)
-		.await?;
+#[must_use]
+pub fn reply_container(container: CreateContainer<'_>) -> CreateReply<'_> {
+	CreateReply::default()
+		.components(vec![CreateComponent::Container(container)])
+		.flags(MessageFlags::IS_COMPONENTS_V2)
+		.reply(true)
+		.allowed_mentions(CreateAllowedMentions::default().replied_user(false))
+}
 
-	Ok(())
+pub fn edit_message_container(container: CreateContainer<'_>) -> EditMessage<'_> {
+	EditMessage::default()
+		.components(vec![CreateComponent::Container(container)])
+		.flags(MessageFlags::IS_COMPONENTS_V2)
+		.content("")
 }
 
 #[derive(Deserialize)]
@@ -232,19 +239,19 @@ struct GifObject {
 }
 
 async fn fetch_gifs_internal(input: &str) -> AResult<Vec<(String, String)>> {
-	let response = HTTP_CLIENT
-		.get("https://tenor.googleapis.com/v2/search")
-		.query(&[
-			("q", input),
-			("key", utils_config().api.gif_token.as_str()),
-			("contentfilter", "medium"),
-			("limit", "40"),
-			("media_filter", "minimal"),
-		])
-		.send()
-		.await?;
-
-	let urls = response.json::<GifResponse>().await?;
+	let urls: GifResponse = fetch_and_parse(
+		HTTP_CLIENT
+			.get("https://tenor.googleapis.com/v2/search")
+			.query(&[
+				("q", input),
+				("key", utils_config().api.gif_token.as_str()),
+				("contentfilter", "medium"),
+				("limit", "40"),
+				("media_filter", "minimal"),
+			])
+			.send(),
+	)
+	.await?;
 
 	Ok(urls
 		.results
@@ -281,7 +288,7 @@ pub async fn get_gif(ctx: &Context, input: &str) -> String {
 }
 
 #[derive(Deserialize)]
-struct LyricsResponse(#[serde(deserialize_with = "non_empty_vec")] pub Vec<LyricsEntry>);
+struct LyricsResponse(pub LyricsEntry);
 
 #[derive(Deserialize)]
 struct LyricsEntry {
@@ -292,20 +299,20 @@ struct LyricsEntry {
 	plain_lyrics: String,
 }
 
-async fn get_lyrics_internal(title: &str) -> AResult<String> {
-	let response = HTTP_CLIENT
-		.get("https://lrclib.net/api/search")
-		.query(&[("q", title)])
-		.send()
-		.await?;
+async fn get_lyrics_internal(track_name: &str, artist_name: &str) -> AResult<String> {
+	let json: LyricsResponse = fetch_and_parse(
+		HTTP_CLIENT
+			.get("https://lrclib.net/api/get")
+			.query(&[("track_name", track_name), ("artist_name", artist_name)])
+			.send(),
+	)
+	.await?;
 
-	let json = response.json::<LyricsResponse>().await?;
-
-	Ok(json.0.into_iter().next().unwrap().plain_lyrics)
+	Ok(json.0.plain_lyrics)
 }
 
-pub async fn get_lyrics(ctx: &Context, title: &str) -> Option<String> {
-	match get_lyrics_internal(title).await {
+pub async fn get_lyrics(ctx: &Context, track_name: &str, artist_name: &str) -> Option<String> {
+	match get_lyrics_internal(track_name, artist_name).await {
 		Ok(lyrics) => Some(lyrics),
 		Err(error) => {
 			log_error(
@@ -331,11 +338,12 @@ struct WaifuImage {
 }
 
 async fn fetch_waifu_internal() -> AResult<String> {
-	let response = HTTP_CLIENT
-		.get("https://api.waifu.im/images?IsNsfw=False")
-		.send()
-		.await?;
-	let waifu_response = response.json::<WaifuResponse>().await?;
+	let waifu_response: WaifuResponse = fetch_and_parse(
+		HTTP_CLIENT
+			.get("https://api.waifu.im/images?IsNsfw=False")
+			.send(),
+	)
+	.await?;
 
 	Ok(waifu_response.items.into_iter().next().unwrap().url)
 }
@@ -520,4 +528,138 @@ pub fn encode_image(content: &[u8]) -> AResult<Vec<u8>> {
 	let mut img_bytes = Vec::with_capacity(content.len());
 	img.write_to(&mut Cursor::new(&mut img_bytes), ImageFormat::Jpeg)?;
 	Ok(img_bytes)
+}
+
+pub async fn fetch_and_parse<T>(
+	request: impl Future<Output = RResult<Response>>,
+) -> Result<T, Error>
+where
+	T: DeserializeOwned,
+{
+	let response = match request.await {
+		Ok(resp) => resp,
+		Err(err) => {
+			return Err(HTTPError::Request(err).into());
+		}
+	};
+
+	match response.json::<T>().await {
+		Ok(json) => Ok(json),
+		Err(err) => Err(HTTPError::Parsing(err).into()),
+	}
+}
+
+pub async fn paginate_container<'a, T, F, Fut>(
+	ctx: SContext<'a>,
+	items: &'a [T],
+	timeout: Duration,
+	mut render: F,
+) -> AResult<()>
+where
+	T: Sync,
+	F: FnMut(&'a T, usize, usize) -> Fut,
+	Fut: Future<Output = CreateContainer<'a>>,
+{
+	let len = items.len();
+
+	if len == 1 || ctx.guild_id().is_none() {
+		let container = render(items.first().unwrap(), 0, len).await;
+		ctx.send(reply_container(container)).await?;
+		return Ok(());
+	}
+
+	let ctx_id = ctx.id();
+
+	let build_page = |container: CreateContainer<'a>, index: usize| -> CreateContainer<'a> {
+		let buttons = vec![
+			CreateButton::new(format!("{ctx_id}_p"))
+				.style(ButtonStyle::Primary)
+				.label("⬅️"),
+			CreateButton::new(format!("{ctx_id}_n"))
+				.style(ButtonStyle::Primary)
+				.label("➡️"),
+		];
+
+		let active_buttons = if index == 0 {
+			buttons.get(1..).unwrap().to_vec()
+		} else if index >= len.saturating_sub(1) {
+			buttons.get(..1).unwrap().to_vec()
+		} else {
+			buttons
+		};
+
+		let action_row = CreateContainerComponent::ActionRow(CreateActionRow::Buttons(Cow::Owned(
+			active_buttons,
+		)));
+
+		container
+			.add_component(separator())
+			.add_component(action_row)
+	};
+
+	let initial_container = render(items.first().unwrap(), 0, len).await;
+	let message = ctx
+		.send(reply_container(build_page(initial_container, 0)))
+		.await?;
+
+	let ctx_id_str = ctx_id.to_string();
+	let mut index: usize = 0;
+	let mut stream = ComponentInteractionCollector::new(ctx.serenity_context())
+		.timeout(timeout)
+		.filter(move |i| i.data.custom_id.starts_with(&ctx_id_str))
+		.stream();
+
+	while let Some(interaction) = stream.next().await {
+		interaction
+			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+			.await?;
+
+		let prev = index;
+		if interaction.data.custom_id.ends_with('n') && index < len.saturating_sub(1) {
+			index = index.saturating_add(1);
+		} else if interaction.data.custom_id.ends_with('p') && index > 0 {
+			index = index.saturating_sub(1);
+		}
+
+		if index == prev {
+			continue;
+		}
+
+		let Some(item) = items.get(index) else {
+			continue;
+		};
+		let container = render(item, index, len).await;
+
+		let mut msg = interaction.message.clone();
+		msg.edit(
+			ctx.http(),
+			edit_message_container(build_page(container, index)),
+		)
+		.await?;
+	}
+
+	let final_container = render(items.get(index).unwrap(), index, len).await;
+
+	message.edit(ctx, reply_container(final_container)).await?;
+
+	Ok(())
+}
+
+pub fn shard_restart(shard_id: ShardId) -> AResult<()> {
+	let response = client_data().runners.get(&shard_id).map_or_else(
+		|| {
+			warn!("No shard runner found in runners map");
+			"Rip, shard doesn't exist!"
+		},
+		|runner| {
+			if let Err(err) = runner.tx.unbounded_send(ShardRunnerMessage::Restart) {
+				warn!("Failed to queue restart of shard: {:?}", err);
+				"Rip, failed to restart shard!"
+			} else {
+				"Woah shard restarted!"
+			}
+		},
+	);
+
+	Ok(())
 }

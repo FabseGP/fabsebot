@@ -2,7 +2,7 @@ use std::string::ToString;
 
 use fabsebot_core::{
 	config::types::{Error, SContext},
-	utils::helpers::{member_pfp, send_container, separator, text_display, thumbnail_section},
+	utils::helpers::{member_pfp, reply_container, separator, text_display, thumbnail_section},
 };
 use serenity::all::{Colour, CreateContainer, Member, PremiumType};
 
@@ -81,7 +81,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 		.add_component(text_display(&guild_info))
 		.accent_colour(Colour::DARK_BLUE);
 
-	send_container(&ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -92,7 +92,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn user_info(
 	ctx: SContext<'_>,
@@ -144,7 +144,7 @@ pub async fn user_info(
 		.add_component(text_display(&user_info))
 		.accent_colour(member.user.accent_colour.unwrap_or_default());
 
-	send_container(&ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }

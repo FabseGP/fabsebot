@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::VecDeque, sync::Arc, time::Duration};
+use std::{collections::VecDeque, fmt::Write as _, sync::Arc, time::Duration};
 
 use anyhow::{Result as AResult, bail};
 use fabsebot_db::guild::{insert_channel, set_current_voice_channel};
@@ -15,11 +15,11 @@ use metrics::counter;
 use serenity::{
 	all::{
 		ButtonStyle, ChannelId, Colour, ComponentInteraction, ComponentInteractionCollector,
-		Context as SerenityContext, CreateActionRow, CreateButton, CreateComponent,
-		CreateContainer, CreateEmbed, CreateMessage, EditMessage, EmbedMessageBuilding as _,
-		GenericChannelId, GuildId, MessageBuilder, MessageId, UserId,
+		Context as SerenityContext, CreateActionRow, CreateButton, CreateContainer, CreateMessage,
+		EditMessage, GenericChannelId, GuildId, MessageId, UserId,
 	},
 	async_trait,
+	builder::CreateContainerComponent,
 	futures::StreamExt as _,
 };
 use songbird::{
@@ -46,8 +46,8 @@ use uuid::Uuid;
 use crate::{
 	config::{
 		constants::{
-			COLOUR_BLUE, COLOUR_GREEN, COLOUR_RED, EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH,
-			INVALID_TRACK_SOURCE, NOT_IN_VOICE_CHAN_MSG,
+			EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, INVALID_TRACK_SOURCE, MESSAGE_LIMIT,
+			NOT_IN_VOICE_CHAN_MSG,
 		},
 		types::{Data, HTTP_CLIENT, SContext},
 	},
@@ -55,7 +55,10 @@ use crate::{
 	events::interaction::build_feedback_action_row,
 	log_error,
 	stats::counters::METRICS,
-	utils::helpers::{get_lyrics, send_container, separator, text_display},
+	utils::helpers::{
+		edit_message_container, get_lyrics, reply_container, separator, text_display,
+		thumbnail_section, visit_page_button,
+	},
 };
 
 #[derive(Clone)]
@@ -154,42 +157,25 @@ impl PlaybackHandler {
 		msg_id: MessageId,
 		metadata: &'a TrackData,
 		queue_size: usize,
-	) -> (CreateEmbed<'a>, [CreateComponent<'a>; 1]) {
-		let mut e =
-			CreateEmbed::default()
-				.colour(COLOUR_RED)
-				.field("Added by:", author_name, false);
-		if let Some(artist) = &metadata.artist {
-			e = e.field("Artist:", artist, true);
-		}
-		if let Some(url) = &metadata.source_url {
-			e = e.url(url);
-		}
-		if let Some(duration) = &metadata.duration_sec {
-			e = e.field("Duration:", format!("{duration}s"), true);
-		}
-		if let Some(title) = &metadata.title {
-			if let Some(u) = &metadata.source_url {
-				e = e.description(
-					MessageBuilder::default()
-						.push_named_link_safe(title.as_str(), u.as_str())
-						.build(),
-				);
-			} else {
-				e = e.description(MessageBuilder::default().push_safe(title.as_str()).build());
-			}
-		}
-		if let Some(url) = &metadata.thumbnail_url {
-			e = e.image(url, Some(Cow::Borrowed("Thumbnail from YouTube")));
-		}
+	) -> (
+		CreateContainerComponent<'a>,
+		CreateContainerComponent<'a>,
+		CreateContainerComponent<'a>,
+	) {
+		let title = metadata.title.as_ref().map_or("Unknown title", |t| t);
+		let artist = metadata.artist.as_ref().map_or("Unknown artist", |a| a);
+		let url = metadata.source_url.as_ref().map_or("Unknown source", |s| s);
+		let duration = metadata.duration_sec.unwrap_or(0);
 
-		e = e.field(
-			"Queue size:",
-			format!("{}", queue_size.saturating_sub(1)),
-			true,
+		let text = format!(
+			"# {title}\n**Added by:** {author_name}\n**Artist:** {artist}\n**Duration:** \
+			 {duration}s\n**Queue size:** {}",
+			queue_size.saturating_sub(1)
 		);
 
-		let action_rows = [CreateComponent::ActionRow(CreateActionRow::buttons(vec![
+		let thumbnail_section = thumbnail_section(text, metadata.thumbnail_url.clone().unwrap());
+
+		let primary_row = CreateContainerComponent::ActionRow(CreateActionRow::buttons(vec![
 			CreateButton::new(format!("{msg_id}_s"))
 				.style(ButtonStyle::Primary)
 				.label("Skip"),
@@ -205,9 +191,11 @@ impl PlaybackHandler {
 			CreateButton::new(format!("{msg_id}_h"))
 				.style(ButtonStyle::Primary)
 				.label("Show/Hide song history"),
-		]))];
+		]));
 
-		(e, action_rows)
+		let visit_button = visit_page_button(url);
+
+		(thumbnail_section, primary_row, visit_button)
 	}
 
 	async fn handle_interaction<'a>(
@@ -215,12 +203,13 @@ impl PlaybackHandler {
 		interaction: ComponentInteraction,
 		handler_lock: Arc<Mutex<Call>>,
 		lyrics_shown: &mut bool,
-		lyrics_embed: &mut Option<CreateEmbed<'a>>,
+		lyrics_container: &mut Option<CreateContainer<'a>>,
 		history_shown: &mut bool,
-		history_embed: &mut Option<CreateEmbed<'a>>,
+		history_container: &mut Option<CreateContainer<'a>>,
 		track: &TrackData,
 		track_guilds: &Vec<GuildPlay>,
-		embed: &CreateEmbed<'_>,
+		container: &CreateContainer<'a>,
+		action_row: &CreateContainerComponent<'a>,
 		requested_channel: i64,
 	) -> AResult<()> {
 		interaction.defer(&self.serenity_context.http).await?;
@@ -234,17 +223,6 @@ impl PlaybackHandler {
 				queue.skip()?;
 				drop(handler);
 				for guild in track_guilds {
-					let channel_id = GenericChannelId::new(guild.requested_channel.cast_unsigned());
-					let message_id = MessageId::new(guild.request_message_id.cast_unsigned());
-					channel_id
-						.edit_message(
-							&self.serenity_context.http,
-							message_id,
-							EditMessage::default()
-								.content("Skipped to next song")
-								.components(&[]),
-						)
-						.await?;
 					if guild.guild_id == i64::from(self.guild_id) {
 						continue;
 					}
@@ -261,9 +239,25 @@ impl PlaybackHandler {
 				}
 			}
 		} else if interaction.data.custom_id.ends_with('p') {
-			let handler = get_configured_songbird_handler(&handler_lock).await;
-			let queue = handler.queue();
-			if let Some(current_track) = queue.current() {
+			for guild in track_guilds {
+				let handler_lock = if guild.guild_id == i64::from(self.guild_id) {
+					handler_lock.clone()
+				} else if let Some(handler_lock) = self
+					.bot_data
+					.music_manager
+					.get(GuildId::new(guild.guild_id.cast_unsigned()))
+				{
+					handler_lock
+				} else {
+					continue;
+				};
+				let Some(current_track) = get_configured_songbird_handler(&handler_lock)
+					.await
+					.queue()
+					.current()
+				else {
+					continue;
+				};
 				match current_track.get_info().await.map(|t| t.playing) {
 					Ok(state) => match state {
 						PlayMode::Pause => {
@@ -279,145 +273,103 @@ impl PlaybackHandler {
 					}
 				}
 			}
-			drop(handler);
+		} else if interaction.data.custom_id.ends_with('c') {
 			for guild in track_guilds {
-				let current_track = if guild.guild_id == i64::from(self.guild_id) {
-					continue;
+				let handler_lock = if guild.guild_id == i64::from(self.guild_id) {
+					handler_lock.clone()
 				} else if let Some(handler_lock) = self
 					.bot_data
 					.music_manager
 					.get(GuildId::new(guild.guild_id.cast_unsigned()))
-					&& let Some(current_track) = get_configured_songbird_handler(&handler_lock)
-						.await
-						.queue()
-						.current()
 				{
-					current_track
+					handler_lock
 				} else {
 					continue;
 				};
-
-				let track_state = match current_track.get_info().await.map(|t| t.playing) {
-					Ok(state) => state,
-					Err(err) => {
-						error!("Failed to get track info: {err}");
-						continue;
-					}
-				};
-
-				match track_state {
-					PlayMode::Pause => {
-						current_track.play()?;
-					}
-					PlayMode::Play => {
-						current_track.pause()?;
-					}
-					_ => {}
-				}
-			}
-		} else if interaction.data.custom_id.ends_with('c') {
-			get_configured_songbird_handler(&handler_lock)
-				.await
-				.queue()
-				.stop();
-			for guild in track_guilds {
-				let channel_id = GenericChannelId::new(guild.requested_channel.cast_unsigned());
-				let message_id = MessageId::new(guild.request_message_id.cast_unsigned());
-				channel_id
-					.edit_message(
-						&self.serenity_context.http,
-						message_id,
-						EditMessage::default()
-							.suppress_embeds(true)
-							.content("Nothing to play")
-							.components(&[]),
-					)
-					.await?;
-				if guild.guild_id == i64::from(self.guild_id) {
-					continue;
-				}
-				if let Some(handler_lock) = self
-					.bot_data
-					.music_manager
-					.get(GuildId::new(guild.guild_id.cast_unsigned()))
-				{
-					get_configured_songbird_handler(&handler_lock)
-						.await
-						.queue()
-						.stop();
-				}
+				get_configured_songbird_handler(&handler_lock)
+					.await
+					.queue()
+					.stop();
 			}
 		} else if interaction.data.custom_id.ends_with('l') {
-			let embed = if *lyrics_shown {
+			let container = if *lyrics_shown {
 				*lyrics_shown = false;
-				embed.clone()
+				container.clone()
 			} else {
 				*lyrics_shown = true;
 				*history_shown = false;
-				if let Some(embed) = &lyrics_embed {
-					embed.clone()
+				if let Some(container) = &lyrics_container {
+					container.clone()
 				} else {
 					let lyrics = if let Some(title) = &track.title
-						&& let Some(lyrics) = get_lyrics(&self.serenity_context, title).await
+						&& let Some(artist) = &track.artist
+						&& let Some(lyrics) =
+							get_lyrics(&self.serenity_context, title, artist).await
 					{
 						lyrics
 					} else {
 						"Not found :(".to_owned()
 					};
-					let embed = CreateEmbed::default()
-						.title("Lyrics")
-						.description(lyrics)
-						.colour(COLOUR_BLUE);
-					*lyrics_embed = Some(embed.clone());
-					embed
+					let mut text = format!("# Lyrics\n{lyrics}");
+					text.truncate(MESSAGE_LIMIT);
+					let text_display = vec![text_display(text)];
+					let container = CreateContainer::new(text_display)
+						.add_component(separator())
+						.add_component(action_row.clone())
+						.accent_colour(Colour::BLUE);
+					*lyrics_container = Some(container.clone());
+					container
 				}
 			};
 			msg.edit(
 				self.serenity_context.http.clone(),
-				EditMessage::default().embed(embed),
+				edit_message_container(container),
 			)
 			.await?;
 		} else if interaction.data.custom_id.ends_with('h') {
-			let embed = if *history_shown {
+			let container = if *history_shown {
 				*history_shown = false;
-				embed.clone()
+				container.clone()
 			} else {
 				*history_shown = true;
 				*lyrics_shown = false;
-				if let Some(embed) = &history_embed {
-					embed.clone()
+				if let Some(container) = &history_container {
+					container.clone()
 				} else {
 					let queue_history =
 						get_queue_history(requested_channel, &self.bot_data.db).await?;
-					let mut embed = CreateEmbed::default()
-						.title(format!(
-							"History of {} last played songs",
-							queue_history.len()
-						))
-						.colour(COLOUR_GREEN);
+					let mut history_string = String::with_capacity(512);
+					writeln!(
+						history_string,
+						"# History of {} last played songs",
+						queue_history.len()
+					)?;
 					for track in queue_history {
 						if let Some(title) = track.title {
 							let author_name = track
 								.requested_by
 								.get_author_name(&self.serenity_context)
 								.await?;
-							embed = embed.field(
-								title,
-								format!(
-									"{author_name} - {}",
-									track.played_at.to_utc().truncate_to_second()
-								),
-								false,
-							);
+							writeln!(
+								history_string,
+								"**{title}:** *{author_name} - {}*",
+								track.played_at.to_utc().truncate_to_second()
+							)?;
 						}
 					}
-					*history_embed = Some(embed.clone());
-					embed
+					history_string.truncate(MESSAGE_LIMIT);
+					let text_display = vec![text_display(history_string)];
+					let container = CreateContainer::new(text_display)
+						.add_component(separator())
+						.add_component(action_row.clone())
+						.accent_colour(Colour::BLUE);
+					*history_container = Some(container.clone());
+					container
 				}
 			};
 			msg.edit(
 				self.serenity_context.http.clone(),
-				EditMessage::default().embed(embed),
+				edit_message_container(container),
 			)
 			.await?;
 		}
@@ -447,26 +399,34 @@ impl PlaybackHandler {
 			.get_author_name(&self.serenity_context)
 			.await?;
 
-		let (embed, action_rows) =
+		let (thumbnail_section, action_row, visit_button) =
 			Self::create_components(&author_name, message_id, &track, queue_size);
+
+		let base_container = CreateContainer::new(vec![thumbnail_section])
+			.add_component(separator())
+			.accent_colour(Colour::RED);
+
+		let full_container = base_container
+			.clone()
+			.add_component(action_row.clone())
+			.add_component(separator())
+			.add_component(visit_button.clone());
 
 		channel_id
 			.edit_message(
 				&self.serenity_context.http,
 				message_id,
-				EditMessage::default()
-					.embed(embed.clone())
-					.components(&action_rows)
-					.content(""),
+				edit_message_container(full_container.clone()),
 			)
 			.await?;
+
 		let message_id_copy = song_play.request_message_id.to_string();
 
 		let mut lyrics_shown = false;
 		let mut history_shown = false;
 
-		let mut lyrics_embed: Option<CreateEmbed> = None;
-		let mut history_embed: Option<CreateEmbed> = None;
+		let mut lyrics_container: Option<CreateContainer> = None;
+		let mut history_embed: Option<CreateContainer> = None;
 
 		let mut collector_stream = ComponentInteractionCollector::new(&self.serenity_context)
 			.timeout(Duration::from_hours(1))
@@ -487,12 +447,13 @@ impl PlaybackHandler {
 						interaction,
 						handler_lock.clone(),
 						&mut lyrics_shown,
-						&mut lyrics_embed,
+						&mut lyrics_container,
 						&mut history_shown,
 						&mut history_embed,
 						&track,
 						&track_guilds,
-						&embed,
+										&full_container,
+						&action_row,
 						song_play.requested_channel
 					)
 					.await?;
@@ -512,13 +473,14 @@ impl PlaybackHandler {
 				},
 			}
 		}
+
+		let final_container = base_container.add_component(visit_button);
+
 		channel_id
 			.edit_message(
 				&self.serenity_context.http,
 				message_id,
-				EditMessage::default()
-					.components(&[])
-					.content("Song finished"),
+				edit_message_container(final_container),
 			)
 			.await?;
 
@@ -551,7 +513,7 @@ impl VoiceEventHandler for PlaybackHandler {
 						}
 					});
 				}
-			} else if state.playing == PlayMode::End {
+			} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
 				if let Err(err) = self.track_watch.send(Some(handle.uuid())) {
 					error!("Failed to broadcast track ending: {err}");
 				}
@@ -688,7 +650,7 @@ pub async fn join_container(ctx: &SContext<'_>) -> AResult<()> {
 		.add_component(build_feedback_action_row())
 		.accent_colour(Colour::GOLD);
 
-	send_container(ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -923,7 +885,7 @@ pub async fn get_matching_guild_plays(
 	let track_guilds = query_as!(
 		GuildPlay,
 		r#"
-    	SELECT * FROM song_plays
+    	SELECT DISTINCT ON (guild_id) * FROM song_plays
     	WHERE track_uuid = $1
         LIMIT 10
     	"#,

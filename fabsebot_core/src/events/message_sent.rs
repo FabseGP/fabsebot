@@ -8,8 +8,8 @@ use fabsebot_db::{
 use metrics::counter;
 use serenity::all::{
 	Colour, Context as SContext, CreateAllowedMentions, CreateAttachment, CreateComponent,
-	CreateContainer, CreateEmbed, CreateEmbedAuthor, CreateMessage, EditMessage, EmojiId,
-	ExecuteWebhook, GenericChannelId, GuildId, Message, MessageFlags, MessageId, ReactionType,
+	CreateContainer, CreateEmbed, CreateEmbedAuthor, CreateMessage, EmojiId, ExecuteWebhook,
+	GenericChannelId, GuildId, Message, MessageFlags, MessageId, ReactionType,
 };
 use songbird::{Call, Songbird, input::Compose as _};
 use sqlx::{Pool, Postgres, query, query_as, query_scalar};
@@ -32,8 +32,8 @@ use crate::{
 	utils::{
 		ai::ai_chatbot,
 		helpers::{
-			channel_counter, discord_message_link, event_container, get_gif, get_waifu,
-			media_gallery, separator, text_display, thumbnail_section, user_pfp,
+			channel_counter, discord_message_link, edit_message_container, get_gif, get_waifu,
+			media_gallery, message_container, separator, text_display, thumbnail_section, user_pfp,
 		},
 		voice::{add_voice_events, queue_song, youtube_source},
 		webhook::{spoiler_message, webhook_find},
@@ -59,7 +59,10 @@ async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 			.add_component(image)
 			.accent_colour(Colour::BLITZ_BLUE);
 
-		event_container(ctx, new_message, container).await?;
+		new_message
+			.channel_id
+			.send_message(&ctx.http, message_container(new_message, container))
+			.await?;
 	}
 
 	Ok(())
@@ -411,7 +414,7 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 					None
 				};
 				if let Some(media) = &media_opt {
-					let image = media_gallery(media);
+					let image = media_gallery(*media);
 					container = container.add_component(image);
 				}
 				let mut preview_message = CreateMessage::default()
@@ -473,12 +476,7 @@ async fn user_queries(
 				.accent_colour(Colour::BLITZ_BLUE);
 
 			response
-				.edit(
-					&ctx.http,
-					EditMessage::default()
-						.components(&[CreateComponent::Container(container)])
-						.flags(MessageFlags::IS_COMPONENTS_V2),
-				)
+				.edit(&ctx.http, edit_message_container(container))
 				.await?;
 		}
 		query!(
@@ -570,7 +568,10 @@ async fn user_queries(
 					let image = media_gallery(media_str);
 					container = container.add_component(image);
 				}
-				event_container(ctx, new_message, container).await?;
+				new_message
+					.channel_id
+					.send_message(&ctx.http, message_container(new_message, container))
+					.await?;
 			}
 		}
 	}
@@ -622,7 +623,10 @@ async fn guild_queries(
 				let image = media_gallery(media);
 				container = container.add_component(image);
 			}
-			event_container(ctx, new_message, container).await?;
+			new_message
+				.channel_id
+				.send_message(&ctx.http, message_container(new_message, container))
+				.await?;
 		} else if let Some(emoji_id) = &record.emoji_id {
 			let emoji_id_typed = EmojiId::new(emoji_id.cast_unsigned());
 			let (is_animated, emoji_id, emoji_name) = if record.guild_emoji

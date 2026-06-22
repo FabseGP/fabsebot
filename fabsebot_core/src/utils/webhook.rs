@@ -16,9 +16,11 @@ const FABSEBOT_WEBHOOK_NAME: &str = "fabsebot";
 const FABSEBOT_WEBHOOK_PFP: &str =
 	"http://img2.wikia.nocookie.net/__cb20150611192544/pokemon/images/e/ef/Psyduck_Confusion.png";
 
-pub async fn error_hook(ctx: &SContext, title: &str, error: String) -> AResult<()> {
-	let webhook = Webhook::from_url(&ctx.http, &utils_config().error_webhook).await?;
-
+pub async fn webhook_components<'a>(
+	webhook: Webhook,
+	ctx: &SContext,
+	components: &'a [CreateComponent<'a>],
+) -> AResult<()> {
 	webhook
 		.execute(
 			&ctx.http,
@@ -26,16 +28,26 @@ pub async fn error_hook(ctx: &SContext, title: &str, error: String) -> AResult<(
 			ExecuteWebhook::default()
 				.with_components(true)
 				.flags(MessageFlags::IS_COMPONENTS_V2)
-				.components(&[
-					CreateComponent::Container(CreateContainer::new(&[
-						CreateContainerComponent::TextDisplay(CreateTextDisplay::new(title)),
-					])),
-					CreateComponent::Container(CreateContainer::new(&[
-						CreateContainerComponent::TextDisplay(CreateTextDisplay::new(error)),
-					])),
-				]),
+				.components(components),
 		)
 		.await?;
+
+	Ok(())
+}
+
+pub async fn error_hook(ctx: &SContext, title: &str, error: String) -> AResult<()> {
+	let webhook = Webhook::from_url(&ctx.http, &utils_config().error_webhook).await?;
+
+	let components = [
+		CreateComponent::Container(CreateContainer::new(vec![
+			CreateContainerComponent::TextDisplay(CreateTextDisplay::new(title)),
+		])),
+		CreateComponent::Container(CreateContainer::new(vec![
+			CreateContainerComponent::TextDisplay(CreateTextDisplay::new(error)),
+		])),
+	];
+
+	webhook_components(webhook, ctx, &components).await?;
 
 	Ok(())
 }

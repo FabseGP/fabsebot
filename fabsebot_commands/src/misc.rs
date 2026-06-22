@@ -1,23 +1,21 @@
-use std::{
-	borrow::Cow, collections::HashSet, fmt::Write as _, io::Cursor, mem::take, time::Duration,
-};
+use std::{borrow::Cow, fmt::Write as _, io::Cursor, mem::take, time::Duration};
 
 use ab_glyph::FontArc;
 use anyhow::{Context as _, Result as AResult};
 use fabsebot_core::{
 	config::{
 		constants::{
-			ANIMATED_QUOTE_VEC, AUTHOR_FONT, COLOUR_BLUE, COLOUR_RED, COLOUR_YELLOW, CONTENT_FONT,
-			DEFAULT_THEME, FONTS, QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME, RANDOM_THEME,
-			STATIC_QUOTE_VEC, THEMES, TSUNDERE_REPLY,
+			ANIMATED_QUOTE_VEC, AUTHOR_FONT, CONTENT_FONT, DEFAULT_THEME, FONTS, MESSAGE_LIMIT,
+			QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME, RANDOM_THEME, STATIC_QUOTE_VEC, THEMES,
+			TSUNDERE_REPLY,
 		},
-		types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, client_data, utils_config},
+		types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, utils_config},
 	},
 	errors::commands::{AIError, GuildError, InteractionError},
 	utils::{
 		ai::ai_response_simple,
 		helpers::{
-			image_uri_fetch, media_gallery, member_pfp, send_container, separator, text_display,
+			image_uri_fetch, media_gallery, member_pfp, reply_container, separator, text_display,
 			thumbnail_section, user_pfp,
 		},
 		image::{
@@ -33,17 +31,16 @@ use serenity::{
 	all::{
 		ActivityData, AutocompleteChoice, ButtonStyle, Colour, ComponentInteractionCollector,
 		ComponentInteractionDataKind, CreateActionRow, CreateAllowedMentions, CreateAttachment,
-		CreateAutocompleteResponse, CreateButton, CreateComponent, CreateContainer, CreateEmbed,
-		CreateEmbedFooter, CreateInteractionResponse, CreateMessage, CreateSelectMenu,
-		CreateSelectMenuKind, CreateSelectMenuOption, DataUri, EditChannel, EditCurrentMember,
-		EditMessage, GenericChannelId, GuildChannel, GuildId, Message, MessageId, OnlineStatus,
-		ShardRunnerMessage, User, UserId,
+		CreateAutocompleteResponse, CreateButton, CreateComponent, CreateContainer,
+		CreateInteractionResponse, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
+		CreateSelectMenuOption, DataUri, EditChannel, EditCurrentMember, EditMessage,
+		GenericChannelId, GuildChannel, GuildId, Message, MessageId, OnlineStatus, User, UserId,
 	},
 	futures::StreamExt as _,
 	nonmax::NonMaxU16,
 };
 use sqlx::{query, query_as, query_scalar};
-use systemstat::{Platform as _, saturating_sub_bytes};
+use systemstat::{ByteSize, Platform as _, saturating_sub_bytes};
 use tokio::{
 	sync::oneshot,
 	time::{sleep, timeout},
@@ -51,121 +48,6 @@ use tokio::{
 use tracing::warn;
 
 use crate::{command_permissions, require_guild_id};
-
-/// When you want to find the imposter
-#[poise::command(
-	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
-)]
-pub async fn poll(
-	ctx: SContext<'_>,
-	#[description = "Question"] title: String,
-	#[description = "Comma-separated options"] options: String,
-	#[description = "Duration in minutes"]
-	#[min = 0]
-	duration: u64,
-) -> Result<(), Error> {
-	let options_list: Vec<_> = options
-		.split(',')
-		.map(str::trim)
-		.filter(|s| !s.is_empty())
-		.collect();
-	let options_count = options_list.len();
-	if options_count < 1 {
-		ctx.say("Bruh, no options ain't gonna cut it for a poll!")
-			.await?;
-		return Err(InteractionError::MissingOptions.into());
-	}
-
-	let mut embed = CreateEmbed::default()
-		.title(title.as_str())
-		.colour(COLOUR_RED)
-		.fields(options_list.iter().map(|&option| (option, "0", false)));
-	let mut final_embed = embed.clone();
-
-	let ctx_id_copy = ctx.id().to_string();
-	let mut buttons = Vec::with_capacity(options_count);
-	for index in 0..options_count {
-		buttons.push(
-			CreateButton::new(format!("{ctx_id_copy}_{index}"))
-				.style(ButtonStyle::Primary)
-				.label((index.saturating_add(1)).to_string()),
-		);
-	}
-	let action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-		&buttons,
-	))];
-
-	let message = ctx
-		.send(
-			CreateReply::default()
-				.embed(embed.clone())
-				.components(&action_row)
-				.reply(true),
-		)
-		.await?;
-
-	let mut vote_counts = vec![0; options_count];
-	let mut voted_users = HashSet::new();
-
-	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-		.timeout(Duration::from_secs(duration.saturating_mul(60)))
-		.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_copy.as_str()))
-		.stream();
-
-	while let Some(interaction) = collector_stream.next().await {
-		interaction
-			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-			.await?;
-		if voted_users.insert(interaction.user.id)
-			&& let Some(index) = interaction
-				.data
-				.custom_id
-				.split('_')
-				.nth(1)
-				.and_then(|s| s.parse::<usize>().ok())
-			&& index < options_count
-			&& let Some(vote_index) = vote_counts.get_mut(index)
-		{
-			*vote_index = i32::saturating_add(*vote_index, 1);
-
-			embed = CreateEmbed::default()
-				.title(&title)
-				.colour(COLOUR_RED)
-				.fields(
-					options_list
-						.iter()
-						.zip(vote_counts.iter())
-						.map(|(&option, &count)| (option, count.to_string(), false)),
-				);
-			final_embed = embed.clone();
-
-			let mut msg = interaction.message;
-			msg.edit(ctx.http(), EditMessage::default().embed(embed))
-				.await?;
-		} else {
-			ctx.send(
-				CreateReply::default()
-					.content("bruh, you have already voted!")
-					.ephemeral(true),
-			)
-			.await?;
-		}
-	}
-	message
-		.edit(
-			ctx,
-			CreateReply::default()
-				.embed(final_embed)
-				.components(&[])
-				.reply(true),
-		)
-		.await?;
-
-	Ok(())
-}
 
 pub async fn birthday_internal(ctx: SContext<'_>, avatar_url: &str, name: &str) -> AResult<()> {
 	let title = format!("# HAPPY BIRTHDAY {name}!");
@@ -178,7 +60,7 @@ pub async fn birthday_internal(ctx: SContext<'_>, avatar_url: &str, name: &str) 
 		.add_component(image)
 		.accent_colour(Colour::BLITZ_BLUE);
 
-	send_container(&ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -227,7 +109,7 @@ impl BotStatus {
 	install_context = "Guild",
 	interaction_context = "Guild",
 	owners_only,
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn bot_control(
 	ctx: SContext<'_>,
@@ -262,8 +144,7 @@ pub async fn bot_control(
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
-	                            CHANGE_NICKNAME"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CHANGE_NICKNAME"
 )]
 pub async fn bot_personalize(
 	ctx: SContext<'_>,
@@ -306,159 +187,74 @@ pub async fn bot_personalize(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
-	let mut embed = CreateEmbed::default().title("Debug");
-
 	let latency = ctx
 		.serenity_context()
 		.runner_info
 		.read()
 		.latency
 		.map_or(0, |latency| latency.as_millis());
-	embed = embed.field("Shard ping:", format!("{latency}ms"), true);
-	embed = embed.field(
-		"Shard id:",
-		ctx.serenity_context().shard_id.to_string(),
-		true,
-	);
-	embed = embed.field("", "", false);
-	let cpu_load = SYSTEM_STATS.cpu_load_aggregate();
-	sleep(Duration::from_secs(1)).await;
-	match cpu_load.and_then(|f| f.done()) {
-		Ok(cpu_load) => {
-			embed = embed.field("System load:", format!("{}%", cpu_load.system), true);
+	let cpu_load = {
+		let aggregate = SYSTEM_STATS.cpu_load_aggregate();
+		sleep(Duration::from_secs(1)).await;
+		match aggregate.and_then(|f| f.done()) {
+			Ok(cpu_load) => cpu_load.system,
+			Err(err) => {
+				warn!("Failed to get system load: {err}");
+				0.0
+			}
 		}
-		Err(err) => {
-			warn!("Failed to get system load: {err}");
-		}
-	}
-	match SYSTEM_STATS.load_average() {
-		Ok(avg_load) => {
-			embed = embed.field(
-				"Average system load (15m):",
-				avg_load.fifteen.to_string(),
-				true,
-			);
-		}
+	};
+	let average_load = match SYSTEM_STATS.load_average() {
+		Ok(avg_load) => avg_load.fifteen,
 		Err(err) => {
 			warn!("Failed to get average load: {err}");
+			0.0
 		}
-	}
-	embed = embed.field("", "", false);
-
-	match SYSTEM_STATS.memory_and_swap() {
-		Ok((mem, swap)) => {
-			embed = embed.field(
-				"System memory:",
-				format!(
-					"{} / {} used",
-					saturating_sub_bytes(mem.total, mem.free),
-					mem.total
-				),
-				true,
-			);
-			embed = embed.field(
-				"System swap:",
-				format!(
-					"{} / {} used",
-					saturating_sub_bytes(swap.total, swap.free),
-					swap.total
-				),
-				true,
-			);
-		}
-		Err(err) => {
-			warn!("Failed to get system memory usage: {err}");
-		}
-	}
-	embed = embed.field("", "", false);
-	match SYSTEM_STATS.cpu_temp() {
-		Ok(temp) => {
-			embed = embed.field("System temperature:", format!("{temp} ℃"), true);
-		}
+	};
+	let ((memory_usage, memory_total), (swap_usage, swap_total)) =
+		match SYSTEM_STATS.memory_and_swap() {
+			Ok((mem, swap)) => (
+				(saturating_sub_bytes(mem.total, mem.free), mem.total),
+				(saturating_sub_bytes(swap.total, swap.free), swap.total),
+			),
+			Err(err) => {
+				warn!("Failed to get system memory usage: {err}");
+				(
+					(ByteSize::tb(0), ByteSize::tb(0)),
+					(ByteSize::tb(0), ByteSize::tb(0)),
+				)
+			}
+		};
+	let cpu_temp = match SYSTEM_STATS.cpu_temp() {
+		Ok(temp) => temp,
 		Err(err) => {
 			warn!("Failed to get system temperature: {err}");
+			0.0
 		}
-	}
-	match SYSTEM_STATS.uptime() {
-		Ok(uptime) => {
-			embed = embed.field("System uptime:", format!("{}s", uptime.as_secs()), true);
-		}
+	};
+	let system_uptime = match SYSTEM_STATS.uptime() {
+		Ok(uptime) => uptime.as_secs(),
 		Err(err) => {
 			warn!("Failed to get system uptime: {err}");
+			0
 		}
-	}
+	};
+	let text = format!(
+		"# Debug\n**Shard ping:**\n{latency}ms\n**Shard id:**\n{}\n**System \
+		 load:**\n{cpu_load}%\n**Average system load (15m):**\n{average_load}\n**System \
+		 memory:**\n{memory_usage} / {memory_total} used\n**System swap:**\n{swap_usage} / \
+		 {swap_total} used\n**System temperature:**\n{cpu_temp} ℃\n**System \
+		 uptime:**\n{system_uptime}s",
+		ctx.serenity_context().shard_id
+	);
 
-	let mut reply = CreateReply::default().embed(embed.clone()).reply(true);
+	let text_display = [text_display(&text)];
+	let container = CreateContainer::new(&text_display).accent_colour(Colour::BLITZ_BLUE);
 
-	let owner_id = utils_config().owner_id;
-
-	if ctx.author().id != owner_id {
-		ctx.send(reply).await?;
-		return Ok(());
-	}
-
-	let button = [CreateButton::new(format!("{}_shard_restart", ctx.id()))
-		.style(ButtonStyle::Primary)
-		.label("Restart shard")];
-	let component = [CreateComponent::ActionRow(CreateActionRow::Buttons(
-		Cow::Borrowed(&button),
-	))];
-
-	reply = reply.components(&component);
-
-	let message = ctx.send(reply).await?;
-
-	let ctx_id_str = ctx.id().to_string();
-	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
-		.timeout(Duration::from_mins(1))
-		.filter(move |interaction| {
-			interaction.data.custom_id.starts_with(ctx_id_str.as_str())
-				&& interaction.user.id.get() == owner_id
-		})
-		.await
-	{
-		let mut msg = interaction.message;
-
-		let response = client_data()
-			.runners
-			.get(&ctx.serenity_context().shard_id)
-			.map_or_else(
-				|| {
-					warn!("No shard runner found in runners map");
-					"Rip, shard doesn't exist!"
-				},
-				|runner| {
-					if let Err(err) = runner.tx.unbounded_send(ShardRunnerMessage::Restart) {
-						warn!("Failed to queue restart of shard: {:?}", err);
-						"Rip, failed to restart shard!"
-					} else {
-						"Woah shard restarted!"
-					}
-				},
-			);
-
-		msg.edit(
-			ctx.http(),
-			EditMessage::default()
-				.embed(embed)
-				.components(vec![])
-				.content(response),
-		)
-		.await?;
-	} else {
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.reply(true)
-					.embed(embed)
-					.components(&[]),
-			)
-			.await?;
-	}
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -469,7 +265,7 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -495,7 +291,8 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "CONNECT | SPEAK | VIEW_CHANNEL | SEND_MESSAGES | \
+	                            SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
@@ -581,7 +378,7 @@ async fn autocomplete_command<'a>(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn help(
 	ctx: SContext<'_>,
@@ -589,7 +386,7 @@ pub async fn help(
 	#[autocomplete = "autocomplete_command"]
 	command: Option<String>,
 ) -> Result<(), Error> {
-	if let Some(cmd_name) = command {
+	let text = if let Some(cmd_name) = command {
 		if let Some(command) = ctx
 			.framework()
 			.options()
@@ -597,25 +394,19 @@ pub async fn help(
 			.iter()
 			.find(|cmd| cmd.name == cmd_name)
 		{
-			let embed = CreateEmbed::new()
-				.title(format!("Help: {}", command.name))
-				.description(
-					command
-						.description
-						.as_deref()
-						.unwrap_or("No description available"),
-				)
-				.color(COLOUR_YELLOW)
-				.field(
-					"Usage",
-					format!("`{}{}`", ctx.prefix(), command.name),
-					false,
-				);
-
-			ctx.send(CreateReply::default().embed(embed).ephemeral(true))
-				.await?;
+			let description = command
+				.description
+				.as_deref()
+				.unwrap_or("No description available");
+			format!(
+				"# Help: {}\n**Description:**\n{description}\n**Usage:**\n`{}{}`",
+				command.name,
+				ctx.prefix(),
+				command.name
+			)
 		} else {
 			ctx.say("Rip, you're hallucinating").await?;
+			return Ok(());
 		}
 	} else {
 		let commands: String =
@@ -633,17 +424,18 @@ pub async fn help(
 					output
 				});
 
-		let embed = CreateEmbed::new()
-			.title("Available Commands")
-			.description(commands)
-			.color(COLOUR_BLUE)
-			.footer(CreateEmbedFooter::new(
-				"Use /help <command> for detailed info",
-			));
+		let mut text = format!(
+			"# Available commands\n**Description:**\n{commands}\n*Use /help <command> for \
+			 detailed info*",
+		);
+		text.truncate(MESSAGE_LIMIT);
+		text
+	};
 
-		ctx.send(CreateReply::default().embed(embed).ephemeral(true))
-			.await?;
-	}
+	let text_display = [text_display(&text)];
+	let container = CreateContainer::new(&text_display).accent_colour(Colour::GOLD);
+
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -689,7 +481,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 	.fetch_all(&ctx.data().db)
 	.await?;
 
-	let title = format!("# Top {} users by message count", users.len());
+	let title = format!("# Top {} user(s) by message count", users.len());
 	let thumbnail_section = [thumbnail_section(&title, &thumbnail)];
 
 	let mut list = String::with_capacity(users.len().saturating_mul(4));
@@ -716,7 +508,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 		.add_component(text_display)
 		.accent_colour(Colour::RED);
 
-	send_container(&ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -1300,7 +1092,7 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 	prefix_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS",
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS",
 	owners_only
 )]
 pub async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
@@ -1418,7 +1210,7 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 		.add_component(text_display)
 		.accent_colour(Colour::RED);
 
-	send_container(&ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }

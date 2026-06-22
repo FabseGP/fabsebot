@@ -1,6 +1,6 @@
 use std::{fmt::Write as _, sync::Arc};
 
-use anyhow::{Result as AResult, anyhow, bail};
+use anyhow::{Result as AResult, anyhow};
 use bytes::Bytes;
 use image::{ImageFormat, guess_format};
 use jiff::{Timestamp, tz::TimeZone};
@@ -22,8 +22,8 @@ use crate::{
 	},
 	utils::{
 		helpers::{
-			discord_message_link, encode_image, get_gif, get_waifu, image_uri, member_pfp,
-			non_empty_vec, user_roles_joined,
+			discord_message_link, encode_image, fetch_and_parse, get_gif, get_waifu, image_uri,
+			member_pfp, non_empty_vec, user_roles_joined,
 		},
 		voice::get_configured_songbird_handler,
 	},
@@ -51,22 +51,13 @@ struct SearchResponse {
 }
 
 async fn internet_search(input: &str, fabseserver_search: &str) -> AResult<String> {
-	let response = match HTTP_CLIENT
-		.get(fabseserver_search)
-		.query(&[("q", input), ("categories", "general"), ("format", "json")])
-		.send()
-		.await
-	{
-		Ok(resp) => match resp.json::<SearchResponse>().await {
-			Ok(json) => json,
-			Err(err) => {
-				bail!("Failed to parse search response: {err}");
-			}
-		},
-		Err(err) => {
-			bail!("Failed to search online: {err}");
-		}
-	};
+	let response: SearchResponse = fetch_and_parse(
+		HTTP_CLIENT
+			.get(fabseserver_search)
+			.query(&[("q", input), ("categories", "general"), ("format", "json")])
+			.send(),
+	)
+	.await?;
 
 	let mut summary = String::with_capacity(1024);
 
@@ -500,17 +491,6 @@ impl AIResponse {
 	}
 }
 
-async fn ai_request_internal<T: Serialize + Send + Sync>(
-	endpoint: &str,
-	request: &T,
-) -> AResult<AIResponse> {
-	let resp = HTTP_CLIENT.post(endpoint).json(request).send().await?;
-
-	resp.json::<AIResponse>()
-		.await
-		.map_err(|e| anyhow!("Failed to parse AI response: {e}"))
-}
-
 #[derive(Serialize)]
 struct SimpleAIRequest<'a> {
 	messages: &'a [SimpleMessage<'a>],
@@ -540,7 +520,14 @@ pub async fn ai_response_simple(
 		max_tokens,
 	};
 
-	let response = ai_request_internal(&utils_config.fabseserver.llm_host_text, &request).await?;
+	let response: AIResponse = fetch_and_parse(
+		HTTP_CLIENT
+			.post(&utils_config.fabseserver.llm_host_text)
+			.json(&request)
+			.send(),
+	)
+	.await?;
+
 	response.extract_content()
 }
 
@@ -712,7 +699,13 @@ pub async fn ai_response(messages: &[AIChatMessage]) -> AResult<AIResponse> {
 		tools: &tools,
 	};
 
-	ai_request_internal(&utils_config.fabseserver.llm_host_text, &request).await
+	fetch_and_parse::<AIResponse>(
+		HTTP_CLIENT
+			.post(&utils_config.fabseserver.llm_host_text)
+			.json(&request)
+			.send(),
+	)
+	.await
 }
 
 #[derive(Serialize)]

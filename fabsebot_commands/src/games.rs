@@ -2,13 +2,12 @@ use std::time::Duration;
 
 use fabsebot_core::{
 	config::types::{Error, SContext},
-	utils::helpers::{send_container, separator, text_display},
+	utils::helpers::{edit_message_container, reply_container, separator, text_display},
 };
 use poise::ChoiceParameter;
 use serenity::all::{
 	ButtonStyle, Colour, ComponentInteractionCollector, CreateActionRow, CreateButton,
-	CreateComponent, CreateContainer, CreateContainerComponent, CreateInteractionResponse,
-	EditMessage, MessageFlags, User,
+	CreateContainer, CreateContainerComponent, CreateInteractionResponse, User,
 };
 
 use crate::{require_guild_id, require_human};
@@ -68,7 +67,7 @@ impl RpsChoice {
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn rps(
 	ctx: SContext<'_>,
@@ -101,7 +100,7 @@ pub async fn rps(
 		))
 		.accent_colour(Colour::ORANGE);
 
-	send_container(&ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	let ctx_id_str = ctx_id.to_string();
 	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
@@ -143,13 +142,8 @@ pub async fn rps(
 		let text_display = [text_display(&response)];
 		let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
 
-		msg.edit(
-			ctx.http(),
-			EditMessage::default()
-				.components(&[CreateComponent::Container(container)])
-				.flags(MessageFlags::IS_COMPONENTS_V2),
-		)
-		.await?;
+		msg.edit(ctx.http(), edit_message_container(container))
+			.await?;
 	}
 	Ok(())
 }

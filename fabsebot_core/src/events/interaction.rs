@@ -5,11 +5,11 @@ use serenity::all::{
 	ButtonStyle, ComponentInteraction, Context as SContext, CreateActionRow, CreateButton,
 	CreateComponent, CreateContainer, CreateContainerComponent, CreateInputText,
 	CreateInteractionResponse, CreateInteractionResponseMessage, CreateLabel, CreateModal,
-	CreateModalComponent, CreateTextDisplay, ExecuteWebhook, GuildId, InputText, InputTextStyle,
-	Label, LabelComponent, MessageFlags, ModalComponent, ModalInteraction, Webhook,
+	CreateModalComponent, CreateTextDisplay, GuildId, InputText, InputTextStyle, Label,
+	LabelComponent, ModalComponent, ModalInteraction, Webhook,
 };
 
-use crate::config::types::utils_config;
+use crate::{config::types::utils_config, utils::webhook::webhook_components};
 
 pub const FEEDBACK_BUTTON_CUSTOM_ID: &str = "feedback-modal-button";
 pub const FEEDBACK_MODAL_CUSTOM_ID: &str = "feedback-modal";
@@ -60,28 +60,20 @@ pub async fn handle_feedback_modal_reply(
 	};
 
 	let webhook = Webhook::from_url(&ctx.http, &utils_config().feedback_webhook).await?;
+	let components = [
+		CreateComponent::Container(CreateContainer::new(vec![
+			CreateContainerComponent::TextDisplay(CreateTextDisplay::new(format!(
+				"# New feedback received\nAuthor ID: {}\nGuild ID: {}",
+				interaction.user.id.get(),
+				guild_id.get()
+			))),
+		])),
+		CreateComponent::Container(CreateContainer::new(vec![
+			CreateContainerComponent::TextDisplay(CreateTextDisplay::new(user_text)),
+		])),
+	];
 
-	webhook
-		.execute(
-			&ctx.http,
-			false,
-			ExecuteWebhook::default()
-				.with_components(true)
-				.flags(MessageFlags::IS_COMPONENTS_V2)
-				.components(&[
-					CreateComponent::Container(CreateContainer::new(&[
-						CreateContainerComponent::TextDisplay(CreateTextDisplay::new(format!(
-							"# New feedback received\nAuthor ID: {}\nGuild ID: {}",
-							interaction.user.id.get(),
-							guild_id.get()
-						))),
-					])),
-					CreateComponent::Container(CreateContainer::new(&[
-						CreateContainerComponent::TextDisplay(CreateTextDisplay::new(user_text)),
-					])),
-				]),
-		)
-		.await?;
+	webhook_components(webhook, ctx, &components).await?;
 
 	Ok(())
 }

@@ -8,6 +8,7 @@ on:
       - "**.lock"
       - "**.json"
       - "**.yaml"
+      - "**.lock"
       - "examples"
       - "bench_assets"
       - ".sqlx"

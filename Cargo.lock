@@ -442,6 +442,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e93abca9e28e0a1b9877922aacb20576e05d4679ffa78c3d6dc22a26a216659"
 
 [[package]]
+name = "bytesize"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49e78e506b9d7633710dab98996f22f95f3d0f488e8f1aa162830556ed9fc14d"
+
+[[package]]
 name = "bytestring"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1203,9 +1209,9 @@ dependencies = [
 
 [[package]]
 name = "emojis"
-version = "0.8.2"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a4d5d50b0b58df5173d8ff1192b4d1422ceae5d981b30d4b6f8ed1d673a2bc4"
+checksum = "0b1514ced566c94991ed9563258ecf61e311fd773bf0a3f20606830386bf66e3"
 dependencies = [
  "phf",
 ]
@@ -1359,7 +1365,6 @@ dependencies = [
  "metrics-exporter-prometheus",
  "mimalloc",
  "rustls",
- "serde",
  "tokio",
  "tokio-metrics",
  "toml",
@@ -1376,6 +1381,7 @@ dependencies = [
  "ab_glyph",
  "anyhow",
  "base64",
+ "bytesize 2.4.0",
  "fabsebot_core",
  "fabsebot_db",
  "fastrand",
@@ -5635,7 +5641,7 @@ version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a583abe520746270ffdbdaf0e3039a806f29be9d7034d66466a4839a01de0610"
 dependencies = [
- "bytesize",
+ "bytesize 1.3.3",
  "kstat-rs",
  "lazy_static",
  "libc",

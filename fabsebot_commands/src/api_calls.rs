@@ -1,57 +1,33 @@
 use core::fmt::{Display, Formatter, Result as FmtResult};
-use std::{borrow::Cow, time::Duration};
+use std::time::Duration;
 
 use anyhow::Result as AResult;
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
-		constants::{COLOUR_GREEN, COLOUR_ORANGE},
-		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, utils_config},
+		constants::MESSAGE_LIMIT,
+		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, UtilsConfig, utils_config},
 	},
-	errors::commands::{AIError, Base64Error, HTTPError, InteractionError},
+	errors::commands::{AIError, Base64Error, InteractionError},
 	utils::{
 		ai::{ContentPart, ai_response, image_content, uri_content, user_roles_pfp},
 		helpers::{
-			get_gifs, get_waifu, media_gallery, non_empty_string, non_empty_vec, send_container,
-			separator, text_display, thumbnail_section, true_bool, user_banner, user_pfp,
-			visit_page_button,
+			fetch_and_parse, get_gifs, get_waifu, media_gallery, non_empty_string, non_empty_vec,
+			paginate_container, reply_container, text_display, thumbnail_section, true_bool,
+			user_banner, user_pfp, visit_page_button,
 		},
 	},
 };
-use fastrand::usize;
 use poise::CreateReply;
 use serde::{Deserialize, Serialize};
 use serenity::{
-	all::{
-		Attachment, ButtonStyle, Colour, ComponentInteractionCollector, CreateActionRow,
-		CreateAttachment, CreateButton, CreateComponent, CreateContainer, CreateContainerComponent,
-		CreateEmbed, CreateInteractionResponse, EditMessage, Member, MessageFlags, MessageId, User,
-	},
+	all::{Attachment, Colour, CreateAttachment, CreateContainer, Member, MessageId, User},
 	futures::StreamExt as _,
 };
 use sqlx::query_scalar;
-use tracing::warn;
 use url::form_urlencoded::byte_serialize;
 
 use crate::{command_permissions, require_guild_id};
-
-struct State {
-	next_id: String,
-	prev_id: String,
-	index: usize,
-	len: usize,
-}
-
-impl State {
-	fn new(ctx_id: u64, len: usize) -> Self {
-		Self {
-			next_id: format!("{ctx_id}_n"),
-			prev_id: format!("{ctx_id}_p"),
-			index: 0,
-			len,
-		}
-	}
-}
 
 #[derive(Deserialize)]
 struct FabseAIImage {
@@ -70,52 +46,24 @@ struct ImageRequest {
 	prompt: String,
 }
 
-async fn ai_image_internal(ctx: &SContext<'_>, prompt: &str) -> AResult<()> {
-	let _typing = ctx.defer_or_broadcast().await;
-	let request = ImageRequest {
-		prompt: format!("{prompt} {}", fastrand::usize(..1024)),
-	};
-	let utils_config = utils_config();
+async fn fetch_and_decode_image(
+	utils_config: &UtilsConfig,
+	request: &ImageRequest,
+) -> AResult<Vec<u8>> {
+	let resp_parsed: FabseAIImage = fetch_and_parse(
+		HTTP_CLIENT
+			.post(&utils_config.api.cloudflare_image_gen)
+			.bearer_auth(&utils_config.api.cloudflare_token)
+			.json(&request)
+			.send(),
+	)
+	.await?;
 
-	let resp = match HTTP_CLIENT
-		.post(&utils_config.api.cloudflare_image_gen)
-		.bearer_auth(&utils_config.api.cloudflare_token)
-		.json(&request)
-		.send()
-		.await
-	{
-		Ok(response) => response,
-		Err(err) => {
-			ctx.reply("Servers too overworked :/").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
+	let img_dec = general_purpose::STANDARD
+		.decode(&resp_parsed.result.image)
+		.map_err(Base64Error::FailedBytesDecode)?;
 
-	let resp_parsed = match resp.json::<FabseAIImage>().await {
-		Ok(resp_parsed) => resp_parsed,
-		Err(err) => {
-			ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
-				.await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	match general_purpose::STANDARD.decode(resp_parsed.result.image) {
-		Ok(img_dec) => {
-			ctx.send(
-				CreateReply::default()
-					.reply(true)
-					.attachment(CreateAttachment::bytes(img_dec, "output.png")),
-			)
-			.await?;
-		}
-		Err(err) => {
-			ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
-				.await?;
-			return Err(Base64Error::FailedBytesDecode(err).into());
-		}
-	}
-	Ok(())
+	Ok(img_dec)
 }
 
 /// Did someone say AI image?
@@ -132,16 +80,44 @@ pub async fn ai_image(
 	prompt: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	ai_image_internal(&ctx, &prompt).await?;
+	let _typing = ctx.defer_or_broadcast().await;
+	let request = ImageRequest {
+		prompt: format!("{prompt} {}", fastrand::usize(..1024)),
+	};
+	let utils_config = utils_config();
+
+	match fetch_and_decode_image(utils_config, &request).await {
+		Ok(bytes) => {
+			ctx.send(
+				CreateReply::default()
+					.reply(true)
+					.attachment(CreateAttachment::bytes(bytes, "output.png")),
+			)
+			.await?;
+		}
+		Err(err) => {
+			ctx.reply(format!("\"{prompt}\" is too dangerous to generate"))
+				.await?;
+			return Err(err);
+		}
+	}
 	Ok(())
 }
 
-async fn ai_text_internal(
-	ctx: &SContext<'_>,
-	role: String,
+/// Make the ai generate text for you
+#[poise::command(
+	slash_command,
+	install_context = "Guild | User",
+	interaction_context = "Guild | PrivateChannel"
+)]
+pub async fn ai_text(
+	ctx: SContext<'_>,
+	#[description = "AI personality, e.g. *you're an evil assistant*"] role: String,
+	#[description = "Prompt"] prompt: String,
+	#[description = "Optional image for context (only JPEG, WEBP and AVIF are supported)"]
 	attachment: Option<Attachment>,
-	prompt: String,
-) -> AResult<()> {
+) -> Result<(), Error> {
+	command_permissions(&ctx).await?;
 	ctx.defer().await?;
 
 	let mut chat_vec = Vec::with_capacity(1);
@@ -172,34 +148,14 @@ async fn ai_text_internal(
 	};
 
 	let content = resp.extract_content()?;
-
 	let mut text = format!("# {prompt}\n{content}");
-	text.truncate(4000);
+	text.truncate(MESSAGE_LIMIT);
 
 	let text_display = [text_display(&text)];
-
 	let container = CreateContainer::new(&text_display).accent_colour(Colour::RED);
 
-	send_container(ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
-	Ok(())
-}
-
-/// Make the ai generate text for you
-#[poise::command(
-	slash_command,
-	install_context = "Guild | User",
-	interaction_context = "Guild | PrivateChannel"
-)]
-pub async fn ai_text(
-	ctx: SContext<'_>,
-	#[description = "AI personality, e.g. *you're an evil assistant*"] role: String,
-	#[description = "Prompt"] prompt: String,
-	#[description = "Optional image for context (only JPEG, WEBP and AVIF are supported)"]
-	attachment: Option<Attachment>,
-) -> Result<(), Error> {
-	command_permissions(&ctx).await?;
-	ai_text_internal(&ctx, role, attachment, prompt).await?;
 	Ok(())
 }
 
@@ -269,224 +225,37 @@ struct AniMangaGenres {
 	name: String,
 }
 
-async fn anime_internal(ctx: SContext<'_>, anime: &str) -> AResult<()> {
-	let typing = ctx.defer_or_broadcast().await;
-	let resp = match HTTP_CLIENT
-		.get("https://api.jikan.moe/v4/anime")
-		.query(&[("q", anime), ("limit", "5")])
-		.send()
-		.await
-	{
-		Ok(resp) => resp,
-		Err(err) => {
-			ctx.reply("API down, get a life!").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-	let json = match resp.json::<AniMangaResponse<AnimeSpecific>>().await {
-		Ok(json) => json,
-		Err(err) => {
-			ctx.reply("Not worthy of looking up").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-	let first_entry = json.data.first().unwrap();
-
-	let empty = String::new();
-	let mut japanese_title = first_entry
-		.titles
-		.iter()
-		.find(|t| t.title_type == "Japanese")
-		.map_or("No japanese title available", |t| t.title.as_str());
-	let mut embed = CreateEmbed::default()
-		.title(japanese_title)
-		.image(
-			&first_entry.images.webp.image_url,
-			Some(Cow::Borrowed("Cover image of anime")),
+impl<T> AniManga<T> {
+	pub fn description(&self) -> String {
+		let japanese_title = self
+			.titles
+			.iter()
+			.find(|t| t.title_type == "Japanese")
+			.map_or("No japanese title available", |t| t.title.as_str());
+		let description = self
+			.synopsis
+			.as_ref()
+			.map_or("No description", |synopsis| synopsis);
+		let english_title = self
+			.titles
+			.iter()
+			.find(|t| t.title_type == "English")
+			.map_or("No english title", |t| t.title.as_str());
+		let score = self.score.unwrap_or(0.0);
+		let popularity = self.popularity.unwrap_or(0);
+		let favorites = self.favorites.unwrap_or(0);
+		let genres = self
+			.genres
+			.iter()
+			.map(|genre| genre.name.as_str())
+			.intersperse(" - ")
+			.collect::<String>();
+		format!(
+			"# {japanese_title}\n**Description:**\n{description}\n**English \
+			 title:**\n{english_title}\n**Score:**\n{score}\n**Popularity:**\n{popularity}\n**\
+			 Favorites:**\n{favorites}\n**Genres:**\n{genres}\n"
 		)
-		.url(&first_entry.url)
-		.colour(COLOUR_ORANGE);
-
-	if let Some(synopsis) = &first_entry.synopsis {
-		embed = embed.description(format!("*{synopsis}*"));
 	}
-
-	embed = embed.field("Format", &first_entry.anime_type, true);
-	embed = embed.field("Status", &first_entry.status, true);
-
-	if let Some(english_title) = first_entry
-		.titles
-		.iter()
-		.find(|t| t.title_type == "English")
-		.map(|t| t.title.as_str())
-	{
-		embed = embed.field("English title", english_title, true);
-	}
-	embed = embed.field("", &empty, false);
-	if let Some(score) = first_entry.score {
-		embed = embed.field("Score", score.to_string(), true);
-	}
-	if let Some(popularity) = first_entry.popularity {
-		embed = embed.field("Popularity", popularity.to_string(), true);
-	}
-	if let Some(favorites) = first_entry.favorites {
-		embed = embed.field("Favorites", favorites.to_string(), true);
-	}
-	embed = embed.field("", &empty, false);
-	if let Some(episodes) = first_entry.specific.episodes {
-		embed = embed.field("Episodes", episodes.to_string(), true);
-	}
-	if let Some(duration) = &first_entry.specific.duration {
-		embed = embed.field("Duration", duration, true);
-	}
-	if let Some(aired) = &first_entry.specific.aired.aired_string {
-		embed = embed.field("Aired", aired, true);
-	}
-	let mut genres_string = first_entry
-		.genres
-		.iter()
-		.map(|genre| genre.name.as_str())
-		.intersperse(" - ")
-		.collect::<String>();
-	embed = embed.field("Genres", genres_string, false);
-	let len = json.data.len();
-	if ctx.guild_id().is_some() && len > 1 {
-		drop(typing);
-		let mut state = State::new(ctx.id(), len);
-		let mut final_embed = embed.clone();
-		let buttons = [
-			CreateButton::new(&state.prev_id)
-				.style(ButtonStyle::Primary)
-				.label("⬅️"),
-			CreateButton::new(&state.next_id)
-				.style(ButtonStyle::Primary)
-				.label("➡️"),
-		];
-		let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-			&buttons[1..],
-		))];
-
-		let message = ctx
-			.send(
-				CreateReply::default()
-					.reply(true)
-					.embed(embed)
-					.components(&action_row),
-			)
-			.await?;
-
-		let ctx_id_str = ctx.id().to_string();
-		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_mins(1))
-			.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
-			.stream();
-
-		while let Some(interaction) = collector_stream.next().await {
-			interaction
-				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-				.await?;
-
-			if interaction.data.custom_id.ends_with('n')
-				&& state.index < state.len.saturating_sub(1)
-			{
-				state.index = state.index.saturating_add(1);
-			} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-				state.index = state.index.saturating_sub(1);
-			}
-
-			let Some(current_entry) = json.data.get(state.index) else {
-				warn!("Invalid anime index: {}", state.index);
-				continue;
-			};
-
-			japanese_title = current_entry
-				.titles
-				.iter()
-				.find(|t| t.title_type == "Japanese")
-				.map_or("No japanese title available", |t| t.title.as_str());
-			embed = CreateEmbed::default()
-				.title(japanese_title)
-				.thumbnail(
-					&current_entry.images.webp.image_url,
-					Some(Cow::Borrowed("Cover image of anime")),
-				)
-				.url(&current_entry.url)
-				.colour(COLOUR_ORANGE);
-
-			if let Some(synopsis) = &current_entry.synopsis {
-				embed = embed.description(format!("*{synopsis}*"));
-			}
-			embed = embed.field("Format", &current_entry.anime_type, true);
-			embed = embed.field("Status", &current_entry.status, true);
-			if let Some(english_title) = current_entry
-				.titles
-				.iter()
-				.find(|t| t.title_type == "English")
-				.map(|t| &t.title)
-			{
-				embed = embed.field("English title", english_title, true);
-			}
-			embed = embed.field("", &empty, false);
-			if let Some(score) = current_entry.score {
-				embed = embed.field("Score", score.to_string(), true);
-			}
-			if let Some(popularity) = current_entry.popularity {
-				embed = embed.field("Popularity", popularity.to_string(), true);
-			}
-			if let Some(favorites) = current_entry.favorites {
-				embed = embed.field("Favorites", favorites.to_string(), true);
-			}
-			embed = embed.field("", &empty, false);
-			if let Some(episodes) = current_entry.specific.episodes {
-				embed = embed.field("Episodes", episodes.to_string(), true);
-			}
-			if let Some(duration) = &current_entry.specific.duration {
-				embed = embed.field("Duration", duration, true);
-			}
-			if let Some(aired) = &current_entry.specific.aired.aired_string {
-				embed = embed.field("Aired", aired, true);
-			}
-			genres_string = current_entry
-				.genres
-				.iter()
-				.map(|genre| genre.name.as_str())
-				.intersperse(" - ")
-				.collect::<String>();
-			embed = embed.field("Genres", genres_string, false);
-			final_embed = embed.clone();
-
-			action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
-				if state.index == 0 {
-					Cow::Borrowed(&buttons[1..])
-				} else if state.index == len.saturating_sub(1) {
-					Cow::Borrowed(&buttons[..1])
-				} else {
-					Cow::Borrowed(&buttons)
-				}
-			}))];
-
-			let mut msg = interaction.message;
-
-			msg.edit(
-				ctx.http(),
-				EditMessage::default().embed(embed).components(&action_row),
-			)
-			.await?;
-		}
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.reply(true)
-					.embed(final_embed)
-					.components(&[]),
-			)
-			.await?;
-	} else {
-		ctx.send(CreateReply::default().reply(true).embed(embed))
-			.await?;
-	}
-	Ok(())
 }
 
 /// Lookup anime (MAL-edition)
@@ -503,7 +272,58 @@ pub async fn anime(
 	anime: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	anime_internal(ctx, &anime).await?;
+	let typing = ctx.defer_or_broadcast().await;
+
+	let json: AniMangaResponse<AnimeSpecific> = match fetch_and_parse(
+		HTTP_CLIENT
+			.get("https://api.jikan.moe/v4/anime")
+			.query(&[("q", anime.as_str()), ("limit", "5")])
+			.send(),
+	)
+	.await
+	{
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply("Not worthy of looking up").await?;
+			return Err(err);
+		}
+	};
+
+	drop(typing);
+
+	paginate_container(
+		ctx,
+		&json.data,
+		Duration::from_mins(1),
+		|entry, _idx, _len| async move {
+			let description = entry.description();
+			let episodes = entry.specific.episodes.unwrap_or(0);
+			let duration = entry
+				.specific
+				.duration
+				.as_ref()
+				.map_or("No duration", |duration| duration);
+			let aired = entry
+				.specific
+				.aired
+				.aired_string
+				.as_ref()
+				.map_or("No date for release", |aired| aired);
+			let mut text = format!(
+				"{description}**Format:**\n{}\n**Status:**\n{}\n**Episodes:**\n{episodes}\n**\
+				 Duration:**\n{duration}\n**Aired:**\n{aired}",
+				entry.anime_type, entry.status
+			);
+			text.truncate(MESSAGE_LIMIT);
+			let thumbnail_section = vec![thumbnail_section(text, &entry.images.webp.image_url)];
+			let button = visit_page_button(&entry.url);
+			CreateContainer::new(thumbnail_section)
+				.add_component(button)
+				.accent_colour(Colour::ORANGE)
+		},
+	)
+	.await?;
+
 	Ok(())
 }
 
@@ -542,26 +362,33 @@ impl Display for AnimeTitle {
 	}
 }
 
-async fn anime_scene_internal(ctx: &SContext<'_>, input: &str) -> AResult<()> {
+/// What anime was that scene from?
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild | User",
+	interaction_context = "Guild | PrivateChannel"
+)]
+pub async fn anime_scene(
+	ctx: SContext<'_>,
+	#[description = "Link to anime image"]
+	#[rest]
+	input: String,
+) -> Result<(), Error> {
+	command_permissions(&ctx).await?;
 	let _typing = ctx.defer_or_broadcast().await;
-	let response = match HTTP_CLIENT
-		.get("https://api.trace.moe/search?cutBorders&anilistInfo")
-		.query(&[("url", input)])
-		.send()
-		.await
+	let scene: MoeResponse = match fetch_and_parse(
+		HTTP_CLIENT
+			.get("https://api.trace.moe/search?cutBorders&anilistInfo")
+			.query(&[("url", input)])
+			.send(),
+	)
+	.await
 	{
 		Ok(resp) => resp,
 		Err(err) => {
-			ctx.reply("Oof, anime-server down!").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let scene = match response.json::<MoeResponse>().await {
-		Ok(json) => json,
-		Err(err) => {
 			ctx.reply("Not worthy of looking up").await?;
-			return Err(HTTPError::Request(err).into());
+			return Err(err);
 		}
 	};
 
@@ -588,26 +415,8 @@ async fn anime_scene_internal(ctx: &SContext<'_>, input: &str) -> AResult<()> {
 		.add_component(media)
 		.accent_colour(Colour::BLUE);
 
-	send_container(ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
-	Ok(())
-}
-
-/// What anime was that scene from?
-#[poise::command(
-	prefix_command,
-	slash_command,
-	install_context = "Guild | User",
-	interaction_context = "Guild | PrivateChannel"
-)]
-pub async fn anime_scene(
-	ctx: SContext<'_>,
-	#[description = "Link to anime image"]
-	#[rest]
-	input: String,
-) -> Result<(), Error> {
-	command_permissions(&ctx).await?;
-	anime_scene_internal(&ctx, &input).await?;
 	Ok(())
 }
 
@@ -615,43 +424,6 @@ pub async fn anime_scene(
 struct EightBallResponse {
 	#[serde(deserialize_with = "non_empty_string")]
 	reading: String,
-}
-
-async fn eightball_internal(ctx: &SContext<'_>, question: &str) -> AResult<()> {
-	let _typing = ctx.defer_or_broadcast().await;
-
-	let request = match HTTP_CLIENT
-		.get("https://eightballapi.com/api/biased")
-		.query(&[("question", question), ("lucky", "false")])
-		.send()
-		.await
-	{
-		Ok(resp) => resp,
-		Err(err) => {
-			ctx.reply("I don't feel like answering...").await?;
-
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let judging = match request.json::<EightBallResponse>().await {
-		Ok(data) => data,
-		Err(err) => {
-			ctx.reply("Sometimes riding a giraffe is what you need")
-				.await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let text = format!("# {question}\n{}", judging.reading);
-
-	let text_display = [text_display(&text)];
-
-	let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
-
-	send_container(ctx, container).await?;
-
-	Ok(())
 }
 
 /// When you need a wise opinion
@@ -668,109 +440,30 @@ pub async fn eightball(
 	question: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	eightball_internal(&ctx, &question).await?;
-	Ok(())
-}
+	let _typing = ctx.defer_or_broadcast().await;
 
-async fn gif_internal(ctx: SContext<'_>, input: &str) -> AResult<()> {
-	let typing = ctx.defer_or_broadcast().await;
-	let gifs = get_gifs(ctx.serenity_context(), input).await;
-	let mut embed = CreateEmbed::default().colour(COLOUR_ORANGE);
-	let len = gifs.len();
-	if ctx.guild_id().is_some() && len > 1 {
-		drop(typing);
-		if let Some(gif) = gifs.first() {
-			embed = embed
-				.image(&gif.0, Some(Cow::Borrowed("The gif itself")))
-				.title(&gif.1);
-		}
-		let mut state = State::new(ctx.id(), len);
-		let mut final_embed = embed.clone();
-		let buttons = [
-			CreateButton::new(&state.prev_id)
-				.style(ButtonStyle::Primary)
-				.label("⬅️"),
-			CreateButton::new(&state.next_id)
-				.style(ButtonStyle::Primary)
-				.label("➡️"),
-		];
-		let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-			&buttons[1..],
-		))];
-
-		let message = ctx
-			.send(
-				CreateReply::default()
-					.reply(true)
-					.embed(embed)
-					.components(&action_row),
-			)
-			.await?;
-
-		let ctx_id_str = ctx.id().to_string();
-		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_mins(1))
-			.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
-			.stream();
-
-		while let Some(interaction) = collector_stream.next().await {
-			interaction
-				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
+	let judging: EightBallResponse = match fetch_and_parse(
+		HTTP_CLIENT
+			.get("https://eightballapi.com/api/biased")
+			.query(&[("question", question.as_str()), ("lucky", "false")])
+			.send(),
+	)
+	.await
+	{
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply("Sometimes riding a giraffe is what you need")
 				.await?;
-
-			if interaction.data.custom_id.ends_with('n')
-				&& state.index < state.len.saturating_sub(1)
-			{
-				state.index = state.index.saturating_add(1);
-			} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-				state.index = state.index.saturating_sub(1);
-			}
-
-			embed = CreateEmbed::default().colour(COLOUR_ORANGE);
-			if let Some(gif) = gifs.get(state.index) {
-				embed = embed
-					.image(&gif.0, Some(Cow::Borrowed("The gif itself")))
-					.title(&gif.1);
-			}
-			final_embed = embed.clone();
-
-			action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
-				if state.index == 0 {
-					Cow::Borrowed(&buttons[1..])
-				} else if state.index == len.saturating_sub(1) {
-					Cow::Borrowed(&buttons[..1])
-				} else {
-					Cow::Borrowed(&buttons)
-				}
-			}))];
-
-			let mut msg = interaction.message;
-
-			msg.edit(
-				ctx.http(),
-				EditMessage::default().embed(embed).components(&action_row),
-			)
-			.await?;
+			return Err(err);
 		}
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.reply(true)
-					.embed(final_embed)
-					.components(&[]),
-			)
-			.await?;
-	} else {
-		let index = usize(..len);
-		if let Some(gif) = gifs.get(index) {
-			embed = embed
-				.image(&gif.0, Some(Cow::Borrowed("The gif itself")))
-				.title(&gif.1);
-		}
-		ctx.send(CreateReply::default().reply(true).embed(embed))
-			.await?;
-	}
+	};
+
+	let text = format!("# {question}\n{}", judging.reading);
+	let text_display = [text_display(&text)];
+
+	let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
+
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -789,7 +482,26 @@ pub async fn gif(
 	input: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	gif_internal(ctx, &input).await?;
+	let typing = ctx.defer_or_broadcast().await;
+	let gifs = get_gifs(ctx.serenity_context(), &input).await;
+
+	drop(typing);
+
+	paginate_container(
+		ctx,
+		&gifs,
+		Duration::from_mins(1),
+		|entry, _idx, _len| async move {
+			let text = format!("# {}", entry.1);
+			let display = vec![text_display(text)];
+			let image = media_gallery(&entry.0);
+			CreateContainer::new(display)
+				.add_component(image)
+				.accent_colour(Colour::ORANGE)
+		},
+	)
+	.await?;
+
 	Ok(())
 }
 
@@ -800,41 +512,13 @@ const ROASTS: &[&str] = &[
 	"get a life bitch",
 	"I don't like you",
 	"you smell",
+	"look at the mirror",
 ];
 
 #[derive(Deserialize)]
 struct JokeResponse {
 	#[serde(deserialize_with = "non_empty_string")]
 	joke: String,
-}
-
-async fn joke_internal(ctx: &SContext<'_>) -> AResult<()> {
-	let request_url =
-		"https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
-
-	let request = match HTTP_CLIENT.get(request_url).send().await {
-		Ok(resp) => resp,
-		Err(err) => {
-			ctx.reply("Look at the mirror").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	match request.json::<JokeResponse>().await {
-		Ok(data) => {
-			ctx.reply(&data.joke).await?;
-		}
-		Err(err) => {
-			let index = fastrand::usize(..ROASTS.len());
-			if let Some(roast) = ROASTS.get(index) {
-				ctx.reply(*roast).await?;
-			} else {
-				ctx.reply("No jokes now").await?;
-			}
-			return Err(HTTPError::Request(err).into());
-		}
-	}
-	Ok(())
 }
 
 /// When your life isn't fun anymore
@@ -846,227 +530,19 @@ async fn joke_internal(ctx: &SContext<'_>) -> AResult<()> {
 )]
 pub async fn joke(ctx: SContext<'_>) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	joke_internal(&ctx).await?;
-	Ok(())
-}
+	let request_url =
+		"https://api.humorapi.com/jokes/random?api-key=48c239c85f804a0387251d9b3587fa2c";
 
-async fn manga_internal(ctx: SContext<'_>, manga: &str) -> AResult<()> {
-	let typing = ctx.defer_or_broadcast().await;
-
-	let resp = match HTTP_CLIENT
-		.get("https://api.jikan.moe/v4/manga")
-		.query(&[("manga", manga), ("limit", "5")])
-		.send()
-		.await
-	{
-		Ok(resp) => resp,
+	match fetch_and_parse::<JokeResponse>(HTTP_CLIENT.get(request_url).send()).await {
+		Ok(data) => {
+			ctx.reply(&data.joke).await?;
+		}
 		Err(err) => {
-			ctx.reply("API down, get a life!").await?;
-			return Err(HTTPError::Request(err).into());
+			let index = fastrand::usize(..ROASTS.len());
+			ctx.reply(*ROASTS.get(index).unwrap()).await?;
+			return Err(err);
 		}
-	};
-	let data = match resp.json::<AniMangaResponse<MangaSpecific>>().await {
-		Ok(json) => json,
-		Err(err) => {
-			ctx.reply("Not worthy of looking up").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-	let first_entry = data.data.first().unwrap();
-
-	let empty = String::new();
-	let mut japanese_title = first_entry
-		.titles
-		.iter()
-		.find(|t| t.title_type == "Japanese")
-		.map_or("No japanese title available", |t| t.title.as_str());
-	let mut embed = CreateEmbed::default()
-		.title(japanese_title)
-		.thumbnail(
-			&first_entry.images.webp.image_url,
-			Some(Cow::Borrowed("Cover image of manga")),
-		)
-		.url(&first_entry.url)
-		.colour(COLOUR_ORANGE);
-	if let Some(synopsis) = &first_entry.synopsis {
-		embed = embed.description(format!("*{synopsis}*"));
 	}
-	embed = embed.field("Format", &first_entry.anime_type, true);
-	embed = embed.field("Status", &first_entry.status, true);
-	if let Some(english_title) = first_entry
-		.titles
-		.iter()
-		.find(|t| t.title_type == "English")
-		.map(|t| &t.title)
-	{
-		embed = embed.field("English title", english_title, true);
-	}
-	embed = embed.field("", &empty, false);
-	if let Some(score) = first_entry.score {
-		embed = embed.field("Score", score.to_string(), true);
-	}
-	if let Some(popularity) = first_entry.popularity {
-		embed = embed.field("Popularity", popularity.to_string(), true);
-	}
-	if let Some(favorites) = first_entry.favorites {
-		embed = embed.field("Favorites", favorites.to_string(), true);
-	}
-	embed = embed.field("", &empty, false);
-	if let Some(chapters) = first_entry.specific.chapters {
-		embed = embed.field("Chapters", chapters.to_string(), true);
-	}
-	if let Some(volumes) = first_entry.specific.volumes {
-		embed = embed.field("Volumes", volumes.to_string(), true);
-	}
-	if let Some(published) = &first_entry.specific.published.aired_string {
-		embed = embed.field("Published", published, true);
-	}
-	let mut genres_string = first_entry
-		.genres
-		.iter()
-		.map(|genre| genre.name.as_str())
-		.intersperse(" - ")
-		.collect::<String>();
-	embed = embed.field("Genres", genres_string, false);
-	let len = data.data.len();
-	if ctx.guild_id().is_some() && len > 1 {
-		drop(typing);
-		let mut state = State::new(ctx.id(), len);
-		let mut final_embed = embed.clone();
-		let buttons = [
-			CreateButton::new(&state.prev_id)
-				.style(ButtonStyle::Primary)
-				.label("⬅️"),
-			CreateButton::new(&state.next_id)
-				.style(ButtonStyle::Primary)
-				.label("➡️"),
-		];
-		let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-			&buttons[1..],
-		))];
-
-		let message = ctx
-			.send(
-				CreateReply::default()
-					.reply(true)
-					.embed(embed)
-					.components(&action_row),
-			)
-			.await?;
-
-		let ctx_id_str = ctx.id().to_string();
-
-		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_mins(1))
-			.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
-			.stream();
-
-		while let Some(interaction) = collector_stream.next().await {
-			interaction
-				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-				.await?;
-
-			if interaction.data.custom_id.ends_with('n')
-				&& state.index < state.len.saturating_sub(1)
-			{
-				state.index = state.index.saturating_add(1);
-			} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-				state.index = state.index.saturating_sub(1);
-			}
-
-			let Some(current_entry) = data.data.get(state.index) else {
-				warn!("Invalid manga index: {}", state.index);
-				continue;
-			};
-
-			japanese_title = current_entry
-				.titles
-				.iter()
-				.find(|t| t.title_type == "Japanese")
-				.map_or("No japanese title available", |t| t.title.as_str());
-			embed = CreateEmbed::default()
-				.title(japanese_title)
-				.thumbnail(
-					&current_entry.images.webp.image_url,
-					Some(Cow::Borrowed("Cover image of manga")),
-				)
-				.url(&current_entry.url)
-				.colour(COLOUR_ORANGE);
-
-			if let Some(synopsis) = &current_entry.synopsis {
-				embed = embed.description(format!("*{synopsis}*"));
-			}
-			embed = embed.field("Format", &current_entry.anime_type, true);
-			embed = embed.field("Status", &current_entry.status, true);
-			if let Some(english_title) = current_entry
-				.titles
-				.iter()
-				.find(|t| t.title_type == "English")
-				.map(|t| &t.title)
-			{
-				embed = embed.field("English title", english_title, true);
-			}
-			embed = embed.field("", &empty, false);
-			if let Some(score) = current_entry.score {
-				embed = embed.field("Score", score.to_string(), true);
-			}
-			if let Some(popularity) = current_entry.popularity {
-				embed = embed.field("Popularity", popularity.to_string(), true);
-			}
-			if let Some(favorites) = current_entry.favorites {
-				embed = embed.field("Favorites", favorites.to_string(), true);
-			}
-			embed = embed.field("", &empty, false);
-			if let Some(chapters) = current_entry.specific.chapters {
-				embed = embed.field("Chapters", chapters.to_string(), true);
-			}
-			if let Some(volumes) = current_entry.specific.volumes {
-				embed = embed.field("Volumes", volumes.to_string(), true);
-			}
-			if let Some(published) = &current_entry.specific.published.aired_string {
-				embed = embed.field("Published", published, true);
-			}
-			genres_string = current_entry
-				.genres
-				.iter()
-				.map(|genre| genre.name.as_str())
-				.intersperse(" - ")
-				.collect::<String>();
-			embed = embed.field("Genres", genres_string, false);
-			final_embed = embed.clone();
-
-			action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
-				if state.index == 0 {
-					Cow::Borrowed(&buttons[1..])
-				} else if state.index == len.saturating_sub(1) {
-					Cow::Borrowed(&buttons[..1])
-				} else {
-					Cow::Borrowed(&buttons)
-				}
-			}))];
-
-			let mut msg = interaction.message;
-
-			msg.edit(
-				ctx.http(),
-				EditMessage::default().embed(embed).components(&action_row),
-			)
-			.await?;
-		}
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.reply(true)
-					.embed(final_embed)
-					.components(&[]),
-			)
-			.await?;
-	} else {
-		ctx.send(CreateReply::default().reply(true).embed(embed))
-			.await?;
-	}
-
 	Ok(())
 }
 
@@ -1084,23 +560,55 @@ pub async fn manga(
 	manga: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	manga_internal(ctx, &manga).await?;
-	Ok(())
-}
 
-async fn memegen_internal(
-	ctx: &SContext<'_>,
-	top_left: &str,
-	top_right: &str,
-	bottom: &str,
-) -> AResult<()> {
-	let request_url = {
-		let encoded_left: String = byte_serialize(top_left.as_bytes()).collect();
-		let encoded_right: String = byte_serialize(top_right.as_bytes()).collect();
-		let encoded_bottom: String = byte_serialize(bottom.as_bytes()).collect();
-		format!("https://api.memegen.link/images/exit/{encoded_left}/{encoded_right}/{encoded_bottom}.png")
+	let typing = ctx.defer_or_broadcast().await;
+
+	let json: AniMangaResponse<MangaSpecific> = match fetch_and_parse(
+		HTTP_CLIENT
+			.get("https://api.jikan.moe/v4/manga")
+			.query(&[("q", manga.as_str()), ("limit", "5")])
+			.send(),
+	)
+	.await
+	{
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply("Not worthy of looking up").await?;
+			return Err(err);
+		}
 	};
-	ctx.reply(request_url).await?;
+
+	drop(typing);
+
+	paginate_container(
+		ctx,
+		&json.data,
+		Duration::from_mins(1),
+		|entry, _idx, _len| async move {
+			let description = entry.description();
+			let chapters = entry.specific.chapters.unwrap_or(0);
+			let volumes = entry.specific.volumes.unwrap_or(0);
+			let published = entry
+				.specific
+				.published
+				.aired_string
+				.as_ref()
+				.map_or("No date for release", |published| published);
+			let mut text = format!(
+				"{description}**Format:**\n{}\n**Status:**\n{}\n**Chapters:**\n{chapters}\n**\
+				 Volumes:**\n{volumes}\n**Published:**\n{published}",
+				entry.anime_type, entry.status
+			);
+			text.truncate(MESSAGE_LIMIT);
+			let thumbnail_section = vec![thumbnail_section(text, &entry.images.webp.image_url)];
+			let button = visit_page_button(&entry.url);
+			CreateContainer::new(thumbnail_section)
+				.add_component(button)
+				.accent_colour(Colour::ORANGE)
+		},
+	)
+	.await?;
+
 	Ok(())
 }
 
@@ -1117,7 +625,14 @@ pub async fn memegen(
 	#[description = "Bottom text"] bottom: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	memegen_internal(&ctx, &top_left, &top_right, &bottom).await?;
+	let request_url = {
+		let encoded_left: String = byte_serialize(top_left.as_bytes()).collect();
+		let encoded_right: String = byte_serialize(top_right.as_bytes()).collect();
+		let encoded_bottom: String = byte_serialize(bottom.as_bytes()).collect();
+		format!("https://api.memegen.link/images/exit/{encoded_left}/{encoded_right}/{encoded_bottom}.png")
+	};
+	ctx.reply(request_url).await?;
+
 	Ok(())
 }
 
@@ -1144,13 +659,13 @@ async fn roast_internal(
 	let content = resp.extract_content()?;
 
 	let mut text = format!("# Roasting {name}\n{content}");
-	text.truncate(4000);
+	text.truncate(MESSAGE_LIMIT);
 
 	let text_display = [text_display(&text)];
 
 	let container = CreateContainer::new(&text_display).accent_colour(Colour::RED);
 
-	send_container(ctx, container).await?;
+	ctx.send(reply_container(container)).await?;
 
 	Ok(())
 }
@@ -1301,12 +816,21 @@ struct TranslateRequest<'a> {
 	alternatives: u8,
 }
 
-async fn translate_internal(
+/// When you stumble on some ancient sayings
+#[poise::command(
+	prefix_command,
+	slash_command,
+	install_context = "Guild | User",
+	interaction_context = "Guild | PrivateChannel"
+)]
+pub async fn translate(
 	ctx: SContext<'_>,
-	target: Option<String>,
-	sentence: Option<String>,
-) -> AResult<()> {
+	#[description = "Language to be translated to, e.g. en"] target: Option<String>,
+	#[description = "What should be translated"] sentence: Option<String>,
+) -> Result<(), Error> {
+	command_permissions(&ctx).await?;
 	let typing = ctx.defer_or_broadcast().await;
+
 	let content = if let Some(query) = sentence {
 		query
 	} else if ctx.guild_id().is_some() {
@@ -1339,152 +863,43 @@ async fn translate_internal(
 	};
 	let translate_server = utils_config().fabseserver.translate.as_str();
 
-	let response = match HTTP_CLIENT
-		.post(translate_server)
-		.json(&request)
-		.send()
-		.await
-	{
-		Ok(resp) => resp,
-		Err(err) => {
-			ctx.reply("Too dangerous to translate").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let data = match response.json::<FabseTranslate>().await {
-		Ok(json) => json,
-		Err(err) => {
-			ctx.reply("Too dangerous to translate").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let mut embed = CreateEmbed::default()
-		.title(format!(
-			"Translation from {} to {target_lang} with {}% confidence",
-			data.detected_language.language, data.detected_language.confidence
-		))
-		.colour(COLOUR_GREEN)
-		.field("Original:", &content, false)
-		.field("Translation:", &data.translated_text, false);
-	let len = data.alternatives.len();
-	if ctx.guild_id().is_some() && len > 1 {
-		drop(typing);
-		let mut state = State::new(ctx.id(), len);
-		let mut final_embed = embed.clone();
-		let buttons = [
-			CreateButton::new(&state.prev_id)
-				.style(ButtonStyle::Primary)
-				.label("⬅️"),
-			CreateButton::new(&state.next_id)
-				.style(ButtonStyle::Primary)
-				.label("➡️"),
-		];
-		let mut action_row = [CreateComponent::ActionRow(CreateActionRow::buttons(
-			&buttons[1..],
-		))];
-
-		let message = ctx
-			.send(
-				CreateReply::default()
-					.reply(true)
-					.embed(embed)
-					.components(&action_row),
-			)
-			.await?;
-
-		let ctx_id_str = ctx.id().to_string();
-
-		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_mins(1))
-			.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
-			.stream();
-
-		while let Some(interaction) = collector_stream.next().await {
-			interaction
-				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-				.await?;
-
-			if interaction.data.custom_id.ends_with('n')
-				&& state.index < state.len.saturating_sub(1)
-			{
-				state.index = state.index.saturating_add(1);
-			} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-				state.index = state.index.saturating_sub(1);
+	let data: FabseTranslate =
+		match fetch_and_parse(HTTP_CLIENT.post(translate_server).json(&request).send()).await {
+			Ok(resp) => resp,
+			Err(err) => {
+				ctx.reply("Too dangerous to translate").await?;
+				return Err(err);
 			}
+		};
 
-			embed = CreateEmbed::default()
-				.title(format!(
-					"Translation from {} to {target_lang} with {}% confidence",
-					data.detected_language.language, data.detected_language.confidence
-				))
-				.colour(COLOUR_GREEN)
-				.field("Original:", &content, false)
-				.field(
-					"Translation:",
-					if state.index == 0 {
-						&data.translated_text
-					} else if let Some(alternative) =
-						data.alternatives.get(state.index.saturating_sub(1))
-					{
-						alternative
-					} else {
-						"rip"
-					},
-					false,
-				);
-			final_embed = embed.clone();
+	drop(typing);
 
-			action_row = [CreateComponent::ActionRow(CreateActionRow::Buttons({
-				if state.index == 0 {
-					Cow::Borrowed(&buttons[1..])
-				} else if state.index == len.saturating_sub(1) {
-					Cow::Borrowed(&buttons[..1])
-				} else {
-					Cow::Borrowed(&buttons)
-				}
-			}))];
+	let target_lang_clone = &target_lang;
+	let content_clone = &content;
+	let language_clone = &data.detected_language.language;
+	let translation_clone = &data.translated_text;
 
-			let mut msg = interaction.message;
+	paginate_container(
+		ctx,
+		&data.alternatives,
+		Duration::from_mins(1),
+		|entry, idx, _len| async move {
+			let mut text = format!(
+				"# Translation from {} to {} with {}% \
+				 confidence\n**Original:**\n{}\n**Translation:**\n{}",
+				target_lang_clone,
+				language_clone,
+				data.detected_language.confidence,
+				content_clone,
+				if idx == 0 { translation_clone } else { entry }
+			);
+			text.truncate(MESSAGE_LIMIT);
+			let display = vec![text_display(text)];
+			CreateContainer::new(display).accent_colour(Colour::DARK_GREEN)
+		},
+	)
+	.await?;
 
-			msg.edit(
-				ctx.http(),
-				EditMessage::default().embed(embed).components(&action_row),
-			)
-			.await?;
-		}
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.reply(true)
-					.embed(final_embed)
-					.components(&[]),
-			)
-			.await?;
-	} else {
-		ctx.send(CreateReply::default().reply(true).embed(embed))
-			.await?;
-	}
-
-	Ok(())
-}
-
-/// When you stumble on some ancient sayings
-#[poise::command(
-	prefix_command,
-	slash_command,
-	install_context = "Guild | User",
-	interaction_context = "Guild | PrivateChannel"
-)]
-pub async fn translate(
-	ctx: SContext<'_>,
-	#[description = "Language to be translated to, e.g. en"] target: Option<String>,
-	#[description = "What should be translated"] sentence: Option<String>,
-) -> Result<(), Error> {
-	command_permissions(&ctx).await?;
-	translate_internal(ctx, target, sentence).await?;
 	Ok(())
 }
 
@@ -1498,164 +913,6 @@ struct UrbanDict {
 	definition: String,
 	example: String,
 	word: String,
-}
-
-async fn urban_internal(ctx: SContext<'_>, input: &str) -> AResult<()> {
-	let typing = ctx.defer_or_broadcast().await;
-
-	let response = match HTTP_CLIENT
-		.get("https://api.urbandictionary.com/v0/define")
-		.query(&[("term", input)])
-		.send()
-		.await
-	{
-		Ok(resp) => resp,
-		Err(err) => {
-			ctx.reply(format!("**Like you, {input} don't exist**"))
-				.await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let data = match response.json::<UrbanResponse>().await {
-		Ok(json) => json,
-		Err(err) => {
-			ctx.reply(format!("**Like you, {input} don't exist**"))
-				.await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let first_entry = data.list.first().unwrap();
-
-	let mut text = format!(
-		"# {}\n**Definition:**\n{}\n\n**Example:**\n{}",
-		first_entry.word,
-		first_entry.definition.replace(['[', ']'], ""),
-		first_entry.example.replace(['[', ']'], "")
-	);
-	text.truncate(4000);
-
-	let display = [text_display(&text)];
-
-	let container = CreateContainer::new(&display).accent_colour(Colour::ROHRKATZE_BLUE);
-
-	let len = data.list.len();
-	if ctx.guild_id().is_some() && len > 1 {
-		drop(typing);
-		let mut state = State::new(ctx.id(), len);
-		let buttons = [
-			CreateButton::new(&state.prev_id)
-				.style(ButtonStyle::Primary)
-				.label("⬅️"),
-			CreateButton::new(&state.next_id)
-				.style(ButtonStyle::Primary)
-				.label("➡️"),
-		];
-		let action_row =
-			CreateContainerComponent::ActionRow(CreateActionRow::buttons(&buttons[1..]));
-
-		let updated_container = container
-			.add_component(separator())
-			.add_component(action_row);
-
-		let message = ctx
-			.send(
-				CreateReply::default()
-					.reply(true)
-					.flags(MessageFlags::IS_COMPONENTS_V2)
-					.components(&[CreateComponent::Container(updated_container)]),
-			)
-			.await?;
-
-		let ctx_id_str = ctx.id().to_string();
-
-		let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
-			.timeout(Duration::from_mins(5))
-			.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
-			.stream();
-
-		while let Some(interaction) = collector_stream.next().await {
-			interaction
-				.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
-				.await?;
-
-			if interaction.data.custom_id.ends_with('n')
-				&& state.index < state.len.saturating_sub(1)
-			{
-				state.index = state.index.saturating_add(1);
-			} else if interaction.data.custom_id.ends_with('p') && state.index > 0 {
-				state.index = state.index.saturating_sub(1);
-			}
-
-			let (current_word, current_definition, current_example) = data
-				.list
-				.get(state.index)
-				.map(|c| {
-					(
-						&c.word,
-						c.definition.replace(['[', ']'], ""),
-						c.example.replace(['[', ']'], ""),
-					)
-				})
-				.unwrap();
-
-			text = format!(
-				"# {current_word}\n**Definition:**\n{current_definition}
-				\n**Example:**\n{current_example}",
-			);
-			text.truncate(4000);
-
-			let display = [text_display(&text)];
-
-			let action_row = CreateContainerComponent::ActionRow(CreateActionRow::Buttons({
-				if state.index == 0 {
-					Cow::Borrowed(&buttons[1..])
-				} else if state.index == len.saturating_sub(1) {
-					Cow::Borrowed(&buttons[..1])
-				} else {
-					Cow::Borrowed(&buttons)
-				}
-			}));
-
-			let updated_container = CreateContainer::new(&display)
-				.add_component(separator())
-				.add_component(action_row)
-				.accent_colour(Colour::ROHRKATZE_BLUE);
-
-			let mut msg = interaction.message;
-
-			msg.edit(
-				ctx.http(),
-				EditMessage::default()
-					.components(&[CreateComponent::Container(updated_container)])
-					.flags(MessageFlags::IS_COMPONENTS_V2),
-			)
-			.await?;
-		}
-		let display = [text_display(&text)];
-
-		let final_container = CreateContainer::new(&display).accent_colour(Colour::ROHRKATZE_BLUE);
-
-		message
-			.edit(
-				ctx,
-				CreateReply::default()
-					.reply(true)
-					.components(&[CreateComponent::Container(final_container)]),
-			)
-			.await?;
-	} else {
-		ctx.send(
-			CreateReply::default()
-				.reply(true)
-				.components(&[CreateComponent::Container(container)])
-				.flags(MessageFlags::IS_COMPONENTS_V2),
-		)
-		.await?;
-	}
-
-	Ok(())
 }
 
 /// The holy moly urbandictionary
@@ -1672,13 +929,44 @@ pub async fn urban(
 	input: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	urban_internal(ctx, &input).await?;
-	Ok(())
-}
+	let typing = ctx.defer_or_broadcast().await;
 
-async fn waifu_internal(ctx: &SContext<'_>) -> AResult<()> {
-	let _typing = ctx.defer_or_broadcast().await;
-	ctx.reply(get_waifu(ctx.serenity_context()).await).await?;
+	let data: UrbanResponse = match fetch_and_parse(
+		HTTP_CLIENT
+			.get("https://api.urbandictionary.com/v0/define")
+			.query(&[("term", &input)])
+			.send(),
+	)
+	.await
+	{
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply(format!("**Like you, {input} don't exist**"))
+				.await?;
+			return Err(err);
+		}
+	};
+
+	drop(typing);
+
+	paginate_container(
+		ctx,
+		&data.list,
+		Duration::from_mins(5),
+		|entry, _idx, _len| async move {
+			let mut text = format!(
+				"# {}\n**Definition:**\n{}\n\n**Example:**\n{}",
+				entry.word,
+				entry.definition.replace(['[', ']'], ""),
+				entry.example.replace(['[', ']'], "")
+			);
+			text.truncate(MESSAGE_LIMIT);
+			let display = vec![text_display(text)];
+			CreateContainer::new(display).accent_colour(Colour::ROHRKATZE_BLUE)
+		},
+	)
+	.await?;
+
 	Ok(())
 }
 
@@ -1691,7 +979,9 @@ async fn waifu_internal(ctx: &SContext<'_>) -> AResult<()> {
 )]
 pub async fn waifu(ctx: SContext<'_>) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	waifu_internal(&ctx).await?;
+	let _typing = ctx.defer_or_broadcast().await;
+	ctx.reply(get_waifu(ctx.serenity_context()).await).await?;
+
 	Ok(())
 }
 
@@ -1719,47 +1009,6 @@ struct WikiUrl {
 	page: String,
 }
 
-async fn wiki_internal(ctx: &SContext<'_>, input: &str) -> AResult<()> {
-	let _typing = ctx.defer_or_broadcast().await;
-	let request_url = {
-		let encoded_input: String = byte_serialize(input.as_bytes()).collect();
-		format!("https://en.wikipedia.org/api/rest_v1/page/summary/{encoded_input}")
-	};
-
-	let request = match HTTP_CLIENT.get(request_url).send().await {
-		Ok(resp) => resp,
-		Err(err) => {
-			ctx.reply("Wikipedia not responding :/").await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let data = match request.json::<WikiResponse>().await {
-		Ok(data) => data,
-		Err(err) => {
-			ctx.reply(format!("**Like you, {input} don't exist**"))
-				.await?;
-			return Err(HTTPError::Request(err).into());
-		}
-	};
-
-	let button = visit_page_button(&data.content_urls.desktop.page);
-
-	let text = format!("# {}\n{}", data.title, data.extract);
-
-	let image = data.originalimage.map_or_else(|| "https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Wikipedia-logo-v2.svg/3840px-Wikipedia-logo-v2.svg.png".to_owned(), |i| i.source);
-
-	let thumbnail_section = [thumbnail_section(&text, &image)];
-
-	let container = CreateContainer::new(&thumbnail_section)
-		.add_component(button)
-		.accent_colour(Colour::DARK_GOLD);
-
-	send_container(ctx, container).await?;
-
-	Ok(())
-}
-
 /// The holy moly... wikipedia?
 #[poise::command(
 	prefix_command,
@@ -1774,6 +1023,31 @@ pub async fn wiki(
 	input: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	wiki_internal(&ctx, &input).await?;
+	let _typing = ctx.defer_or_broadcast().await;
+	let request_url = {
+		let encoded_input: String = byte_serialize(input.as_bytes()).collect();
+		format!("https://en.wikipedia.org/api/rest_v1/page/summary/{encoded_input}")
+	};
+
+	let data: WikiResponse = match fetch_and_parse(HTTP_CLIENT.get(request_url).send()).await {
+		Ok(resp) => resp,
+		Err(err) => {
+			ctx.reply(format!("**Like you, {input} don't exist**"))
+				.await?;
+			return Err(err);
+		}
+	};
+
+	let button = visit_page_button(&data.content_urls.desktop.page);
+	let text = format!("# {}\n{}", data.title, data.extract);
+	let image = data.originalimage.map_or_else(|| "https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Wikipedia-logo-v2.svg/3840px-Wikipedia-logo-v2.svg.png".to_owned(), |i| i.source);
+	let thumbnail_section = [thumbnail_section(&text, &image)];
+
+	let container = CreateContainer::new(&thumbnail_section)
+		.add_component(button)
+		.accent_colour(Colour::DARK_GOLD);
+
+	ctx.send(reply_container(container)).await?;
+
 	Ok(())
 }

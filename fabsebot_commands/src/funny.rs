@@ -16,7 +16,7 @@ use crate::command_permissions;
 pub async fn anonymous(
 	ctx: SContext<'_>,
 	#[description = "Message to send"]
-	#[rest]
+	#[max_length = 2000]
 	message: String,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
@@ -35,14 +35,25 @@ pub async fn anonymous(
 	slash_command,
 	install_context = "Guild",
 	interaction_context = "Guild",
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS",
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS",
 	owners_only
 )]
 pub async fn user_dm(
 	ctx: SContext<'_>,
 	#[description = "Target"] user: User,
-	#[description = "Message to send"] message: String,
+	#[description = "Message to send"]
+	#[max_length = 2000]
+	message: String,
 ) -> Result<(), Error> {
+	if user.bot() {
+		ctx.send(
+			CreateReply::default()
+				.content("... really, a bot?")
+				.ephemeral(true),
+		)
+		.await?;
+		return Ok(());
+	}
 	user.id
 		.direct_message(ctx.http(), CreateMessage::default().content(message))
 		.await?;
@@ -67,6 +78,7 @@ pub async fn user_misuse(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 	#[description = "Message to send"]
+	#[max_length = 2000]
 	#[rest]
 	message: String,
 ) -> Result<(), Error> {
