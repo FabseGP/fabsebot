@@ -145,7 +145,7 @@ pub struct Data {
 	pub app_emojis: Cache<EmojiId, Arc<Emoji>>,
 	pub state_tracker: AtomicBool,
 	pub lavalink_client: LavalinkClient,
-	pub track_signals: DashMap<u64, Sender<Option<TrackSignal>>>,
+	pub track_signals: DashMap<u64, Sender<TrackSignal>>,
 }
 
 pub type Error = AError;

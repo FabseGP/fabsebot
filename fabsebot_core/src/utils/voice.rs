@@ -139,7 +139,7 @@ pub struct PlaybackHandler {
 	bot_data: Arc<Data>,
 	guild_id: GuildId,
 	channel_id: GenericChannelId,
-	track_watch: Sender<Option<TrackSignal>>,
+	track_watch: Sender<TrackSignal>,
 }
 
 impl PlaybackHandler {
@@ -148,7 +148,7 @@ impl PlaybackHandler {
 		bot_data: Arc<Data>,
 		guild_id: GuildId,
 		channel_id: GenericChannelId,
-		track_watch: Sender<Option<TrackSignal>>,
+		track_watch: Sender<TrackSignal>,
 	) -> Self {
 		Self {
 			serenity_context,
@@ -388,7 +388,7 @@ impl PlaybackHandler {
 		&self,
 		track: TrackData,
 		song_play: GuildPlay,
-		mut receiver: Receiver<Option<TrackSignal>>,
+		mut receiver: Receiver<TrackSignal>,
 	) -> AResult<()> {
 		let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id) else {
 			return Ok(());
@@ -473,8 +473,8 @@ impl PlaybackHandler {
 						}
 						Ok(()) => {
 							match *receiver.borrow() {
-								Some(TrackSignal::Ended(uuid)) if uuid == track.track_uuid => break,
-								Some(TrackSignal::Disconnected) => break,
+								TrackSignal::Ended(uuid) if uuid == track.track_uuid => break,
+								TrackSignal::Disconnected => break,
 									_ => {}
 							}
 						}
@@ -523,10 +523,7 @@ impl VoiceEventHandler for PlaybackHandler {
 					});
 				}
 			} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
-				if let Err(err) = self
-					.track_watch
-					.send(Some(TrackSignal::Ended(handle.uuid())))
-				{
+				if let Err(err) = self.track_watch.send(TrackSignal::Ended(handle.uuid())) {
 					error!("Failed to broadcast track ending: {err}");
 				}
 			} else if let PlayMode::Errored(error) = &state.playing {
@@ -559,6 +556,7 @@ impl VoiceEventHandler for PlaybackHandler {
 pub enum TrackSignal {
 	Ended(Uuid),
 	Disconnected,
+	Connected,
 }
 
 pub async fn add_voice_events(
@@ -569,7 +567,7 @@ pub async fn add_voice_events(
 ) {
 	let mut handler = handler_lock.lock().await;
 
-	let (tx, _rx) = watch::channel::<Option<TrackSignal>>(None);
+	let (tx, _rx) = watch::channel::<TrackSignal>(TrackSignal::Connected);
 
 	let data: Arc<Data> = ctx.data();
 	data.track_signals.insert(guild_id.get(), tx.clone());
