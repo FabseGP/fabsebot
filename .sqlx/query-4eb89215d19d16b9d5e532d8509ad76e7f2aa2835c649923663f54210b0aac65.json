@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n    \tSELECT * FROM song_plays\n    \tWHERE track_uuid = $1\n        LIMIT 10\n    \t",
+  "query": "\n    \tSELECT DISTINCT ON (guild_id) * FROM song_plays\n    \tWHERE track_uuid = $1\n        LIMIT 10\n    \t",
   "describe": {
     "columns": [
       {
@@ -96,5 +96,5 @@
       false
     ]
   },
-  "hash": "d0011efbed2618b819bf4afe04a20af9c360483b08bce9cc55b05160e1129665"
+  "hash": "4eb89215d19d16b9d5e532d8509ad76e7f2aa2835c649923663f54210b0aac65"
 }
