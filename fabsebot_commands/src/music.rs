@@ -13,8 +13,8 @@ use fabsebot_core::{
 		ai::ai_voice,
 		helpers::{fetch_and_parse, non_empty_vec},
 		voice::{
-			get_configured_songbird_handler, lavalink_delete, lavalink_join, lavalink_play,
-			queue_song, remove_handler, try_voice, youtube_source,
+			TrackSignal, get_configured_songbird_handler, lavalink_delete, lavalink_join,
+			lavalink_play, queue_song, remove_handler, try_voice, youtube_source,
 		},
 	},
 };
@@ -324,6 +324,10 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	)
 	.execute(&ctx.data().db)
 	.await?;
+
+	if let Some((_, tx)) = ctx.data().track_signals.remove(&guild_id.get()) {
+		tx.send(Some(TrackSignal::Disconnected))?;
+	}
 
 	Ok(())
 }

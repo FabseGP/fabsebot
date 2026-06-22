@@ -5,3 +5,4 @@ perf.data.old
 flamegraph.svg
 profile.json
 .env
+.txt

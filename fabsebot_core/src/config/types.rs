@@ -16,11 +16,14 @@ use serenity::all::{
 use songbird::Songbird;
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch::Sender};
 
 use crate::{
 	config::settings::{APIConfig, HTTPAgent, ServerConfig},
-	utils::ai::{ContentPart, ToolCall},
+	utils::{
+		ai::{ContentPart, ToolCall},
+		voice::TrackSignal,
+	},
 };
 
 pub type WebhookMap = Cache<GenericChannelId, Webhook>;
@@ -142,6 +145,7 @@ pub struct Data {
 	pub app_emojis: Cache<EmojiId, Arc<Emoji>>,
 	pub state_tracker: AtomicBool,
 	pub lavalink_client: LavalinkClient,
+	pub track_signals: DashMap<u64, Sender<Option<TrackSignal>>>,
 }
 
 pub type Error = AError;

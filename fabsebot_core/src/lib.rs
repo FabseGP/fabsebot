@@ -14,6 +14,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult};
+use dashmap::DashMap;
 use lavalink_rs::model::UserId;
 use metrics::counter;
 use mini_moka::sync::Cache;
@@ -228,6 +229,7 @@ pub async fn bot_start(
 			.build(),
 		state_tracker: AtomicBool::new(true),
 		lavalink_client,
+		track_signals: DashMap::new(),
 	});
 	let additional_prefix: &'static str =
 		Box::leak(format!("hey {}", bot_config.username).into_boxed_str());
