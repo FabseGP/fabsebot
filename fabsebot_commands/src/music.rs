@@ -326,7 +326,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	.await?;
 
 	if let Some((_, tx)) = ctx.data().track_signals.remove(&guild_id.get()) {
-		tx.send(Some(TrackSignal::Disconnected))?;
+		tx.send(TrackSignal::Disconnected)?;
 	}
 
 	Ok(())

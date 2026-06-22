@@ -86,7 +86,7 @@ impl VoiceEventHandler for DriverDisconnectHandler {
 				.track_signals
 				.remove(&disconnect_data.guild_id.get())
 			{
-				tx.send(Some(TrackSignal::Disconnected)).ok()?;
+				tx.send(TrackSignal::Disconnected).ok()?;
 			}
 		}
 		None
