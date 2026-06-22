@@ -1,21 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\tSELECT * FROM guild_word_reaction\n\t\tWHERE guild_id = $1\n\t\tAND word ILIKE ANY($2)\n\t\t",
+  "query": "\n\t\tSELECT word, content, media, emoji_id, guild_emoji FROM guild_word_reaction\n\t\tWHERE guild_id = $1\n\t\tAND word ILIKE ANY($2)\n\t\t",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "guild_id",
-        "type_info": "Int8",
-        "origin": {
-          "Table": {
-            "table": "guild_word_reaction",
-            "name": "guild_id"
-          }
-        }
-      },
-      {
-        "ordinal": 1,
         "name": "word",
         "type_info": "Text",
         "origin": {
@@ -26,7 +15,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 1,
         "name": "content",
         "type_info": "Text",
         "origin": {
@@ -37,7 +26,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "media",
         "type_info": "Text",
         "origin": {
@@ -48,7 +37,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "emoji_id",
         "type_info": "Int8",
         "origin": {
@@ -59,7 +48,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "guild_emoji",
         "type_info": "Bool",
         "origin": {
@@ -78,12 +67,11 @@
     },
     "nullable": [
       false,
-      false,
       true,
       true,
       true,
       false
     ]
   },
-  "hash": "faa0567ab785bec2ff809be9cfdc350f1749aa9dfddc0cea129a3ee34404272a"
+  "hash": "c042331dd077d29c200b38f373bbb8ff76e72fcdf9e8e1cd01b5da80b5400bca"
 }

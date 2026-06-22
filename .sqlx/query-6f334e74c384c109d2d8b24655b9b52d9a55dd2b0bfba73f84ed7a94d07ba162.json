@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    \tINSERT INTO guild_settings (guild_id)\n    \tVALUES ($1)\n    \tON CONFLICT (guild_id) \n    \tDO UPDATE SET guild_id = guild_settings.guild_id \n    \tRETURNING spoiler_channel, ai_chat_channel, global_chat_channel,\n    \tmusic_channel, chatbot_role, global_chat\n    \t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "spoiler_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "spoiler_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "ai_chat_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "ai_chat_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "global_chat_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "global_chat_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "music_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "music_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "chatbot_role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "chatbot_role"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "global_chat",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "global_chat"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "6f334e74c384c109d2d8b24655b9b52d9a55dd2b0bfba73f84ed7a94d07ba162"
+}

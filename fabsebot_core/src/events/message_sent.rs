@@ -501,7 +501,7 @@ async fn user_queries(
 			let Some(mentioned_user_settings) = query_as!(
 				UserSettings,
 				r#"
-    			SELECT * from user_settings
+    			SELECT afk_reason, pinged_links, ping_content, ping_media, afk from user_settings
     			WHERE guild_id = $1
     			AND user_id = $2
     			AND (afk IS TRUE OR ping_content IS NOT NULL)
@@ -686,7 +686,7 @@ async fn db_queries(
 	let word_reactions = query_as!(
 		WordReactions,
 		r#"
-		SELECT * FROM guild_word_reaction
+		SELECT word, content, media, emoji_id, guild_emoji FROM guild_word_reaction
 		WHERE guild_id = $1
 		AND word ILIKE ANY($2)
 		"#,

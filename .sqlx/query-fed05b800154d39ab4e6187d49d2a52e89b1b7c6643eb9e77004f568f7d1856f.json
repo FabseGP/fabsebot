@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT requested_by, requested_channel, request_message_id\n        FROM song_plays\n        WHERE track_uuid = $1\n          AND guild_id = $2\n          AND requested_channel = $3\n        ORDER BY played_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "requested_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "requested_by"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "requested_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "requested_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "request_message_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "request_message_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "fed05b800154d39ab4e6187d49d2a52e89b1b7c6643eb9e77004f568f7d1856f"
+}

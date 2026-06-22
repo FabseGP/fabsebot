@@ -2,24 +2,12 @@ use anyhow::{Context as _, Result as AResult};
 use sqlx::{Pool, Postgres, Transaction, query, query_as};
 
 pub struct GuildSettings {
-	pub guild_id: i64,
-	pub dead_chat_channel: Option<i64>,
-	pub dead_chat_rate: Option<i64>,
-	pub last_dead_chat: Option<i64>,
-	pub quotes_channel: Option<i64>,
 	pub spoiler_channel: Option<i64>,
-	pub prefix: Option<String>,
 	pub ai_chat_channel: Option<i64>,
 	pub global_chat_channel: Option<i64>,
 	pub global_chat: bool,
-	pub global_music: bool,
-	pub global_call: bool,
 	pub music_channel: Option<i64>,
-	pub waifu_channel: Option<i64>,
-	pub waifu_rate: Option<i64>,
-	pub last_waifu: Option<i64>,
 	pub chatbot_role: Option<String>,
-	pub current_voice_channel: Option<i64>,
 }
 
 pub async fn set_music_channel(
@@ -88,7 +76,6 @@ pub async fn set_current_voice_channel(
 }
 
 pub struct WordReactions {
-	pub guild_id: i64,
 	pub word: String,
 	pub content: Option<String>,
 	pub media: Option<String>,
@@ -206,7 +193,8 @@ pub async fn insert_guild_settings(guild_id: i64, conn: &Pool<Postgres>) -> ARes
     	VALUES ($1)
     	ON CONFLICT (guild_id) 
     	DO UPDATE SET guild_id = guild_settings.guild_id 
-    	RETURNING *
+    	RETURNING spoiler_channel, ai_chat_channel, global_chat_channel,
+    	music_channel, chatbot_role, global_chat
     	"#,
 		guild_id
 	)

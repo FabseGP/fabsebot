@@ -2,9 +2,6 @@ use anyhow::Result as AResult;
 use sqlx::{Pool, Postgres, query, query_as};
 
 pub struct UserSettings {
-	pub guild_id: i64,
-	pub user_id: i64,
-	pub message_count: i32,
 	pub afk: bool,
 	pub afk_reason: Option<String>,
 	pub pinged_links: Option<String>,
@@ -40,7 +37,7 @@ pub async fn insert_user_settings(
    		VALUES ($1, $2, 1)
     	ON CONFLICT (guild_id, user_id) 
     	DO UPDATE SET message_count = user_settings.message_count + 1
-    	RETURNING *
+    	RETURNING afk_reason, pinged_links, ping_content, ping_media, afk
     	"#,
 		guild_id,
 		user_id

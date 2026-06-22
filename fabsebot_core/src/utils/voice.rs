@@ -389,6 +389,7 @@ impl PlaybackHandler {
 		track: TrackData,
 		song_play: GuildPlay,
 		mut receiver: Receiver<TrackSignal>,
+		track_uuid: Uuid,
 	) -> AResult<()> {
 		let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id) else {
 			return Ok(());
@@ -445,7 +446,7 @@ impl PlaybackHandler {
 			})
 			.stream();
 
-		let track_guilds = get_matching_guild_plays(track.track_uuid, &self.bot_data.db).await?;
+		let track_guilds = get_matching_guild_plays(track_uuid, &self.bot_data.db).await?;
 
 		loop {
 			select! {
@@ -473,7 +474,7 @@ impl PlaybackHandler {
 						}
 						Ok(()) => {
 							match *receiver.borrow() {
-								TrackSignal::Ended(uuid) if uuid == track.track_uuid => break,
+								TrackSignal::Ended(uuid) if uuid == track_uuid => break,
 								TrackSignal::Disconnected => break,
 									_ => {}
 							}
@@ -513,9 +514,10 @@ impl VoiceEventHandler for PlaybackHandler {
 				{
 					let self_clone = self.clone();
 					let track_end_rx = self_clone.track_watch.subscribe();
+					let track_uuid = handle.uuid();
 					spawn(async move {
 						if let Err(err) = self_clone
-							.update_info(guild_track, song_play, track_end_rx)
+							.update_info(guild_track, song_play, track_end_rx, track_uuid)
 							.await
 						{
 							error!("Failed to update song info: {err}");
@@ -788,21 +790,19 @@ pub async fn insert_track(metadata: AuxMetadata, uuid: Uuid, conn: &Pool<Postgre
 }
 
 pub struct TrackData {
-	pub track_uuid: Uuid,
 	pub title: Option<String>,
 	pub artist: Option<String>,
 	pub source_url: Option<String>,
 	pub duration_sec: Option<i64>,
 	pub thumbnail_url: Option<String>,
-	pub last_seen: OffsetDateTime,
-	pub first_seen: OffsetDateTime,
 }
 
 pub async fn get_track(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<TrackData> {
 	let track = query_as!(
 		TrackData,
 		r#"
-    	SELECT * FROM tracks
+    	SELECT title, artist, source_url, duration_sec, thumbnail_url
+    	FROM tracks
     	WHERE track_uuid = $1
     	"#,
 		uuid,
@@ -861,13 +861,9 @@ impl DBUserIDExt for DBUserID {
 }
 
 pub struct GuildPlay {
-	pub play_id: i64,
-	pub track_uuid: Uuid,
-	pub guild_id: i64,
 	pub requested_by: DBUserID,
 	pub requested_channel: i64,
 	pub request_message_id: i64,
-	pub played_at: OffsetDateTime,
 }
 
 pub async fn get_guild_play(
@@ -879,7 +875,8 @@ pub async fn get_guild_play(
 	let track = query_as!(
 		GuildPlay,
 		r#"
-        SELECT * FROM song_plays
+        SELECT requested_by, requested_channel, request_message_id
+        FROM song_plays
         WHERE track_uuid = $1
           AND guild_id = $2
           AND requested_channel = $3
@@ -912,15 +909,10 @@ pub async fn get_matching_guild_plays(uuid: Uuid, conn: &Pool<Postgres>) -> ARes
 }
 
 pub struct ChannelPlayHistory {
-	pub play_id: i64,
 	pub played_at: OffsetDateTime,
 	pub requested_by: DBUserID,
-	pub track_uuid: Uuid,
 	pub title: Option<String>,
-	pub artist: Option<String>,
 	pub source_url: Option<String>,
-	pub duration_sec: Option<i64>,
-	pub thumbnail_url: Option<String>,
 }
 
 pub async fn get_queue_history(
@@ -931,15 +923,10 @@ pub async fn get_queue_history(
 		ChannelPlayHistory,
 		r#"
         SELECT 
-            sp.play_id,
             sp.played_at,
             sp.requested_by,
-            t.track_uuid,
             t.title,
-            t.artist,
-            t.source_url,
-            t.duration_sec,
-            t.thumbnail_url
+            t.source_url
         FROM song_plays sp
         JOIN tracks t ON sp.track_uuid = t.track_uuid
         WHERE sp.requested_channel = $1

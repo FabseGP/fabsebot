@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    \tINSERT INTO user_settings (guild_id, user_id, message_count)\n   \t\tVALUES ($1, $2, 1)\n    \tON CONFLICT (guild_id, user_id) \n    \tDO UPDATE SET message_count = user_settings.message_count + 1\n    \tRETURNING afk_reason, pinged_links, ping_content, ping_media, afk\n    \t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "afk_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "afk_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pinged_links",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "pinged_links"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "ping_content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "ping_content"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "ping_media",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "ping_media"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "afk",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "afk"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "a82a3055fad1951bab2d46b9697cadadf27fe895eb07fd1fddb431ef4432a16e"
+}

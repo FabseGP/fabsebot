@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    \t\t\tSELECT afk_reason, pinged_links, ping_content, ping_media, afk from user_settings\n    \t\t\tWHERE guild_id = $1\n    \t\t\tAND user_id = $2\n    \t\t\tAND (afk IS TRUE OR ping_content IS NOT NULL)\n    \t\t\t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "afk_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "afk_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pinged_links",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "pinged_links"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "ping_content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "ping_content"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "ping_media",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "ping_media"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "afk",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "afk"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "eac8f59cce6bcc1294ac5ca0efc2a4832674c3beac02b847b6a9fb94637eb9cf"
+}
