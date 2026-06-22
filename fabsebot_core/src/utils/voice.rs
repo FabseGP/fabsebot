@@ -29,7 +29,7 @@ use songbird::{
 	input::{AudioStream, AuxMetadata, Input, LiveInput, YoutubeDl},
 	tracks::{PlayMode, Track},
 };
-use sqlx::{Pool, Postgres, query, query_as, types::time::OffsetDateTime};
+use sqlx::{Pool, Postgres, query, query_as, query_scalar, types::time::OffsetDateTime};
 use symphonia::core::io::MediaSource;
 use tokio::{
 	select, spawn,
@@ -207,7 +207,7 @@ impl PlaybackHandler {
 		history_shown: &mut bool,
 		history_container: &mut Option<CreateContainer<'a>>,
 		track: &TrackData,
-		track_guilds: &Vec<GuildPlay>,
+		track_guilds: &Vec<i64>,
 		container: &CreateContainer<'a>,
 		action_row: &CreateContainerComponent<'a>,
 		requested_channel: i64,
@@ -222,14 +222,14 @@ impl PlaybackHandler {
 			if queue.len() > 1 {
 				queue.skip()?;
 				drop(handler);
-				for guild in track_guilds {
-					if guild.guild_id == i64::from(self.guild_id) {
+				for guild_id in track_guilds {
+					if *guild_id == i64::from(self.guild_id) {
 						continue;
 					}
 					if let Some(handler_lock) = self
 						.bot_data
 						.music_manager
-						.get(GuildId::from(guild.guild_id.cast_unsigned()))
+						.get(GuildId::from(guild_id.cast_unsigned()))
 					{
 						get_configured_songbird_handler(&handler_lock)
 							.await
@@ -239,13 +239,13 @@ impl PlaybackHandler {
 				}
 			}
 		} else if interaction.data.custom_id.ends_with('p') {
-			for guild in track_guilds {
-				let handler_lock = if guild.guild_id == i64::from(self.guild_id) {
+			for guild_id in track_guilds {
+				let handler_lock = if *guild_id == i64::from(self.guild_id) {
 					handler_lock.clone()
 				} else if let Some(handler_lock) = self
 					.bot_data
 					.music_manager
-					.get(GuildId::new(guild.guild_id.cast_unsigned()))
+					.get(GuildId::new(guild_id.cast_unsigned()))
 				{
 					handler_lock
 				} else {
@@ -274,13 +274,13 @@ impl PlaybackHandler {
 				}
 			}
 		} else if interaction.data.custom_id.ends_with('c') {
-			for guild in track_guilds {
-				let handler_lock = if guild.guild_id == i64::from(self.guild_id) {
+			for guild_id in track_guilds {
+				let handler_lock = if *guild_id == i64::from(self.guild_id) {
 					handler_lock.clone()
 				} else if let Some(handler_lock) = self
 					.bot_data
 					.music_manager
-					.get(GuildId::new(guild.guild_id.cast_unsigned()))
+					.get(GuildId::new(guild_id.cast_unsigned()))
 				{
 					handler_lock
 				} else {
@@ -878,14 +878,10 @@ pub async fn get_guild_play(
 	Ok(track)
 }
 
-pub async fn get_matching_guild_plays(
-	uuid: Uuid,
-	conn: &Pool<Postgres>,
-) -> AResult<Vec<GuildPlay>> {
-	let track_guilds = query_as!(
-		GuildPlay,
+pub async fn get_matching_guild_plays(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<Vec<i64>> {
+	let track_guilds = query_scalar!(
 		r#"
-    	SELECT DISTINCT ON (guild_id) * FROM song_plays
+    	SELECT DISTINCT guild_id FROM song_plays
     	WHERE track_uuid = $1
         LIMIT 10
     	"#,

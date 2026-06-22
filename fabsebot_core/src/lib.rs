@@ -14,7 +14,6 @@ use std::{
 };
 
 use anyhow::{Context as _, Result as AResult};
-use fabsebot_db::guild::GuildSettings;
 use lavalink_rs::model::UserId;
 use metrics::counter;
 use mini_moka::sync::Cache;
@@ -27,7 +26,7 @@ use serenity::{
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
-use sqlx::{Pool, Postgres, query, query_as};
+use sqlx::{Pool, Postgres, query};
 use tokio::{
 	select,
 	signal::unix::{SignalKind, signal},
@@ -109,10 +108,11 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 		};
 		let now_timestamp = system_time.cast_signed();
 
-		let guilds = match query_as!(
-			GuildSettings,
+		let guilds = match query!(
 			r#"
-			SELECT * FROM guild_settings
+			SELECT guild_id, last_waifu, waifu_rate, waifu_channel,
+			last_dead_chat, dead_chat_rate, dead_chat_channel
+			FROM guild_settings
 			WHERE waifu_channel IS NOT NULL
 			OR dead_chat_channel IS NOT NULL
 			"#

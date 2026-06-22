@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\tSELECT guild_id, last_waifu, waifu_rate, waifu_channel,\n\t\t\tlast_dead_chat, dead_chat_rate, dead_chat_channel\n\t\t\tFROM guild_settings\n\t\t\tWHERE waifu_channel IS NOT NULL\n\t\t\tOR dead_chat_channel IS NOT NULL\n\t\t\t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "guild_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "guild_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "last_waifu",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "last_waifu"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "waifu_rate",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "waifu_rate"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "waifu_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "waifu_channel"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "last_dead_chat",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "last_dead_chat"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "dead_chat_rate",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "dead_chat_rate"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "dead_chat_channel",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "guild_settings",
+            "name": "dead_chat_channel"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3e368fba22f4565ced072b4f8db6e381b435d32097098086095f8d1c417511f7"
+}

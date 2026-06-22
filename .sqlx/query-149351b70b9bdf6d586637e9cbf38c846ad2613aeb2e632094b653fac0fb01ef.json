@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    \tSELECT DISTINCT guild_id FROM song_plays\n    \tWHERE track_uuid = $1\n        LIMIT 10\n    \t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "guild_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "guild_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "149351b70b9bdf6d586637e9cbf38c846ad2613aeb2e632094b653fac0fb01ef"
+}
