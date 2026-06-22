@@ -178,6 +178,7 @@ All notable changes to this project will be documented in this file.
 - Reduce db payload
 - Cleanup unattended voice calls
 - Remove option on tracksignal
+- Missed some...
 
 ### 💼 Other
 
@@ -247,6 +248,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Sqlx prepare...
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
