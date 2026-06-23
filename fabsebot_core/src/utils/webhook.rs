@@ -65,12 +65,7 @@ pub async fn spoiler_message(
 		let Some(avatar_url) = message.author.avatar_url() else {
 			bail!("Avatar not found");
 		};
-		let webhook = match webhook_find(ctx, message.guild_id, message.channel_id, data).await {
-			Ok(webhook) => webhook,
-			Err(err) => {
-				bail!(err);
-			}
-		};
+		let webhook = webhook_find(ctx, message.guild_id, message.channel_id, data).await?;
 		let username = message.author.display_name();
 		for (i, payload) in message.attachments.iter().enumerate() {
 			let download_bytes = match HTTP_CLIENT

@@ -12,9 +12,9 @@ use fabsebot_core::{
 	utils::{
 		ai::{ContentPart, ai_response, image_content, uri_content, user_roles_pfp},
 		helpers::{
-			fetch_and_parse, get_gifs, get_waifu, media_gallery, non_empty_string, non_empty_vec,
-			paginate_container, reply_container, text_display, thumbnail_section, true_bool,
-			user_banner, user_pfp, visit_page_button,
+			fetch_and_parse, get_gifs, get_waifu, media_gallery, member_pfp, non_empty_string,
+			non_empty_vec, paginate_container, reply_container, text_display, thumbnail_section,
+			true_bool, user_banner, visit_page_button,
 		},
 	},
 };
@@ -684,7 +684,9 @@ pub async fn roast_user(
 
 	let mut chat_vec = Vec::with_capacity(3);
 
-	uri_content(&user_pfp(&user), &mut chat_vec).await?;
+	if let Some(avatar) = user.avatar_url() {
+		uri_content(&avatar, &mut chat_vec).await?;
+	}
 	if let Some(banner) = &user_banner(ctx.http(), user.id).await {
 		uri_content(banner, &mut chat_vec).await?;
 	}
@@ -715,13 +717,14 @@ pub async fn roast(
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
+	let avatar_url = member_pfp(&ctx, &member).await?;
 	let _typing = ctx.defer_or_broadcast().await;
 
 	let mut chat_vec = Vec::with_capacity(3);
 
 	let roles = user_roles_pfp(
 		&member.roles(ctx.cache()).unwrap_or_default(),
-		&member,
+		&avatar_url,
 		&mut chat_vec,
 	)
 	.await?;

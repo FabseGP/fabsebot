@@ -448,6 +448,7 @@ pub async fn set_afk(
 	ctx: SContext<'_>,
 	#[description = "Reason for afk"] reason: Option<String>,
 ) -> Result<(), Error> {
+	let avatar_url = user_pfp(&ctx, ctx.author()).await?;
 	let guild_id = require_guild_id(ctx).await?;
 	let guild_id_i64 = i64::from(guild_id);
 	let user_id_i64 = i64::from(ctx.author().id);
@@ -470,8 +471,6 @@ pub async fn set_afk(
 		.as_deref()
 		.unwrap_or("Didn't renew life subscription");
 	let user_name = ctx.author().display_name();
-
-	let avatar_url = user_pfp(ctx.author());
 
 	let title = format!("# {user_name} killed!");
 	let thumbnail_section = [thumbnail_section(&title, &avatar_url)];

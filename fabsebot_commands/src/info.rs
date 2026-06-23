@@ -98,6 +98,7 @@ pub async fn user_info(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
+	let avatar_url = member_pfp(&ctx, &member).await?;
 	let username = if let Some(nick) = member.nick.as_ref() {
 		format!(
 			"# {nick} (aká {})\n ID: {}",
@@ -107,9 +108,7 @@ pub async fn user_info(
 		format!("# {}\n ID: {}", member.display_name(), member.user.id)
 	};
 
-	let avatar = member_pfp(&member);
-
-	let thumbnail_section = [thumbnail_section(&username, &avatar)];
+	let thumbnail_section = [thumbnail_section(&username, &avatar_url)];
 
 	let premium_type = match member.user.premium_type {
 		PremiumType::NitroBasic => "Basic nitro",

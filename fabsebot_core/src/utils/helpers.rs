@@ -68,15 +68,17 @@ pub async fn correct_permissions(
 	required_permissions: Permissions,
 ) -> AResult<()> {
 	let Some(Some(channel)) = ctx.channel().await.map(Channel::guild) else {
-		ctx.reply("Couldn't fetch channel :/").await?;
-		bail!("Failed to fetch channel");
+		let msg = "Couldn't fetch channel :/";
+		ctx.reply(msg).await?;
+		bail!(msg);
 	};
 
 	let bot_member = match guild_id.member(ctx.http(), ctx.framework().bot_id()).await {
 		Ok(member) => member,
 		Err(err) => {
-			ctx.reply("Couldn't fetch bot member :/").await?;
-			bail!("Failed to fetch bot member: {err}");
+			let msg = "Couldn't fetch bot member :/";
+			ctx.reply(msg).await?;
+			bail!("{msg}: {err}");
 		}
 	};
 
@@ -87,12 +89,11 @@ pub async fn correct_permissions(
 
 	if !bot_permissions.contains(required_permissions) {
 		let missing_permissions = (!bot_permissions) & required_permissions;
-		ctx.reply(format!(
+		let msg = format!(
 			"I'm missing these required permissions in this channel: {missing_permissions}"
-		))
-		.await?;
-
-		bail!("Bot doesn't have required permissions: {missing_permissions}");
+		);
+		ctx.reply(&msg).await?;
+		bail!("{msg}");
 	}
 
 	Ok(())
@@ -470,20 +471,22 @@ pub fn discord_emoji(input: &mut &str) -> ModalResult<DiscordEmoji> {
 	})
 }
 
-#[must_use]
-pub fn member_pfp(member: &Member) -> String {
-	member.avatar_url().unwrap_or_else(|| {
-		member
-			.user
-			.avatar_url()
-			.unwrap_or_else(|| member.user.default_avatar_url())
-	})
+pub async fn member_pfp(ctx: &SContext<'_>, member: &Member) -> AResult<String> {
+	let Some(avatar_url) = member.avatar_url().or_else(|| member.user.avatar_url()) else {
+		let msg = "Failed to fetch member avatar :/";
+		ctx.reply(msg).await?;
+		bail!("{msg}");
+	};
+	Ok(avatar_url)
 }
 
-#[must_use]
-pub fn user_pfp(user: &User) -> String {
-	user.avatar_url()
-		.unwrap_or_else(|| user.default_avatar_url())
+pub async fn user_pfp(ctx: &SContext<'_>, user: &User) -> AResult<String> {
+	let Some(avatar_url) = user.avatar_url() else {
+		let msg = "Failed to fetch user avatar :/";
+		ctx.reply(msg).await?;
+		bail!("{msg}");
+	};
+	Ok(avatar_url)
 }
 
 pub async fn user_banner(http: &Http, user_id: UserId) -> Option<String> {

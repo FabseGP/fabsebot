@@ -82,6 +82,7 @@ pub async fn user_misuse(
 	#[rest]
 	message: String,
 ) -> Result<(), Error> {
+	let avatar_url = member_pfp(&ctx, &member).await?;
 	let webhook = match webhook_find(
 		ctx.serenity_context(),
 		ctx.guild_id(),
@@ -107,7 +108,6 @@ pub async fn user_misuse(
 			.ephemeral(true),
 	)
 	.await?;
-	let avatar_url = member_pfp(&member);
 	webhook
 		.execute(
 			ctx.http(),

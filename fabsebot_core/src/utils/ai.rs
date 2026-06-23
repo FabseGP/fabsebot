@@ -7,7 +7,7 @@ use jiff::{Timestamp, tz::TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use serenity::{
-	all::{Context as SContext, GenericChannelId, GuildId, Http, Member, Message, MessageId, Role},
+	all::{Context as SContext, GenericChannelId, GuildId, Http, Message, MessageId, Role},
 	nonmax::NonMaxU16,
 	small_fixed_array::FixedString,
 };
@@ -23,7 +23,7 @@ use crate::{
 	utils::{
 		helpers::{
 			discord_message_link, encode_image, fetch_and_parse, get_gif, get_waifu, image_uri,
-			member_pfp, non_empty_vec, user_roles_joined,
+			non_empty_vec, user_roles_joined,
 		},
 		voice::get_configured_songbird_handler,
 	},
@@ -95,10 +95,10 @@ pub async fn uri_content(avatar_url: &str, chat_vec: &mut Vec<ContentPart>) -> A
 
 pub async fn user_roles_pfp(
 	roles: &[Role],
-	member: &Member,
+	avatar_url: &str,
 	chat_vec: &mut Vec<ContentPart>,
 ) -> AResult<String> {
-	uri_content(&member_pfp(member), chat_vec).await?;
+	uri_content(avatar_url, chat_vec).await?;
 	Ok(user_roles_joined(roles))
 }
 
@@ -384,8 +384,9 @@ async fn tool_calling(
 					.search_members(&ctx.http, &args.query, NonMaxU16::new(1))
 					.await && let Some(member) = members.first()
 					&& let Some(roles) = member.roles(&ctx.cache)
+					&& let Some(avatar) = member.avatar_url().or_else(|| member.user.avatar_url())
 				{
-					let roles_joined = user_roles_pfp(&roles, member, &mut chat_vec).await?;
+					let roles_joined = user_roles_pfp(&roles, &avatar, &mut chat_vec).await?;
 					let username = member.display_name();
 					format!(
 						"{username} has the following roles: {roles_joined}. The user joined this \

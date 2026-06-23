@@ -35,7 +35,7 @@ use tokio::{
 	select, spawn,
 	sync::{
 		Mutex, MutexGuard,
-		watch::{self, Receiver, Sender},
+		watch::{self, Receiver},
 	},
 	time::sleep,
 };
@@ -139,7 +139,6 @@ pub struct PlaybackHandler {
 	bot_data: Arc<Data>,
 	guild_id: GuildId,
 	channel_id: GenericChannelId,
-	track_watch: Sender<TrackSignal>,
 }
 
 impl PlaybackHandler {
@@ -148,14 +147,12 @@ impl PlaybackHandler {
 		bot_data: Arc<Data>,
 		guild_id: GuildId,
 		channel_id: GenericChannelId,
-		track_watch: Sender<TrackSignal>,
 	) -> Self {
 		Self {
 			serenity_context,
 			bot_data,
 			guild_id,
 			channel_id,
-			track_watch,
 		}
 	}
 
@@ -513,11 +510,17 @@ impl VoiceEventHandler for PlaybackHandler {
 					.await
 				{
 					let self_clone = self.clone();
-					let track_end_rx = self_clone.track_watch.subscribe();
+					let track_watch = self
+						.bot_data
+						.track_signals
+						.get(&self.guild_id.get())
+						.unwrap()
+						.value()
+						.subscribe();
 					let track_uuid = handle.uuid();
 					spawn(async move {
 						if let Err(err) = self_clone
-							.update_info(guild_track, song_play, track_end_rx, track_uuid)
+							.update_info(guild_track, song_play, track_watch, track_uuid)
 							.await
 						{
 							error!("Failed to update song info: {err}");
@@ -525,7 +528,12 @@ impl VoiceEventHandler for PlaybackHandler {
 					});
 				}
 			} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
-				if let Err(err) = self.track_watch.send(TrackSignal::Ended(handle.uuid())) {
+				let track_watch = self
+					.bot_data
+					.track_signals
+					.get(&self.guild_id.get())
+					.unwrap();
+				if let Err(err) = track_watch.value().send(TrackSignal::Ended(handle.uuid())) {
 					error!("Failed to broadcast track ending: {err}");
 				}
 			} else if let PlayMode::Errored(error) = &state.playing {
@@ -572,19 +580,19 @@ pub async fn add_voice_events(
 	let (tx, _rx) = watch::channel::<TrackSignal>(TrackSignal::Connected);
 
 	let data: Arc<Data> = ctx.data();
-	data.track_signals.insert(guild_id.get(), tx.clone());
+	data.track_signals.insert(guild_id.get(), tx);
 
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Playable),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, tx.clone()),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::End),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, tx.clone()),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Error),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, tx),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Core(CoreEvent::DriverDisconnect),
@@ -698,7 +706,7 @@ pub async fn voice_channel_id(ctx: SContext<'_>) -> AResult<ChannelId> {
 			.and_then(|voice_state| voice_state.channel_id)
 	}) else {
 		ctx.reply(EMPTY_VOICE_CHAN_MSG).await?;
-		bail!("User tried to join in empty voice channel");
+		bail!(EMPTY_VOICE_CHAN_MSG);
 	};
 
 	Ok(channel_id)
@@ -720,22 +728,16 @@ pub async fn try_voice(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mute
 	let handler_lock = if let Some(lock) = ctx.data().music_manager.get(guild_id) {
 		lock
 	} else {
-		match voice_channel(ctx, guild_id).await {
-			Ok(lock) => {
-				join_container(&ctx).await?;
-				add_voice_events(
-					ctx.serenity_context(),
-					guild_id,
-					ctx.channel_id(),
-					lock.clone(),
-				)
-				.await;
-				lock
-			}
-			Err(voice_err) => {
-				bail!("{voice_err}");
-			}
-		}
+		let handler_lock = voice_channel(ctx, guild_id).await?;
+		join_container(&ctx).await?;
+		add_voice_events(
+			ctx.serenity_context(),
+			guild_id,
+			ctx.channel_id(),
+			handler_lock.clone(),
+		)
+		.await;
+		handler_lock
 	};
 
 	set_current_voice_channel(

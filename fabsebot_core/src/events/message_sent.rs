@@ -33,7 +33,7 @@ use crate::{
 		ai::ai_chatbot,
 		helpers::{
 			channel_counter, discord_message_link, edit_message_container, get_gif, get_waifu,
-			media_gallery, message_container, separator, text_display, thumbnail_section, user_pfp,
+			media_gallery, message_container, separator, text_display, thumbnail_section,
 		},
 		voice::{add_voice_events, queue_song, youtube_source},
 		webhook::{spoiler_message, webhook_find},
@@ -270,6 +270,7 @@ async fn global_chats(
 	if let Some(global_chat_channel) = channel_id
 		&& i64::from(new_message.channel_id) == global_chat_channel
 		&& global_chat
+		&& let Some(avatar) = new_message.author.avatar_url()
 	{
 		channel_counter("global_chat".to_owned());
 		let guild_global_chats = query!(
@@ -322,7 +323,7 @@ async fn global_chats(
 				};
 				let mut message = ExecuteWebhook::default()
 					.username(new_message.author.display_name())
-					.avatar_url(user_pfp(&new_message.author))
+					.avatar_url(&avatar)
 					.content(content);
 				for attachment in new_message
 					.attachments
@@ -341,11 +342,13 @@ async fn global_chats(
 				if let Some(replied_message) = &new_message.referenced_message {
 					let mut embed = CreateEmbed::default()
 						.description(replied_message.content.as_str())
-						.author(
-							CreateEmbedAuthor::new(replied_message.author.display_name())
-								.icon_url(user_pfp(&replied_message.author)),
-						)
 						.timestamp(new_message.timestamp);
+					if let Some(avatar) = replied_message.author.avatar_url() {
+						embed = embed.author(
+							CreateEmbedAuthor::new(replied_message.author.display_name())
+								.icon_url(avatar),
+						);
+					}
 					if let Some(attachment) = replied_message.attachments.first() {
 						embed = embed.image(
 							attachment.url.as_str(),
@@ -387,8 +390,9 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 			&& let Some(channel_name) = channel.guild().map(|g| g.base.name)
 		{
 			let ref_msg = channel_id.message(&ctx.http, message_id).await?;
-			if ref_msg.poll.is_none() {
-				let author_avatar = user_pfp(&ref_msg.author);
+			if ref_msg.poll.is_none()
+				&& let Some(author_avatar) = ref_msg.author.avatar_url()
+			{
 				let thumbnail_display = [thumbnail_section(
 					ref_msg.author.display_name(),
 					&author_avatar,
