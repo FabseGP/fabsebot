@@ -9,7 +9,10 @@ use serenity::all::{
 	LabelComponent, ModalComponent, ModalInteraction, Webhook,
 };
 
-use crate::{config::types::utils_config, utils::webhook::webhook_components};
+use crate::{
+	config::types::utils_config,
+	utils::{helpers::text_display, webhook::webhook_components},
+};
 
 pub const FEEDBACK_BUTTON_CUSTOM_ID: &str = "feedback-modal-button";
 pub const FEEDBACK_MODAL_CUSTOM_ID: &str = "feedback-modal";
@@ -60,18 +63,14 @@ pub async fn handle_feedback_modal_reply(
 	};
 
 	let webhook = Webhook::from_url(&ctx.http, &utils_config().feedback_webhook).await?;
-	let components = [
-		CreateComponent::Container(CreateContainer::new(vec![
-			CreateContainerComponent::TextDisplay(CreateTextDisplay::new(format!(
-				"# New feedback received\nAuthor ID: {}\nGuild ID: {}",
-				interaction.user.id.get(),
-				guild_id.get()
-			))),
-		])),
-		CreateComponent::Container(CreateContainer::new(vec![
-			CreateContainerComponent::TextDisplay(CreateTextDisplay::new(user_text)),
-		])),
-	];
+	let text = format!(
+		"# New feedback received\n**Author ID:** {}\n**Guild ID:** {}\n{user_text}",
+		interaction.user.id.get(),
+		guild_id.get()
+	);
+	let components = [CreateComponent::Container(CreateContainer::new(vec![
+		text_display(text),
+	]))];
 
 	webhook_components(webhook, ctx, &components).await?;
 

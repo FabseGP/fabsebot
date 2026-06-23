@@ -1,7 +1,10 @@
 use anyhow::{Result as AResult, anyhow};
-use serenity::all::{
-	Context as SContext, CreateEmbed, CreateMessage, GenericChannelId, GuildId, MessageId,
-	audit_log::{Action::Message, MessageAction::Delete},
+use serenity::{
+	all::{
+		Context as SContext, CreateMessage, GenericChannelId, GuildId, MessageId,
+		audit_log::{Action::Message, MessageAction::Delete},
+	},
+	builder::CreateAllowedMentions,
 };
 
 use crate::errors::commands::GuildError;
@@ -21,8 +24,8 @@ pub async fn handle_message_delete(
 		let deleted_content = ctx
 			.cache
 			.message(channel_id, deleted_message_id)
-			.map(|msg| (msg.content.clone(), msg.embeds.first().cloned()));
-		if let Some((content, embed_opt)) = deleted_content {
+			.map(|msg| (msg.content.clone(), msg.components.first().cloned()));
+		if let Some((content, component_opt)) = deleted_content {
 			let (guild_owner_id, evil_person_id, evil_person_name, neccessary_perms) = {
 				if let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
 					&& let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
@@ -50,10 +53,15 @@ pub async fn handle_message_delete(
 						)),
 					)
 					.await?;
-				let mut message = CreateMessage::default().content(content);
-				if let Some(embed) = embed_opt {
-					message = message.embed(CreateEmbed::from(embed));
-				}
+				let message = if component_opt.is_some() {
+					"Discord didn't allow me to resend my message smh"
+				} else {
+					content.as_str()
+				};
+				let message = CreateMessage::default()
+					.content(message)
+					.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
+
 				channel_id.send_message(&ctx.http, message).await?;
 			}
 		}

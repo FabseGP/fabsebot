@@ -73,7 +73,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 		ctx.reply(MISSING_REPLY_MSG).await?;
 		return Err(InteractionError::EmptyMessage.into());
 	};
-	let handler_lock = try_voice(ctx, guild_id).await?;
+	let handler_lock = try_voice(ctx, guild_id, false).await?;
 	let _typing = ctx.defer_or_broadcast().await;
 
 	let bytes = match ai_voice(&payload).await {
@@ -109,7 +109,7 @@ pub async fn add_deezer_playlist(
 	playlist_id: String,
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
-	let handler_lock = try_voice(ctx, guild_id).await?;
+	let handler_lock = try_voice(ctx, guild_id, false).await?;
 
 	let payload: DeezerResponse = match fetch_and_parse(
 		HTTP_CLIENT
@@ -187,7 +187,7 @@ pub async fn add_youtube_playlist(
 	playlist_url: String,
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
-	let handler_lock = try_voice(ctx, guild_id).await?;
+	let handler_lock = try_voice(ctx, guild_id, false).await?;
 	let _typing = ctx.defer_or_broadcast().await;
 	let yt_dlp_output = match Command::new("yt-dlp")
 		.args([
@@ -282,20 +282,8 @@ pub async fn join_voice(
 		return Ok(());
 	}
 	let _typing = ctx.defer_or_broadcast().await;
-	let _handler_lock = try_voice(ctx, guild_id).await?;
-	if global {
-		query!(
-			r#"
-			INSERT INTO guild_settings (guild_id, global_call)
-            VALUES ($1, TRUE)
-            ON CONFLICT (guild_id)
-            DO UPDATE SET global_call = TRUE, global_music = TRUE
-            "#,
-			i64::from(guild_id),
-		)
-		.execute(&ctx.data().db)
-		.await?;
-	}
+	let _handler_lock = try_voice(ctx, guild_id, global).await?;
+
 	Ok(())
 }
 
@@ -348,7 +336,7 @@ pub async fn play_song(
 	url: String,
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
-	let handler_lock = try_voice(ctx, guild_id).await?;
+	let handler_lock = try_voice(ctx, guild_id, false).await?;
 	let typing = ctx.defer_or_broadcast().await;
 	let Some(mut src) = youtube_source(url).await else {
 		ctx.reply(INVALID_TRACK_SOURCE).await?;
@@ -462,7 +450,7 @@ pub async fn seek_song(
 	#[description = "Seconds to seek, i.e. '-20' or '+20'"] seconds: String,
 ) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
-	let handler_lock = try_voice(ctx, guild_id).await?;
+	let handler_lock = try_voice(ctx, guild_id, false).await?;
 	let _typing = ctx.defer_or_broadcast().await;
 	let Some(current_playback) = get_configured_songbird_handler(&handler_lock)
 		.await
@@ -525,12 +513,7 @@ pub async fn seek_song(
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
-pub async fn join_lavalink(
-	ctx: SContext<'_>,
-	#[description = "Allow music playback across guilds"]
-	#[flag]
-	global: bool,
-) -> Result<(), Error> {
+pub async fn join_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	if ctx.data().music_manager.get(guild_id).is_some() {
 		ctx.reply("Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection")
@@ -539,19 +522,6 @@ pub async fn join_lavalink(
 	}
 	let _typing = ctx.defer_or_broadcast().await;
 	lavalink_join(ctx, guild_id).await?;
-	if global {
-		query!(
-			r#"
-			INSERT INTO guild_settings (guild_id, global_call)
-            VALUES ($1, TRUE)
-            ON CONFLICT (guild_id)
-            DO UPDATE SET global_call = TRUE, global_music = TRUE
-            "#,
-			i64::from(guild_id),
-		)
-		.execute(&ctx.data().db)
-		.await?;
-	}
 	Ok(())
 }
 
@@ -567,19 +537,6 @@ pub async fn leave_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = require_guild_id(ctx).await?;
 	remove_handler(ctx, guild_id).await?;
 	lavalink_delete(ctx, guild_id).await?;
-
-	ctx.reply("Left voice channel, don't forget me").await?;
-	query!(
-		r#"
-		INSERT INTO guild_settings (guild_id, global_music, global_call)
-        VALUES ($1, FALSE, FALSE)
-        ON CONFLICT (guild_id)
-        DO UPDATE SET global_music = FALSE, global_call = FALSE
-        "#,
-		i64::from(guild_id),
-	)
-	.execute(&ctx.data().db)
-	.await?;
 
 	Ok(())
 }

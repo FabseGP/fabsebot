@@ -191,14 +191,17 @@ pub fn separator<'a>() -> CreateContainerComponent<'a> {
 }
 
 pub fn message_container<'a>(
-	message: &Message,
+	message_opt: Option<&Message>,
 	container: CreateContainer<'a>,
 ) -> CreateMessage<'a> {
-	CreateMessage::default()
+	let mut create_message = CreateMessage::default()
 		.components(vec![CreateComponent::Container(container)])
 		.flags(MessageFlags::IS_COMPONENTS_V2)
-		.reference_message(message)
-		.allowed_mentions(CreateAllowedMentions::default().replied_user(false))
+		.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
+	if let Some(message) = message_opt {
+		create_message = create_message.reference_message(message);
+	}
+	create_message
 }
 
 #[must_use]
@@ -270,13 +273,9 @@ pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(String, String)> {
 	match fetch_gifs_internal(input).await {
 		Ok(gifs) => gifs,
 		Err(error) => {
-			log_error(
-				"# Failed to fetch gifs",
-				error.to_string(),
-				ctx,
-				METRICS.gifs_errors.clone(),
-			)
-			.await;
+			let output = format!("# Failed to fetch gifs\n{error}");
+			counter!(METRICS.gifs_errors.clone()).increment(1);
+			log_error(&output, ctx).await;
 			vec![(FALLBACK_GIF.to_owned(), FALLBACK_GIF_TITLE.to_owned())]
 		}
 	}
@@ -316,13 +315,9 @@ pub async fn get_lyrics(ctx: &Context, track_name: &str, artist_name: &str) -> O
 	match get_lyrics_internal(track_name, artist_name).await {
 		Ok(lyrics) => Some(lyrics),
 		Err(error) => {
-			log_error(
-				"# Failed to fetch lyrics",
-				error.to_string(),
-				ctx,
-				METRICS.lyrics_errors.clone(),
-			)
-			.await;
+			let output = format!("# Failed to fetch lyrics\n{error}");
+			counter!(METRICS.lyrics_errors.clone()).increment(1);
+			log_error(&output, ctx).await;
 			None
 		}
 	}
@@ -353,13 +348,9 @@ pub async fn get_waifu(ctx: &Context) -> String {
 	match fetch_waifu_internal().await {
 		Ok(waifu) => waifu,
 		Err(error) => {
-			log_error(
-				"# Failed to fetch waifu",
-				error.to_string(),
-				ctx,
-				METRICS.waifu_errors.clone(),
-			)
-			.await;
+			let output = format!("# Failed to fetch waifu\n{error}");
+			counter!(METRICS.waifu_errors.clone()).increment(1);
+			log_error(&output, ctx).await;
 			FALLBACK_WAIFU.to_owned()
 		}
 	}

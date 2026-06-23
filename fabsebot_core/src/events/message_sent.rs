@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Write as _, sync::Arc};
+use std::{fmt::Write as _, sync::Arc};
 
 use anyhow::Result as AResult;
 use fabsebot_db::{
@@ -6,10 +6,13 @@ use fabsebot_db::{
 	user::{UserSettings, insert_user, insert_user_settings},
 };
 use metrics::counter;
-use serenity::all::{
-	Colour, Context as SContext, CreateAllowedMentions, CreateAttachment, CreateComponent,
-	CreateContainer, CreateEmbed, CreateEmbedAuthor, CreateMessage, EmojiId, ExecuteWebhook,
-	GenericChannelId, GuildId, Message, MessageFlags, MessageId, ReactionType,
+use serenity::{
+	all::{
+		Colour, Context as SContext, CreateAllowedMentions, CreateContainer, CreateMessage,
+		EmojiId, ExecuteWebhook, GenericChannelId, GuildId, Message, MessageId, ReactionType,
+	},
+	builder::CreateComponent,
+	model::channel::MessageFlags,
 };
 use songbird::{Call, Songbird, input::Compose as _};
 use sqlx::{Pool, Postgres, query, query_as, query_scalar};
@@ -22,7 +25,7 @@ use crate::{
 		constants::{
 			AI_CHAT_ERROR, DEFAULT_BOT_ROLE, EMPTY_VOICE_CHAN_MSG, FABSEMAN_WEBHOOK_CONTENT,
 			FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FAILED_SONG_FETCH, FLOPPAGANDA_GIF,
-			INVALID_TRACK_SOURCE, MISSING_METADATA_MSG, QUEUE_MSG,
+			INVALID_TRACK_SOURCE, MESSAGE_LIMIT, MISSING_METADATA_MSG, QUEUE_MSG,
 		},
 		types::{AIChats, Data, GuildCache, WebhookMap, utils_config},
 	},
@@ -61,7 +64,7 @@ async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 
 		new_message
 			.channel_id
-			.send_message(&ctx.http, message_container(new_message, container))
+			.send_message(&ctx.http, message_container(Some(new_message), container))
 			.await?;
 	}
 
@@ -128,6 +131,7 @@ async fn queue_track(
 			guild_id,
 			GenericChannelId::new(channel_id.get()),
 			lock.clone(),
+			false,
 		)
 		.await;
 		lock
@@ -150,13 +154,12 @@ async fn queue_track(
 		let audio = match src.create_async().await {
 			Ok(audio) => audio,
 			Err(err) => {
-				log_error(
-					"Failed to create source",
-					MusicError::FailedFetch(err).to_string(),
-					&ctx_clone,
-					METRICS.music_queue_errors.clone(),
-				)
-				.await;
+				let output = format!(
+					"# Failed to create source\n{}",
+					MusicError::FailedFetch(err)
+				);
+				counter!(METRICS.music_queue_errors.clone()).increment(1);
+				log_error(&output, &ctx_clone).await;
 				if let Err(err) = new_message_clone
 					.reply(&ctx_clone.http, FAILED_SONG_FETCH)
 					.await
@@ -169,13 +172,12 @@ async fn queue_track(
 		let metadata = match src.aux_metadata().await {
 			Ok(metadata) => metadata,
 			Err(err) => {
-				log_error(
-					"# Failed to obtain metadata",
-					MusicError::MissingMetadata(err).to_string(),
-					&ctx_clone,
-					METRICS.music_queue_errors.clone(),
-				)
-				.await;
+				let output = format!(
+					"# Failed to obtain metadata\n{}",
+					MusicError::MissingMetadata(err)
+				);
+				counter!(METRICS.music_queue_errors.clone()).increment(1);
+				log_error(&output, &ctx_clone).await;
 				if let Err(err) = new_message_clone
 					.reply(&ctx_clone.http, MISSING_METADATA_MSG)
 					.await
@@ -205,13 +207,9 @@ async fn queue_track(
 		)
 		.await
 		{
-			log_error(
-				"# Failed to queue song",
-				err.to_string(),
-				&ctx_clone,
-				METRICS.music_queue_errors.clone(),
-			)
-			.await;
+			let output = format!("# Failed to queue song\n{err}");
+			counter!(METRICS.music_queue_errors.clone()).increment(1);
+			log_error(&output, &ctx_clone).await;
 		}
 	});
 
@@ -242,13 +240,9 @@ fn ai_chats(
 		)
 		.await
 		{
-			log_error(
-				"# Failed to send AI-chat",
-				error.to_string(),
-				&ctx_clone,
-				METRICS.chatbot_errors.clone(),
-			)
-			.await;
+			let output = format!("# Failed to send AI-chat\n{error}");
+			counter!(METRICS.chatbot_errors.clone()).increment(1);
+			log_error(&output, &ctx_clone).await;
 			if let Err(err) = new_message_clone
 				.reply(&ctx_clone.http, AI_CHAT_ERROR)
 				.await
@@ -316,47 +310,51 @@ async fn global_chats(
 						return Ok(());
 					}
 				};
-				let content = if new_message.content.is_empty() {
-					""
-				} else {
-					new_message.content.as_str()
-				};
-				let mut message = ExecuteWebhook::default()
-					.username(new_message.author.display_name())
-					.avatar_url(&avatar)
-					.content(content);
-				for attachment in new_message
+				let display = [text_display(&new_message.content)];
+				let mut container = CreateContainer::new(&display);
+				if let Some(attachment) = new_message
 					.attachments
 					.iter()
-					.filter(|a| a.dimensions().is_some())
+					.find(|a| a.dimensions().is_some())
 				{
-					message = message.add_file(
-						CreateAttachment::url(
-							&ctx.http,
-							attachment.url.as_str(),
-							attachment.filename.clone(),
-						)
-						.await?,
-					);
+					let image = media_gallery(&attachment.url);
+					container = container.add_component(separator()).add_component(image);
 				}
 				if let Some(replied_message) = &new_message.referenced_message {
-					let mut embed = CreateEmbed::default()
-						.description(replied_message.content.as_str())
-						.timestamp(new_message.timestamp);
+					let mut text = format!(
+						"# Referencing message sent by {}\n{}\n*Timestamp:*{}",
+						replied_message.author.display_name(),
+						replied_message.content.as_str(),
+						new_message.timestamp
+					);
+					text.truncate(MESSAGE_LIMIT);
 					if let Some(avatar) = replied_message.author.avatar_url() {
-						embed = embed.author(
-							CreateEmbedAuthor::new(replied_message.author.display_name())
-								.icon_url(avatar),
-						);
+						let thumbnail_section = thumbnail_section(text, avatar);
+						container = container
+							.add_component(separator())
+							.add_component(thumbnail_section);
+					} else {
+						let text_display = text_display(text);
+						container = container
+							.add_component(separator())
+							.add_component(text_display);
 					}
-					if let Some(attachment) = replied_message.attachments.first() {
-						embed = embed.image(
-							attachment.url.as_str(),
-							Some(Cow::Borrowed("Attachment from replied message")),
-						);
+					if let Some(attachment) = replied_message
+						.attachments
+						.iter()
+						.find(|a| a.dimensions().is_some())
+					{
+						let image = media_gallery(&attachment.url);
+						container = container.add_component(separator()).add_component(image);
 					}
-					message = message.embed(embed);
 				}
+				let component = [CreateComponent::Container(container)];
+				let message = ExecuteWebhook::default()
+					.with_components(true)
+					.flags(MessageFlags::IS_COMPONENTS_V2)
+					.username(new_message.author.display_name())
+					.components(&component)
+					.avatar_url(&avatar);
 				if let Err(err) = webhook.execute(&ctx.http, false, message).await {
 					error!("Failed to execute webhook: {err}");
 					chat_channel
@@ -409,27 +407,16 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 					.add_component(separator())
 					.add_component(channel_display)
 					.accent_colour(Colour::ORANGE);
-				let media_opt = if let Some(attachment) = ref_msg.attachments.first()
+				if let Some(attachment) = ref_msg.attachments.first()
 					&& let Some(content_type) = &attachment.content_type
 					&& (content_type.starts_with("image") || content_type.starts_with("video"))
 				{
-					Some(attachment.url.as_str())
-				} else {
-					None
-				};
-				if let Some(media) = &media_opt {
-					let image = media_gallery(*media);
+					let image = media_gallery(attachment.url.as_str());
 					container = container.add_component(image);
 				}
-				let mut preview_message = CreateMessage::default()
-					.components(vec![CreateComponent::Container(container)])
-					.allowed_mentions(CreateAllowedMentions::default().replied_user(false))
-					.flags(MessageFlags::IS_COMPONENTS_V2);
+				let mut preview_message = message_container(None, container);
 				if ref_msg.channel_id == new_message.channel_id {
 					preview_message = preview_message.reference_message(&ref_msg);
-				}
-				if let Some(ref_embed) = ref_msg.embeds.into_iter().next() {
-					preview_message = preview_message.add_embed(CreateEmbed::from(ref_embed));
 				}
 				new_message
 					.channel_id
@@ -574,7 +561,7 @@ async fn user_queries(
 				}
 				new_message
 					.channel_id
-					.send_message(&ctx.http, message_container(new_message, container))
+					.send_message(&ctx.http, message_container(Some(new_message), container))
 					.await?;
 			}
 		}
@@ -629,7 +616,7 @@ async fn guild_queries(
 			}
 			new_message
 				.channel_id
-				.send_message(&ctx.http, message_container(new_message, container))
+				.send_message(&ctx.http, message_container(Some(new_message), container))
 				.await?;
 		} else if let Some(emoji_id) = &record.emoji_id {
 			let emoji_id_typed = EmojiId::new(emoji_id.cast_unsigned());

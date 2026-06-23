@@ -139,6 +139,7 @@ pub struct PlaybackHandler {
 	bot_data: Arc<Data>,
 	guild_id: GuildId,
 	channel_id: GenericChannelId,
+	global: bool,
 }
 
 impl PlaybackHandler {
@@ -147,12 +148,14 @@ impl PlaybackHandler {
 		bot_data: Arc<Data>,
 		guild_id: GuildId,
 		channel_id: GenericChannelId,
+		global: bool,
 	) -> Self {
 		Self {
 			serenity_context,
 			bot_data,
 			guild_id,
 			channel_id,
+			global,
 		}
 	}
 
@@ -211,7 +214,7 @@ impl PlaybackHandler {
 		history_shown: &mut bool,
 		history_container: &mut Option<CreateContainer<'a>>,
 		track: &TrackData,
-		track_guilds: &Vec<i64>,
+		track_guilds: &[i64],
 		container: &CreateContainer<'a>,
 		action_row: &CreateContainerComponent<'a>,
 		requested_channel: i64,
@@ -353,7 +356,7 @@ impl PlaybackHandler {
 							let author_name = track
 								.requested_by
 								.get_author_name(&self.serenity_context)
-								.await?;
+								.await;
 							writeln!(
 								history_string,
 								"**{title}:** *{author_name} - {}*",
@@ -389,7 +392,7 @@ impl PlaybackHandler {
 		track_uuid: Uuid,
 	) -> AResult<()> {
 		let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id) else {
-			return Ok(());
+			bail!("Not in a voice channel?");
 		};
 		let queue_size = get_configured_songbird_handler(&handler_lock)
 			.await
@@ -402,7 +405,7 @@ impl PlaybackHandler {
 		let author_name = song_play
 			.requested_by
 			.get_author_name(&self.serenity_context)
-			.await?;
+			.await;
 
 		let (thumbnail_section, action_row, visit_button) =
 			Self::create_components(&author_name, message_id, &track, queue_size);
@@ -443,7 +446,11 @@ impl PlaybackHandler {
 			})
 			.stream();
 
-		let track_guilds = get_matching_guild_plays(track_uuid, &self.bot_data.db).await?;
+		let track_guilds = if self.global {
+			get_matching_guild_plays(track_uuid, &self.bot_data.db).await?
+		} else {
+			vec![self.guild_id.get().cast_signed()]
+		};
 
 		loop {
 			select! {
@@ -574,6 +581,7 @@ pub async fn add_voice_events(
 	guild_id: GuildId,
 	channel_id: GenericChannelId,
 	handler_lock: Arc<Mutex<Call>>,
+	global: bool,
 ) {
 	let mut handler = handler_lock.lock().await;
 
@@ -584,15 +592,15 @@ pub async fn add_voice_events(
 
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Playable),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::End),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Error),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Core(CoreEvent::DriverDisconnect),
@@ -724,7 +732,25 @@ pub async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<
 	Ok(handler_lock)
 }
 
-pub async fn try_voice(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
+pub async fn try_voice(
+	ctx: SContext<'_>,
+	guild_id: GuildId,
+	global: bool,
+) -> AResult<Arc<Mutex<Call>>> {
+	if global {
+		query!(
+			r#"
+			INSERT INTO guild_settings (guild_id, global_call)
+            VALUES ($1, TRUE)
+            ON CONFLICT (guild_id)
+            DO UPDATE SET global_call = TRUE, global_music = TRUE
+            "#,
+			i64::from(guild_id),
+		)
+		.execute(&ctx.data().db)
+		.await?;
+	}
+
 	let handler_lock = if let Some(lock) = ctx.data().music_manager.get(guild_id) {
 		lock
 	} else {
@@ -735,6 +761,7 @@ pub async fn try_voice(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mute
 			guild_id,
 			ctx.channel_id(),
 			handler_lock.clone(),
+			global,
 		)
 		.await;
 		handler_lock
@@ -844,21 +871,19 @@ type DBUserID = Option<i64>;
 
 #[async_trait]
 pub trait DBUserIDExt {
-	async fn get_author_name(&self, serenity_context: &SerenityContext) -> AResult<String>;
+	async fn get_author_name(&self, serenity_context: &SerenityContext) -> String;
 }
 
 #[async_trait]
 impl DBUserIDExt for DBUserID {
-	async fn get_author_name(&self, serenity_context: &SerenityContext) -> AResult<String> {
-		let author_name = if let Some(user_id) = self.map(|u| UserId::new(u.cast_unsigned()))
+	async fn get_author_name(&self, serenity_context: &SerenityContext) -> String {
+		if let Some(user_id) = self.map(|u| UserId::new(u.cast_unsigned()))
 			&& let Ok(user) = serenity_context.http.get_user(user_id).await
 		{
 			user.display_name().to_owned()
 		} else {
 			"Unknown".to_owned()
-		};
-
-		Ok(author_name)
+		}
 	}
 }
 
@@ -914,7 +939,6 @@ pub struct ChannelPlayHistory {
 	pub played_at: OffsetDateTime,
 	pub requested_by: DBUserID,
 	pub title: Option<String>,
-	pub source_url: Option<String>,
 }
 
 pub async fn get_queue_history(
@@ -927,8 +951,7 @@ pub async fn get_queue_history(
         SELECT 
             sp.played_at,
             sp.requested_by,
-            t.title,
-            t.source_url
+            t.title
         FROM song_plays sp
         JOIN tracks t ON sp.track_uuid = t.track_uuid
         WHERE sp.requested_channel = $1
@@ -967,17 +990,13 @@ pub async fn rejoin_voice(
 			match join_handler(music_manager, guild_id, channel_id.expect_channel()).await {
 				Ok(lock) => lock,
 				Err(err) => {
-					log_error(
-						"# Failed to rejoin voice channel",
-						err.to_string(),
-						ctx,
-						METRICS.voice_join_errors.clone(),
-					)
-					.await;
+					let output = format!("# Failed to rejoin voice channel\n{err}");
+					counter!(METRICS.voice_join_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 					continue;
 				}
 			};
-		add_voice_events(ctx, guild_id, channel_id, handler_lock).await;
+		add_voice_events(ctx, guild_id, channel_id, handler_lock, false).await;
 	}
 
 	Ok(())

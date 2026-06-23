@@ -5,7 +5,6 @@ use metrics::counter;
 use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
 use sqlx::query_scalar;
-use tracing::error;
 
 use crate::{
 	config::types::{Data, Error},
@@ -23,67 +22,47 @@ use crate::{
 	},
 	log_error,
 	stats::counters::METRICS,
-	utils::webhook::error_hook,
 };
 
 pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 	match error {
 		FrameworkError::Command { error, ctx, .. } => {
-			let error_title = format!("# Error in command '{}'", ctx.command().name);
-			error!("{error_title}: {error}");
+			let output = format!("# Error in command '{}'\n{error}", ctx.command().name);
 			counter!(
 				METRICS.command_errors.clone(),
 				"command" => ctx.command().name.clone(),
 			)
 			.increment(1);
-			if let Err(err) =
-				error_hook(ctx.serenity_context(), &error_title, error.to_string()).await
-			{
-				error!("Failed to send command error to webhook: {err}");
-			}
+			log_error(&output, ctx.serenity_context()).await;
 		}
 		FrameworkError::DynamicPrefix { error, ctx, .. } => {
-			log_error(
-				"# Error in dynamic prefix",
-				error.to_string(),
-				ctx.framework.serenity_context,
-				METRICS.prefix_errors.clone(),
-			)
-			.await;
+			let output = format!("# Error in dynamic prefix\n{error}");
+			counter!(METRICS.prefix_errors.clone()).increment(1);
+			log_error(&output, ctx.framework.serenity_context).await;
 		}
 		FrameworkError::MissingBotPermissions {
 			missing_permissions,
 			ctx,
 			..
 		} => {
-			let error_title = format!(
-				"# Missing bot permissions in command {}",
+			let output = format!(
+				"# Missing bot permissions in command '{}'\n{missing_permissions}",
 				ctx.command().name
 			);
-			log_error(
-				&error_title,
-				missing_permissions.to_string(),
-				ctx.serenity_context(),
-				METRICS.bot_permissions_errors.clone(),
-			)
-			.await;
+			counter!(METRICS.bot_permissions_errors.clone()).increment(1);
+			log_error(&output, ctx.serenity_context()).await;
 		}
 		FrameworkError::MissingUserPermissions {
 			missing_permissions: Some(missing_permissions),
 			ctx,
 			..
 		} => {
-			let error_title = format!(
-				"# Missing user permissions in command {}",
+			let output = format!(
+				"# Missing user permissions in command '{}'\n{missing_permissions}",
 				ctx.command().name
 			);
-			log_error(
-				&error_title,
-				missing_permissions.to_string(),
-				ctx.serenity_context(),
-				METRICS.user_permissions_errors.clone(),
-			)
-			.await;
+			counter!(METRICS.user_permissions_errors.clone()).increment(1);
+			log_error(&output, ctx.serenity_context()).await;
 		}
 		_ => {}
 	}
@@ -130,13 +109,9 @@ impl SEventHandler for EventHandler {
 		match event {
 			FullEvent::Ready { data_about_bot, .. } => {
 				if let Err(error) = handle_ready(ctx, data_about_bot).await {
-					log_error(
-						"# Error handling connection to Discord",
-						error.to_string(),
-						ctx,
-						METRICS.ready_errors.clone(),
-					)
-					.await;
+					let output = format!("# Error handling connection to Discord\n{error}");
+					counter!(METRICS.ready_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 				}
 			}
 			FullEvent::Message { new_message, .. } => {
@@ -144,13 +119,9 @@ impl SEventHandler for EventHandler {
 					&& let Some(guild_id) = new_message.guild_id
 					&& let Err(error) = Box::pin(handle_message(ctx, new_message, guild_id)).await
 				{
-					log_error(
-						"# Error handling sent message",
-						error.to_string(),
-						ctx,
-						METRICS.message_errors.clone(),
-					)
-					.await;
+					let output = format!("# Error handling sent message\n{error}");
+					counter!(METRICS.message_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 				}
 			}
 			FullEvent::GuildCreate {
@@ -159,26 +130,18 @@ impl SEventHandler for EventHandler {
 				..
 			} => {
 				if *is_new && let Err(error) = handle_guild_create(ctx.data(), guild.id).await {
-					log_error(
-						"# Error handling newly created guild",
-						error.to_string(),
-						ctx,
-						METRICS.new_guild_errors.clone(),
-					)
-					.await;
+					let output = format!("# Error handling newly created guild\n{error}");
+					counter!(METRICS.new_guild_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 				}
 			}
 			FullEvent::GuildDelete { incomplete, .. } => {
 				if !incomplete.unavailable
 					&& let Err(error) = handle_guild_delete(ctx.data(), incomplete.id).await
 				{
-					log_error(
-						"# Error handling deleted guild",
-						error.to_string(),
-						ctx,
-						METRICS.deleted_guild_errors.clone(),
-					)
-					.await;
+					let output = format!("# Error handling deleted guild\n{error}");
+					counter!(METRICS.deleted_guild_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 				}
 			}
 
@@ -198,24 +161,16 @@ impl SEventHandler for EventHandler {
 						handle_message_delete(ctx, *channel_id, *guild_id, *deleted_message_id)
 							.await
 				{
-					log_error(
-						"# Error handling deleted message",
-						error.to_string(),
-						ctx,
-						METRICS.messages_deleted_errors.clone(),
-					)
-					.await;
+					let output = format!("# Error handling deleted message\n{error}");
+					counter!(METRICS.messages_deleted_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 				}
 			}
 			FullEvent::GuildMemberAddition { new_member, .. } => {
 				if let Err(error) = handle_member_addition(ctx.data(), new_member).await {
-					log_error(
-						"# Error handling new guild member",
-						error.to_string(),
-						ctx,
-						METRICS.member_addition_errors.clone(),
-					)
-					.await;
+					let output = format!("# Error handling new guild member\n{error}");
+					counter!(METRICS.member_addition_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 				}
 			}
 			FullEvent::InteractionCreate { interaction, .. } => {
@@ -224,13 +179,9 @@ impl SEventHandler for EventHandler {
 					&& let Err(error) =
 						handle_feedback_modal_button(ctx, component_interaction).await
 				{
-					log_error(
-						"# Error handling feedback modal",
-						error.to_string(),
-						ctx,
-						METRICS.feedback_modal_errors.clone(),
-					)
-					.await;
+					let output = format!("# Error handling feedback modal\n{error}");
+					counter!(METRICS.feedback_modal_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 				}
 				if let Some(modal_interaction) = interaction.as_modal_submit()
 					&& modal_interaction.data.custom_id == FEEDBACK_MODAL_CUSTOM_ID
@@ -238,13 +189,9 @@ impl SEventHandler for EventHandler {
 					&& let Err(error) =
 						handle_feedback_modal_reply(ctx, modal_interaction, guild_id).await
 				{
-					log_error(
-						"# Error handling feedback reply",
-						error.to_string(),
-						ctx,
-						METRICS.feedback_reply_errors.clone(),
-					)
-					.await;
+					let output = format!("# Error handling feedback reply\n{error}");
+					counter!(METRICS.feedback_reply_errors.clone()).increment(1);
+					log_error(&output, ctx).await;
 				}
 			}
 			_ => {}

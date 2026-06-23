@@ -2,14 +2,13 @@ use anyhow::{Result as AResult, bail};
 use serde::Serialize;
 use serenity::all::{
 	Channel, Context as SContext, CreateAttachment, CreateComponent, CreateContainer,
-	CreateContainerComponent, CreateTextDisplay, ExecuteWebhook, GenericChannelId, GuildId,
-	Message, MessageFlags, Webhook,
+	ExecuteWebhook, GenericChannelId, GuildId, Message, MessageFlags, Webhook,
 };
 use tracing::warn;
 
 use crate::{
 	config::types::{HTTP_CLIENT, WebhookMap, utils_config},
-	utils::helpers::channel_counter,
+	utils::helpers::{channel_counter, text_display},
 };
 
 const FABSEBOT_WEBHOOK_NAME: &str = "fabsebot";
@@ -19,7 +18,7 @@ const FABSEBOT_WEBHOOK_PFP: &str =
 pub async fn webhook_components<'a>(
 	webhook: Webhook,
 	ctx: &SContext,
-	components: &'a [CreateComponent<'a>],
+	component: &'a [CreateComponent<'a>],
 ) -> AResult<()> {
 	webhook
 		.execute(
@@ -28,26 +27,18 @@ pub async fn webhook_components<'a>(
 			ExecuteWebhook::default()
 				.with_components(true)
 				.flags(MessageFlags::IS_COMPONENTS_V2)
-				.components(components),
+				.components(component),
 		)
 		.await?;
 
 	Ok(())
 }
 
-pub async fn error_hook(ctx: &SContext, title: &str, error: String) -> AResult<()> {
+pub async fn error_hook(ctx: &SContext, output: &str) -> AResult<()> {
 	let webhook = Webhook::from_url(&ctx.http, &utils_config().error_webhook).await?;
+	let component = CreateComponent::Container(CreateContainer::new(vec![text_display(output)]));
 
-	let components = [
-		CreateComponent::Container(CreateContainer::new(vec![
-			CreateContainerComponent::TextDisplay(CreateTextDisplay::new(title)),
-		])),
-		CreateComponent::Container(CreateContainer::new(vec![
-			CreateContainerComponent::TextDisplay(CreateTextDisplay::new(error)),
-		])),
-	];
-
-	webhook_components(webhook, ctx, &components).await?;
+	webhook_components(webhook, ctx, &[component]).await?;
 
 	Ok(())
 }

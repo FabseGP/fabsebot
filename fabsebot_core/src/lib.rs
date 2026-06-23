@@ -52,10 +52,9 @@ use crate::{
 
 const PING_INTERVAL_SEC: u64 = 60;
 
-pub async fn log_error(error_title: &str, error: String, ctx: &SContext, counter: String) {
-	error!("{error_title}: {error}");
-	counter!(counter).increment(1);
-	if let Err(err) = error_hook(ctx, error_title, error).await {
+pub async fn log_error(output: &str, ctx: &SContext) {
+	error!("{output}");
+	if let Err(err) = error_hook(ctx, output).await {
 		error!("Failed to send error to webhook: {err}");
 	}
 }
