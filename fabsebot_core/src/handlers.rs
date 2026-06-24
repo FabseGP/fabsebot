@@ -5,6 +5,7 @@ use metrics::counter;
 use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
 use sqlx::query_scalar;
+use tracing::warn;
 
 use crate::{
 	config::types::{Data, Error},
@@ -49,6 +50,9 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 				"# Missing bot permissions in command '{}'\n{missing_permissions}",
 				ctx.command().name
 			);
+			if let Err(err) = ctx.say(&output).await {
+				warn!("Failed to notify user about missing bot permissions: {err}");
+			}
 			counter!(METRICS.bot_permissions_errors.clone()).increment(1);
 			log_error(&output, ctx.serenity_context()).await;
 		}
@@ -61,6 +65,9 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 				"# Missing user permissions in command '{}'\n{missing_permissions}",
 				ctx.command().name
 			);
+			if let Err(err) = ctx.say(&output).await {
+				warn!("Failed to notify user about missing user permissions: {err}");
+			}
 			counter!(METRICS.user_permissions_errors.clone()).increment(1);
 			log_error(&output, ctx.serenity_context()).await;
 		}
