@@ -19,6 +19,7 @@ use fabsebot_core::{
 	},
 };
 use poise::CreateReply;
+use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use serenity::{
 	all::{Attachment, Colour, CreateAttachment, CreateContainer, Member, MessageId, User},
@@ -41,20 +42,18 @@ struct AIResponseImage {
 	image: String,
 }
 
-#[derive(Serialize)]
-struct ImageRequest {
-	prompt: String,
-}
+async fn fetch_and_decode_image(utils_config: &UtilsConfig, prompt: String) -> AResult<Vec<u8>> {
+	let form = Form::new()
+		.text("prompt", prompt)
+		.text("steps", "25")
+		.text("width", "512")
+		.text("height", "512");
 
-async fn fetch_and_decode_image(
-	utils_config: &UtilsConfig,
-	request: &ImageRequest,
-) -> AResult<Vec<u8>> {
 	let resp_parsed: FabseAIImage = fetch_and_parse(
 		HTTP_CLIENT
 			.post(&utils_config.api.cloudflare_image_gen)
 			.bearer_auth(&utils_config.api.cloudflare_token)
-			.json(&request)
+			.multipart(form)
 			.send(),
 	)
 	.await?;
@@ -81,12 +80,9 @@ pub async fn ai_image(
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
 	let _typing = ctx.defer_or_broadcast().await;
-	let request = ImageRequest {
-		prompt: format!("{prompt} {}", fastrand::usize(..1024)),
-	};
 	let utils_config = utils_config();
 
-	match fetch_and_decode_image(utils_config, &request).await {
+	match fetch_and_decode_image(utils_config, prompt.clone()).await {
 		Ok(bytes) => {
 			ctx.send(
 				CreateReply::default()
@@ -336,9 +332,9 @@ struct MoeResponse {
 #[derive(Deserialize)]
 struct AnimeScene {
 	anilist: Anilist,
-	episode: Option<i32>,
-	from: Option<f32>,
-	to: Option<f32>,
+	episode: Option<f32>,
+	from: f32,
+	to: f32,
 	#[serde(deserialize_with = "non_empty_string")]
 	video: String,
 }
@@ -403,9 +399,9 @@ pub async fn anime_scene(
 
 	let text = format!(
 		"# {title}\n**Episode:** {}\n**From:** {}\n**To:**: {}",
-		first_result.episode.unwrap_or(0),
-		first_result.from.unwrap_or(0.0),
-		first_result.to.unwrap_or(0.0)
+		first_result.episode.unwrap_or(0.0),
+		first_result.from,
+		first_result.to
 	);
 
 	let text_display = [text_display(&text)];

@@ -69,11 +69,11 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 	let thumbnail_section = [thumbnail_section(&guild_name, &thumbnail)];
 
 	let guild_info = format!(
-		"### Guild description: {guild_description}\n### Guild ID: {guild_id}\n### Owner id: \
-		 {guild_owner_id}\n### Guild boosters: {guild_boosters}\n### Creation date: \
-		 {guild_created_at}\n### Emoji count: {guild_emojis}\n### Sticker count time boosting \
-		 server: {guild_stickers}\n### Members count: {guild_member_count}/{guild_max_size}\n### \
-		 Role count: {guild_roles}\n### Channels: {guild_channels}\n### Server size: {guild_size}",
+		"**Guild description:** {guild_description}\n**Guild ID:** {guild_id}\n**Owner id:** \
+		 {guild_owner_id}\n**Guild boosters:** {guild_boosters}\n**Creation date:** \
+		 {guild_created_at}\n**Emoji count:** {guild_emojis}\n**Sticker count:** \
+		 {guild_stickers}\n**Members count:** {guild_member_count}/{guild_max_size}\n**Role \
+		 count:** {guild_roles}\n**Channels:** {guild_channels}\n**Server size:** {guild_size}",
 	);
 
 	let container = CreateContainer::new(&thumbnail_section)
@@ -101,7 +101,7 @@ pub async fn user_info(
 	let avatar_url = member_pfp(&ctx, &member).await?;
 	let username = if let Some(nick) = member.nick.as_ref() {
 		format!(
-			"# {nick} (aká {})\n ID: {}",
+			"# {nick} (aká {})\n**ID:** {}",
 			member.user.name, member.user.id
 		)
 	} else {
@@ -128,8 +128,8 @@ pub async fn user_info(
 		.unwrap_or_default();
 
 	let user_info = format!(
-		"### Creation date: {}\n### Joined date: {}\n### Roles: {}\n### Verified: {}\n### Last \
-		 time boosting server: {}\n### Nitro tier: {}",
+		"**Creation date:** {}\n**Joined date:** {}\n**Roles:** {}\n**Verified:** {}\n**Last time \
+		 boosting server:** {}\n**Nitro tier: {}**",
 		member.user.id.created_at(),
 		member.joined_at.unwrap_or_default(),
 		roles,

@@ -23,7 +23,7 @@ metrics = { workspace = true }
 mini-moka = { workspace = true }
 poise = { workspace = true }
 rayon = { workspace = true }
-reqwest = { workspace = true, default-features = false, features = ["http3", "json", "query", "rustls", "zstd"] }
+reqwest = { workspace = true, default-features = false, features = ["http3", "json", "multipart", "query", "rustls", "zstd"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "temp_cache", "transport_compression_zstd"] }
