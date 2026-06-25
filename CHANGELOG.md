@@ -182,6 +182,7 @@ All notable changes to this project will be documented in this file.
 - Reduce db payload V2
 - Don't use default avatar
 - Fix anime_scene and ai_image
+- Propagate missing permissions to user
 
 ### 💼 Other
 
@@ -257,6 +258,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Cleanup
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
