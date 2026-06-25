@@ -47,17 +47,6 @@ use crate::{
 	stats::counters::METRICS,
 };
 
-#[macro_export]
-macro_rules! log_errors {
-    ($($result:expr),+ $(,)?) => {
-        $(
-            if let Err(err) = $result {
-                error!("{err}");
-            }
-        )+
-    };
-}
-
 const DISCORD_CHANNEL_DEFAULT_PREFIX: &str = "https://discord.com/channels/";
 const DISCORD_CHANNEL_PTB_PREFIX: &str = "https://ptb.discord.com/channels/";
 const DISCORD_CHANNEL_CANARY_PREFIX: &str = "https://canary.discord.com/channels/";
@@ -89,9 +78,7 @@ pub async fn correct_permissions(
 
 	if !bot_permissions.contains(required_permissions) {
 		let missing_permissions = (!bot_permissions) & required_permissions;
-		let msg = format!(
-			"I'm missing these required permissions in this channel: {missing_permissions}"
-		);
+		let msg = format!("I'm missing these required permissions: **{missing_permissions}**");
 		ctx.reply(&msg).await?;
 		bail!("{msg}");
 	}

@@ -8,7 +8,8 @@ use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::types::{Error, HTTP_CLIENT, SContext},
 	utils::helpers::{
-		get_gifs, get_waifu, reply_container, separator, text_display, thumbnail_section, user_pfp,
+		correct_permissions, get_gifs, get_waifu, reply_container, separator, text_display,
+		thumbnail_section, user_pfp,
 	},
 };
 use fabsebot_db::guild::{reset_guild, set_music_channel, set_spoiler_channel};
@@ -21,6 +22,7 @@ use serenity::{
 		CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption, GuildId,
 	},
 	futures::StreamExt as _,
+	model::Permissions,
 };
 use sqlx::{Pool, Postgres, query};
 use tracing::warn;
@@ -62,6 +64,8 @@ async fn configure_channels(
 	if let Some(music_channel) = music_channel_opt {
 		let music_channel_id_i64 = i64::from(music_channel.id());
 		set_music_channel(guild_id_i64, music_channel_id_i64, &ctx.data().db).await?;
+		let permissions = Permissions::CONNECT | Permissions::SPEAK;
+		correct_permissions(&ctx, guild_id, permissions).await?;
 		music_channel
 			.id()
 			.say(
@@ -74,6 +78,8 @@ async fn configure_channels(
 	if let Some(spoiler_channel) = spoiler_channel_opt {
 		let spoiler_channel_id_i64 = i64::from(spoiler_channel.id());
 		set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, &ctx.data().db).await?;
+		let permissions = Permissions::MANAGE_WEBHOOKS;
+		correct_permissions(&ctx, guild_id, permissions).await?;
 		spoiler_channel
 			.id()
 			.say(

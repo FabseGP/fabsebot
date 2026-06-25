@@ -29,7 +29,7 @@ use crate::{
 		},
 		types::{AIChats, Data, GuildCache, WebhookMap, utils_config},
 	},
-	log_error, log_errors,
+	log_error,
 	stats::counters::METRICS,
 	utils::{
 		ai::ai_chatbot,
@@ -729,13 +729,18 @@ pub async fn handle_message(
 		)
 	);
 
-	log_errors!(
+	#[expect(clippy::tuple_array_conversions)]
+	for function in [
 		bot_ping,
 		easter_eggs,
 		message_preview,
 		spoiler_message,
-		global_chat
-	);
+		global_chat,
+	] {
+		if let Err(err) = function {
+			log_error(&format!("# {err}"), ctx).await;
+		}
+	}
 
 	let user_id_i64 = i64::from(new_message.author.id);
 
