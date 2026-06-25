@@ -47,7 +47,7 @@ use tokio::{
 };
 use tracing::warn;
 
-use crate::{command_permissions, require_guild_id};
+use crate::command_permissions;
 
 pub async fn birthday_internal(ctx: SContext<'_>, avatar_url: &str, name: &str) -> AResult<()> {
 	let title = format!("# HAPPY BIRTHDAY {name}!");
@@ -106,8 +106,7 @@ impl BotStatus {
 /// Bot control
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	owners_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
@@ -141,9 +140,8 @@ pub async fn bot_control(
 /// Personalize the bot in your server
 #[poise::command(
 	slash_command,
+	guild_only,
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
-	install_context = "Guild",
-	interaction_context = "Guild",
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CHANGE_NICKNAME"
 )]
 pub async fn bot_personalize(
@@ -153,7 +151,7 @@ pub async fn bot_personalize(
 	#[description = "Link to avatar"] avatar: Option<String>,
 	#[description = "Link to banner"] banner: Option<String>,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	let mut edited_member = EditCurrentMember::default()
 		.nickname(nickname.map(Cow::from))
 		.bio(bio.map(Cow::from))
@@ -185,8 +183,7 @@ pub async fn bot_personalize(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
@@ -263,12 +260,11 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
 		INSERT INTO guild_settings (guild_id, global_chat)
@@ -276,7 +272,7 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
         ON CONFLICT (guild_id)
         DO UPDATE SET global_chat = FALSE
         "#,
-		i64::from(guild_id),
+		guild_id_i64,
 	)
 	.execute(&ctx.data().db)
 	.await?;
@@ -289,14 +285,12 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "CONNECT | SPEAK | VIEW_CHANNEL | SEND_MESSAGES | \
 	                            SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
-	let guild_id_i64 = i64::from(guild_id);
+	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	let channel_id_i64 = i64::from(ctx.channel_id());
 	query!(
 		r#"
@@ -376,8 +370,7 @@ async fn autocomplete_command<'a>(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn help(
@@ -449,12 +442,11 @@ struct UserCount {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	let thumbnail = match ctx.guild() {
 		Some(guild) => guild.banner_url().unwrap_or_else(|| {
 			guild
@@ -921,59 +913,60 @@ pub async fn quote_internal(
 
 	let allowed_mentions = CreateAllowedMentions::default().replied_user(false);
 
-	let (message_handle, reply_handle) = if let Some((reply, guild_id)) = reply {
-		let message_url = reply.link().to_string();
+	let (message_handle, reply_handle) =
+		if let Some((reply, guild_id_i64)) = reply.map(|r| (r.0, i64::from(r.1))) {
+			let message_url = reply.link().to_string();
 
-		let quote_channel_opt: Option<Option<i64>> = query_scalar!(
-			"SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
-			i64::from(guild_id)
-		)
-		.fetch_optional(&ctx.data().db)
-		.await?;
+			let quote_channel_opt: Option<Option<i64>> = query_scalar!(
+				"SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
+				guild_id_i64
+			)
+			.fetch_optional(&ctx.data().db)
+			.await?;
 
-		if let Some(Some(channel)) = quote_channel_opt {
-			let quote_channel = GenericChannelId::new(channel.cast_unsigned());
-			quote_channel
-				.send_message(
-					ctx.http(),
-					CreateMessage::default()
-						.add_file(attachment.clone())
-						.content(&message_url),
-				)
-				.await?;
-		}
-		(
-			Some(
-				ctx.channel_id()
+			if let Some(Some(channel)) = quote_channel_opt {
+				let quote_channel = GenericChannelId::new(channel.cast_unsigned());
+				quote_channel
 					.send_message(
 						ctx.http(),
 						CreateMessage::default()
 							.add_file(attachment.clone())
-							.reference_message(msg)
-							.content(message_url)
+							.content(&message_url),
+					)
+					.await?;
+			}
+			(
+				Some(
+					ctx.channel_id()
+						.send_message(
+							ctx.http(),
+							CreateMessage::default()
+								.add_file(attachment.clone())
+								.reference_message(msg)
+								.content(message_url)
+								.components(&action_row)
+								.select_menu(font_menu)
+								.select_menu(theme_menu)
+								.allowed_mentions(allowed_mentions),
+						)
+						.await?,
+				),
+				None,
+			)
+		} else {
+			(
+				None,
+				Some(
+					ctx.send(
+						CreateReply::default()
+							.attachment(attachment.clone())
 							.components(&action_row)
-							.select_menu(font_menu)
-							.select_menu(theme_menu)
 							.allowed_mentions(allowed_mentions),
 					)
 					.await?,
-			),
-			None,
-		)
-	} else {
-		(
-			None,
-			Some(
-				ctx.send(
-					CreateReply::default()
-						.attachment(attachment.clone())
-						.components(&action_row)
-						.allowed_mentions(allowed_mentions),
-				)
-				.await?,
-			),
-		)
-	};
+				),
+			)
+		};
 
 	let ctx_id_str = ctx.id().to_string();
 	let mut final_attachment = attachment.clone();
@@ -1066,12 +1059,11 @@ pub async fn quote_menu(
 /// When your memory is not enough
 #[poise::command(
 	prefix_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	let msg = ctx
 		.channel_id()
 		.message(&ctx.http(), MessageId::new(ctx.id()))
@@ -1094,10 +1086,9 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 
 #[poise::command(
 	prefix_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
-	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS",
-	owners_only
+	guild_only,
+	owners_only,
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn register_commands(ctx: SContext<'_>) -> Result<(), Error> {
 	let commands = &ctx.framework().options().commands;
@@ -1134,9 +1125,8 @@ pub async fn respond(
 /// When your users are yapping
 #[poise::command(
 	slash_command,
+	guild_only,
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
-	install_context = "Guild",
-	interaction_context = "Guild",
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
 	                            MANAGE_CHANNELS"
 )]
@@ -1168,12 +1158,11 @@ struct WordCount {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	let thumbnail = {
 		let guild = ctx.guild().unwrap();
 		guild.banner_url().unwrap_or_else(|| {
@@ -1192,7 +1181,7 @@ pub async fn word_count(ctx: SContext<'_>) -> Result<(), Error> {
 		ORDER BY count
 		DESC LIMIT 25
 		"#,
-		i64::from(guild_id)
+		guild_id_i64
 	)
 	.fetch_all(&ctx.data().db)
 	.await?;

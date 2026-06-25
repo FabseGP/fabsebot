@@ -26,8 +26,6 @@ use sqlx::{Pool, Postgres, query};
 use tracing::warn;
 use url::Url;
 
-use crate::require_guild_id;
-
 async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(guild_id);
 	let mut tx = ctx
@@ -68,8 +66,8 @@ async fn configure_channels(
 			.id()
 			.say(
 				ctx.http(),
-				"Once I'm in a voice channel with /join_voice, I'll start listen to your song \
-				 requests!\nMessages prefixed with # will be ignored",
+				"I'll start listen to your song requests!\nMessages prefixed with # will be \
+				 ignored",
 			)
 			.await?;
 	}
@@ -177,13 +175,12 @@ impl SelectionState {
 /// Configure server settings for the bot
 #[poise::command(
 	slash_command,
+	guild_only,
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
-	install_context = "Guild",
-	interaction_context = "Guild",
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 
 	let mut current_state = SelectionState::MainMenu;
 
@@ -409,12 +406,11 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 /// To reset or not to reset the user, that's the question
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	ctx.send(
 		CreateReply::default()
 			.content("User settings resetted... probably")
@@ -440,8 +436,7 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 /// When you want to escape discord
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_afk(
@@ -449,8 +444,7 @@ pub async fn set_afk(
 	#[description = "Reason for afk"] reason: Option<String>,
 ) -> Result<(), Error> {
 	let avatar_url = user_pfp(&ctx, ctx.author()).await?;
-	let guild_id = require_guild_id(ctx).await?;
-	let guild_id_i64 = i64::from(guild_id);
+	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	let user_id_i64 = i64::from(ctx.author().id);
 	query!(
 		r#"
@@ -523,8 +517,7 @@ async fn set_chatbot_channel(
 /// value
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_chatbot_options(
@@ -533,8 +526,7 @@ pub async fn set_chatbot_options(
 		String,
 	>,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
-	let guild_id_i64 = i64::from(guild_id);
+	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
 	query!(
 		r#"
@@ -603,20 +595,16 @@ struct CreateApplicationEmoji<'a> {
 
 /// Configure which prefix to use for commands
 #[poise::command(
-	prefix_command,
 	slash_command,
+	guild_only,
 	required_permissions = "ADMINISTRATOR | MODERATE_MEMBERS",
-	install_context = "Guild",
-	interaction_context = "Guild",
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_prefix(
 	ctx: SContext<'_>,
-	#[description = "Character(s) to use as prefix for commands"]
-	#[rest]
-	characters: String,
+	#[description = "Character(s) to use as prefix for commands"] characters: String,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
 		INSERT INTO guild_settings (guild_id, prefix)
@@ -624,7 +612,7 @@ pub async fn set_prefix(
         ON CONFLICT (guild_id)
         DO UPDATE SET prefix = $2
         "#,
-		i64::from(guild_id),
+		guild_id_i64,
 		characters,
 	)
 	.execute(&ctx.data().db)
@@ -674,8 +662,7 @@ async fn set_quote_channel(
 /// Configure custom embed sent on user ping
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_user_ping(
@@ -685,7 +672,6 @@ pub async fn set_user_ping(
 	                 query"]
 	media: Option<String>,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
 	let valid = if let Some(user_media) = &media {
 		if user_media.starts_with("https") {
 			ctx.defer().await?;
@@ -709,7 +695,7 @@ pub async fn set_user_ping(
 		true
 	};
 	let response = if valid {
-		let guild_id_i64 = i64::from(guild_id);
+		let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 		let user_id_i64 = i64::from(ctx.author().id);
 		query!(
 			r#"
@@ -772,8 +758,7 @@ async fn set_waifu_channel(
 /// Configure words to react to with custom content
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_word_react(
@@ -787,7 +772,6 @@ pub async fn set_word_react(
 		String,
 	>,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
 	let mut emoji_id = None;
 	let mut guild_emoji = false;
 	let valid = if content.is_some() {
@@ -864,7 +848,7 @@ pub async fn set_word_react(
 		false
 	};
 	if valid {
-		let guild_id_i64 = i64::from(guild_id);
+		let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 		query!(
 			r#"
 			INSERT INTO guild_word_reaction (guild_id, word, content, media, emoji_id, guild_emoji)
@@ -901,16 +885,14 @@ pub async fn set_word_react(
 /// Configure words to track count of
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn set_word_track(
 	ctx: SContext<'_>,
 	#[description = "Word to track count of"] word: String,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
-	let guild_id_i64 = i64::from(guild_id);
+	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
 		INSERT INTO guild_word_tracking (guild_id, word)

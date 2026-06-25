@@ -2,10 +2,7 @@ use core::time::Duration;
 
 use fabsebot_core::{
 	config::{
-		constants::{
-			FAILED_SONG_FETCH, INVALID_TRACK_SOURCE, MISSING_METADATA_MSG, MISSING_REPLY_MSG,
-			QUEUE_MSG,
-		},
+		constants::{FAILED_SONG_FETCH, MISSING_METADATA_MSG, MISSING_REPLY_MSG, QUEUEING_MSG},
 		types::{Error, HTTP_CLIENT, SContext},
 	},
 	errors::commands::{AIError, InteractionError, MusicError},
@@ -13,20 +10,21 @@ use fabsebot_core::{
 		ai::ai_voice,
 		helpers::{fetch_and_parse, non_empty_vec},
 		voice::{
-			TrackSignal, get_configured_songbird_handler, lavalink_delete, lavalink_join,
-			lavalink_play, queue_song, remove_handler, try_voice, youtube_source,
+			TrackSignal, add_playlist, add_song, get_configured_songbird_handler, lavalink_delete,
+			lavalink_join, lavalink_play, remove_handler, try_voice,
 		},
 	},
 };
+use poise::CreateReply;
 use serde::Deserialize;
-use serenity::all::{CreateMessage, GenericChannelId, GuildId, MessageId};
-use songbird::input::{Compose as _, Input, YoutubeDl};
+use serenity::{
+	all::{CreateMessage, GenericChannelId, GuildId, MessageId},
+	builder::EditMessage,
+};
+use songbird::input::Input;
 use sqlx::{query, query_scalar};
 use tokio::process::Command;
-use tracing::warn;
 use url::Url;
-
-use crate::require_guild_id;
 
 #[derive(Deserialize)]
 struct DeezerResponse {
@@ -54,13 +52,11 @@ struct DeezerArtist {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
 pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
 	let payload = if let Some(input) = input {
 		input
 	} else if let Ok(msg) = ctx
@@ -73,6 +69,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 		ctx.reply(MISSING_REPLY_MSG).await?;
 		return Err(InteractionError::EmptyMessage.into());
 	};
+	let guild_id = ctx.guild_id().unwrap();
 	let handler_lock = try_voice(ctx, guild_id, false).await?;
 	let _typing = ctx.defer_or_broadcast().await;
 
@@ -88,6 +85,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 		.await
 		.enqueue_input(Input::from(bytes))
 		.await;
+
 	ctx.reply("Here we go").await?;
 
 	Ok(())
@@ -97,8 +95,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
@@ -108,9 +105,9 @@ pub async fn add_deezer_playlist(
 	#[rest]
 	playlist_id: String,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	let handler_lock = try_voice(ctx, guild_id, false).await?;
-
+	let _typing = ctx.defer_or_broadcast().await;
 	let payload: DeezerResponse = match fetch_and_parse(
 		HTTP_CLIENT
 			.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
@@ -124,49 +121,26 @@ pub async fn add_deezer_playlist(
 			return Err(err);
 		}
 	};
-
-	let _typing = ctx.defer_or_broadcast().await;
-	let reply = ctx.reply(QUEUE_MSG).await?;
+	let reply = ctx.reply(QUEUEING_MSG).await?;
 	let msg = reply.message().await?;
-	let mut failed_songs: u32 = 0;
-	for track in payload.tracks.data {
-		let search = format!("{} {}", track.title, track.artist.name);
-		let mut src = YoutubeDl::new_search(HTTP_CLIENT.clone(), search);
-		let audio = match src.create_async().await {
-			Ok(audio) => audio,
-			Err(err) => {
-				warn!("Failed to fetch song: {err}");
-				failed_songs = failed_songs.saturating_add(1);
-				continue;
-			}
-		};
-		let metadata = match src.aux_metadata().await {
-			Ok(metadata) => metadata,
-			Err(err) => {
-				warn!("Missing metadata for song: {err}");
-				failed_songs = failed_songs.saturating_add(1);
-				continue;
-			}
-		};
-		queue_song(
-			metadata,
-			audio,
-			src,
-			handler_lock.clone(),
-			i64::from(guild_id),
-			ctx.data(),
-			i64::from(msg.id),
-			i64::from(msg.channel_id),
-			i64::from(ctx.author().id),
-		)
-		.await?;
-	}
-	if failed_songs != 0 {
-		ctx.reply(format!(
-			"Couldn't queue {failed_songs} because of YouTube :/"
-		))
-		.await?;
-	}
+	let urls: Vec<String> = payload
+		.tracks
+		.data
+		.iter()
+		.map(|d| format!("{} {}", d.title, d.artist.name))
+		.collect();
+
+	add_playlist(
+		ctx,
+		i64::from(guild_id),
+		i64::from(msg.id),
+		i64::from(msg.channel_id),
+		i64::from(ctx.author().id),
+		urls,
+		handler_lock,
+		reply,
+	)
+	.await?;
 
 	Ok(())
 }
@@ -175,8 +149,7 @@ pub async fn add_deezer_playlist(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
@@ -186,7 +159,7 @@ pub async fn add_youtube_playlist(
 	#[rest]
 	playlist_url: String,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	let handler_lock = try_voice(ctx, guild_id, false).await?;
 	let _typing = ctx.defer_or_broadcast().await;
 	let yt_dlp_output = match Command::new("yt-dlp")
@@ -213,49 +186,20 @@ pub async fn add_youtube_playlist(
 		.map(ToString::to_string)
 		.collect();
 
-	let reply = ctx.reply(QUEUE_MSG).await?;
+	let reply = ctx.reply(QUEUEING_MSG).await?;
 	let msg = reply.message().await?;
 
-	let mut failed_songs: u32 = 0;
-
-	for url in urls {
-		let mut src = YoutubeDl::new(HTTP_CLIENT.clone(), url);
-		let audio = match src.create_async().await {
-			Ok(audio) => audio,
-			Err(err) => {
-				warn!("Failed to fetch song: {err}");
-				failed_songs = failed_songs.saturating_add(1);
-				continue;
-			}
-		};
-		let metadata = match src.aux_metadata().await {
-			Ok(metadata) => metadata,
-			Err(err) => {
-				warn!("Missing metadata for song: {err}");
-				failed_songs = failed_songs.saturating_add(1);
-				continue;
-			}
-		};
-		queue_song(
-			metadata,
-			audio,
-			src,
-			handler_lock.clone(),
-			i64::from(guild_id),
-			ctx.data(),
-			i64::from(msg.id),
-			i64::from(msg.channel_id),
-			i64::from(ctx.author().id),
-		)
-		.await?;
-	}
-
-	if failed_songs != 0 {
-		ctx.reply(format!(
-			"Couldn't queue {failed_songs} because of YouTube :/"
-		))
-		.await?;
-	}
+	add_playlist(
+		ctx,
+		i64::from(guild_id),
+		i64::from(msg.id),
+		i64::from(msg.channel_id),
+		i64::from(ctx.author().id),
+		urls,
+		handler_lock,
+		reply,
+	)
+	.await?;
 
 	Ok(())
 }
@@ -264,8 +208,7 @@ pub async fn add_youtube_playlist(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
@@ -275,13 +218,12 @@ pub async fn join_voice(
 	#[flag]
 	global: bool,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	if ctx.data().music_manager.get(guild_id).is_some() {
 		ctx.reply("Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection")
 			.await?;
 		return Ok(());
 	}
-	let _typing = ctx.defer_or_broadcast().await;
 	let _handler_lock = try_voice(ctx, guild_id, global).await?;
 
 	Ok(())
@@ -291,13 +233,12 @@ pub async fn join_voice(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CONNECT \
 	                            | SPEAK"
 )]
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	remove_handler(ctx, guild_id).await?;
 
 	ctx.reply("Left voice channel, don't forget me").await?;
@@ -324,8 +265,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
@@ -335,45 +275,27 @@ pub async fn play_song(
 	#[rest]
 	url: String,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	let handler_lock = try_voice(ctx, guild_id, false).await?;
-	let typing = ctx.defer_or_broadcast().await;
-	let Some(mut src) = youtube_source(url).await else {
-		ctx.reply(INVALID_TRACK_SOURCE).await?;
-		return Err(MusicError::UnknownSource.into());
-	};
-	let audio = match src.create_async().await {
-		Ok(audio) => audio,
-		Err(err) => {
-			ctx.reply(FAILED_SONG_FETCH).await?;
-			return Err(MusicError::FailedFetch(err).into());
-		}
-	};
-
-	let metadata = match src.aux_metadata().await {
-		Ok(metadata) => metadata,
-		Err(err) => {
-			ctx.reply(MISSING_METADATA_MSG).await?;
-			return Err(MusicError::MissingMetadata(err).into());
-		}
-	};
-	let reply = ctx.reply(QUEUE_MSG).await?;
+	let reply = ctx.reply(QUEUEING_MSG).await?;
 	let msg = reply.message().await?;
 	let guild_id_i64 = i64::from(guild_id);
-	queue_song(
-		metadata.clone(),
-		audio,
-		src.clone(),
-		handler_lock.clone(),
-		guild_id_i64,
+	if let Err(err) = add_song(
 		ctx.data(),
+		guild_id_i64,
 		i64::from(msg.id),
 		i64::from(msg.channel_id),
 		i64::from(ctx.author().id),
+		url.clone(),
+		handler_lock.clone(),
 	)
-	.await?;
-
-	drop(typing);
+	.await
+	{
+		reply
+			.edit(ctx, CreateReply::new().content(FAILED_SONG_FETCH))
+			.await?;
+		return Err(err);
+	}
 
 	let is_global = query_scalar!(
 		r#"
@@ -413,23 +335,25 @@ pub async fn play_song(
 					.http()
 					.get_channel(GenericChannelId::new(id.get()))
 					.await && let Some(guild_channel) = channel.guild()
-				&& let Ok(global_audio) = src.create_async().await
 			{
-				let msg = guild_channel
-					.send_message(ctx.http(), CreateMessage::default().content(QUEUE_MSG))
+				let mut msg = guild_channel
+					.send_message(ctx.http(), CreateMessage::default().content(QUEUEING_MSG))
 					.await?;
-				queue_song(
-					metadata.clone(),
-					global_audio,
-					src.clone(),
-					global_handler_lock,
-					i64::from(guild_id),
+				if let Err(err) = add_song(
 					ctx.data(),
+					global_guild,
 					i64::from(msg.id),
 					i64::from(msg.channel_id),
 					i64::from(ctx.author().id),
+					url.clone(),
+					global_handler_lock,
 				)
-				.await?;
+				.await
+				{
+					msg.edit(ctx.http(), EditMessage::new().content(FAILED_SONG_FETCH))
+						.await?;
+					return Err(err);
+				}
 			}
 		}
 	}
@@ -440,8 +364,7 @@ pub async fn play_song(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
@@ -449,8 +372,16 @@ pub async fn seek_song(
 	ctx: SContext<'_>,
 	#[description = "Seconds to seek, i.e. '-20' or '+20'"] seconds: String,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	let handler_lock = try_voice(ctx, guild_id, false).await?;
+	let seconds_value = match seconds.parse::<i64>() {
+		Ok(value) => value,
+		Err(err) => {
+			ctx.reply("Bruh, provide a valid number with a sign (e.g. '+20' or '-20')!")
+				.await?;
+			return Err(MusicError::InvalidSeek(err).into());
+		}
+	};
 	let _typing = ctx.defer_or_broadcast().await;
 	let Some(current_playback) = get_configured_songbird_handler(&handler_lock)
 		.await
@@ -468,39 +399,20 @@ pub async fn seek_song(
 		}
 	};
 	let current_position = current_playback_info.position;
-	let seconds_value = match seconds.parse::<i64>() {
-		Ok(value) => value,
-		Err(err) => {
-			ctx.reply("Bruh, provide a valid number with a sign (e.g. '+20' or '-20')!")
-				.await?;
-			return Err(MusicError::InvalidSeek(err).into());
-		}
-	};
-	let current_secs = current_position.as_secs().cast_signed();
-	if seconds_value.is_negative() {
-		let new_position = current_secs.saturating_add(seconds_value).cast_unsigned();
-		let seek = Duration::from_secs(new_position);
-		if seek.is_zero() {
-			ctx.reply("Bruh, wanting to seek more seconds back than what have been played")
-				.await?;
-		} else if let Err(err) = current_playback.seek_async(seek).await {
-			ctx.reply("Failed to seek song backwards").await?;
-			return Err(MusicError::FailedSeek(err).into());
-		} else {
-			ctx.reply(format!("Seeked {}s backward", seconds_value.abs()))
-				.await?;
-		}
+	let new_position = if seconds_value.is_negative() {
+		current_position.saturating_sub(Duration::from_secs(seconds_value.abs().cast_unsigned()))
 	} else {
-		let seconds_to_add = seconds_value.cast_unsigned();
-		let seek = current_position.saturating_add(Duration::from_secs(seconds_to_add));
-		if let Err(err) = current_playback.seek_async(seek).await {
-			ctx.reply("Bruh, you seeked more forward than the length of the song! I'm bailing out")
-				.await?;
-			return Err(MusicError::FailedSeek(err).into());
-		}
-		ctx.reply(format!("Seeked {seconds_value}s forward"))
-			.await?;
-	}
+		current_position.saturating_add(Duration::from_secs(seconds_value.cast_unsigned()))
+	};
+	let reply = if new_position.is_zero() {
+		"Bruh, wanting to seek more seconds backwards than what have been played"
+	} else if let Err(err) = current_playback.seek_async(new_position).await {
+		ctx.reply("Failed to seek song :/").await?;
+		return Err(MusicError::FailedSeek(err).into());
+	} else {
+		"Song seeked"
+	};
+	ctx.reply(reply).await?;
 
 	Ok(())
 }
@@ -508,19 +420,17 @@ pub async fn seek_song(
 /// Join the current voice channel (lavalink)
 #[poise::command(
 	prefix_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
 pub async fn join_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	if ctx.data().music_manager.get(guild_id).is_some() {
 		ctx.reply("Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection")
 			.await?;
 		return Ok(());
 	}
-	let _typing = ctx.defer_or_broadcast().await;
 	lavalink_join(ctx, guild_id).await?;
 	Ok(())
 }
@@ -528,13 +438,12 @@ pub async fn join_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
 /// Leave the current voice channel (lavalink)
 #[poise::command(
 	prefix_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CONNECT \
 	                            | SPEAK"
 )]
 pub async fn leave_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	remove_handler(ctx, guild_id).await?;
 	lavalink_delete(ctx, guild_id).await?;
 
@@ -544,8 +453,7 @@ pub async fn leave_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
 /// Play song / add song to queue in the current voice channel (lavalink)
 #[poise::command(
 	prefix_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
@@ -555,7 +463,7 @@ pub async fn play_lavalink(
 	#[rest]
 	url: String,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
+	let guild_id = ctx.guild_id().unwrap();
 	lavalink_play(ctx, guild_id, url).await?;
 
 	Ok(())

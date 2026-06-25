@@ -28,7 +28,7 @@ use serenity::{
 use sqlx::query_scalar;
 use url::form_urlencoded::byte_serialize;
 
-use crate::{command_permissions, require_guild_id};
+use crate::command_permissions;
 
 #[derive(Deserialize)]
 struct FabseAIImage {
@@ -703,8 +703,7 @@ pub async fn roast_user(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
 	                            READ_MESSAGE_HISTORY"
 )]
@@ -712,7 +711,6 @@ pub async fn roast(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
 	let avatar_url = member_pfp(&ctx, &member).await?;
 	let _typing = ctx.defer_or_broadcast().await;
 
@@ -739,8 +737,8 @@ pub async fn roast(
 		WHERE guild_id = $1
 		AND user_id = $2
 		"#,
-		guild_id.get().cast_signed(),
-		ctx.author().id.get().cast_signed()
+		i64::from(ctx.guild_id().unwrap()),
+		i64::from(ctx.author().id)
 	)
 	.fetch_one(&ctx.data().db)
 	.await?;

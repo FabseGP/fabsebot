@@ -6,14 +6,11 @@ use fabsebot_core::{
 };
 use serenity::all::{Colour, CreateContainer, Member, PremiumType};
 
-use crate::require_guild;
-
 /// Get server information
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
@@ -33,7 +30,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 		guild_roles,
 		guild_channels,
 	) = {
-		let guild = require_guild(ctx).await?;
+		let guild = ctx.guild().unwrap();
 		let id = guild.id;
 		(
 			id,
@@ -90,8 +87,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn user_info(

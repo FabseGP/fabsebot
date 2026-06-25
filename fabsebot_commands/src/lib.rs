@@ -1,18 +1,16 @@
 #![feature(iter_intersperse)]
 
-use std::convert::Infallible;
-
 use anyhow::Result as AResult;
 use fabsebot_core::{
 	config::{
-		constants::{HUMAN_ONLY_MSG, NOT_IN_GUILD_MSG},
+		constants::HUMAN_ONLY_MSG,
 		types::{Data, Error, SContext},
 	},
-	errors::commands::{GuildError, InteractionError},
+	errors::commands::InteractionError,
 	utils::helpers::correct_permissions,
 };
 use poise::Command;
-use serenity::all::{CacheRef, Guild, GuildId, Permissions, User};
+use serenity::all::{Permissions, User};
 
 mod api_calls;
 mod funny;
@@ -90,22 +88,6 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		settings::set_word_react(),
 		settings::set_word_track(),
 	]
-}
-
-pub async fn require_guild(ctx: SContext<'_>) -> AResult<CacheRef<'_, GuildId, Guild, Infallible>> {
-	let Some(guild) = ctx.guild() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Err(GuildError::NotInGuild.into());
-	};
-	Ok(guild)
-}
-
-pub async fn require_guild_id(ctx: SContext<'_>) -> AResult<GuildId> {
-	let Some(guild_id) = ctx.guild_id() else {
-		ctx.reply(NOT_IN_GUILD_MSG).await?;
-		return Err(GuildError::NotInGuild.into());
-	};
-	Ok(guild_id)
 }
 
 pub async fn require_human(ctx: SContext<'_>, user: &User) -> AResult<()> {

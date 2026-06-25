@@ -7,14 +7,13 @@ use crate::utils::image::create_solid_theme;
 
 pub const MESSAGE_LIMIT: usize = 4000;
 
-pub const NOT_IN_GUILD_MSG: &str = "Why you not in a guild?";
 pub const HUMAN_ONLY_MSG: &str = "**Invalid target, get some friends**";
 pub const MISSING_REPLY_MSG: &str = "Bruh, reply to a message";
 pub const NOT_IN_VOICE_CHAN_MSG: &str =
 	"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel first";
 pub const EMPTY_VOICE_CHAN_MSG: &str = "No voice channel with at least 1 user found :/";
 pub const INVALID_TRACK_SOURCE: &str = "Only YouTube-links are supported";
-pub const QUEUE_MSG: &str = "Song added to queue";
+pub const QUEUEING_MSG: &str = "Adding song to queue";
 pub const MISSING_METADATA_MSG: &str = "Nothing is known about this song";
 pub const FAILED_SONG_FETCH: &str = "Failed to fetch song from YouTube :/";
 pub const TSUNDERE_REPLY: &str = "Ugh, fine. It's nice to see you again, I suppose... for now, \

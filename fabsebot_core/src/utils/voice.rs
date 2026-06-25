@@ -12,6 +12,7 @@ use lavalink_rs::{
 	player_context::TrackInQueue,
 };
 use metrics::counter;
+use poise::{CreateReply, ReplyHandle};
 use serenity::{
 	all::{
 		ButtonStyle, ChannelId, Colour, ComponentInteraction, ComponentInteractionCollector,
@@ -26,7 +27,7 @@ use songbird::{
 	Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
 	Songbird, TrackEvent,
 	driver::Bitrate,
-	input::{AudioStream, AuxMetadata, Input, LiveInput, YoutubeDl},
+	input::{AudioStream, AuxMetadata, Compose as _, Input, LiveInput, YoutubeDl},
 	tracks::{PlayMode, Track},
 };
 use sqlx::{Pool, Postgres, query, query_as, query_scalar, types::time::OffsetDateTime};
@@ -449,7 +450,7 @@ impl PlaybackHandler {
 		let track_guilds = if self.global {
 			get_matching_guild_plays(track_uuid, &self.bot_data.db).await?
 		} else {
-			vec![self.guild_id.get().cast_signed()]
+			vec![i64::from(self.guild_id)]
 		};
 
 		loop {
@@ -612,27 +613,19 @@ pub async fn add_voice_events(
 	);
 }
 
-pub async fn get_configured_songbird_handler(
-	handler_lock: &Arc<Mutex<Call>>,
-) -> MutexGuard<'_, Call> {
+pub async fn get_configured_songbird_handler(handler_lock: &Mutex<Call>) -> MutexGuard<'_, Call> {
 	let mut handler = handler_lock.lock().await;
 	handler.set_bitrate(Bitrate::Max);
 	handler
 }
 
-pub async fn youtube_source(url: String) -> Option<YoutubeDl<'static>> {
-	match Url::parse(&url) {
-		Ok(parsed_url) => parsed_url
-			.domain()
-			.filter(|d| {
-				*d == "youtube.com"
-					|| *d == "www.youtube.com"
-					|| *d == "youtu.be"
-					|| *d == "m.youtube.com"
-			})
-			.map(|_| YoutubeDl::new(HTTP_CLIENT.clone(), url)),
-		Err(_) => Some(YoutubeDl::new_search(HTTP_CLIENT.clone(), url)),
-	}
+#[must_use]
+pub fn youtube_source(url: &str) -> bool {
+	Url::parse(url).is_ok_and(|parsed_url| {
+		parsed_url.domain().is_some_and(|d| {
+			d == "youtube.com" || d == "www.youtube.com" || d == "youtu.be" || d == "m.youtube.com"
+		})
+	})
 }
 
 pub async fn queue_song(
@@ -692,7 +685,7 @@ pub async fn join_container(ctx: &SContext<'_>) -> AResult<()> {
 }
 
 pub async fn join_handler(
-	music_manager: &Arc<Songbird>,
+	music_manager: Arc<Songbird>,
 	guild_id: GuildId,
 	channel_id: ChannelId,
 ) -> AResult<Arc<Mutex<Call>>> {
@@ -722,13 +715,14 @@ pub async fn voice_channel_id(ctx: SContext<'_>) -> AResult<ChannelId> {
 
 pub async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
 	let channel_id = voice_channel_id(ctx).await?;
-	let handler_lock = match join_handler(&ctx.data().music_manager, guild_id, channel_id).await {
-		Ok(lock) => lock,
-		Err(err) => {
-			ctx.reply("I don't wanna join").await?;
-			return Err(err);
-		}
-	};
+	let handler_lock =
+		match join_handler(ctx.data().music_manager.clone(), guild_id, channel_id).await {
+			Ok(lock) => lock,
+			Err(err) => {
+				ctx.reply("I don't wanna join").await?;
+				return Err(err);
+			}
+		};
 	Ok(handler_lock)
 }
 
@@ -969,7 +963,7 @@ pub async fn get_queue_history(
 pub async fn rejoin_voice(
 	ctx: &SerenityContext,
 	conn: &Pool<Postgres>,
-	music_manager: &Arc<Songbird>,
+	music_manager: Arc<Songbird>,
 ) -> AResult<()> {
 	let persistent_voice_channels = query!(
 		r#"
@@ -986,16 +980,21 @@ pub async fn rejoin_voice(
 		let guild_id = GuildId::new(record.guild_id.cast_unsigned());
 		let channel_id =
 			GenericChannelId::new(record.current_voice_channel.unwrap().cast_unsigned());
-		let handler_lock =
-			match join_handler(music_manager, guild_id, channel_id.expect_channel()).await {
-				Ok(lock) => lock,
-				Err(err) => {
-					let output = format!("# Failed to rejoin voice channel\n{err}");
-					counter!(METRICS.voice_join_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
-					continue;
-				}
-			};
+		let handler_lock = match join_handler(
+			music_manager.clone(),
+			guild_id,
+			channel_id.expect_channel(),
+		)
+		.await
+		{
+			Ok(lock) => lock,
+			Err(err) => {
+				let output = format!("# Failed to rejoin voice channel\n{err}");
+				counter!(METRICS.voice_join_errors.clone()).increment(1);
+				log_error(&output, ctx).await;
+				continue;
+			}
+		};
 		add_voice_events(ctx, guild_id, channel_id, handler_lock, false).await;
 	}
 
@@ -1096,6 +1095,89 @@ pub async fn lavalink_play(ctx: SContext<'_>, guild_id: GuildId, input: String) 
 	}
 
 	ctx.reply("Song playing").await?;
+
+	Ok(())
+}
+
+pub async fn add_song(
+	data: Arc<Data>,
+	guild_id_i64: i64,
+	msg_id_i64: i64,
+	channel_id_i64: i64,
+	author_id_i64: i64,
+	url: String,
+	handler_lock: Arc<Mutex<Call>>,
+) -> AResult<()> {
+	let mut src = if youtube_source(&url) {
+		YoutubeDl::new(HTTP_CLIENT.clone(), url)
+	} else {
+		YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
+	};
+	let audio = match src.create_async().await {
+		Ok(audio) => audio,
+		Err(err) => {
+			bail!("Failed to fetch song: {err}");
+		}
+	};
+	let metadata = match src.aux_metadata().await {
+		Ok(metadata) => metadata,
+		Err(err) => {
+			bail!("Missing metadata for song: {err}");
+		}
+	};
+	queue_song(
+		metadata,
+		audio,
+		src,
+		handler_lock.clone(),
+		guild_id_i64,
+		data,
+		msg_id_i64,
+		channel_id_i64,
+		author_id_i64,
+	)
+	.await?;
+
+	Ok(())
+}
+
+pub async fn add_playlist(
+	ctx: SContext<'_>,
+	guild_id_i64: i64,
+	msg_id_i64: i64,
+	channel_id_i64: i64,
+	author_id_i64: i64,
+	urls: Vec<String>,
+	handler_lock: Arc<Mutex<Call>>,
+	reply: ReplyHandle<'_>,
+) -> AResult<()> {
+	let mut failed_songs: u32 = 0;
+	for url in urls {
+		if let Err(err) = add_song(
+			ctx.data(),
+			guild_id_i64,
+			msg_id_i64,
+			channel_id_i64,
+			author_id_i64,
+			url,
+			handler_lock.clone(),
+		)
+		.await
+		{
+			warn!("{err}");
+			failed_songs = failed_songs.saturating_add(1);
+		}
+	}
+	if failed_songs != 0 {
+		reply
+			.edit(
+				ctx,
+				CreateReply::new().content(format!(
+					"Couldn't queue {failed_songs} because of YouTube :/"
+				)),
+			)
+			.await?;
+	}
 
 	Ok(())
 }

@@ -10,7 +10,7 @@ use serenity::all::{
 	CreateContainer, CreateContainerComponent, CreateInteractionResponse, User,
 };
 
-use crate::{require_guild_id, require_human};
+use crate::require_human;
 
 #[derive(PartialEq, Eq, ChoiceParameter)]
 pub enum RpsChoice {
@@ -65,8 +65,7 @@ impl RpsChoice {
 #[poise::command(
 	prefix_command,
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn rps(
@@ -74,9 +73,9 @@ pub async fn rps(
 	#[description = "Target"] user: User,
 	#[description = "Your choice: rock, paper, or scissors"] choice: RpsChoice,
 ) -> Result<(), Error> {
-	let guild_id = require_guild_id(ctx).await?;
 	require_human(ctx, &user).await?;
 
+	let guild_id = ctx.guild_id().unwrap();
 	let ctx_id = ctx.id();
 	let buttons = [
 		CreateButton::new(RpsChoice::Rock.button_id(ctx_id))

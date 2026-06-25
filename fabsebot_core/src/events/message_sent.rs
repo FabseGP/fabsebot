@@ -11,10 +11,10 @@ use serenity::{
 		Colour, Context as SContext, CreateAllowedMentions, CreateContainer, CreateMessage,
 		EmojiId, ExecuteWebhook, GenericChannelId, GuildId, Message, MessageId, ReactionType,
 	},
-	builder::CreateComponent,
+	builder::{CreateComponent, EditMessage},
 	model::channel::MessageFlags,
 };
-use songbird::{Call, Songbird, input::Compose as _};
+use songbird::{Call, Songbird};
 use sqlx::{Pool, Postgres, query, query_as, query_scalar};
 use tokio::{join, sync::Mutex, task::spawn};
 use tracing::error;
@@ -25,11 +25,10 @@ use crate::{
 		constants::{
 			AI_CHAT_ERROR, DEFAULT_BOT_ROLE, EMPTY_VOICE_CHAN_MSG, FABSEMAN_WEBHOOK_CONTENT,
 			FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FAILED_SONG_FETCH, FLOPPAGANDA_GIF,
-			INVALID_TRACK_SOURCE, MESSAGE_LIMIT, MISSING_METADATA_MSG, QUEUE_MSG,
+			MESSAGE_LIMIT, QUEUEING_MSG,
 		},
 		types::{AIChats, Data, GuildCache, WebhookMap, utils_config},
 	},
-	errors::commands::MusicError,
 	log_error, log_errors,
 	stats::counters::METRICS,
 	utils::{
@@ -38,7 +37,7 @@ use crate::{
 			channel_counter, discord_message_link, edit_message_container, get_gif, get_waifu,
 			media_gallery, message_container, separator, text_display, thumbnail_section,
 		},
-		voice::{add_voice_events, queue_song, youtube_source},
+		voice::{add_song, add_voice_events},
 		webhook::{spoiler_message, webhook_find},
 	},
 };
@@ -126,14 +125,7 @@ async fn queue_track(
 		.await && let Some(channel_id) = voice_state.channel_id
 		&& let Ok(lock) = music_manager.join(guild_id, channel_id).await
 	{
-		add_voice_events(
-			ctx,
-			guild_id,
-			GenericChannelId::new(channel_id.get()),
-			lock.clone(),
-			false,
-		)
-		.await;
+		add_voice_events(ctx, guild_id, new_message.channel_id, lock.clone(), false).await;
 		lock
 	} else {
 		new_message.reply(&ctx.http, EMPTY_VOICE_CHAN_MSG).await?;
@@ -141,72 +133,28 @@ async fn queue_track(
 	};
 	let ctx_clone = ctx.clone();
 	let new_message_clone = new_message.clone();
+	let mut msg = new_message.reply(&ctx_clone.http, QUEUEING_MSG).await?;
 	spawn(async move {
-		let Some(mut src) = youtube_source(new_message_clone.content.to_string()).await else {
-			if let Err(err) = new_message_clone
-				.reply(&ctx_clone.http, INVALID_TRACK_SOURCE)
+		if let Err(err) = add_song(
+			ctx_clone.data(),
+			i64::from(guild_id),
+			i64::from(msg.id),
+			i64::from(msg.channel_id),
+			i64::from(new_message_clone.author.id),
+			new_message_clone.content.into_string(),
+			handler_lock,
+		)
+		.await
+		{
+			if let Err(err) = msg
+				.edit(
+					&ctx_clone.http,
+					EditMessage::new().content(FAILED_SONG_FETCH),
+				)
 				.await
 			{
 				error!("Failed to send message: {err}");
 			}
-			return;
-		};
-		let audio = match src.create_async().await {
-			Ok(audio) => audio,
-			Err(err) => {
-				let output = format!(
-					"# Failed to create source\n{}",
-					MusicError::FailedFetch(err)
-				);
-				counter!(METRICS.music_queue_errors.clone()).increment(1);
-				log_error(&output, &ctx_clone).await;
-				if let Err(err) = new_message_clone
-					.reply(&ctx_clone.http, FAILED_SONG_FETCH)
-					.await
-				{
-					error!("Failed to send message: {err}");
-				}
-				return;
-			}
-		};
-		let metadata = match src.aux_metadata().await {
-			Ok(metadata) => metadata,
-			Err(err) => {
-				let output = format!(
-					"# Failed to obtain metadata\n{}",
-					MusicError::MissingMetadata(err)
-				);
-				counter!(METRICS.music_queue_errors.clone()).increment(1);
-				log_error(&output, &ctx_clone).await;
-				if let Err(err) = new_message_clone
-					.reply(&ctx_clone.http, MISSING_METADATA_MSG)
-					.await
-				{
-					error!("Failed to send message: {err}");
-				}
-				return;
-			}
-		};
-		let msg = match new_message_clone.reply(&ctx_clone.http, QUEUE_MSG).await {
-			Ok(msg) => msg,
-			Err(err) => {
-				error!("Failed to send message: {err}");
-				return;
-			}
-		};
-		if let Err(err) = queue_song(
-			metadata,
-			audio,
-			src,
-			handler_lock,
-			i64::from(guild_id),
-			ctx_clone.data(),
-			i64::from(msg.id),
-			i64::from(msg.channel_id),
-			i64::from(new_message_clone.author.id),
-		)
-		.await
-		{
 			let output = format!("# Failed to queue song\n{err}");
 			counter!(METRICS.music_queue_errors.clone()).increment(1);
 			log_error(&output, &ctx_clone).await;

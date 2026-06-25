@@ -33,10 +33,9 @@ pub async fn anonymous(
 /// Misuse other users dm
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
-	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS",
-	owners_only
+	owners_only,
+	guild_only,
+	required_bot_permissions = "SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn user_dm(
 	ctx: SContext<'_>,
@@ -69,8 +68,7 @@ pub async fn user_dm(
 /// Send message as another user
 #[poise::command(
 	slash_command,
-	install_context = "Guild",
-	interaction_context = "Guild",
+	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
 	                            MANAGE_WEBHOOKS"
 )]
@@ -79,7 +77,6 @@ pub async fn user_misuse(
 	#[description = "Target"] member: Member,
 	#[description = "Message to send"]
 	#[max_length = 2000]
-	#[rest]
 	message: String,
 ) -> Result<(), Error> {
 	let avatar_url = member_pfp(&ctx, &member).await?;
