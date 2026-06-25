@@ -531,7 +531,12 @@ where
 	T: DeserializeOwned,
 {
 	let response = match request.await {
-		Ok(resp) => resp,
+		Ok(resp) => match resp.error_for_status() {
+			Ok(data) => data,
+			Err(err) => {
+				return Err(HTTPError::Request(err).into());
+			}
+		},
 		Err(err) => {
 			return Err(HTTPError::Request(err).into());
 		}
