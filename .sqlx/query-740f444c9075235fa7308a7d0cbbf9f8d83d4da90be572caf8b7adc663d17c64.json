@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    \t\tUPDATE guild_word_tracking\n    \t\tSET count = count + 1\n    \t\tWHERE guild_id = $1\n    \t\tAND word ILIKE ANY($2)\n    \t\t",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "740f444c9075235fa7308a7d0cbbf9f8d83d4da90be572caf8b7adc663d17c64"
+}

@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n    \t\t\tSELECT afk_reason, pinged_links, ping_content, ping_media, afk from user_settings\n    \t\t\tWHERE guild_id = $1\n    \t\t\tAND user_id = $2\n    \t\t\tAND (afk IS TRUE OR ping_content IS NOT NULL)\n    \t\t\t",
+  "query": "\n\t\tWITH ensure_user AS (\n\t\t\tINSERT INTO users (user_id)\n\t\t\tVALUES ($1)\n\t\t\tON CONFLICT (user_id) DO NOTHING\n\t\t)\n    \tINSERT INTO user_settings (guild_id, user_id, message_count)\n   \t\tVALUES ($1, $2, 1)\n    \tON CONFLICT (guild_id, user_id) \n    \tDO UPDATE SET message_count = user_settings.message_count + 1\n    \tRETURNING user_id, afk_reason, pinged_links, ping_content, ping_media, afk\n    \t",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "afk_reason",
         "type_info": "Text",
         "origin": {
@@ -15,7 +26,7 @@
         }
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "pinged_links",
         "type_info": "Text",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "ping_content",
         "type_info": "Text",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "ping_media",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "afk",
         "type_info": "Bool",
         "origin": {
@@ -66,6 +77,7 @@
       ]
     },
     "nullable": [
+      false,
       true,
       true,
       true,
@@ -73,5 +85,5 @@
       false
     ]
   },
-  "hash": "eac8f59cce6bcc1294ac5ca0efc2a4832674c3beac02b847b6a9fb94637eb9cf"
+  "hash": "84264774f6df4e54043e6cad7aab65c427f455db85e2ffa73ff8c031e0fdcff7"
 }

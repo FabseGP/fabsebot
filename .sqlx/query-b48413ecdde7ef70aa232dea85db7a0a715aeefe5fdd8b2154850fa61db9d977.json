@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\tSELECT word, content, media, emoji_id, guild_emoji FROM guild_word_reaction\n\t\tWHERE guild_id = $1\n\t\tAND word ILIKE ANY($2)\n\t\t",
+  "query": "\n        \tSELECT word, content, media, emoji_id, guild_emoji\n        \tFROM guild_word_reaction\n        \tWHERE guild_id = $1\n        \tAND word ILIKE ANY($2)\n        \t",
   "describe": {
     "columns": [
       {
@@ -73,5 +73,5 @@
       false
     ]
   },
-  "hash": "c042331dd077d29c200b38f373bbb8ff76e72fcdf9e8e1cd01b5da80b5400bca"
+  "hash": "b48413ecdde7ef70aa232dea85db7a0a715aeefe5fdd8b2154850fa61db9d977"
 }

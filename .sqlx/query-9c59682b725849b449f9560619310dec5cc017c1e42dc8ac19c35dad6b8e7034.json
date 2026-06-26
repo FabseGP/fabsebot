@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n    \tINSERT INTO user_settings (guild_id, user_id, message_count)\n   \t\tVALUES ($1, $2, 1)\n    \tON CONFLICT (guild_id, user_id) \n    \tDO UPDATE SET message_count = user_settings.message_count + 1\n    \tRETURNING afk_reason, pinged_links, ping_content, ping_media, afk\n    \t",
+  "query": "\n        \tSELECT user_id, afk_reason, pinged_links, ping_content, ping_media, afk\n        \tFROM user_settings\n        \tWHERE guild_id = $1\n          \tAND user_id = ANY($2)\n          \tAND (afk IS TRUE OR ping_content IS NOT NULL)\n        \t",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "afk_reason",
         "type_info": "Text",
         "origin": {
@@ -15,7 +26,7 @@
         }
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "pinged_links",
         "type_info": "Text",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "ping_content",
         "type_info": "Text",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "ping_media",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "afk",
         "type_info": "Bool",
         "origin": {
@@ -62,10 +73,11 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
+      false,
       true,
       true,
       true,
@@ -73,5 +85,5 @@
       false
     ]
   },
-  "hash": "a82a3055fad1951bab2d46b9697cadadf27fe895eb07fd1fddb431ef4432a16e"
+  "hash": "9c59682b725849b449f9560619310dec5cc017c1e42dc8ac19c35dad6b8e7034"
 }
