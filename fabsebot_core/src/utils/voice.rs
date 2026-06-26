@@ -1,4 +1,12 @@
-use std::{collections::VecDeque, fmt::Write as _, sync::Arc, time::Duration};
+use std::{
+	collections::VecDeque,
+	fmt::Write as _,
+	sync::{
+		Arc,
+		atomic::{AtomicBool, Ordering},
+	},
+	time::Duration,
+};
 
 use anyhow::{Result as AResult, bail};
 use fabsebot_db::guild::{insert_channel, set_current_voice_channel};
@@ -47,8 +55,8 @@ use uuid::Uuid;
 use crate::{
 	config::{
 		constants::{
-			EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, INVALID_TRACK_SOURCE, MESSAGE_LIMIT,
-			NOT_IN_VOICE_CHAN_MSG,
+			EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, FALLBACK_MUSIC_THUMBNAIL,
+			INVALID_TRACK_SOURCE, MESSAGE_LIMIT, NOT_IN_VOICE_CHAN_MSG,
 		},
 		types::{Data, HTTP_CLIENT, SContext},
 	},
@@ -139,7 +147,6 @@ struct PlaybackHandler {
 	serenity_context: SerenityContext,
 	bot_data: Arc<Data>,
 	guild_id: GuildId,
-	channel_id: GenericChannelId,
 	global: bool,
 }
 
@@ -148,14 +155,12 @@ impl PlaybackHandler {
 		serenity_context: SerenityContext,
 		bot_data: Arc<Data>,
 		guild_id: GuildId,
-		channel_id: GenericChannelId,
 		global: bool,
 	) -> Self {
 		Self {
 			serenity_context,
 			bot_data,
 			guild_id,
-			channel_id,
 			global,
 		}
 	}
@@ -163,7 +168,7 @@ impl PlaybackHandler {
 	fn create_components<'a>(
 		author_name: &'a str,
 		msg_id: MessageId,
-		metadata: &'a TrackData,
+		metadata: &'a TrackPlayData,
 		queue_size: usize,
 	) -> (
 		CreateContainerComponent<'a>,
@@ -173,6 +178,10 @@ impl PlaybackHandler {
 		let title = metadata.title.as_ref().map_or("Unknown title", |t| t);
 		let artist = metadata.artist.as_ref().map_or("Unknown artist", |a| a);
 		let url = metadata.source_url.as_ref().map_or("Unknown source", |s| s);
+		let thumbnail = metadata
+			.thumbnail_url
+			.as_ref()
+			.map_or(FALLBACK_MUSIC_THUMBNAIL, |t| t);
 		let duration = metadata.duration_sec.unwrap_or(0);
 
 		let text = format!(
@@ -181,7 +190,7 @@ impl PlaybackHandler {
 			queue_size.saturating_sub(1)
 		);
 
-		let thumbnail_section = thumbnail_section(text, metadata.thumbnail_url.clone().unwrap());
+		let thumbnail_section = thumbnail_section(text, thumbnail);
 
 		let primary_row = CreateContainerComponent::ActionRow(CreateActionRow::buttons(vec![
 			CreateButton::new(format!("{msg_id}_s"))
@@ -214,11 +223,10 @@ impl PlaybackHandler {
 		lyrics_container: &mut Option<CreateContainer<'a>>,
 		history_shown: &mut bool,
 		history_container: &mut Option<CreateContainer<'a>>,
-		track: &TrackData,
+		track: &TrackPlayData,
 		track_guilds: &[i64],
 		container: &CreateContainer<'a>,
 		action_row: &CreateContainerComponent<'a>,
-		requested_channel: i64,
 	) -> AResult<()> {
 		interaction.defer(&self.serenity_context.http).await?;
 
@@ -345,7 +353,7 @@ impl PlaybackHandler {
 					container.clone()
 				} else {
 					let queue_history =
-						get_queue_history(requested_channel, &self.bot_data.db).await?;
+						get_queue_history(track.requested_channel, &self.bot_data.db).await?;
 					let mut history_string = String::with_capacity(512);
 					writeln!(
 						history_string,
@@ -387,8 +395,7 @@ impl PlaybackHandler {
 
 	async fn update_info(
 		&self,
-		track: TrackData,
-		song_play: GuildPlay,
+		queue_data: Arc<QueueData>,
 		mut receiver: Receiver<TrackSignal>,
 		track_uuid: Uuid,
 	) -> AResult<()> {
@@ -400,16 +407,18 @@ impl PlaybackHandler {
 			.queue()
 			.len();
 
-		let channel_id = GenericChannelId::new(song_play.requested_channel.cast_unsigned());
-		let message_id = MessageId::new(song_play.request_message_id.cast_unsigned());
+		let track_data = &queue_data.track_data;
 
-		let author_name = song_play
+		let channel_id = GenericChannelId::new(track_data.requested_channel.cast_unsigned());
+		let message_id = MessageId::new(track_data.request_message_id.cast_unsigned());
+
+		let author_name = track_data
 			.requested_by
 			.get_author_name(&self.serenity_context)
 			.await;
 
 		let (thumbnail_section, action_row, visit_button) =
-			Self::create_components(&author_name, message_id, &track, queue_size);
+			Self::create_components(&author_name, message_id, track_data, queue_size);
 
 		let base_container = CreateContainer::new(vec![thumbnail_section])
 			.add_component(separator())
@@ -429,7 +438,7 @@ impl PlaybackHandler {
 			)
 			.await?;
 
-		let message_id_copy = song_play.request_message_id.to_string();
+		let message_id_copy = track_data.request_message_id.to_string();
 
 		let mut lyrics_shown = false;
 		let mut history_shown = false;
@@ -463,11 +472,10 @@ impl PlaybackHandler {
 						&mut lyrics_container,
 						&mut history_shown,
 						&mut history_embed,
-						&track,
+						track_data,
 						&track_guilds,
-										&full_container,
-						&action_row,
-						song_play.requested_channel
+						&full_container,
+						&action_row
 					)
 					.await?;
 				},
@@ -506,64 +514,57 @@ impl PlaybackHandler {
 #[async_trait]
 impl VoiceEventHandler for PlaybackHandler {
 	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
-		if let EventContext::Track([(state, handle)]) = ctx {
-			if state.playing == PlayMode::Play {
-				if let Ok(guild_track) = get_track(handle.uuid(), &self.bot_data.db).await
-					&& let Ok(song_play) = get_guild_play(
-						handle.uuid(),
-						i64::from(self.guild_id),
-						i64::from(self.channel_id),
-						&self.bot_data.db,
-					)
-					.await
-				{
-					let self_clone = self.clone();
+		if let EventContext::Track(tracks) = ctx {
+			for (state, handle) in *tracks {
+				let queue_data: Arc<QueueData> = handle.data();
+				if state.playing == PlayMode::Play {
+					let first_play = queue_data.first_play.load(Ordering::Relaxed);
+					if first_play {
+						let self_clone = self.clone();
+						let track_watch = self
+							.bot_data
+							.track_signals
+							.get(&self.guild_id.get())
+							.unwrap()
+							.value()
+							.subscribe();
+						let track_uuid = handle.uuid();
+						let queue_data_clone = queue_data.clone();
+						spawn(async move {
+							if let Err(err) = self_clone
+								.update_info(queue_data_clone, track_watch, track_uuid)
+								.await
+							{
+								error!("Failed to update song info: {err}");
+							}
+						});
+						queue_data.first_play.store(false, Ordering::Relaxed);
+					}
+				} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
 					let track_watch = self
 						.bot_data
 						.track_signals
 						.get(&self.guild_id.get())
-						.unwrap()
-						.value()
-						.subscribe();
-					let track_uuid = handle.uuid();
-					spawn(async move {
-						if let Err(err) = self_clone
-							.update_info(guild_track, song_play, track_watch, track_uuid)
-							.await
-						{
-							error!("Failed to update song info: {err}");
-						}
-					});
-				}
-			} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
-				let track_watch = self
-					.bot_data
-					.track_signals
-					.get(&self.guild_id.get())
-					.unwrap();
-				if let Err(err) = track_watch.value().send(TrackSignal::Ended(handle.uuid())) {
-					error!("Failed to broadcast track ending: {err}");
-				}
-			} else if let PlayMode::Errored(error) = &state.playing {
-				error!("Failed to play track: {error}");
-				counter!(METRICS.prefix_errors.clone()).increment(1);
-				if let Ok(song_play) = get_guild_play(
-					handle.uuid(),
-					i64::from(self.guild_id),
-					i64::from(self.channel_id),
-					&self.bot_data.db,
-				)
-				.await && let Err(err) =
-					GenericChannelId::new(song_play.requested_channel.cast_unsigned())
-						.edit_message(
-							&self.serenity_context.http,
-							MessageId::new(song_play.request_message_id.cast_unsigned()),
-							EditMessage::default()
-								.content("Track errored on playback, try a different source :/"),
-						)
-						.await
-				{
-					error!("Failed to notify user about track error: {err}");
+						.unwrap();
+					if let Err(err) = track_watch.value().send(TrackSignal::Ended(handle.uuid())) {
+						error!("Failed to broadcast track ending: {err}");
+					}
+				} else if let PlayMode::Errored(error) = &state.playing {
+					error!("Failed to play track: {error}");
+					counter!(METRICS.prefix_errors.clone()).increment(1);
+					if let Err(err) = GenericChannelId::new(
+						queue_data.track_data.requested_channel.cast_unsigned(),
+					)
+					.edit_message(
+						&self.serenity_context.http,
+						MessageId::new(queue_data.track_data.request_message_id.cast_unsigned()),
+						EditMessage::default()
+							.content("Track errored on playback, try a different source :/"),
+					)
+					.await
+					{
+						error!("Failed to notify user about track error: {err}");
+					}
 				}
 			}
 		}
@@ -592,16 +593,16 @@ pub async fn add_voice_events(
 	data.track_signals.insert(guild_id.get(), tx);
 
 	handler.add_global_event(
-		SongBirdEvent::Track(TrackEvent::Playable),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, global),
+		SongBirdEvent::Track(TrackEvent::Play),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::End),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, global),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Error),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, channel_id, global),
+		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Core(CoreEvent::DriverDisconnect),
@@ -628,6 +629,11 @@ fn youtube_source(url: &str) -> bool {
 	})
 }
 
+struct QueueData {
+	track_data: TrackPlayData,
+	first_play: AtomicBool,
+}
+
 async fn queue_song(
 	metadata: AuxMetadata,
 	audio: AudioStream<Box<dyn MediaSource>>,
@@ -647,14 +653,29 @@ async fn queue_song(
 		});
 
 	insert_channel(guild_id, channel_id, &data.db).await?;
-	insert_track(metadata, uuid, &data.db).await?;
+	insert_track(&metadata, uuid, &data.db).await?;
 	insert_guild_play(uuid, guild_id, channel_id, author_id, message_id, &data.db).await?;
+
+	let queue_data = Arc::new(QueueData {
+		track_data: TrackPlayData {
+			title: metadata.title,
+			artist: metadata.artist,
+			source_url: metadata.source_url,
+			duration_sec: metadata.duration.map(|d| d.as_secs().cast_signed()),
+			thumbnail_url: metadata.thumbnail,
+			requested_by: Some(author_id),
+			requested_channel: channel_id,
+			request_message_id: message_id,
+		},
+		first_play: AtomicBool::new(true),
+	});
 
 	get_configured_songbird_handler(&handler_lock)
 		.await
-		.enqueue(Track::new_with_uuid(
+		.enqueue(Track::new_with_uuid_and_data(
 			Input::Live(LiveInput::Raw(audio), Some(Box::new(source))),
 			uuid,
+			queue_data,
 		))
 		.await;
 
@@ -791,7 +812,7 @@ pub async fn remove_handler(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()>
 	Ok(())
 }
 
-async fn insert_track(metadata: AuxMetadata, uuid: Uuid, conn: &Pool<Postgres>) -> AResult<()> {
+async fn insert_track(metadata: &AuxMetadata, uuid: Uuid, conn: &Pool<Postgres>) -> AResult<()> {
 	query!(
 		r#"
     	INSERT INTO tracks (track_uuid, title, artist, source_url, duration_sec, thumbnail_url)
@@ -812,28 +833,15 @@ async fn insert_track(metadata: AuxMetadata, uuid: Uuid, conn: &Pool<Postgres>) 
 	Ok(())
 }
 
-struct TrackData {
+struct TrackPlayData {
 	title: Option<String>,
 	artist: Option<String>,
 	source_url: Option<String>,
 	duration_sec: Option<i64>,
 	thumbnail_url: Option<String>,
-}
-
-async fn get_track(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<TrackData> {
-	let track = query_as!(
-		TrackData,
-		r#"
-    	SELECT title, artist, source_url, duration_sec, thumbnail_url
-    	FROM tracks
-    	WHERE track_uuid = $1
-    	"#,
-		uuid,
-	)
-	.fetch_one(conn)
-	.await?;
-
-	Ok(track)
+	requested_by: DBUserID,
+	requested_channel: i64,
+	request_message_id: i64,
 }
 
 async fn insert_guild_play(
@@ -879,39 +887,6 @@ impl DBUserIDExt for DBUserID {
 			"Unknown".to_owned()
 		}
 	}
-}
-
-struct GuildPlay {
-	requested_by: DBUserID,
-	requested_channel: i64,
-	request_message_id: i64,
-}
-
-async fn get_guild_play(
-	uuid: Uuid,
-	guild_id: i64,
-	channel_id: i64,
-	conn: &Pool<Postgres>,
-) -> AResult<GuildPlay> {
-	let track = query_as!(
-		GuildPlay,
-		r#"
-        SELECT requested_by, requested_channel, request_message_id
-        FROM song_plays
-        WHERE track_uuid = $1
-          AND guild_id = $2
-          AND requested_channel = $3
-        ORDER BY played_at DESC
-        LIMIT 1
-        "#,
-		uuid,
-		guild_id,
-		channel_id,
-	)
-	.fetch_one(conn)
-	.await?;
-
-	Ok(track)
 }
 
 async fn get_matching_guild_plays(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<Vec<i64>> {

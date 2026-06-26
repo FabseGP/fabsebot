@@ -40,6 +40,7 @@ pub const FLOPPAGANDA_GIF: &str = "https://c.tenor.com/1y6DManILSYAAAAd/tenor.gi
 pub const FALLBACK_GIF: &str = "https://i.postimg.cc/zffntsGs/tenor.gif";
 pub const FALLBACK_GIF_TITLE: &str = "Sucks to be you";
 pub const FALLBACK_WAIFU: &str = "https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif";
+pub const FALLBACK_MUSIC_THUMBNAIL: &str = "https://c.tenor.com/gRnPiR82No4AAAAd/tenor.gif";
 
 pub static EMOJI_FONT: LazyLock<FontArc> = LazyLock::new(|| {
 	FontArc::try_from_slice(include_bytes!("../../../fonts/NotoEmoji-Regular.ttf")).unwrap()
