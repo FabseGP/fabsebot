@@ -91,7 +91,7 @@ async fn periodic_ping(url: &str, token: &str) -> ! {
 	}
 }
 
-pub async fn periodic_task(data: Arc<Data>) -> ! {
+pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
 	let mut interval = interval(Duration::from_hours(1));
 	let bot_context = bot_context();
 	loop {
@@ -117,7 +117,7 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 			OR dead_chat_channel IS NOT NULL
 			"#
 		)
-		.fetch_all(&data.db)
+		.fetch_all(&bot_data.db)
 		.await
 		{
 			Ok(guilds) => guilds,
@@ -149,7 +149,7 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 					guild.guild_id,
 					now_timestamp
 				)
-				.execute(&data.db)
+				.execute(&bot_data.db)
 				.await
 				{
 					error!("Failed to update last_waifu in db: {:?}", &err);
@@ -169,15 +169,15 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 					error!("Failed to send dead chat gif: {:?}", &err);
 				} else if let Err(err) = query!(
 					r#"
-						INSERT INTO guild_settings (guild_id, last_dead_chat)
-            			VALUES ($1, $2)
-            			ON CONFLICT (guild_id)
-            			DO UPDATE SET last_dead_chat = $2
-            			"#,
+					INSERT INTO guild_settings (guild_id, last_dead_chat)
+            		VALUES ($1, $2)
+            		ON CONFLICT (guild_id)
+            		DO UPDATE SET last_dead_chat = $2
+            		"#,
 					guild.guild_id,
 					now_timestamp
 				)
-				.execute(&data.db)
+				.execute(&bot_data.db)
 				.await
 				{
 					error!("Failed to update last_dead_chat in db: {:?}", &err);

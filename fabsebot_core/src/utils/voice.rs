@@ -38,7 +38,7 @@ use songbird::{
 	input::{AudioStream, AuxMetadata, Compose as _, Input, LiveInput, YoutubeDl},
 	tracks::{PlayMode, Track},
 };
-use sqlx::{Pool, Postgres, query, query_as, query_scalar, types::time::OffsetDateTime};
+use sqlx::{Executor, Pool, Postgres, query, query_as, query_scalar, types::time::OffsetDateTime};
 use symphonia::core::io::MediaSource;
 use tokio::{
 	select, spawn,
@@ -145,21 +145,14 @@ impl VoiceEventHandler for ClientDisconnectHandler {
 #[derive(Clone)]
 struct PlaybackHandler {
 	serenity_context: SerenityContext,
-	bot_data: Arc<Data>,
 	guild_id: GuildId,
 	global: bool,
 }
 
 impl PlaybackHandler {
-	const fn new(
-		serenity_context: SerenityContext,
-		bot_data: Arc<Data>,
-		guild_id: GuildId,
-		global: bool,
-	) -> Self {
+	const fn new(serenity_context: SerenityContext, guild_id: GuildId, global: bool) -> Self {
 		Self {
 			serenity_context,
-			bot_data,
 			guild_id,
 			global,
 		}
@@ -232,6 +225,8 @@ impl PlaybackHandler {
 
 		let mut msg = interaction.message;
 
+		let bot_data: Arc<Data> = self.serenity_context.data();
+
 		if interaction.data.custom_id.ends_with('s') {
 			let handler = get_configured_songbird_handler(&handler_lock).await;
 			let queue = handler.queue();
@@ -242,8 +237,7 @@ impl PlaybackHandler {
 					if *guild_id == i64::from(self.guild_id) {
 						continue;
 					}
-					if let Some(handler_lock) = self
-						.bot_data
+					if let Some(handler_lock) = bot_data
 						.music_manager
 						.get(GuildId::from(guild_id.cast_unsigned()))
 					{
@@ -258,8 +252,7 @@ impl PlaybackHandler {
 			for guild_id in track_guilds {
 				let handler_lock = if *guild_id == i64::from(self.guild_id) {
 					handler_lock.clone()
-				} else if let Some(handler_lock) = self
-					.bot_data
+				} else if let Some(handler_lock) = bot_data
 					.music_manager
 					.get(GuildId::new(guild_id.cast_unsigned()))
 				{
@@ -293,8 +286,7 @@ impl PlaybackHandler {
 			for guild_id in track_guilds {
 				let handler_lock = if *guild_id == i64::from(self.guild_id) {
 					handler_lock.clone()
-				} else if let Some(handler_lock) = self
-					.bot_data
+				} else if let Some(handler_lock) = bot_data
 					.music_manager
 					.get(GuildId::new(guild_id.cast_unsigned()))
 				{
@@ -353,7 +345,7 @@ impl PlaybackHandler {
 					container.clone()
 				} else {
 					let queue_history =
-						get_queue_history(track.requested_channel, &self.bot_data.db).await?;
+						get_queue_history(track.requested_channel, &bot_data.db).await?;
 					let mut history_string = String::with_capacity(512);
 					writeln!(
 						history_string,
@@ -399,7 +391,8 @@ impl PlaybackHandler {
 		mut receiver: Receiver<TrackSignal>,
 		track_uuid: Uuid,
 	) -> AResult<()> {
-		let Some(handler_lock) = self.bot_data.music_manager.get(self.guild_id) else {
+		let bot_data: Arc<Data> = self.serenity_context.data();
+		let Some(handler_lock) = bot_data.music_manager.get(self.guild_id) else {
 			bail!("Not in a voice channel?");
 		};
 		let queue_size = get_configured_songbird_handler(&handler_lock)
@@ -457,7 +450,7 @@ impl PlaybackHandler {
 			.stream();
 
 		let track_guilds = if self.global {
-			get_matching_guild_plays(track_uuid, &self.bot_data.db).await?
+			get_matching_guild_plays(track_uuid, &bot_data.db).await?
 		} else {
 			vec![i64::from(self.guild_id)]
 		};
@@ -515,14 +508,14 @@ impl PlaybackHandler {
 impl VoiceEventHandler for PlaybackHandler {
 	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
 		if let EventContext::Track(tracks) = ctx {
+			let bot_data: Arc<Data> = self.serenity_context.data();
 			for (state, handle) in *tracks {
 				let queue_data: Arc<QueueData> = handle.data();
 				if state.playing == PlayMode::Play {
 					let first_play = queue_data.first_play.load(Ordering::Relaxed);
 					if first_play {
 						let self_clone = self.clone();
-						let track_watch = self
-							.bot_data
+						let track_watch = bot_data
 							.track_signals
 							.get(&self.guild_id.get())
 							.unwrap()
@@ -541,11 +534,7 @@ impl VoiceEventHandler for PlaybackHandler {
 						queue_data.first_play.store(false, Ordering::Relaxed);
 					}
 				} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
-					let track_watch = self
-						.bot_data
-						.track_signals
-						.get(&self.guild_id.get())
-						.unwrap();
+					let track_watch = bot_data.track_signals.get(&self.guild_id.get()).unwrap();
 					if let Err(err) = track_watch.value().send(TrackSignal::Ended(handle.uuid())) {
 						error!("Failed to broadcast track ending: {err}");
 					}
@@ -589,24 +578,24 @@ pub async fn add_voice_events(
 
 	let (tx, _rx) = watch::channel::<TrackSignal>(TrackSignal::Connected);
 
-	let data: Arc<Data> = ctx.data();
-	data.track_signals.insert(guild_id.get(), tx);
+	let bot_data: Arc<Data> = ctx.data();
+	bot_data.track_signals.insert(guild_id.get(), tx);
 
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Play),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, global),
+		PlaybackHandler::new(ctx.clone(), guild_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::End),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, global),
+		PlaybackHandler::new(ctx.clone(), guild_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Error),
-		PlaybackHandler::new(ctx.clone(), ctx.data(), guild_id, global),
+		PlaybackHandler::new(ctx.clone(), guild_id, global),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Core(CoreEvent::DriverDisconnect),
-		DriverDisconnectHandler::new(ctx.data()),
+		DriverDisconnectHandler::new(bot_data),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Core(CoreEvent::ClientDisconnect),
@@ -640,7 +629,7 @@ async fn queue_song(
 	source: YoutubeDl<'static>,
 	handler_lock: Arc<Mutex<Call>>,
 	guild_id: i64,
-	data: Arc<Data>,
+	pool: &Pool<Postgres>,
 	message_id: i64,
 	channel_id: i64,
 	author_id: i64,
@@ -652,9 +641,13 @@ async fn queue_song(
 			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
 		});
 
-	insert_channel(guild_id, channel_id, &data.db).await?;
-	insert_track(&metadata, uuid, &data.db).await?;
-	insert_guild_play(uuid, guild_id, channel_id, author_id, message_id, &data.db).await?;
+	let mut tx = pool.begin().await?;
+
+	insert_channel(guild_id, channel_id, &mut *tx).await?;
+	insert_track(&metadata, uuid, &mut *tx).await?;
+	insert_guild_play(uuid, guild_id, channel_id, author_id, message_id, &mut *tx).await?;
+
+	tx.commit().await?;
 
 	let queue_data = Arc::new(QueueData {
 		track_data: TrackPlayData {
@@ -812,7 +805,10 @@ pub async fn remove_handler(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()>
 	Ok(())
 }
 
-async fn insert_track(metadata: &AuxMetadata, uuid: Uuid, conn: &Pool<Postgres>) -> AResult<()> {
+async fn insert_track<'c, E>(metadata: &AuxMetadata, uuid: Uuid, conn: E) -> AResult<()>
+where
+	E: Executor<'c, Database = Postgres>,
+{
 	query!(
 		r#"
     	INSERT INTO tracks (track_uuid, title, artist, source_url, duration_sec, thumbnail_url)
@@ -844,14 +840,17 @@ struct TrackPlayData {
 	request_message_id: i64,
 }
 
-async fn insert_guild_play(
+async fn insert_guild_play<'c, E>(
 	uuid: Uuid,
 	guild_id: i64,
 	channel_id: i64,
 	author_id: i64,
 	message_id: i64,
-	conn: &Pool<Postgres>,
-) -> AResult<()> {
+	conn: E,
+) -> AResult<()>
+where
+	E: Executor<'c, Database = Postgres>,
+{
 	query!(
 		r#"
     	INSERT INTO song_plays (track_uuid, guild_id, requested_by, requested_channel, request_message_id)
@@ -1075,7 +1074,7 @@ pub async fn lavalink_play(ctx: SContext<'_>, guild_id: GuildId, input: String) 
 }
 
 pub async fn add_song(
-	data: Arc<Data>,
+	pool: &Pool<Postgres>,
 	guild_id_i64: i64,
 	msg_id_i64: i64,
 	channel_id_i64: i64,
@@ -1106,7 +1105,7 @@ pub async fn add_song(
 		src,
 		handler_lock.clone(),
 		guild_id_i64,
-		data,
+		pool,
 		msg_id_i64,
 		channel_id_i64,
 		author_id_i64,
@@ -1129,7 +1128,7 @@ pub async fn add_playlist(
 	let mut failed_songs: u32 = 0;
 	for url in urls {
 		if let Err(err) = add_song(
-			ctx.data(),
+			&ctx.data().db,
 			guild_id_i64,
 			msg_id_i64,
 			channel_id_i64,

@@ -2,8 +2,8 @@ use std::{fmt::Write as _, sync::Arc};
 
 use anyhow::Result as AResult;
 use fabsebot_db::{
-	guild::{WordReactions, insert_guild, insert_guild_settings},
-	user::{UserSettings, insert_user, insert_user_settings},
+	guild::{WordReactions, insert_guild_settings},
+	user::{UserSettings, insert_user_settings},
 };
 use metrics::counter;
 use serenity::{
@@ -15,8 +15,8 @@ use serenity::{
 	model::channel::MessageFlags,
 };
 use songbird::{Call, Songbird};
-use sqlx::{Pool, Postgres, query, query_as, query_scalar};
-use tokio::{join, sync::Mutex, task::spawn};
+use sqlx::{Pool, Postgres, query, query_as};
+use tokio::{join, sync::Mutex, task::spawn, try_join};
 use tracing::error;
 use winnow::Parser as _;
 
@@ -132,11 +132,12 @@ async fn queue_track(
 		return Ok(());
 	};
 	let ctx_clone = ctx.clone();
+	let bot_data: Arc<Data> = ctx.data();
 	let new_message_clone = new_message.clone();
 	let mut msg = new_message.reply(&ctx_clone.http, QUEUEING_MSG).await?;
 	spawn(async move {
 		if let Err(err) = add_song(
-			ctx_clone.data(),
+			&bot_data.db,
 			i64::from(guild_id),
 			i64::from(msg.id),
 			i64::from(msg.channel_id),
@@ -204,7 +205,6 @@ fn ai_chats(
 async fn global_chats(
 	ctx: &SContext,
 	new_message: &Message,
-	data: Arc<Data>,
 	channel_id: Option<i64>,
 	global_chat: bool,
 	guild_id: i64,
@@ -214,6 +214,7 @@ async fn global_chats(
 		&& global_chat
 		&& let Some(avatar) = new_message.author.avatar_url()
 	{
+		let bot_data: Arc<Data> = ctx.data();
 		channel_counter("global_chat".to_owned());
 		let guild_global_chats = query!(
 			r#"
@@ -224,7 +225,7 @@ async fn global_chats(
 			"#,
 			guild_id
 		)
-		.fetch_all(&data.db)
+		.fetch_all(&bot_data.db)
 		.await?;
 		for (guild_id, guild_channel_id) in guild_global_chats.iter().filter_map(|record| {
 			record
@@ -237,7 +238,7 @@ async fn global_chats(
 					ctx,
 					new_message.guild_id,
 					chat_channel.id(),
-					data.channel_webhooks.clone(),
+					bot_data.channel_webhooks.clone(),
 				)
 				.await
 				{
@@ -434,25 +435,29 @@ async fn user_queries(
 		.await?;
 	}
 
-	if new_message.referenced_message.is_none() {
-		for mentioned_user in &new_message.mentions {
-			let mentioned_user_id_i64 = i64::from(mentioned_user.id);
-			let Some(mentioned_user_settings) = query_as!(
-				UserSettings,
-				r#"
-    			SELECT afk_reason, pinged_links, ping_content, ping_media, afk from user_settings
-    			WHERE guild_id = $1
-    			AND user_id = $2
-    			AND (afk IS TRUE OR ping_content IS NOT NULL)
-    			"#,
-				guild_id,
-				mentioned_user_id_i64
-			)
-			.fetch_optional(conn)
-			.await?
-			else {
-				continue;
-			};
+	if new_message.referenced_message.is_none() && !new_message.mentions.is_empty() {
+		let mentioned_ids: Vec<i64> = new_message
+			.mentions
+			.iter()
+			.map(|u| i64::from(u.id))
+			.collect();
+
+		let mentioned_settings = query_as!(
+			UserSettings,
+			r#"
+        	SELECT user_id, afk_reason, pinged_links, ping_content, ping_media, afk
+        	FROM user_settings
+        	WHERE guild_id = $1
+          	AND user_id = ANY($2)
+          	AND (afk IS TRUE OR ping_content IS NOT NULL)
+        	"#,
+			guild_id,
+			&mentioned_ids[..]
+		)
+		.fetch_all(conn)
+		.await?;
+
+		for mentioned_user_settings in mentioned_settings {
 			if mentioned_user_settings.afk {
 				let pinged_link = format!(
 					"{};{},",
@@ -468,7 +473,7 @@ async fn user_queries(
                     "#,
 					pinged_link,
 					guild_id,
-					mentioned_user_id_i64,
+					mentioned_user_settings.user_id,
 				)
 				.execute(conn)
 				.await?;
@@ -521,27 +526,11 @@ async fn user_queries(
 async fn guild_queries(
 	ctx: &SContext,
 	new_message: &Message,
-	data: Arc<Data>,
-	word_tracking: &[String],
 	word_reactions: &[WordReactions],
 	guild_id: GuildId,
-	guild_id_i64: i64,
 ) -> AResult<()> {
-	for record in word_tracking {
-		counter!(METRICS.words_tracked.clone()).increment(1);
-		query!(
-			r#"
-			UPDATE guild_word_tracking
-            SET count = count + 1 
-            WHERE guild_id = $1
-            AND word = $2
-            "#,
-			guild_id_i64,
-			record
-		)
-		.execute(&data.db)
-		.await?;
-	}
+	let bot_data: Arc<Data> = ctx.data();
+
 	for record in word_reactions {
 		counter!(METRICS.word_reactions.clone()).increment(1);
 		if let Some(content) = &record.content {
@@ -572,8 +561,9 @@ async fn guild_queries(
 				&& let Ok(guild_emoji) = guild_id.emoji(&ctx.http, emoji_id_typed).await
 			{
 				(guild_emoji.animated(), guild_emoji.id, guild_emoji.name)
-			} else if let Some(cache_emoji) =
-				data.app_emojis.get(&EmojiId::new(emoji_id.cast_unsigned()))
+			} else if let Some(cache_emoji) = bot_data
+				.app_emojis
+				.get(&EmojiId::new(emoji_id.cast_unsigned()))
 			{
 				(
 					cache_emoji.animated(),
@@ -604,12 +594,20 @@ async fn guild_queries(
 async fn db_queries(
 	ctx: &SContext,
 	new_message: &Message,
-	data: Arc<Data>,
 	guild_id: GuildId,
 	guild_id_i64: i64,
 	author_settings: UserSettings,
 ) -> AResult<()> {
-	user_queries(ctx, new_message, guild_id_i64, author_settings, &data.db).await?;
+	let bot_data: Arc<Data> = ctx.data();
+
+	user_queries(
+		ctx,
+		new_message,
+		guild_id_i64,
+		author_settings,
+		&bot_data.db,
+	)
+	.await?;
 
 	let words: Vec<String> = new_message
 		.content
@@ -622,41 +620,35 @@ async fn db_queries(
 		.filter(|s| !s.is_empty())
 		.collect();
 
-	let word_reactions = query_as!(
-		WordReactions,
-		r#"
-		SELECT word, content, media, emoji_id, guild_emoji FROM guild_word_reaction
-		WHERE guild_id = $1
-		AND word ILIKE ANY($2)
-		"#,
-		guild_id_i64,
-		&words
-	)
-	.fetch_all(&data.db)
-	.await?;
+	let (word_reactions, updated_words) = try_join!(
+		query_as!(
+			WordReactions,
+			r#"
+        	SELECT word, content, media, emoji_id, guild_emoji
+        	FROM guild_word_reaction
+        	WHERE guild_id = $1
+        	AND word ILIKE ANY($2)
+        	"#,
+			guild_id_i64,
+			&words
+		)
+		.fetch_all(&bot_data.db),
+		query!(
+			r#"
+    		UPDATE guild_word_tracking
+    		SET count = count + 1
+    		WHERE guild_id = $1
+    		AND word ILIKE ANY($2)
+    		"#,
+			guild_id_i64,
+			&words
+		)
+		.execute(&bot_data.db)
+	)?;
 
-	let word_tracking = query_scalar!(
-		r#"
-		SELECT word FROM guild_word_tracking
-		WHERE guild_id = $1
-		AND word ILIKE ANY($2)
-		"#,
-		guild_id_i64,
-		&words
-	)
-	.fetch_all(&data.db)
-	.await?;
+	counter!(METRICS.words_tracked.clone()).increment(updated_words.rows_affected());
 
-	guild_queries(
-		ctx,
-		new_message,
-		data,
-		&word_tracking,
-		&word_reactions,
-		guild_id,
-		guild_id_i64,
-	)
-	.await?;
+	guild_queries(ctx, new_message, &word_reactions, guild_id).await?;
 
 	Ok(())
 }
@@ -666,30 +658,23 @@ pub async fn handle_message(
 	new_message: &Message,
 	guild_id: GuildId,
 ) -> AResult<()> {
-	let data: Arc<Data> = ctx.data();
+	let bot_data: Arc<Data> = ctx.data();
 
 	let guild_id_i64 = i64::from(guild_id);
 
-	let guild_cache = data.guilds.get(&guild_id).unwrap_or_else(|| {
+	let guild_cache = bot_data.guilds.get(&guild_id).unwrap_or_else(|| {
 		let new_data = Arc::new(GuildCache::default());
-		data.guilds.insert(guild_id, new_data.clone());
+		bot_data.guilds.insert(guild_id, new_data.clone());
 		new_data
 	});
 
-	let guild_settings = match insert_guild_settings(guild_id_i64, &data.db).await {
-		Ok(settings) => settings,
-		Err(err) => {
-			error!("Failed to fetch guild settings: {err}");
-			insert_guild(guild_id_i64, &data.db).await?;
-			insert_guild_settings(guild_id_i64, &data.db).await?
-		}
-	};
+	let guild_settings = insert_guild_settings(guild_id_i64, &bot_data.db).await?;
 
 	if !new_message.content.starts_with('#') {
 		if let Some(music_channel) = guild_settings.music_channel
 			&& i64::from(new_message.channel_id) == music_channel
 		{
-			queue_track(ctx, new_message, data.music_manager.clone(), guild_id).await?;
+			queue_track(ctx, new_message, bot_data.music_manager.clone(), guild_id).await?;
 		}
 		if let Some(ai_chat_channel) = guild_settings.ai_chat_channel
 			&& i64::from(new_message.channel_id) == ai_chat_channel
@@ -698,7 +683,7 @@ pub async fn handle_message(
 				ctx,
 				new_message,
 				guild_cache.ai_chats.clone(),
-				data.music_manager.get(guild_id),
+				bot_data.music_manager.get(guild_id),
 				guild_id,
 				guild_settings
 					.chatbot_role
@@ -711,18 +696,17 @@ pub async fn handle_message(
 	let content = new_message.content.to_lowercase();
 	let (bot_ping, easter_eggs, message_preview, spoiler_message, global_chat) = join!(
 		check_bot_ping(ctx, new_message),
-		easter_eggs(ctx, new_message, &content, &data.channel_webhooks),
+		easter_eggs(ctx, new_message, &content, &bot_data.channel_webhooks),
 		message_preview(ctx, new_message, &content),
 		spoiler_message(
 			ctx,
 			new_message,
 			guild_settings.spoiler_channel,
-			data.channel_webhooks.clone()
+			bot_data.channel_webhooks.clone()
 		),
 		global_chats(
 			ctx,
 			new_message,
-			data.clone(),
 			guild_settings.global_chat_channel,
 			guild_settings.global_chat,
 			guild_id_i64
@@ -744,24 +728,9 @@ pub async fn handle_message(
 
 	let user_id_i64 = i64::from(new_message.author.id);
 
-	let author_settings = match insert_user_settings(guild_id_i64, user_id_i64, &data.db).await {
-		Ok(settings) => settings,
-		Err(err) => {
-			error!("Failed to fetch user settings: {err}");
-			insert_user(user_id_i64, &data.db).await?;
-			insert_user_settings(guild_id_i64, user_id_i64, &data.db).await?
-		}
-	};
+	let author_settings = insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
 
-	db_queries(
-		ctx,
-		new_message,
-		data,
-		guild_id,
-		guild_id_i64,
-		author_settings,
-	)
-	.await?;
+	db_queries(ctx, new_message, guild_id, guild_id_i64, author_settings).await?;
 
 	Ok(())
 }

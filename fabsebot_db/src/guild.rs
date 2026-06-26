@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result as AResult};
-use sqlx::{Pool, Postgres, Transaction, query, query_as};
+use sqlx::{Executor, Pool, Postgres, Transaction, query, query_as};
 
 pub struct GuildSettings {
 	pub spoiler_channel: Option<i64>,
@@ -138,10 +138,13 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
 	Ok(())
 }
 
-pub async fn insert_channel(guild_id: i64, channel_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
+pub async fn insert_channel<'c, E>(guild_id: i64, channel_id: i64, conn: E) -> AResult<()>
+where
+	E: Executor<'c, Database = Postgres>,
+{
 	query!(
 		r#"
-		INSERT INTO channels (guild_id, channel_id)
+        INSERT INTO channels (guild_id, channel_id)
         VALUES ($1, $2)
         ON CONFLICT (guild_id, channel_id)
         DO NOTHING
@@ -151,7 +154,6 @@ pub async fn insert_channel(guild_id: i64, channel_id: i64, conn: &Pool<Postgres
 	)
 	.execute(conn)
 	.await?;
-
 	Ok(())
 }
 
@@ -189,17 +191,21 @@ pub async fn insert_guild_settings(guild_id: i64, conn: &Pool<Postgres>) -> ARes
 	let guild_settings = query_as!(
 		GuildSettings,
 		r#"
-    	INSERT INTO guild_settings (guild_id)
-    	VALUES ($1)
-    	ON CONFLICT (guild_id) 
-    	DO UPDATE SET guild_id = guild_settings.guild_id 
-    	RETURNING spoiler_channel, ai_chat_channel, global_chat_channel,
-    	music_channel, chatbot_role, global_chat
-    	"#,
+		WITH ensure_guild AS (
+			INSERT INTO guilds (guild_id)
+			VALUES ($1)
+			ON CONFLICT (guild_id) DO NOTHING
+		)
+		INSERT INTO guild_settings (guild_id)
+		VALUES ($1)
+		ON CONFLICT (guild_id)
+		DO UPDATE SET guild_id = guild_settings.guild_id
+		RETURNING spoiler_channel, ai_chat_channel, global_chat_channel,
+		music_channel, chatbot_role, global_chat
+		"#,
 		guild_id
 	)
 	.fetch_one(conn)
 	.await?;
-
 	Ok(guild_settings)
 }

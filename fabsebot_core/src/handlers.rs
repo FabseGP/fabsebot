@@ -1,6 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use anyhow::Result as AResult;
+use fabsebot_db::guild::delete_guild;
 use metrics::counter;
 use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
@@ -11,13 +12,10 @@ use crate::{
 	config::types::{Data, Error},
 	events::{
 		bot_ready::handle_ready,
-		guild_create::handle_guild_create,
-		guild_delete::handle_guild_delete,
 		interaction::{
 			FEEDBACK_BUTTON_CUSTOM_ID, FEEDBACK_MODAL_CUSTOM_ID, handle_feedback_modal_button,
 			handle_feedback_modal_reply,
 		},
-		member_addition::handle_member_addition,
 		message_delete::handle_message_delete,
 		message_sent::handle_message,
 	},
@@ -91,8 +89,8 @@ pub async fn on_command(context: Context<'_, Data, Error>) {
 pub async fn dynamic_prefix(
 	ctx: PartialContext<'_, Data, Error>,
 ) -> AResult<Option<Cow<'static, str>>> {
-	let data: Arc<Data> = ctx.framework.serenity_context.data();
-	if let Some(guild_id) = ctx.guild_id
+	let bot_data: Arc<Data> = ctx.framework.serenity_context.data();
+	let prefix = if let Some(guild_id) = ctx.guild_id
 		&& let Some(Some(prefix)) = query_scalar!(
 			r#"
 			SELECT prefix FROM guild_settings
@@ -100,12 +98,14 @@ pub async fn dynamic_prefix(
 			"#,
 			i64::from(guild_id)
 		)
-		.fetch_optional(&data.db)
+		.fetch_optional(&bot_data.db)
 		.await?
 	{
-		return Ok(Some(Cow::Owned(prefix)));
-	}
-	Ok(Some(Cow::Borrowed("!")))
+		Cow::Owned(prefix)
+	} else {
+		Cow::Borrowed("!")
+	};
+	Ok(Some(prefix))
 }
 
 pub struct EventHandler;
@@ -113,6 +113,7 @@ pub struct EventHandler;
 #[serenity::async_trait]
 impl SEventHandler for EventHandler {
 	async fn dispatch(&self, ctx: &SContext, event: &FullEvent) {
+		let bot_data: Arc<Data> = ctx.data();
 		match event {
 			FullEvent::Ready { data_about_bot, .. } => {
 				if let Err(error) = handle_ready(ctx, data_about_bot).await {
@@ -131,20 +132,9 @@ impl SEventHandler for EventHandler {
 					log_error(&output, ctx).await;
 				}
 			}
-			FullEvent::GuildCreate {
-				guild,
-				is_new: Some(is_new),
-				..
-			} => {
-				if *is_new && let Err(error) = handle_guild_create(ctx.data(), guild.id).await {
-					let output = format!("# Error handling newly created guild\n{error}");
-					counter!(METRICS.new_guild_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
-				}
-			}
 			FullEvent::GuildDelete { incomplete, .. } => {
 				if !incomplete.unavailable
-					&& let Err(error) = handle_guild_delete(ctx.data(), incomplete.id).await
+					&& let Err(error) = delete_guild(i64::from(incomplete.id), &bot_data.db).await
 				{
 					let output = format!("# Error handling deleted guild\n{error}");
 					counter!(METRICS.deleted_guild_errors.clone()).increment(1);
@@ -170,13 +160,6 @@ impl SEventHandler for EventHandler {
 				{
 					let output = format!("# Error handling deleted message\n{error}");
 					counter!(METRICS.messages_deleted_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
-				}
-			}
-			FullEvent::GuildMemberAddition { new_member, .. } => {
-				if let Err(error) = handle_member_addition(ctx.data(), new_member).await {
-					let output = format!("# Error handling new guild member\n{error}");
-					counter!(METRICS.member_addition_errors.clone()).increment(1);
 					log_error(&output, ctx).await;
 				}
 			}

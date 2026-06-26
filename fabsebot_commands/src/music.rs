@@ -281,7 +281,7 @@ pub async fn play_song(
 	let msg = reply.message().await?;
 	let guild_id_i64 = i64::from(guild_id);
 	if let Err(err) = add_song(
-		ctx.data(),
+		&ctx.data().db,
 		guild_id_i64,
 		i64::from(msg.id),
 		i64::from(msg.channel_id),
@@ -340,7 +340,7 @@ pub async fn play_song(
 					.send_message(ctx.http(), CreateMessage::default().content(QUEUEING_MSG))
 					.await?;
 				if let Err(err) = add_song(
-					ctx.data(),
+					&ctx.data().db,
 					global_guild,
 					i64::from(msg.id),
 					i64::from(msg.channel_id),
