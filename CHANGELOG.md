@@ -63,6 +63,7 @@ All notable changes to this project will be documented in this file.
 - Lavalink commands
 - Compile for fabsevps
 - Fully migrated to components V2!
+- Propagate HTTP error codes
 
 ### 🐛 Bug Fixes
 
@@ -258,6 +259,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Cleanup
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
