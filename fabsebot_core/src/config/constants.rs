@@ -6,6 +6,7 @@ use image::{Rgba, RgbaImage};
 use crate::utils::image::create_solid_theme;
 
 pub const MESSAGE_LIMIT: usize = 4000;
+pub const CONTENT_LIMIT: usize = 2000;
 
 pub const HUMAN_ONLY_MSG: &str = "**Invalid target, get some friends**";
 pub const MISSING_REPLY_MSG: &str = "Bruh, reply to a message";

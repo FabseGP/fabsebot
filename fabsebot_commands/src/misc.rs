@@ -9,11 +9,11 @@ use fabsebot_core::{
 			QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME, RANDOM_THEME, STATIC_QUOTE_VEC, THEMES,
 			TSUNDERE_REPLY,
 		},
-		types::{Error, HTTP_CLIENT, SContext, SYSTEM_STATS, utils_config},
+		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, utils_config},
 	},
 	errors::commands::{AIError, GuildError, InteractionError},
 	utils::{
-		ai::ai_response_simple,
+		ai::{ContentPart, ai_response},
 		helpers::{
 			image_uri_fetch, media_gallery, member_pfp, reply_container, separator, text_display,
 			thumbnail_section, user_pfp,
@@ -49,7 +49,7 @@ use tracing::warn;
 
 use crate::command_permissions;
 
-pub async fn birthday_internal(ctx: SContext<'_>, avatar_url: &str, name: &str) -> AResult<()> {
+async fn birthday_internal(ctx: SContext<'_>, avatar_url: &str, name: &str) -> AResult<()> {
 	let title = format!("# HAPPY BIRTHDAY {name}!");
 	let thumbnail_section = [thumbnail_section(&title, avatar_url)];
 
@@ -84,7 +84,7 @@ pub async fn birthday(
 }
 
 #[derive(ChoiceParameter)]
-pub enum BotStatus {
+enum BotStatus {
 	#[name = "invisible"]
 	Invisible,
 	#[name = "dnd"]
@@ -507,12 +507,16 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 
 async fn ohitsyou_internal(ctx: &SContext<'_>) -> AResult<()> {
 	let _typing = ctx.defer_or_broadcast().await;
-	let resp = match ai_response_simple(
-		"you're a tsundere. no commentary, no alternatives, no meta-text. just the one line.",
-		"generate a one-line love-hate greeting",
-		None,
-	)
-	.await
+	let role = "you're a tsundere. no commentary, no alternatives, no meta-text. just the one \
+	            line."
+		.to_owned();
+	let prompt = vec![ContentPart::Text {
+		text: "generate a one-line love-hate greeting".to_owned(),
+	}];
+	let mut messages = vec![AIChatMessage::system(role), AIChatMessage::user(prompt)];
+	let guild_id = ctx.guild_id().unwrap();
+
+	let resp = match ai_response(&mut messages, ctx.serenity_context(), guild_id, None, false).await
 	{
 		Ok(resp) => resp,
 		Err(err) => {
@@ -820,7 +824,7 @@ impl ImageInfo {
 	}
 }
 
-pub async fn quote_internal(
+async fn quote_internal(
 	ctx: SContext<'_>,
 	msg: &Message,
 	reply: Option<(&Message, GuildId)>,
@@ -1105,12 +1109,15 @@ pub async fn respond(
 	#[description = "Message"] message: Message,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let resp = match ai_response_simple(
-		"Mock this Discord message someone posted. Just give the roast, nothing else.",
-		&message.content,
-		None,
-	)
-	.await
+	let role =
+		"Mock this Discord message someone posted. Just give the roast, nothing else.".to_owned();
+	let prompt = vec![ContentPart::Text {
+		text: message.content.into_string(),
+	}];
+	let mut messages = vec![AIChatMessage::system(role), AIChatMessage::user(prompt)];
+	let guild_id = ctx.guild_id().unwrap();
+
+	let resp = match ai_response(&mut messages, ctx.serenity_context(), guild_id, None, false).await
 	{
 		Ok(resp) => resp,
 		Err(err) => {

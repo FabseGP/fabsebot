@@ -97,19 +97,6 @@ where
 	Ok(s)
 }
 
-pub fn non_empty_option_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-	D: serde::Deserializer<'de>,
-{
-	let opt = Option::<String>::deserialize(deserializer)?;
-	match opt {
-		Some(s) if s.trim().is_empty() => {
-			Err(D::Error::custom("field cannot be empty or whitespace"))
-		}
-		other => Ok(other),
-	}
-}
-
 pub fn non_empty_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
 	D: Deserializer<'de>,
@@ -343,7 +330,7 @@ pub async fn get_waifu(ctx: &Context) -> String {
 	}
 }
 
-pub async fn send_emoji(
+async fn send_emoji(
 	ctx: &Context,
 	content: &str,
 	emojis: &Cache<u64, Arc<Emoji>>,
@@ -397,9 +384,9 @@ pub struct DiscordMessageLink {
 	pub message: u64,
 }
 
-pub struct DiscordEmoji {
-	pub emoji_name: String,
-	pub emoji_id: u64,
+struct DiscordEmoji {
+	emoji_name: String,
+	emoji_id: u64,
 }
 
 fn discord_id(input: &mut &str) -> ModalResult<u64> {
@@ -439,7 +426,7 @@ pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink>
 	})
 }
 
-pub fn discord_emoji(input: &mut &str) -> ModalResult<DiscordEmoji> {
+fn discord_emoji(input: &mut &str) -> ModalResult<DiscordEmoji> {
 	let (name, id) =
 		delimited("<:", separated_pair(emoji_name, ':', discord_id), ">").parse_next(input)?;
 
@@ -631,7 +618,7 @@ where
 	Ok(())
 }
 
-pub fn shard_restart(shard_id: ShardId) -> AResult<()> {
+fn shard_restart(shard_id: ShardId) {
 	let response = client_data().runners.get(&shard_id).map_or_else(
 		|| {
 			warn!("No shard runner found in runners map");
@@ -646,6 +633,4 @@ pub fn shard_restart(shard_id: ShardId) -> AResult<()> {
 			}
 		},
 	);
-
-	Ok(())
 }

@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::types::{Error, HTTP_CLIENT, SContext},
 	utils::helpers::{
-		correct_permissions, get_gifs, get_waifu, reply_container, separator, text_display,
+		correct_permissions, get_gif, get_waifu, reply_container, separator, text_display,
 		thumbnail_section, user_pfp,
 	},
 };
@@ -585,11 +585,8 @@ async fn set_dead_chat(
 	)
 	.execute(conn)
 	.await?;
-	let gifs = get_gifs(ctx.serenity_context(), "dead chat").await;
-	let index = fastrand::usize(..gifs.len());
-	if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
-		channel.id().say(ctx.http(), gif).await?;
-	}
+	let gif = get_gif(ctx.serenity_context(), "dead chat").await;
+	channel.id().say(ctx.http(), gif).await?;
 	Ok(())
 }
 

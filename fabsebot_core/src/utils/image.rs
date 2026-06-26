@@ -328,7 +328,7 @@ pub fn get_theme(theme: &str) -> (ImageBuffer<Rgba<u8>, Vec<u8>>, Rgba<u8>) {
 	}
 }
 
-pub fn convert_to_bw(image: &mut RgbaImage) {
+fn convert_to_bw(image: &mut RgbaImage) {
 	let pixels = image.as_flat_samples_mut();
 	pixels.samples.par_chunks_exact_mut(4).for_each(|chunk| {
 		let [r, g, b] = chunk.get_disjoint_mut([0, 1, 2]).unwrap();

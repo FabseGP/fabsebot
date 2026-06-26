@@ -12,13 +12,14 @@ use serenity::{
 	small_fixed_array::FixedString,
 };
 use songbird::{Call, input::Input};
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::Mutex;
 use tracing::warn;
 use winnow::Parser as _;
 
 use crate::{
-	config::types::{
-		AIChatContext, AIChatMessage, AIChats, AIRole, HTTP_CLIENT, ToolCalls, utils_config,
+	config::{
+		constants::CONTENT_LIMIT,
+		types::{AIChatContext, AIChatMessage, AIChats, HTTP_CLIENT, utils_config},
 	},
 	utils::{
 		helpers::{
@@ -239,46 +240,36 @@ pub async fn ai_chatbot(
 			conversations.messages.push(system_msg);
 		}
 		conversations.messages.push(AIChatMessage::user(chat_vec));
-		ai_response(&conversations.messages).await
+		ai_response(
+			&mut conversations.messages,
+			ctx,
+			guild_id,
+			Some(message),
+			true,
+		)
+		.await
 	};
 
 	match response_opt {
 		Ok(response) => {
-			let final_response = if response.has_tool_calls()
-				&& let Ok(tool_calls) = response.get_tool_calls()
-			{
-				tool_calling(
-					&response,
-					tool_calls,
-					&mut conversations,
-					ctx,
-					message,
-					guild_id,
-				)
-				.await?
-			} else {
-				response.extract_content()?
-			};
-			if final_response.len() >= 2000 {
+			if response.len() >= CONTENT_LIMIT {
 				let mut start = 0;
-				while start < final_response.len() {
-					let end = final_response[start..]
+				while start < response.len() {
+					let end = response[start..]
 						.char_indices()
 						.take_while(|(i, _)| *i < 2000)
 						.last()
-						.map_or(final_response.len(), |(i, c)| {
+						.map_or(response.len(), |(i, c)| {
 							start.saturating_add(i).saturating_add(c.len_utf8())
 						});
-					message
-						.reply(&ctx.http, &final_response[start..end])
-						.await?;
+					message.reply(&ctx.http, &response[start..end]).await?;
 					start = end;
 				}
 			} else {
-				message.reply(&ctx.http, final_response.as_str()).await?;
+				message.reply(&ctx.http, response.as_str()).await?;
 			}
 			if let Some(handler_lock) = voice_handle {
-				match ai_voice(&final_response).await {
+				match ai_voice(&response).await {
 					Ok(bytes) => {
 						get_configured_songbird_handler(&handler_lock)
 							.await
@@ -292,7 +283,7 @@ pub async fn ai_chatbot(
 			}
 			conversations
 				.messages
-				.push(AIChatMessage::assistant(final_response));
+				.push(AIChatMessage::assistant(response));
 		}
 		Err(err) => {
 			*conversations = AIChatContext::default();
@@ -307,7 +298,7 @@ pub async fn ai_chatbot(
 }
 
 #[derive(Deserialize)]
-pub struct ToolArgs {
+struct ToolArgs {
 	#[serde(default)]
 	query: String,
 }
@@ -315,9 +306,9 @@ pub struct ToolArgs {
 async fn tool_calling(
 	response: &AIResponse,
 	tool_calls: &[ToolCall],
-	conversations: &mut MutexGuard<'_, AIChatContext>,
+	conversations: &mut Vec<AIChatMessage>,
 	ctx: &SContext,
-	message: &Message,
+	message: Option<&Message>,
 	guild_id: GuildId,
 ) -> AResult<String> {
 	let utils_config = utils_config();
@@ -327,13 +318,10 @@ async fn tool_calling(
 		.and_then(|c| c.message.content.clone())
 		.map(|choice| vec![ContentPart::Text { text: choice }]);
 
-	conversations
-		.messages
-		.push(AIChatMessage::assistant_with_tools(
-			tool_content,
-			tool_calls.to_vec(),
-		));
-
+	conversations.push(AIChatMessage::assistant_with_tools(
+		tool_content,
+		tool_calls.to_vec(),
+	));
 	for tool in tool_calls {
 		let args = tool.extract_args()?;
 		let mut chat_vec = Vec::with_capacity(1);
@@ -348,7 +336,9 @@ async fn tool_calling(
 				zone.to_string()
 			}
 			ToolCalls::GuildInfo => {
-				if let Some(guild) = message.guild(&ctx.cache) {
+				if let Some(message) = message
+					&& let Some(guild) = message.guild(&ctx.cache)
+				{
 					format!(
 						"The guild you're currently talking in is named {} with this description \
 						 {}, have {} members and have {} channels with these names {}, current \
@@ -400,19 +390,11 @@ async fn tool_calling(
 			ToolCalls::Waifu => get_waifu(ctx).await,
 		};
 		chat_vec.push(ContentPart::Text { text: tool_output });
-		conversations
-			.messages
-			.push(AIChatMessage::tool(chat_vec, tool.id.clone()));
+		conversations.push(AIChatMessage::tool(chat_vec, tool.id.clone()));
 	}
 
-	let final_resp = ai_response(&conversations.messages).await?;
+	let final_resp = ai_response_internal(conversations, true, true).await?;
 	final_resp.extract_content()
-}
-
-#[derive(Serialize)]
-struct SimpleMessage<'a> {
-	role: AIRole,
-	content: &'a str,
 }
 
 #[derive(Serialize)]
@@ -428,23 +410,34 @@ pub struct ImageUrl {
 }
 
 #[derive(Deserialize)]
-pub struct AIResponse {
+struct AIResponse {
 	#[serde(deserialize_with = "non_empty_vec")]
 	choices: Vec<AIChoice>,
 }
 
-#[derive(Deserialize)]
-pub struct AIChoice {
-	#[serde(default)]
-	pub finish_reason: String,
-	pub message: AIMessage,
+#[derive(Deserialize, PartialEq)]
+enum FinishReasons {
+	#[serde(rename = "stop")]
+	Stop,
+	#[serde(rename = "length")]
+	Length,
+	#[serde(rename = "tool_calls")]
+	ToolCalls,
+	#[serde(rename = "content_filter")]
+	ContentFilter,
 }
 
 #[derive(Deserialize)]
-pub struct AIMessage {
-	pub content: Option<String>,
+struct AIChoice {
+	finish_reason: FinishReasons,
+	message: AIMessage,
+}
+
+#[derive(Deserialize)]
+struct AIMessage {
+	content: Option<String>,
 	#[serde(default)]
-	pub tool_calls: Vec<ToolCall>,
+	tool_calls: Vec<ToolCall>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -461,15 +454,26 @@ pub struct FunctionCall {
 	pub arguments: String,
 }
 
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolCalls {
+	Web,
+	Time,
+	Gif,
+	GuildInfo,
+	UserInfo,
+	Waifu,
+}
+
 impl ToolCall {
-	pub fn extract_args(&self) -> AResult<ToolArgs> {
+	fn extract_args(&self) -> AResult<ToolArgs> {
 		from_str::<ToolArgs>(&self.function.arguments)
 			.map_err(|e| anyhow!("Invalid tool arguments JSON: {e}"))
 	}
 }
 
 impl AIResponse {
-	pub fn extract_content(&self) -> AResult<String> {
+	fn extract_content(&self) -> AResult<String> {
 		self.choices
 			.first()
 			.and_then(|c| c.message.content.as_deref())
@@ -478,58 +482,18 @@ impl AIResponse {
 	}
 
 	#[must_use]
-	pub fn has_tool_calls(&self) -> bool {
+	fn has_tool_calls(&self) -> bool {
 		self.choices
 			.first()
-			.is_some_and(|c| !c.message.tool_calls.is_empty())
+			.is_some_and(|c| c.finish_reason == FinishReasons::ToolCalls)
 	}
 
-	pub fn get_tool_calls(&self) -> AResult<&[ToolCall]> {
+	fn get_tool_calls(&self) -> AResult<&[ToolCall]> {
 		self.choices
 			.first()
 			.map(|c| c.message.tool_calls.as_slice())
 			.ok_or_else(|| anyhow!("No choices in response"))
 	}
-}
-
-#[derive(Serialize)]
-struct SimpleAIRequest<'a> {
-	messages: &'a [SimpleMessage<'a>],
-	model: &'a str,
-	#[serde(skip_serializing_if = "Option::is_none")]
-	max_tokens: Option<u32>,
-}
-
-pub async fn ai_response_simple(
-	role: &str,
-	prompt: &str,
-	max_tokens: Option<u32>,
-) -> AResult<String> {
-	let utils_config = utils_config();
-	let request = SimpleAIRequest {
-		messages: &[
-			SimpleMessage {
-				role: AIRole::System,
-				content: role,
-			},
-			SimpleMessage {
-				role: AIRole::User,
-				content: prompt,
-			},
-		],
-		model: &utils_config.fabseserver.text_gen_model,
-		max_tokens,
-	};
-
-	let response: AIResponse = fetch_and_parse(
-		HTTP_CLIENT
-			.post(&utils_config.fabseserver.llm_host_text)
-			.json(&request)
-			.send(),
-	)
-	.await?;
-
-	response.extract_content()
 }
 
 #[derive(Serialize)]
@@ -568,10 +532,21 @@ struct AIToolsQuery<'a> {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ToolChoice {
+	None,
+	Auto,
+	Required,
+}
+
+#[derive(Serialize)]
 struct ChatRequest<'a> {
 	messages: &'a [AIChatMessage],
 	model: &'a str,
-	tools: &'a [AITools<'a>],
+	#[serde(skip_serializing_if = "Option::is_none")]
+	tools: Option<&'a [AITools<'a>; 6]>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	tool_choice: Option<ToolChoice>,
 }
 
 const fn get_available_tools() -> [AITools<'static>; 6] {
@@ -691,13 +666,19 @@ const fn get_available_tools() -> [AITools<'static>; 6] {
 	]
 }
 
-pub async fn ai_response(messages: &[AIChatMessage]) -> AResult<AIResponse> {
-	let tools = get_available_tools();
+async fn ai_response_internal(
+	messages: &[AIChatMessage],
+	tools_calling: bool,
+	force_no_tools: bool,
+) -> AResult<AIResponse> {
 	let utils_config = utils_config();
+	let tools_list = tools_calling.then_some(get_available_tools());
+	let tool_choice = force_no_tools.then_some(ToolChoice::None);
 	let request = ChatRequest {
 		model: &utils_config.fabseserver.text_gen_model,
 		messages,
-		tools: &tools,
+		tools: tools_list.as_ref(),
+		tool_choice,
 	};
 
 	fetch_and_parse::<AIResponse>(
@@ -707,6 +688,27 @@ pub async fn ai_response(messages: &[AIChatMessage]) -> AResult<AIResponse> {
 			.send(),
 	)
 	.await
+}
+
+pub async fn ai_response(
+	messages: &mut Vec<AIChatMessage>,
+	ctx: &SContext,
+	guild_id: GuildId,
+	message: Option<&Message>,
+	tools: bool,
+) -> AResult<String> {
+	let response = ai_response_internal(messages, tools, false).await?;
+
+	let output = if tools
+		&& response.has_tool_calls()
+		&& let Ok(tool_calls) = response.get_tool_calls()
+	{
+		tool_calling(&response, tool_calls, messages, ctx, message, guild_id).await?
+	} else {
+		response.extract_content()?
+	};
+
+	Ok(output)
 }
 
 #[derive(Serialize)]

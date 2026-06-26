@@ -44,7 +44,7 @@ use crate::{
 	handlers::{EventHandler, dynamic_prefix, on_command, on_error},
 	stats::counters::METRICS,
 	utils::{
-		helpers::{get_gifs, get_waifu},
+		helpers::{get_gif, get_waifu},
 		voice::setup_lavalink,
 		webhook::error_hook,
 	},
@@ -161,29 +161,26 @@ pub async fn periodic_task(data: Arc<Data>) -> ! {
 				&& let Some(dead_chat_channel) = guild.dead_chat_channel
 			{
 				counter!(METRICS.periodic_dead_chat.clone()).increment(1);
-				let gifs = get_gifs(bot_context, "dead chat").await;
-				let index = fastrand::usize(..gifs.len());
-				if let Some(gif) = gifs.get(index).map(|g| g.0.clone()) {
-					if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
-						.say(&bot_context.http, gif)
-						.await
-					{
-						error!("Failed to send dead chat gif: {:?}", &err);
-					} else if let Err(err) = query!(
-						r#"
+				let gif = get_gif(bot_context, "dead chat").await;
+				if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
+					.say(&bot_context.http, gif)
+					.await
+				{
+					error!("Failed to send dead chat gif: {:?}", &err);
+				} else if let Err(err) = query!(
+					r#"
 						INSERT INTO guild_settings (guild_id, last_dead_chat)
             			VALUES ($1, $2)
             			ON CONFLICT (guild_id)
             			DO UPDATE SET last_dead_chat = $2
             			"#,
-						guild.guild_id,
-						now_timestamp
-					)
-					.execute(&data.db)
-					.await
-					{
-						error!("Failed to update last_dead_chat in db: {:?}", &err);
-					}
+					guild.guild_id,
+					now_timestamp
+				)
+				.execute(&data.db)
+				.await
+				{
+					error!("Failed to update last_dead_chat in db: {:?}", &err);
 				}
 			}
 		}

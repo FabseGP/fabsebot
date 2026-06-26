@@ -13,7 +13,7 @@ use serenity::all::{
 use crate::require_human;
 
 #[derive(PartialEq, Eq, ChoiceParameter)]
-pub enum RpsChoice {
+enum RpsChoice {
 	#[name = "🪨 Rock"]
 	Rock,
 	#[name = "🧻 Paper"]

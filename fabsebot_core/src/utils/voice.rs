@@ -63,7 +63,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct DriverDisconnectHandler {
+struct DriverDisconnectHandler {
 	bot_data: Arc<Data>,
 }
 
@@ -95,7 +95,7 @@ impl VoiceEventHandler for DriverDisconnectHandler {
 }
 
 #[derive(Clone)]
-pub struct ClientDisconnectHandler {
+struct ClientDisconnectHandler {
 	serenity_context: SerenityContext,
 	channel_id: GenericChannelId,
 }
@@ -135,7 +135,7 @@ impl VoiceEventHandler for ClientDisconnectHandler {
 }
 
 #[derive(Clone)]
-pub struct PlaybackHandler {
+struct PlaybackHandler {
 	serenity_context: SerenityContext,
 	bot_data: Arc<Data>,
 	guild_id: GuildId,
@@ -385,7 +385,7 @@ impl PlaybackHandler {
 		Ok(())
 	}
 
-	pub async fn update_info(
+	async fn update_info(
 		&self,
 		track: TrackData,
 		song_play: GuildPlay,
@@ -620,7 +620,7 @@ pub async fn get_configured_songbird_handler(handler_lock: &Mutex<Call>) -> Mute
 }
 
 #[must_use]
-pub fn youtube_source(url: &str) -> bool {
+fn youtube_source(url: &str) -> bool {
 	Url::parse(url).is_ok_and(|parsed_url| {
 		parsed_url.domain().is_some_and(|d| {
 			d == "youtube.com" || d == "www.youtube.com" || d == "youtu.be" || d == "m.youtube.com"
@@ -628,7 +628,7 @@ pub fn youtube_source(url: &str) -> bool {
 	})
 }
 
-pub async fn queue_song(
+async fn queue_song(
 	metadata: AuxMetadata,
 	audio: AudioStream<Box<dyn MediaSource>>,
 	source: YoutubeDl<'static>,
@@ -661,7 +661,7 @@ pub async fn queue_song(
 	Ok(())
 }
 
-pub async fn join_container(ctx: &SContext<'_>) -> AResult<()> {
+async fn join_container(ctx: &SContext<'_>) -> AResult<()> {
 	let playback_info = "# I've joined the party!\n## Commands:\n
 	- **/play_song**: *Queue a new song from a YouTube url or from a search*
 	- **/seek_song**: *Seek song forward (e.g. +20) or backwards (e.g. -20)*
@@ -684,7 +684,7 @@ pub async fn join_container(ctx: &SContext<'_>) -> AResult<()> {
 	Ok(())
 }
 
-pub async fn join_handler(
+async fn join_handler(
 	music_manager: Arc<Songbird>,
 	guild_id: GuildId,
 	channel_id: ChannelId,
@@ -699,7 +699,7 @@ pub async fn join_handler(
 	Ok(handler_lock)
 }
 
-pub async fn voice_channel_id(ctx: SContext<'_>) -> AResult<ChannelId> {
+async fn voice_channel_id(ctx: SContext<'_>) -> AResult<ChannelId> {
 	let Some(channel_id) = ctx.guild().and_then(|guild| {
 		guild
 			.voice_states
@@ -713,7 +713,7 @@ pub async fn voice_channel_id(ctx: SContext<'_>) -> AResult<ChannelId> {
 	Ok(channel_id)
 }
 
-pub async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
+async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
 	let channel_id = voice_channel_id(ctx).await?;
 	let handler_lock =
 		match join_handler(ctx.data().music_manager.clone(), guild_id, channel_id).await {
@@ -791,7 +791,7 @@ pub async fn remove_handler(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()>
 	Ok(())
 }
 
-pub async fn insert_track(metadata: AuxMetadata, uuid: Uuid, conn: &Pool<Postgres>) -> AResult<()> {
+async fn insert_track(metadata: AuxMetadata, uuid: Uuid, conn: &Pool<Postgres>) -> AResult<()> {
 	query!(
 		r#"
     	INSERT INTO tracks (track_uuid, title, artist, source_url, duration_sec, thumbnail_url)
@@ -812,15 +812,15 @@ pub async fn insert_track(metadata: AuxMetadata, uuid: Uuid, conn: &Pool<Postgre
 	Ok(())
 }
 
-pub struct TrackData {
-	pub title: Option<String>,
-	pub artist: Option<String>,
-	pub source_url: Option<String>,
-	pub duration_sec: Option<i64>,
-	pub thumbnail_url: Option<String>,
+struct TrackData {
+	title: Option<String>,
+	artist: Option<String>,
+	source_url: Option<String>,
+	duration_sec: Option<i64>,
+	thumbnail_url: Option<String>,
 }
 
-pub async fn get_track(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<TrackData> {
+async fn get_track(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<TrackData> {
 	let track = query_as!(
 		TrackData,
 		r#"
@@ -836,7 +836,7 @@ pub async fn get_track(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<TrackData> 
 	Ok(track)
 }
 
-pub async fn insert_guild_play(
+async fn insert_guild_play(
 	uuid: Uuid,
 	guild_id: i64,
 	channel_id: i64,
@@ -864,7 +864,7 @@ pub async fn insert_guild_play(
 type DBUserID = Option<i64>;
 
 #[async_trait]
-pub trait DBUserIDExt {
+trait DBUserIDExt {
 	async fn get_author_name(&self, serenity_context: &SerenityContext) -> String;
 }
 
@@ -881,13 +881,13 @@ impl DBUserIDExt for DBUserID {
 	}
 }
 
-pub struct GuildPlay {
-	pub requested_by: DBUserID,
-	pub requested_channel: i64,
-	pub request_message_id: i64,
+struct GuildPlay {
+	requested_by: DBUserID,
+	requested_channel: i64,
+	request_message_id: i64,
 }
 
-pub async fn get_guild_play(
+async fn get_guild_play(
 	uuid: Uuid,
 	guild_id: i64,
 	channel_id: i64,
@@ -914,7 +914,7 @@ pub async fn get_guild_play(
 	Ok(track)
 }
 
-pub async fn get_matching_guild_plays(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<Vec<i64>> {
+async fn get_matching_guild_plays(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<Vec<i64>> {
 	let track_guilds = query_scalar!(
 		r#"
     	SELECT DISTINCT guild_id FROM song_plays
@@ -929,13 +929,13 @@ pub async fn get_matching_guild_plays(uuid: Uuid, conn: &Pool<Postgres>) -> ARes
 	Ok(track_guilds)
 }
 
-pub struct ChannelPlayHistory {
-	pub played_at: OffsetDateTime,
-	pub requested_by: DBUserID,
-	pub title: Option<String>,
+struct ChannelPlayHistory {
+	played_at: OffsetDateTime,
+	requested_by: DBUserID,
+	title: Option<String>,
 }
 
-pub async fn get_queue_history(
+async fn get_queue_history(
 	channel_id: i64,
 	conn: &Pool<Postgres>,
 ) -> AResult<Vec<ChannelPlayHistory>> {
@@ -960,7 +960,7 @@ pub async fn get_queue_history(
 	Ok(queue_history)
 }
 
-pub async fn rejoin_voice(
+async fn rejoin_voice(
 	ctx: &SerenityContext,
 	conn: &Pool<Postgres>,
 	music_manager: Arc<Songbird>,

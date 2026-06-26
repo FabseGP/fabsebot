@@ -9,7 +9,7 @@ use lavalink_rs::client::LavalinkClient;
 use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serenity::all::{
 	Context, Emoji, EmojiId, GenericChannelId, GuildId, ShardId, ShardRunnerMetadata, Webhook,
 };
@@ -39,52 +39,29 @@ pub struct AIChatContext {
 	pub messages: Vec<AIChatMessage>,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
-#[serde(rename_all = "lowercase")]
-pub enum ToolCalls {
-	Web,
-	Time,
-	Gif,
-	GuildInfo,
-	UserInfo,
-	Waifu,
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum AIRole {
+enum AIRole {
 	System,
 	User,
 	Assistant,
 	Tool,
 }
 
-impl AIRole {
-	#[must_use]
-	pub const fn is_system(&self) -> bool {
-		matches!(self, Self::System)
-	}
-
-	#[must_use]
-	pub const fn is_user(&self) -> bool {
-		matches!(self, Self::User)
-	}
-}
-
 #[derive(Serialize)]
 pub struct AIChatMessage {
-	pub role: AIRole,
+	role: AIRole,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pub content: Option<Vec<ContentPart>>,
+	content: Option<Vec<ContentPart>>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pub tool_call_id: Option<String>,
+	tool_call_id: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	pub tool_calls: Option<Vec<ToolCall>>,
+	tool_calls: Option<Vec<ToolCall>>,
 }
 
 impl AIChatMessage {
 	#[must_use]
-	pub const fn new(
+	const fn new(
 		role: AIRole,
 		content: Option<Vec<ContentPart>>,
 		tool_call_id: Option<String>,

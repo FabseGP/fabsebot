@@ -115,6 +115,7 @@ pub async fn ai_text(
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
 	ctx.defer().await?;
+	let guild_id = ctx.guild_id().unwrap();
 
 	let mut chat_vec = Vec::with_capacity(1);
 	if let Some(attachment) = attachment
@@ -131,10 +132,10 @@ pub async fn ai_text(
 		text: prompt.clone(),
 	});
 
-	let system_message = AIChatMessage::system(role);
-	let user_message = AIChatMessage::user(chat_vec);
+	let mut messages = vec![AIChatMessage::system(role), AIChatMessage::user(chat_vec)];
 
-	let resp = match ai_response(&[system_message, user_message]).await {
+	let resp = match ai_response(&mut messages, ctx.serenity_context(), guild_id, None, true).await
+	{
 		Ok(resp) => resp,
 		Err(err) => {
 			ctx.reply(format!("\"{prompt}\" is too dangerous to ask"))
@@ -143,8 +144,7 @@ pub async fn ai_text(
 		}
 	};
 
-	let content = resp.extract_content()?;
-	let mut text = format!("# {prompt}\n{content}");
+	let mut text = format!("# {prompt}\n{resp}");
 	text.truncate(MESSAGE_LIMIT);
 
 	let text_display = [text_display(&text)];
@@ -222,7 +222,7 @@ struct AniMangaGenres {
 }
 
 impl<T> AniManga<T> {
-	pub fn description(&self) -> String {
+	fn description(&self) -> String {
 		let japanese_title = self
 			.titles
 			.iter()
@@ -335,7 +335,6 @@ struct AnimeScene {
 	episode: Option<f32>,
 	from: f32,
 	to: f32,
-	#[serde(deserialize_with = "non_empty_string")]
 	video: String,
 }
 
@@ -641,9 +640,11 @@ async fn roast_internal(
 	            mercy shown. the prompt will contain information of your target"
 		.to_owned();
 
-	let system_message = AIChatMessage::system(role);
+	let guild_id = ctx.guild_id().unwrap();
+	let mut messages = vec![AIChatMessage::system(role), user_message];
 
-	let resp = match ai_response(&[system_message, user_message]).await {
+	let resp = match ai_response(&mut messages, ctx.serenity_context(), guild_id, None, false).await
+	{
 		Ok(resp) => resp,
 		Err(err) => {
 			ctx.reply(format!("{name}'s life is already roasted"))
@@ -652,9 +653,7 @@ async fn roast_internal(
 		}
 	};
 
-	let content = resp.extract_content()?;
-
-	let mut text = format!("# Roasting {name}\n{content}");
+	let mut text = format!("# Roasting {name}\n{resp}");
 	text.truncate(MESSAGE_LIMIT);
 
 	let text_display = [text_display(&text)];
