@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\tWITH ensure_guild AS (\n\t\t\tINSERT INTO guilds (guild_id)\n\t\t\tVALUES ($1)\n\t\t\tON CONFLICT (guild_id) DO NOTHING\n\t\t)\n\t\tINSERT INTO guild_settings (guild_id)\n\t\tVALUES ($1)\n\t\tON CONFLICT (guild_id)\n\t\tDO UPDATE SET guild_id = guild_settings.guild_id\n\t\tRETURNING spoiler_channel, ai_chat_channel, global_chat_channel,\n\t\tmusic_channel, chatbot_role, global_chat\n\t\t",
+  "query": "\n\t\tWITH ensure_guild AS (SELECT ensure_guild($1))\n\t\tINSERT INTO guild_settings (guild_id)\n\t\tVALUES ($1)\n\t\tON CONFLICT (guild_id)\n\t\tDO UPDATE SET guild_id = guild_settings.guild_id\n\t\tRETURNING spoiler_channel, ai_chat_channel, global_chat_channel,\n\t\tmusic_channel, chatbot_role, global_chat\n\t\t",
   "describe": {
     "columns": [
       {
@@ -84,5 +84,5 @@
       false
     ]
   },
-  "hash": "bee4bdd55505314356a9118d71fbddafc44d9db4ac334207f40dae5baecb8875"
+  "hash": "a55838a06f1a7cf7aef7427abd49b435fbfd21f0630f0460c4ac6ae75fda8c11"
 }

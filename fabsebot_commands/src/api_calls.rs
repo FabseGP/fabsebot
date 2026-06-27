@@ -710,7 +710,7 @@ pub async fn roast(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
-	let avatar_url = member_pfp(&ctx, &member).await?;
+	let avatar_url = member_pfp(&member);
 	let _typing = ctx.defer_or_broadcast().await;
 
 	let mut chat_vec = Vec::with_capacity(3);

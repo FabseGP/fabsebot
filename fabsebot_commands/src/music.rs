@@ -11,7 +11,7 @@ use fabsebot_core::{
 		helpers::{fetch_and_parse, non_empty_vec},
 		voice::{
 			TrackSignal, add_playlist, add_song, get_configured_songbird_handler, lavalink_delete,
-			lavalink_join, lavalink_play, remove_handler, try_voice,
+			lavalink_join, lavalink_play, queue_payload, remove_handler, try_voice,
 		},
 	},
 };
@@ -21,7 +21,6 @@ use serenity::{
 	all::{CreateMessage, GenericChannelId, GuildId, MessageId},
 	builder::EditMessage,
 };
-use songbird::input::Input;
 use sqlx::{query, query_scalar};
 use tokio::process::Command;
 use url::Url;
@@ -81,12 +80,9 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 		}
 	};
 
-	get_configured_songbird_handler(&handler_lock)
-		.await
-		.enqueue_input(Input::from(bytes))
-		.await;
-
 	ctx.reply("Here we go").await?;
+
+	queue_payload(handler_lock, bytes).await;
 
 	Ok(())
 }
@@ -244,6 +240,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	ctx.reply("Left voice channel, don't forget me").await?;
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, global_music, global_call)
         VALUES ($1, FALSE, FALSE)
         ON CONFLICT (guild_id)

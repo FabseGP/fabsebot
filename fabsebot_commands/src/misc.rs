@@ -78,7 +78,7 @@ pub async fn birthday(
 	#[description = "User to congratulate"] user: User,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	let avatar_url = user_pfp(&ctx, &user).await?;
+	let avatar_url = user_pfp(&user);
 	birthday_internal(ctx, &avatar_url, user.display_name()).await?;
 	Ok(())
 }
@@ -267,6 +267,7 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, global_chat)
 		VALUES ($1, FALSE)
         ON CONFLICT (guild_id)
@@ -294,6 +295,7 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	let channel_id_i64 = i64::from(ctx.channel_id());
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
         VALUES ($1, TRUE, $2)
         ON CONFLICT (guild_id)
@@ -838,12 +840,12 @@ async fn quote_internal(
 				(avatar, reply.author.name.clone())
 			} else {
 				let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-				let avatar = member_pfp(&ctx, &member).await?;
+				let avatar = member_pfp(&member);
 				(avatar, member.user.name)
 			};
 			(url, format!("- {name}"), reply.content.to_string())
 		} else {
-			let avatar = user_pfp(&ctx, &msg.author).await?;
+			let avatar = user_pfp(&msg.author);
 			(
 				avatar,
 				format!("- {}", msg.author.name),

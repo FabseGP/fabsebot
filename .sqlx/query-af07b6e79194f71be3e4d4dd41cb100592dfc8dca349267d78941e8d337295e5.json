@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        \t\tUPDATE user_settings\n        \t\tSET pinged_links = COALESCE(pinged_links, '[]'::jsonb) || jsonb_build_array(u.entry)\n        \t\tFROM UNNEST($1::jsonb[], $2::bigint[]) AS u(entry, user_id)\n        \t\tWHERE user_settings.guild_id = $3\n        \t\tAND user_settings.user_id = u.user_id\n        \t\t",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "JsonbArray",
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af07b6e79194f71be3e4d4dd41cb100592dfc8dca349267d78941e8d337295e5"
+}

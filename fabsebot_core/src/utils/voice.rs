@@ -9,7 +9,8 @@ use std::{
 };
 
 use anyhow::{Result as AResult, bail};
-use fabsebot_db::guild::{insert_channel, set_current_voice_channel};
+use bytes::Bytes;
+use fabsebot_db::guild::set_current_voice_channel;
 use lavalink_rs::{
 	client::LavalinkClient,
 	model::{
@@ -38,7 +39,7 @@ use songbird::{
 	input::{AudioStream, AuxMetadata, Compose as _, Input, LiveInput, YoutubeDl},
 	tracks::{PlayMode, Track},
 };
-use sqlx::{Executor, Pool, Postgres, query, query_as, query_scalar, types::time::OffsetDateTime};
+use sqlx::{Pool, Postgres, query, query_as, query_scalar, types::time::OffsetDateTime};
 use symphonia::core::io::MediaSource;
 use tokio::{
 	select, spawn,
@@ -511,6 +512,9 @@ impl VoiceEventHandler for PlaybackHandler {
 			let bot_data: Arc<Data> = self.serenity_context.data();
 			for (state, handle) in *tracks {
 				let queue_data: Arc<QueueData> = handle.data();
+				if queue_data.payload_type != PayloadType::Song {
+					continue;
+				}
 				if state.playing == PlayMode::Play {
 					let first_play = queue_data.first_play.load(Ordering::Relaxed);
 					if first_play {
@@ -618,9 +622,26 @@ fn youtube_source(url: &str) -> bool {
 	})
 }
 
+#[derive(PartialEq, Default)]
+enum PayloadType {
+	Song,
+	#[default]
+	Custom,
+}
+
+#[derive(Default)]
 struct QueueData {
 	track_data: TrackPlayData,
 	first_play: AtomicBool,
+	payload_type: PayloadType,
+}
+
+pub async fn queue_payload(handler_lock: Arc<Mutex<Call>>, payload: Bytes) {
+	let queue_data = Arc::new(QueueData::default());
+	get_configured_songbird_handler(&handler_lock)
+		.await
+		.enqueue(Track::new_with_data(Input::from(payload), queue_data))
+		.await;
 }
 
 async fn queue_song(
@@ -641,13 +662,10 @@ async fn queue_song(
 			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
 		});
 
-	let mut tx = pool.begin().await?;
-
-	insert_channel(guild_id, channel_id, &mut *tx).await?;
-	insert_track(&metadata, uuid, &mut *tx).await?;
-	insert_guild_play(uuid, guild_id, channel_id, author_id, message_id, &mut *tx).await?;
-
-	tx.commit().await?;
+	insert_guild_play(
+		uuid, &metadata, guild_id, channel_id, author_id, message_id, pool,
+	)
+	.await?;
 
 	let queue_data = Arc::new(QueueData {
 		track_data: TrackPlayData {
@@ -656,11 +674,12 @@ async fn queue_song(
 			source_url: metadata.source_url,
 			duration_sec: metadata.duration.map(|d| d.as_secs().cast_signed()),
 			thumbnail_url: metadata.thumbnail,
-			requested_by: Some(author_id),
+			requested_by: author_id,
 			requested_channel: channel_id,
 			request_message_id: message_id,
 		},
 		first_play: AtomicBool::new(true),
+		payload_type: PayloadType::Song,
 	});
 
 	get_configured_songbird_handler(&handler_lock)
@@ -748,6 +767,7 @@ pub async fn try_voice(
 	if global {
 		query!(
 			r#"
+			WITH ensure_guild AS (SELECT ensure_guild($1))
 			INSERT INTO guild_settings (guild_id, global_call)
             VALUES ($1, TRUE)
             ON CONFLICT (guild_id)
@@ -805,30 +825,7 @@ pub async fn remove_handler(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()>
 	Ok(())
 }
 
-async fn insert_track<'c, E>(metadata: &AuxMetadata, uuid: Uuid, conn: E) -> AResult<()>
-where
-	E: Executor<'c, Database = Postgres>,
-{
-	query!(
-		r#"
-    	INSERT INTO tracks (track_uuid, title, artist, source_url, duration_sec, thumbnail_url)
-   		VALUES ($1, $2, $3, $4, $5, $6)
-    	ON CONFLICT (track_uuid) 
-    	DO NOTHING
-    	"#,
-		uuid,
-		metadata.title,
-		metadata.artist,
-		metadata.source_url,
-		metadata.duration.map(|d| d.as_secs().cast_signed()),
-		metadata.thumbnail
-	)
-	.execute(conn)
-	.await?;
-
-	Ok(())
-}
-
+#[derive(Default)]
 struct TrackPlayData {
 	title: Option<String>,
 	artist: Option<String>,
@@ -840,27 +837,42 @@ struct TrackPlayData {
 	request_message_id: i64,
 }
 
-async fn insert_guild_play<'c, E>(
+async fn insert_guild_play(
 	uuid: Uuid,
+	metadata: &AuxMetadata,
 	guild_id: i64,
 	channel_id: i64,
 	author_id: i64,
 	message_id: i64,
-	conn: E,
-) -> AResult<()>
-where
-	E: Executor<'c, Database = Postgres>,
-{
+	conn: &Pool<Postgres>,
+) -> AResult<()> {
 	query!(
-		r#"
+    	r#"
+		WITH ensure_guild AS (SELECT ensure_guild($2)),
+    	ensure_channel AS (
+        	INSERT INTO channels (guild_id, channel_id)
+        	VALUES ($2, $4)
+        	ON CONFLICT (guild_id, channel_id)
+        	DO NOTHING
+    	),
+    	ensure_track AS (
+        	INSERT INTO tracks (track_uuid, title, artist, source_url, duration_sec, thumbnail_url)
+        	VALUES ($1, $6, $7, $8, $9, $10)
+			ON CONFLICT (track_uuid)
+			DO UPDATE SET last_seen = NOW()
+    	)
     	INSERT INTO song_plays (track_uuid, guild_id, requested_by, requested_channel, request_message_id)
-   		VALUES ($1, $2, $3, $4, $5)
+    	VALUES ($1, $2, $3, $4, $5)
     	"#,
-		uuid,
-		guild_id,
-		author_id,
-		channel_id,
-		message_id
+    	uuid,
+    	guild_id,
+    	author_id,
+    	channel_id,
+    	message_id,
+    	metadata.title, metadata.artist,
+    	metadata.source_url,
+    	metadata.duration.map(|d| d.as_secs().cast_signed()),
+    	metadata.thumbnail
 	)
 	.execute(conn)
 	.await?;
@@ -868,7 +880,7 @@ where
 	Ok(())
 }
 
-type DBUserID = Option<i64>;
+type DBUserID = i64;
 
 #[async_trait]
 trait DBUserIDExt {
@@ -878,13 +890,14 @@ trait DBUserIDExt {
 #[async_trait]
 impl DBUserIDExt for DBUserID {
 	async fn get_author_name(&self, serenity_context: &SerenityContext) -> String {
-		if let Some(user_id) = self.map(|u| UserId::new(u.cast_unsigned()))
-			&& let Ok(user) = serenity_context.http.get_user(user_id).await
-		{
-			user.display_name().to_owned()
-		} else {
-			"Unknown".to_owned()
-		}
+		serenity_context
+			.http
+			.get_user(UserId::new(self.cast_unsigned()))
+			.await
+			.map_or_else(
+				|_| "Unknown".to_owned(),
+				|user| user.display_name().to_owned(),
+			)
 	}
 }
 
@@ -1024,7 +1037,7 @@ pub async fn lavalink_play(ctx: SContext<'_>, guild_id: GuildId, input: String) 
 		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
 		return Err(MusicError::NotInVoiceChan.into());
 	};
-	let query = if input.starts_with("https") {
+	let query = if Url::parse(&input).is_ok() {
 		input
 	} else {
 		match SearchEngines::YouTube.to_query(&input) {

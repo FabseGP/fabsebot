@@ -79,7 +79,7 @@ pub async fn user_misuse(
 	#[max_length = 2000]
 	message: String,
 ) -> Result<(), Error> {
-	let avatar_url = member_pfp(&ctx, &member).await?;
+	let avatar_url = member_pfp(&member);
 	let webhook = match webhook_find(
 		ctx.serenity_context(),
 		ctx.guild_id(),

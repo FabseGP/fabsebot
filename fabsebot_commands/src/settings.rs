@@ -3,7 +3,7 @@ use std::{
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::Context as _;
+use anyhow::{Context as _, Result as AResult};
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::types::{Error, HTTP_CLIENT, SContext},
@@ -27,6 +27,30 @@ use serenity::{
 use sqlx::{Pool, Postgres, query};
 use tracing::warn;
 use url::Url;
+
+async fn validate_media(ctx: &SContext<'_>, media: Option<&String>) -> AResult<bool> {
+	let Some(user_media) = media else {
+		return Ok(true);
+	};
+	if Url::parse(user_media).is_ok() {
+		ctx.defer().await?;
+		Ok(HTTP_CLIENT
+			.head(user_media)
+			.send()
+			.await
+			.is_ok_and(|response| {
+				response
+					.headers()
+					.get("content-type")
+					.and_then(|ct| ct.to_str().ok())
+					.is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif")
+			}))
+	} else if let Some(stripped) = user_media.strip_prefix("!gif") {
+		Ok(!stripped.is_empty())
+	} else {
+		Ok(false)
+	}
+}
 
 async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(guild_id);
@@ -427,7 +451,7 @@ pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 		r#"
 		UPDATE user_settings
         SET afk = FALSE, afk_reason = NULL,
-        pinged_links = NULL, ping_content = NULL, ping_media = NULL
+        pinged_links = '[]'::jsonb, ping_content = NULL, ping_media = NULL
     	WHERE guild_id = $1 AND user_id = $2
     	"#,
 		i64::from(guild_id),
@@ -449,17 +473,19 @@ pub async fn set_afk(
 	ctx: SContext<'_>,
 	#[description = "Reason for afk"] reason: Option<String>,
 ) -> Result<(), Error> {
-	let avatar_url = user_pfp(&ctx, ctx.author()).await?;
+	let avatar_url = user_pfp(ctx.author());
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	let user_id_i64 = i64::from(ctx.author().id);
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1)),
+     		ensure_user AS (SELECT ensure_user($2))
 		INSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)
-    	VALUES ($1, $2, TRUE, $3, NULL)
+    	VALUES ($1, $2, TRUE, $3, '[]'::jsonb)
         ON CONFLICT (guild_id, user_id)
         DO UPDATE SET afk = TRUE,
         afk_reason = $3,
-        pinged_links = NULL
+        pinged_links = '[]'::jsonb
         "#,
 		guild_id_i64,
 		user_id_i64,
@@ -498,6 +524,7 @@ async fn set_chatbot_channel(
 ) -> Result<(), Error> {
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, ai_chat_channel)
         VALUES ($1, $2)
         ON CONFLICT (guild_id)
@@ -536,6 +563,7 @@ pub async fn set_chatbot_options(
 	let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings
 		(guild_id, chatbot_role)
         VALUES ($1, $2)
@@ -571,6 +599,7 @@ async fn set_dead_chat(
 ) -> Result<(), Error> {
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, last_dead_chat)
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (guild_id)
@@ -610,6 +639,7 @@ pub async fn set_prefix(
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, prefix)
         VALUES ($1, $2)
         ON CONFLICT (guild_id)
@@ -641,6 +671,7 @@ async fn set_quote_channel(
 ) -> Result<(), Error> {
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, quotes_channel)
         VALUES ($1, $2)
         ON CONFLICT (guild_id)
@@ -675,33 +706,14 @@ pub async fn set_user_ping(
 	                 query"]
 	media: Option<String>,
 ) -> Result<(), Error> {
-	let valid = if let Some(user_media) = &media {
-		if user_media.starts_with("https") {
-			ctx.defer().await?;
-			HTTP_CLIENT
-				.head(user_media)
-				.send()
-				.await
-				.is_ok_and(|response| {
-					response
-						.headers()
-						.get("content-type")
-						.and_then(|ct| ct.to_str().ok())
-						.is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif")
-				})
-		} else if let Some(media_stripped) = user_media.strip_prefix("!gif") {
-			!media_stripped.is_empty()
-		} else {
-			user_media == "waifu"
-		}
-	} else {
-		true
-	};
+	let valid = validate_media(&ctx, media.as_ref()).await?;
 	let response = if valid {
 		let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 		let user_id_i64 = i64::from(ctx.author().id);
 		query!(
 			r#"
+			WITH ensure_guild AS (SELECT ensure_guild($1)),
+     			ensure_user AS (SELECT ensure_user($2))
 			INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (guild_id, user_id)
@@ -737,6 +749,7 @@ async fn set_waifu_channel(
 ) -> Result<(), Error> {
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, waifu_channel, waifu_rate, last_waifu)
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (guild_id)
@@ -777,69 +790,44 @@ pub async fn set_word_react(
 ) -> Result<(), Error> {
 	let mut emoji_id = None;
 	let mut guild_emoji = false;
-	let valid = if content.is_some() {
-		if let Some(user_media) = &media {
-			if user_media.starts_with("https") {
-				ctx.defer().await?;
-				HTTP_CLIENT
-					.head(user_media)
-					.send()
-					.await
-					.is_ok_and(|response| {
-						response
-							.headers()
-							.get("content-type")
-							.and_then(|ct| ct.to_str().ok())
-							.is_some_and(|ct| ct.starts_with("image/") || ct == "application/gif")
-					})
-			} else if let Some(media_stripped) = user_media.strip_prefix("!gif") {
-				!media_stripped.is_empty()
-			} else {
-				false
-			}
-		} else {
-			true
-		}
-	} else if let Some(emoji_name) = emoji_name {
+	let valid_media = validate_media(&ctx, media.as_ref()).await?;
+	let valid_emoji = if let Some(emoji_name) = emoji_name {
 		if let Some(guild) = ctx.guild()
 			&& guild.emojis.iter().any(|emoji| emoji.name == emoji_name)
 		{
 			guild_emoji = true;
 			true
-		} else if let Some(emoji_media) = emoji_media {
-			if Url::parse(&emoji_media).is_ok() {
-				ctx.defer().await?;
-				let response = HTTP_CLIENT.head(&emoji_media).send().await?;
-				let content_type = response
-					.headers()
-					.get("content-type")
-					.and_then(|ct| ct.to_str().ok())
-					.unwrap_or("image/png")
-					.to_string();
-				if content_type.starts_with("image/") || content_type == "application/gif" {
-					let image_bytes = HTTP_CLIENT.get(&emoji_media).send().await?.bytes().await?;
-					let base64_str = general_purpose::STANDARD.encode(&image_bytes);
-					let image_data = format!("data:{content_type};base64,{base64_str}");
-					let params = CreateApplicationEmoji {
-						name: &emoji_name,
-						image: &image_data,
-					};
-					match ctx.http().create_application_emoji(&params).await {
-						Ok(http_emoji) => {
-							emoji_id = Some(http_emoji.id.get().cast_signed());
-							ctx.data()
-								.app_emojis
-								.insert(http_emoji.id, Arc::new(http_emoji));
+		} else if let Some(emoji_media) = emoji_media
+			&& Url::parse(&emoji_media).is_ok()
+		{
+			ctx.defer().await?;
+			let response = HTTP_CLIENT.head(&emoji_media).send().await?;
+			let content_type = response
+				.headers()
+				.get("content-type")
+				.and_then(|ct| ct.to_str().ok())
+				.unwrap_or("image/png");
+			if content_type.starts_with("image/") || content_type == "application/gif" {
+				let image_bytes = HTTP_CLIENT.get(&emoji_media).send().await?.bytes().await?;
+				let base64_str = general_purpose::STANDARD.encode(&image_bytes);
+				let image_data = format!("data:{content_type};base64,{base64_str}");
+				let params = CreateApplicationEmoji {
+					name: &emoji_name,
+					image: &image_data,
+				};
+				match ctx.http().create_application_emoji(&params).await {
+					Ok(http_emoji) => {
+						emoji_id = Some(http_emoji.id.get().cast_signed());
+						ctx.data()
+							.app_emojis
+							.insert(http_emoji.id, Arc::new(http_emoji));
 
-							true
-						}
-						Err(err) => {
-							warn!("Failed to get app emojis: {err}");
-							false
-						}
+						true
 					}
-				} else {
-					false
+					Err(err) => {
+						warn!("Failed to get app emojis: {err}");
+						false
+					}
 				}
 			} else {
 				false
@@ -850,14 +838,15 @@ pub async fn set_word_react(
 	} else {
 		false
 	};
-	if valid {
+	if valid_media && valid_emoji {
 		let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 		query!(
 			r#"
+			WITH ensure_guild AS (SELECT ensure_guild($1))
 			INSERT INTO guild_word_reaction (guild_id, word, content, media, emoji_id, guild_emoji)
             VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (guild_id, word)
-            DO UPDATE SET word = $2, content = $3, media = $4, emoji_id = $5, guild_emoji = $6
+            ON CONFLICT (guild_id)
+            DO UPDATE SET content = $3, media = $4, emoji_id = $5, guild_emoji = $6
             "#,
 			guild_id_i64,
 			word,
@@ -898,10 +887,11 @@ pub async fn set_word_track(
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_word_tracking (guild_id, word)
         VALUES ($1, $2)
         ON CONFLICT (guild_id, word)
-        DO UPDATE SET word = $2, count = 0
+        DO UPDATE SET count = 0
         "#,
 		guild_id_i64,
 		word,

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        \tSELECT user_id, afk_reason, pinged_links, ping_content, ping_media, afk\n        \tFROM user_settings\n        \tWHERE guild_id = $1\n          \tAND user_id = ANY($2)\n          \tAND (afk IS TRUE OR ping_content IS NOT NULL)\n        \t",
+  "query": "\n        \tSELECT user_id, afk_reason,\n        \t    pinged_links as \"pinged_links: Json<Vec<PingedLink>>\",\n        \t    ping_content, ping_media, afk\n        \tFROM user_settings\n        \tWHERE guild_id = $1\n          \tAND user_id = ANY($2)\n          \tAND (afk IS TRUE OR ping_content IS NOT NULL)\n        \t",
   "describe": {
     "columns": [
       {
@@ -27,8 +27,8 @@
       },
       {
         "ordinal": 2,
-        "name": "pinged_links",
-        "type_info": "Text",
+        "name": "pinged_links: Json<Vec<PingedLink>>",
+        "type_info": "Jsonb",
         "origin": {
           "Table": {
             "table": "user_settings",
@@ -79,11 +79,11 @@
     "nullable": [
       false,
       true,
-      true,
+      false,
       true,
       true,
       false
     ]
   },
-  "hash": "9c59682b725849b449f9560619310dec5cc017c1e42dc8ac19c35dad6b8e7034"
+  "hash": "c58be92cd5af590caf52899d620112a92acf4b1cf55cda721f38c21f5f1880f5"
 }

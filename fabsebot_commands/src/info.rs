@@ -94,7 +94,7 @@ pub async fn user_info(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
-	let avatar_url = member_pfp(&ctx, &member).await?;
+	let avatar_url = member_pfp(&member);
 	let username = if let Some(nick) = member.nick.as_ref() {
 		format!(
 			"# {nick} (aká {})\n**ID:** {}",

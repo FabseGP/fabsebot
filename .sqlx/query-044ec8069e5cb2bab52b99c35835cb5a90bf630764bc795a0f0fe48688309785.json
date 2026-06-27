@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tWITH ensure_guild AS (SELECT ensure_guild($1))\n\t\tINSERT INTO guild_settings (guild_id, ai_chat_channel)\n        VALUES ($1, $2)\n        ON CONFLICT (guild_id)\n        DO UPDATE SET ai_chat_channel = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "044ec8069e5cb2bab52b99c35835cb5a90bf630764bc795a0f0fe48688309785"
+}

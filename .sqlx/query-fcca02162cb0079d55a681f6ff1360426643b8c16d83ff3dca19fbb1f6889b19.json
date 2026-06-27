@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tWITH ensure_guild AS (SELECT ensure_guild($1))\n\t\tINSERT INTO guild_settings (guild_id, waifu_channel, waifu_rate, last_waifu)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (guild_id)\n        DO UPDATE SET waifu_channel = $2,\n        waifu_rate = $3,\n        last_waifu = $4\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fcca02162cb0079d55a681f6ff1360426643b8c16d83ff3dca19fbb1f6889b19"
+}

@@ -3,19 +3,20 @@ use std::{fmt::Write as _, sync::Arc};
 use anyhow::Result as AResult;
 use fabsebot_db::{
 	guild::{WordReactions, insert_guild_settings},
-	user::{UserSettings, insert_user_settings},
+	user::{PingedLink, UserSettings, insert_user_settings},
 };
 use metrics::counter;
+use serde_json::{Value, to_value};
 use serenity::{
 	all::{
 		Colour, Context as SContext, CreateAllowedMentions, CreateContainer, CreateMessage,
 		EmojiId, ExecuteWebhook, GenericChannelId, GuildId, Message, MessageId, ReactionType,
 	},
 	builder::{CreateComponent, EditMessage},
-	model::channel::MessageFlags,
+	model::{channel::MessageFlags, id::UserId},
 };
 use songbird::{Call, Songbird};
-use sqlx::{Pool, Postgres, query, query_as};
+use sqlx::{Pool, Postgres, query, query_as, types::Json};
 use tokio::{join, sync::Mutex, task::spawn, try_join};
 use tracing::error;
 use winnow::Parser as _;
@@ -34,8 +35,8 @@ use crate::{
 	utils::{
 		ai::ai_chatbot,
 		helpers::{
-			channel_counter, discord_message_link, edit_message_container, get_gif, get_waifu,
-			media_gallery, message_container, separator, text_display, thumbnail_section,
+			channel_counter, discord_message_link, get_gif, get_waifu, media_gallery,
+			message_container, separator, text_display, thumbnail_section,
 		},
 		voice::{add_song, add_voice_events},
 		webhook::{spoiler_message, webhook_find},
@@ -112,8 +113,8 @@ async fn easter_eggs(
 }
 
 async fn queue_track(
-	ctx: &SContext,
-	new_message: &Message,
+	ctx: SContext,
+	new_message: Message,
 	music_manager: Arc<Songbird>,
 	guild_id: GuildId,
 ) -> AResult<()> {
@@ -125,40 +126,35 @@ async fn queue_track(
 		.await && let Some(channel_id) = voice_state.channel_id
 		&& let Ok(lock) = music_manager.join(guild_id, channel_id).await
 	{
-		add_voice_events(ctx, guild_id, new_message.channel_id, lock.clone(), false).await;
+		add_voice_events(&ctx, guild_id, new_message.channel_id, lock.clone(), false).await;
 		lock
 	} else {
 		new_message.reply(&ctx.http, EMPTY_VOICE_CHAN_MSG).await?;
 		return Ok(());
 	};
-	let ctx_clone = ctx.clone();
+	let mut msg = new_message.reply(&ctx.http, QUEUEING_MSG).await?;
 	let bot_data: Arc<Data> = ctx.data();
-	let new_message_clone = new_message.clone();
-	let mut msg = new_message.reply(&ctx_clone.http, QUEUEING_MSG).await?;
 	spawn(async move {
 		if let Err(err) = add_song(
 			&bot_data.db,
 			i64::from(guild_id),
 			i64::from(msg.id),
 			i64::from(msg.channel_id),
-			i64::from(new_message_clone.author.id),
-			new_message_clone.content.into_string(),
+			i64::from(new_message.author.id),
+			new_message.content.into_string(),
 			handler_lock,
 		)
 		.await
 		{
 			if let Err(err) = msg
-				.edit(
-					&ctx_clone.http,
-					EditMessage::new().content(FAILED_SONG_FETCH),
-				)
+				.edit(&ctx.http, EditMessage::new().content(FAILED_SONG_FETCH))
 				.await
 			{
 				error!("Failed to send message: {err}");
 			}
 			let output = format!("# Failed to queue song\n{err}");
 			counter!(METRICS.music_queue_errors.clone()).increment(1);
-			log_error(&output, &ctx_clone).await;
+			log_error(&output, &ctx).await;
 		}
 	});
 
@@ -166,8 +162,8 @@ async fn queue_track(
 }
 
 fn ai_chats(
-	ctx: &SContext,
-	new_message: &Message,
+	ctx: SContext,
+	new_message: Message,
 	ai_chats: AIChats,
 	music_manager: Option<Arc<Mutex<Call>>>,
 	guild_id: GuildId,
@@ -175,13 +171,10 @@ fn ai_chats(
 ) {
 	channel_counter("chatbot".to_owned());
 
-	let ctx_clone = ctx.clone();
-	let new_message_clone = new_message.clone();
-
 	spawn(async move {
 		if let Err(error) = ai_chatbot(
-			&ctx_clone,
-			&new_message_clone,
+			&ctx,
+			&new_message,
 			chatbot_role,
 			guild_id,
 			ai_chats,
@@ -191,11 +184,8 @@ fn ai_chats(
 		{
 			let output = format!("# Failed to send AI-chat\n{error}");
 			counter!(METRICS.chatbot_errors.clone()).increment(1);
-			log_error(&output, &ctx_clone).await;
-			if let Err(err) = new_message_clone
-				.reply(&ctx_clone.http, AI_CHAT_ERROR)
-				.await
-			{
+			log_error(&output, &ctx).await;
+			if let Err(err) = new_message.reply(&ctx.http, AI_CHAT_ERROR).await {
 				error!("Failed to send message: {err}");
 			}
 		}
@@ -389,42 +379,40 @@ async fn user_queries(
 
 	if author_settings.afk {
 		counter!(METRICS.user_afks.clone()).increment(1);
-		let mut response = new_message
-			.reply(
-				&ctx.http,
-				format!(
-					"Ugh, welcome back {}! Guess I didn't manage to kill you after all",
-					new_message.author.display_name()
-				),
-			)
-			.await?;
-		if let Some(links) = author_settings.pinged_links.as_deref() {
-			let title_display = [text_display("# Pings you retrieved: ")];
+		let text = format!(
+			"# Ugh, welcome back {}! Guess I didn't manage to kill you after all",
+			new_message.author.display_name()
+		);
+		let title_display = [text_display(text)];
+		let mut container = CreateContainer::new(&title_display).accent_colour(Colour::BLITZ_BLUE);
 
-			let mut list = String::with_capacity(links.len());
+		if !author_settings.pinged_links.0.is_empty() {
+			let mut list =
+				String::with_capacity(author_settings.pinged_links.0.len().saturating_add(1));
 
-			for entry in links.split(',') {
-				if let Some((name, role)) = entry.split_once(';') {
-					writeln!(list, "**{name}**: {role}")?;
-				}
+			writeln!(list, "## Pinged links:")?;
+
+			for entry in author_settings.pinged_links.0 {
+				writeln!(list, "**{}**: {}", entry.author, entry.link)?;
 			}
-			let text_display = text_display(&list);
+			let text_display = text_display(list);
 
-			let container = CreateContainer::new(&title_display)
+			container = container
 				.add_component(separator())
-				.add_component(text_display)
-				.accent_colour(Colour::BLITZ_BLUE);
-
-			response
-				.edit(&ctx.http, edit_message_container(container))
-				.await?;
+				.add_component(text_display);
 		}
+
+		new_message
+			.channel_id
+			.send_message(&ctx.http, message_container(Some(new_message), container))
+			.await?;
+
 		query!(
 			r#"
 			UPDATE user_settings
 			SET afk = FALSE,
 			afk_reason = NULL,
-			pinged_links = NULL
+    		pinged_links = '[]'::jsonb
 			WHERE guild_id = $1
 			AND user_id = $2
 			"#,
@@ -445,7 +433,9 @@ async fn user_queries(
 		let mentioned_settings = query_as!(
 			UserSettings,
 			r#"
-        	SELECT user_id, afk_reason, pinged_links, ping_content, ping_media, afk
+        	SELECT user_id, afk_reason,
+        	    pinged_links as "pinged_links: Json<Vec<PingedLink>>",
+        	    ping_content, ping_media, afk
         	FROM user_settings
         	WHERE guild_id = $1
           	AND user_id = ANY($2)
@@ -457,26 +447,43 @@ async fn user_queries(
 		.fetch_all(conn)
 		.await?;
 
+		let ping_updates: Vec<(Value, i64)> = mentioned_settings
+			.iter()
+			.filter(|s| s.afk)
+			.map(|s| {
+				let entry = PingedLink {
+					link: new_message.link().to_string(),
+					author: new_message.author.display_name().to_owned(),
+				};
+				(to_value(entry).unwrap(), s.user_id)
+			})
+			.collect();
+
+		if !ping_updates.is_empty() {
+			let (entries, user_ids): (Vec<Value>, Vec<i64>) = ping_updates.into_iter().unzip();
+			query!(
+				r#"
+        		UPDATE user_settings
+        		SET pinged_links = COALESCE(pinged_links, '[]'::jsonb) || jsonb_build_array(u.entry)
+        		FROM UNNEST($1::jsonb[], $2::bigint[]) AS u(entry, user_id)
+        		WHERE user_settings.guild_id = $3
+        		AND user_settings.user_id = u.user_id
+        		"#,
+				&entries[..],
+				&user_ids[..],
+				guild_id
+			)
+			.execute(conn)
+			.await?;
+		}
+
 		for mentioned_user_settings in mentioned_settings {
-			if mentioned_user_settings.afk {
-				let pinged_link = format!(
-					"{};{},",
-					new_message.link(),
-					new_message.author.display_name()
-				);
-				query!(
-					r#"
-					UPDATE user_settings
-                    SET pinged_links = COALESCE(pinged_links || ',' || $1, $1) 
-                    WHERE guild_id = $2
-                    AND user_id = $3
-                    "#,
-					pinged_link,
-					guild_id,
-					mentioned_user_settings.user_id,
-				)
-				.execute(conn)
-				.await?;
+			if mentioned_user_settings.afk
+				&& let Ok(user) = ctx
+					.http
+					.get_user(UserId::new(mentioned_user_settings.user_id.cast_unsigned()))
+					.await
+			{
 				let reason = mentioned_user_settings
 					.afk_reason
 					.as_deref()
@@ -486,7 +493,7 @@ async fn user_queries(
 						&ctx.http,
 						format!(
 							"{} is currently dead. Reason: {reason}",
-							new_message.author.display_name()
+							user.display_name()
 						),
 					)
 					.await?;
@@ -495,21 +502,17 @@ async fn user_queries(
 				counter!(METRICS.custom_user_pings.clone()).increment(1);
 				let title = format!("# {ping_content}");
 				let text_display = [text_display(&title)];
-				let media = if let Some(ping_media) = mentioned_user_settings.ping_media {
-					Some(if ping_media.eq_ignore_ascii_case("waifu") {
+				let mut container =
+					CreateContainer::new(&text_display).accent_colour(Colour::BLITZ_BLUE);
+				if let Some(ping_media) = mentioned_user_settings.ping_media {
+					let media = if ping_media.eq_ignore_ascii_case("waifu") {
 						get_waifu(ctx).await
 					} else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
 						get_gif(ctx, gif_query).await
 					} else {
 						ping_media
-					})
-				} else {
-					None
-				};
-				let mut container =
-					CreateContainer::new(&text_display).accent_colour(Colour::BLITZ_BLUE);
-				if let Some(media_str) = &media {
-					let image = media_gallery(media_str);
+					};
+					let image = media_gallery(media);
 					container = container.add_component(image);
 				}
 				new_message
@@ -537,17 +540,12 @@ async fn guild_queries(
 			let title = format!("# {content}");
 			let text_display = [text_display(&title)];
 			let mut container = CreateContainer::new(&text_display).accent_colour(Colour::GOLD);
-			let media_opt = if let Some(reaction_media) = &record.media {
+			if let Some(reaction_media) = &record.media {
 				let media = if let Some(gif_query) = reaction_media.strip_prefix("!gif") {
 					get_gif(ctx, gif_query).await
 				} else {
 					reaction_media.to_owned()
 				};
-				Some(media)
-			} else {
-				None
-			};
-			if let Some(media) = &media_opt {
 				let image = media_gallery(media);
 				container = container.add_component(image);
 			}
@@ -662,11 +660,11 @@ pub async fn handle_message(
 
 	let guild_id_i64 = i64::from(guild_id);
 
-	let guild_cache = bot_data.guilds.get(&guild_id).unwrap_or_else(|| {
-		let new_data = Arc::new(GuildCache::default());
-		bot_data.guilds.insert(guild_id, new_data.clone());
-		new_data
-	});
+	let guild_cache = bot_data
+		.guilds
+		.get(&guild_id)
+		.get_or_insert_with(|| Arc::new(GuildCache::default()))
+		.clone();
 
 	let guild_settings = insert_guild_settings(guild_id_i64, &bot_data.db).await?;
 
@@ -674,14 +672,20 @@ pub async fn handle_message(
 		if let Some(music_channel) = guild_settings.music_channel
 			&& i64::from(new_message.channel_id) == music_channel
 		{
-			queue_track(ctx, new_message, bot_data.music_manager.clone(), guild_id).await?;
+			queue_track(
+				ctx.clone(),
+				new_message.clone(),
+				bot_data.music_manager.clone(),
+				guild_id,
+			)
+			.await?;
 		}
 		if let Some(ai_chat_channel) = guild_settings.ai_chat_channel
 			&& i64::from(new_message.channel_id) == ai_chat_channel
 		{
 			ai_chats(
-				ctx,
-				new_message,
+				ctx.clone(),
+				new_message.clone(),
 				guild_cache.ai_chats.clone(),
 				bot_data.music_manager.get(guild_id),
 				guild_id,
@@ -727,7 +731,6 @@ pub async fn handle_message(
 	}
 
 	let user_id_i64 = i64::from(new_message.author.id);
-
 	let author_settings = insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
 
 	db_queries(ctx, new_message, guild_id, guild_id_i64, author_settings).await?;

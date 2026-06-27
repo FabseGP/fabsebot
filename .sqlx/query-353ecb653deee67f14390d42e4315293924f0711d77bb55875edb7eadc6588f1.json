@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\tWITH ensure_guild AS (SELECT ensure_guild($1)),\n     \t\t\tensure_user AS (SELECT ensure_user($2))\n\t\t\tINSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)\n            VALUES ($1, $2, $3, $4)\n            ON CONFLICT (guild_id, user_id)\n            DO UPDATE SET ping_content = $3, \n            ping_media = $4\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "353ecb653deee67f14390d42e4315293924f0711d77bb55875edb7eadc6588f1"
+}

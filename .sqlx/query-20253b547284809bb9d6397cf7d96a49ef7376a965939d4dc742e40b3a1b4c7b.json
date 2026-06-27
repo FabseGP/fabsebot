@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tWITH ensure_guild AS (SELECT ensure_guild($1))\n\t\tINSERT INTO guild_settings (guild_id, global_music, global_call)\n        VALUES ($1, FALSE, FALSE)\n        ON CONFLICT (guild_id)\n        DO UPDATE SET global_music = FALSE, global_call = FALSE\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "20253b547284809bb9d6397cf7d96a49ef7376a965939d4dc742e40b3a1b4c7b"
+}

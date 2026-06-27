@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result as AResult};
-use sqlx::{Executor, Pool, Postgres, Transaction, query, query_as};
+use sqlx::{Pool, Postgres, Transaction, query, query_as};
 
 pub struct GuildSettings {
 	pub spoiler_channel: Option<i64>,
@@ -17,6 +17,7 @@ pub async fn set_music_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, music_channel)
         VALUES ($1, $2)
         ON CONFLICT (guild_id)
@@ -39,6 +40,7 @@ pub async fn set_spoiler_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, spoiler_channel)
         VALUES ($1, $2)
         ON CONFLICT (guild_id)
@@ -61,9 +63,11 @@ pub async fn set_current_voice_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
-		UPDATE guild_settings
-		SET current_voice_channel = $2
-		WHERE guild_id = $1
+		WITH ensure_guild AS (SELECT ensure_guild($1))
+		INSERT INTO guild_settings (guild_id, current_voice_channel)
+        VALUES ($1, $2)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET current_voice_channel = $2
 		"#,
 		guild_id,
 		channel_id,
@@ -138,41 +142,6 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
 	Ok(())
 }
 
-pub async fn insert_channel<'c, E>(guild_id: i64, channel_id: i64, conn: E) -> AResult<()>
-where
-	E: Executor<'c, Database = Postgres>,
-{
-	query!(
-		r#"
-        INSERT INTO channels (guild_id, channel_id)
-        VALUES ($1, $2)
-        ON CONFLICT (guild_id, channel_id)
-        DO NOTHING
-        "#,
-		guild_id,
-		channel_id
-	)
-	.execute(conn)
-	.await?;
-	Ok(())
-}
-
-pub async fn insert_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
-	query!(
-		r#"
-		INSERT INTO guilds (guild_id)
-        VALUES ($1)
-        ON CONFLICT (guild_id)
-        DO NOTHING
-        "#,
-		guild_id
-	)
-	.execute(conn)
-	.await?;
-
-	Ok(())
-}
-
 pub async fn delete_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
 	query!(
 		r#"
@@ -191,11 +160,7 @@ pub async fn insert_guild_settings(guild_id: i64, conn: &Pool<Postgres>) -> ARes
 	let guild_settings = query_as!(
 		GuildSettings,
 		r#"
-		WITH ensure_guild AS (
-			INSERT INTO guilds (guild_id)
-			VALUES ($1)
-			ON CONFLICT (guild_id) DO NOTHING
-		)
+		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id)
 		VALUES ($1)
 		ON CONFLICT (guild_id)
