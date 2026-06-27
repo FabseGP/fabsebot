@@ -21,7 +21,6 @@ use lavalink_rs::{
 	player_context::TrackInQueue,
 };
 use metrics::counter;
-use poise::{CreateReply, ReplyHandle};
 use serenity::{
 	all::{
 		ButtonStyle, ChannelId, Colour, ComponentInteraction, ComponentInteractionCollector,
