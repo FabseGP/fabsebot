@@ -1136,13 +1136,16 @@ pub async fn add_playlist(
 	let reply = ctx.reply(QUEUEING_MSG).await?;
 	let msg = reply.message().await?;
 	let mut failed_songs: u32 = 0;
+	let msg_id_i64 = i64::from(msg.id);
+	let channel_id_i64 = i64::from(msg.channel_id);
+	let author_id_i64 = i64::from(ctx.author().id);
 	for url in urls {
 		if let Err(err) = add_song(
 			&ctx.data().db,
 			guild_id_i64,
-			i64::from(msg.id),
-			i64::from(msg.channel_id),
-			i64::from(ctx.author().id),
+			msg_id_i64,
+			channel_id_i64,
+			author_id_i64,
 			url,
 			handler_lock.clone(),
 		)
