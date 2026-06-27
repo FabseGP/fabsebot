@@ -57,7 +57,7 @@ use crate::{
 	config::{
 		constants::{
 			EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, FALLBACK_MUSIC_THUMBNAIL,
-			INVALID_TRACK_SOURCE, MESSAGE_LIMIT, NOT_IN_VOICE_CHAN_MSG,
+			INVALID_TRACK_SOURCE, MESSAGE_LIMIT, NOT_IN_VOICE_CHAN_MSG, QUEUEING_MSG,
 		},
 		types::{Data, HTTP_CLIENT, SContext},
 	},
@@ -1131,21 +1131,19 @@ pub async fn add_song(
 pub async fn add_playlist(
 	ctx: SContext<'_>,
 	guild_id_i64: i64,
-	msg_id_i64: i64,
-	channel_id_i64: i64,
-	author_id_i64: i64,
 	urls: Vec<String>,
 	handler_lock: Arc<Mutex<Call>>,
-	reply: ReplyHandle<'_>,
 ) -> AResult<()> {
+	let reply = ctx.reply(QUEUEING_MSG).await?;
+	let msg = reply.message().await?;
 	let mut failed_songs: u32 = 0;
 	for url in urls {
 		if let Err(err) = add_song(
 			&ctx.data().db,
 			guild_id_i64,
-			msg_id_i64,
-			channel_id_i64,
-			author_id_i64,
+			i64::from(msg.id),
+			i64::from(msg.channel_id),
+			i64::from(ctx.author().id),
 			url,
 			handler_lock.clone(),
 		)
@@ -1156,14 +1154,10 @@ pub async fn add_playlist(
 		}
 	}
 	if failed_songs != 0 {
-		reply
-			.edit(
-				ctx,
-				CreateReply::new().content(format!(
-					"Couldn't queue {failed_songs} because of YouTube :/"
-				)),
-			)
-			.await?;
+		ctx.say(format!(
+			"Couldn't queue {failed_songs} songs because of YouTube :/"
+		))
+		.await?;
 	}
 
 	Ok(())

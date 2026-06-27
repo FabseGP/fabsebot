@@ -117,8 +117,6 @@ pub async fn add_deezer_playlist(
 			return Err(err);
 		}
 	};
-	let reply = ctx.reply(QUEUEING_MSG).await?;
-	let msg = reply.message().await?;
 	let urls: Vec<String> = payload
 		.tracks
 		.data
@@ -126,17 +124,7 @@ pub async fn add_deezer_playlist(
 		.map(|d| format!("{} {}", d.title, d.artist.name))
 		.collect();
 
-	add_playlist(
-		ctx,
-		i64::from(guild_id),
-		i64::from(msg.id),
-		i64::from(msg.channel_id),
-		i64::from(ctx.author().id),
-		urls,
-		handler_lock,
-		reply,
-	)
-	.await?;
+	add_playlist(ctx, i64::from(guild_id), urls, handler_lock).await?;
 
 	Ok(())
 }
@@ -182,20 +170,7 @@ pub async fn add_youtube_playlist(
 		.map(ToString::to_string)
 		.collect();
 
-	let reply = ctx.reply(QUEUEING_MSG).await?;
-	let msg = reply.message().await?;
-
-	add_playlist(
-		ctx,
-		i64::from(guild_id),
-		i64::from(msg.id),
-		i64::from(msg.channel_id),
-		i64::from(ctx.author().id),
-		urls,
-		handler_lock,
-		reply,
-	)
-	.await?;
+	add_playlist(ctx, i64::from(guild_id), urls, handler_lock).await?;
 
 	Ok(())
 }
