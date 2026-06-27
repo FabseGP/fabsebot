@@ -848,6 +848,7 @@ async fn insert_guild_play(
 	query!(
     	r#"
 		WITH ensure_guild AS (SELECT ensure_guild($2)),
+     		ensure_user AS (SELECT ensure_user($3)),
     	ensure_channel AS (
         	INSERT INTO channels (guild_id, channel_id)
         	VALUES ($2, $4)
@@ -868,7 +869,8 @@ async fn insert_guild_play(
     	author_id,
     	channel_id,
     	message_id,
-    	metadata.title, metadata.artist,
+    	metadata.title,
+    	metadata.artist,
     	metadata.source_url,
     	metadata.duration.map(|d| d.as_secs().cast_signed()),
     	metadata.thumbnail
