@@ -141,7 +141,6 @@ pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
 					error!("Failed to send waifu: {:?}", &err);
 				} else if let Err(err) = query!(
 					r#"
-					WITH ensure_guild AS (SELECT ensure_guild($1))
 					INSERT INTO guild_settings (guild_id, last_waifu)
             		VALUES ($1, $2)
             		ON CONFLICT (guild_id)
@@ -170,7 +169,6 @@ pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
 					error!("Failed to send dead chat gif: {:?}", &err);
 				} else if let Err(err) = query!(
 					r#"
-					WITH ensure_guild AS (SELECT ensure_guild($1))
 					INSERT INTO guild_settings (guild_id, last_dead_chat)
             		VALUES ($1, $2)
             		ON CONFLICT (guild_id)

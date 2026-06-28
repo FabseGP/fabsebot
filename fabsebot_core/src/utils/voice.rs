@@ -345,7 +345,7 @@ impl PlaybackHandler {
 					container.clone()
 				} else {
 					let queue_history =
-						get_queue_history(track.requested_channel, &bot_data.db).await?;
+						get_queue_history(i64::from(self.guild_id), &bot_data.db).await?;
 					let mut history_string = String::with_capacity(512);
 					writeln!(
 						history_string,
@@ -661,10 +661,7 @@ async fn queue_song(
 			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
 		});
 
-	insert_guild_play(
-		uuid, &metadata, guild_id, channel_id, author_id, message_id, pool,
-	)
-	.await?;
+	insert_guild_play(uuid, &metadata, guild_id, author_id, pool).await?;
 
 	let queue_data = Arc::new(QueueData {
 		track_data: TrackPlayData {
@@ -766,7 +763,6 @@ pub async fn try_voice(
 	if global {
 		query!(
 			r#"
-			WITH ensure_guild AS (SELECT ensure_guild($1))
 			INSERT INTO guild_settings (guild_id, global_call)
             VALUES ($1, TRUE)
             ON CONFLICT (guild_id)
@@ -840,40 +836,28 @@ async fn insert_guild_play(
 	uuid: Uuid,
 	metadata: &AuxMetadata,
 	guild_id: i64,
-	channel_id: i64,
 	author_id: i64,
-	message_id: i64,
 	conn: &Pool<Postgres>,
 ) -> AResult<()> {
 	query!(
-    	r#"
-		WITH ensure_guild AS (SELECT ensure_guild($2)),
-     		ensure_user AS (SELECT ensure_user($3)),
-    	ensure_channel AS (
-        	INSERT INTO channels (guild_id, channel_id)
-        	VALUES ($2, $4)
-        	ON CONFLICT (guild_id, channel_id)
-        	DO NOTHING
-    	),
-    	ensure_track AS (
+		r#"
+    	WITH ensured_track AS (
         	INSERT INTO tracks (track_uuid, title, artist, source_url, duration_sec, thumbnail_url)
-        	VALUES ($1, $6, $7, $8, $9, $10)
+        	VALUES ($1, $4, $5, $6, $7, $8)
 			ON CONFLICT (track_uuid)
 			DO UPDATE SET last_seen = NOW()
     	)
-    	INSERT INTO song_plays (track_uuid, guild_id, requested_by, requested_channel, request_message_id)
-    	VALUES ($1, $2, $3, $4, $5)
+    	INSERT INTO song_plays (track_uuid, guild_id, requested_by)
+    	VALUES ($1, $2, $3)
     	"#,
-    	uuid,
-    	guild_id,
-    	author_id,
-    	channel_id,
-    	message_id,
-    	metadata.title,
-    	metadata.artist,
-    	metadata.source_url,
-    	metadata.duration.map(|d| d.as_secs().cast_signed()),
-    	metadata.thumbnail
+		uuid,
+		guild_id,
+		author_id,
+		metadata.title,
+		metadata.artist,
+		metadata.source_url,
+		metadata.duration.map(|d| d.as_secs().cast_signed()),
+		metadata.thumbnail
 	)
 	.execute(conn)
 	.await?;
@@ -905,7 +889,8 @@ impl DBUserIDExt for DBUserID {
 async fn get_matching_guild_plays(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<Vec<i64>> {
 	let track_guilds = query_scalar!(
 		r#"
-    	SELECT DISTINCT guild_id FROM song_plays
+    	SELECT DISTINCT guild_id
+    	FROM song_plays
     	WHERE track_uuid = $1
         LIMIT 10
     	"#,
@@ -924,7 +909,7 @@ struct ChannelPlayHistory {
 }
 
 async fn get_queue_history(
-	channel_id: i64,
+	guild_id: i64,
 	conn: &Pool<Postgres>,
 ) -> AResult<Vec<ChannelPlayHistory>> {
 	let queue_history = query_as!(
@@ -936,11 +921,11 @@ async fn get_queue_history(
             t.title
         FROM song_plays sp
         JOIN tracks t ON sp.track_uuid = t.track_uuid
-        WHERE sp.requested_channel = $1
+        WHERE sp.guild_id = $1
         ORDER BY sp.played_at DESC
         LIMIT 25
         "#,
-		channel_id
+		guild_id
 	)
 	.fetch_all(conn)
 	.await?;
@@ -955,7 +940,8 @@ async fn rejoin_voice(
 ) -> AResult<()> {
 	let persistent_voice_channels = query!(
 		r#"
-		SELECT guild_id, current_voice_channel FROM guild_settings
+		SELECT guild_id, current_voice_channel
+		FROM guild_settings
 		WHERE current_voice_channel IS NOT NULL
 		"#
 	)
@@ -990,9 +976,7 @@ async fn rejoin_voice(
 }
 
 pub async fn setup_lavalink(host: String, password: String, bot_id: LavaUserId) -> LavalinkClient {
-	let events = Events {
-		..Default::default()
-	};
+	let events = Events::default();
 
 	let node_local = NodeBuilder {
 		hostname: host,

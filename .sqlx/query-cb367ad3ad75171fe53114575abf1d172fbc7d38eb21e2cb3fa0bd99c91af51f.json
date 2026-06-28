@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT \n            sp.played_at,\n            sp.requested_by,\n            t.title\n        FROM song_plays sp\n        JOIN tracks t ON sp.track_uuid = t.track_uuid\n        WHERE sp.requested_channel = $1\n        ORDER BY sp.played_at DESC\n        LIMIT 25\n        ",
+  "query": "\n        SELECT \n            sp.played_at,\n            sp.requested_by,\n            t.title\n        FROM song_plays sp\n        JOIN tracks t ON sp.track_uuid = t.track_uuid\n        WHERE sp.guild_id = $1\n        ORDER BY sp.played_at DESC\n        LIMIT 25\n        ",
   "describe": {
     "columns": [
       {
@@ -48,5 +48,5 @@
       true
     ]
   },
-  "hash": "cee8b12ef1d624ab95dfb2d609c38a8850203af535e0dd4d7748fa6dbd702407"
+  "hash": "cb367ad3ad75171fe53114575abf1d172fbc7d38eb21e2cb3fa0bd99c91af51f"
 }

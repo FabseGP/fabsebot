@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tINSERT INTO guild_settings (guild_id, quotes_channel)\n\t\tVALUES ($1, $2)\n        ON CONFLICT (guild_id)\n        DO UPDATE SET quotes_channel = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c763c918dce1de37a8b1aed7ab785873b9d2ed69066b7b5bd67a493ba9914d8"
+}

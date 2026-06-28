@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\tSELECT guild_id, current_voice_channel FROM guild_settings\n\t\tWHERE current_voice_channel IS NOT NULL\n\t\t",
+  "query": "\n\t\tSELECT guild_id, current_voice_channel\n\t\tFROM guild_settings\n\t\tWHERE current_voice_channel IS NOT NULL\n\t\t",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       true
     ]
   },
-  "hash": "6a2c5cd0bb311e93870ee4e72f7652b5a9c68002d3b110f8e974e78c6d2b0e4d"
+  "hash": "16c9d21cb3953a1cf9a55a8f9cbdaadaef1d9fd6e963b3fca4a849012b5dc02e"
 }

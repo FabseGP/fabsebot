@@ -17,7 +17,6 @@ pub async fn set_music_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, music_channel)
         VALUES ($1, $2)
         ON CONFLICT (guild_id)
@@ -40,7 +39,6 @@ pub async fn set_spoiler_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, spoiler_channel)
         VALUES ($1, $2)
         ON CONFLICT (guild_id)
@@ -63,7 +61,6 @@ pub async fn set_current_voice_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, current_voice_channel)
         VALUES ($1, $2)
         ON CONFLICT (guild_id)
@@ -156,17 +153,32 @@ pub async fn delete_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
 	Ok(())
 }
 
+pub async fn insert_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
+	query!(
+		r#"
+		INSERT INTO guilds (guild_id)
+        VALUES ($1)
+        ON CONFLICT (guild_id)
+        DO NOTHING
+        "#,
+		guild_id
+	)
+	.execute(conn)
+	.await?;
+
+	Ok(())
+}
+
 pub async fn insert_guild_settings(guild_id: i64, conn: &Pool<Postgres>) -> AResult<GuildSettings> {
 	let guild_settings = query_as!(
 		GuildSettings,
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id)
 		VALUES ($1)
 		ON CONFLICT (guild_id)
 		DO UPDATE SET guild_id = guild_settings.guild_id
 		RETURNING spoiler_channel, ai_chat_channel, global_chat_channel,
-		music_channel, chatbot_role, global_chat
+			music_channel, chatbot_role, global_chat
 		"#,
 		guild_id
 	)

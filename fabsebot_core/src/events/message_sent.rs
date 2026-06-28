@@ -2,7 +2,7 @@ use std::{fmt::Write as _, sync::Arc};
 
 use anyhow::Result as AResult;
 use fabsebot_db::{
-	guild::{WordReactions, insert_guild_settings},
+	guild::{WordReactions, insert_guild, insert_guild_settings},
 	user::{PingedLink, UserSettings, insert_user_settings},
 };
 use metrics::counter;
@@ -660,11 +660,14 @@ pub async fn handle_message(
 
 	let guild_id_i64 = i64::from(guild_id);
 
-	let guild_cache = bot_data
-		.guilds
-		.get(&guild_id)
-		.get_or_insert_with(|| Arc::new(GuildCache::default()))
-		.clone();
+	let guild_cache = if let Some(cache) = bot_data.guilds.get(&guild_id) {
+		cache
+	} else {
+		insert_guild(guild_id_i64, &bot_data.db).await?;
+		let cache = Arc::new(GuildCache::default());
+		bot_data.guilds.insert(guild_id, cache.clone());
+		cache
+	};
 
 	let guild_settings = insert_guild_settings(guild_id_i64, &bot_data.db).await?;
 

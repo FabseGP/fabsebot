@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\tWITH ensure_guild AS (SELECT ensure_guild($1)),\n     \t\tensure_user AS (SELECT ensure_user($2))\n    \tINSERT INTO user_settings (guild_id, user_id, message_count)\n   \t\tVALUES ($1, $2, 1)\n    \tON CONFLICT (guild_id, user_id) \n    \tDO UPDATE SET message_count = user_settings.message_count + 1\n    \tRETURNING user_id, afk_reason,\n\t\t\tpinged_links as \"pinged_links: Json<Vec<PingedLink>>\", \n\t\t\tping_content, ping_media, afk\n    \t",
+  "query": "\n\t\tWITH ensured_user AS (\n\t\t\tINSERT INTO users (user_id)\n\t\t\tVALUES ($2)\n\t\t\tON CONFLICT (user_id) DO NOTHING\n\t\t)\n\t\tINSERT INTO user_settings (guild_id, user_id, message_count)\n\t\tVALUES ($1, $2, 1)\n\t\tON CONFLICT (guild_id, user_id)\n\t\tDO UPDATE SET message_count = user_settings.message_count + 1\n\t\tRETURNING user_id, afk_reason,\n    \t\tpinged_links as \"pinged_links: Json<Vec<PingedLink>>\",\n    \t\tping_content, ping_media, afk\n    \t",
   "describe": {
     "columns": [
       {
@@ -85,5 +85,5 @@
       false
     ]
   },
-  "hash": "e7aad046d31d9df12bd9c015f82e29e6624b339dda1e3f62c704180649749e12"
+  "hash": "7a42d6627650de3503d4ca6c0e37c6c0408ce022b645d554d17dd6f63b3a3d22"
 }

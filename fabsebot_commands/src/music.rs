@@ -215,9 +215,8 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	ctx.reply("Left voice channel, don't forget me").await?;
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, global_music, global_call)
-        VALUES ($1, FALSE, FALSE)
+		VALUES ($1, FALSE, FALSE)
         ON CONFLICT (guild_id)
         DO UPDATE SET global_music = FALSE, global_call = FALSE
         "#,

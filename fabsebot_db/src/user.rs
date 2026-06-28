@@ -25,15 +25,18 @@ pub async fn insert_user_settings(
 	let user_settings = query_as!(
 		UserSettings,
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1)),
-     		ensure_user AS (SELECT ensure_user($2))
-    	INSERT INTO user_settings (guild_id, user_id, message_count)
-   		VALUES ($1, $2, 1)
-    	ON CONFLICT (guild_id, user_id) 
-    	DO UPDATE SET message_count = user_settings.message_count + 1
-    	RETURNING user_id, afk_reason,
-			pinged_links as "pinged_links: Json<Vec<PingedLink>>", 
-			ping_content, ping_media, afk
+		WITH ensured_user AS (
+			INSERT INTO users (user_id)
+			VALUES ($2)
+			ON CONFLICT (user_id) DO NOTHING
+		)
+		INSERT INTO user_settings (guild_id, user_id, message_count)
+		VALUES ($1, $2, 1)
+		ON CONFLICT (guild_id, user_id)
+		DO UPDATE SET message_count = user_settings.message_count + 1
+		RETURNING user_id, afk_reason,
+    		pinged_links as "pinged_links: Json<Vec<PingedLink>>",
+    		ping_content, ping_media, afk
     	"#,
 		guild_id,
 		user_id

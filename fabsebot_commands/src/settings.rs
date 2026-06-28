@@ -478,15 +478,13 @@ pub async fn set_afk(
 	let user_id_i64 = i64::from(ctx.author().id);
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1)),
-     		ensure_user AS (SELECT ensure_user($2))
 		INSERT INTO user_settings (guild_id, user_id, afk, afk_reason, pinged_links)
-    	VALUES ($1, $2, TRUE, $3, '[]'::jsonb)
-        ON CONFLICT (guild_id, user_id)
-        DO UPDATE SET afk = TRUE,
-        afk_reason = $3,
-        pinged_links = '[]'::jsonb
-        "#,
+		VALUES ($1, $2, TRUE, $3, '[]'::jsonb)
+		ON CONFLICT (guild_id, user_id)
+		DO UPDATE SET afk = TRUE,
+    		afk_reason = $3,
+    		pinged_links = '[]'::jsonb
+    	"#,
 		guild_id_i64,
 		user_id_i64,
 		reason,
@@ -524,9 +522,8 @@ async fn set_chatbot_channel(
 ) -> Result<(), Error> {
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, ai_chat_channel)
-        VALUES ($1, $2)
+		VALUES ($1, $2)
         ON CONFLICT (guild_id)
         DO UPDATE SET ai_chat_channel = $2
         "#,
@@ -563,10 +560,8 @@ pub async fn set_chatbot_options(
 	let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
-		INSERT INTO guild_settings
-		(guild_id, chatbot_role)
-        VALUES ($1, $2)
+		INSERT INTO guild_settings (guild_id, chatbot_role)
+		VALUES ($1, $2)
         ON CONFLICT (guild_id)
         DO UPDATE SET chatbot_role = $2
         "#,
@@ -599,13 +594,12 @@ async fn set_dead_chat(
 ) -> Result<(), Error> {
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, dead_chat_rate, dead_chat_channel, last_dead_chat)
-        VALUES ($1, $2, $3, $4)
+		VALUES ($1, $2, $3, $4)
         ON CONFLICT (guild_id)
         DO UPDATE SET dead_chat_rate = $2, 
-        dead_chat_channel = $3,
-        last_dead_chat = $4
+        	dead_chat_channel = $3,
+        	last_dead_chat = $4
         "#,
 		guild_id_i64,
 		occurrence,
@@ -639,9 +633,8 @@ pub async fn set_prefix(
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, prefix)
-        VALUES ($1, $2)
+		VALUES ($1, $2)
         ON CONFLICT (guild_id)
         DO UPDATE SET prefix = $2
         "#,
@@ -671,9 +664,8 @@ async fn set_quote_channel(
 ) -> Result<(), Error> {
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, quotes_channel)
-        VALUES ($1, $2)
+		VALUES ($1, $2)
         ON CONFLICT (guild_id)
         DO UPDATE SET quotes_channel = $2
         "#,
@@ -712,13 +704,11 @@ pub async fn set_user_ping(
 		let user_id_i64 = i64::from(ctx.author().id);
 		query!(
 			r#"
-			WITH ensure_guild AS (SELECT ensure_guild($1)),
-     			ensure_user AS (SELECT ensure_user($2))
 			INSERT INTO user_settings (guild_id, user_id, ping_content, ping_media)
-            VALUES ($1, $2, $3, $4)
+			VALUES ($1, $2, $3, $4)
             ON CONFLICT (guild_id, user_id)
             DO UPDATE SET ping_content = $3, 
-            ping_media = $4
+            	ping_media = $4
             "#,
 			guild_id_i64,
 			user_id_i64,
@@ -749,13 +739,12 @@ async fn set_waifu_channel(
 ) -> Result<(), Error> {
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, waifu_channel, waifu_rate, last_waifu)
-        VALUES ($1, $2, $3, $4)
+		VALUES ($1, $2, $3, $4)
         ON CONFLICT (guild_id)
         DO UPDATE SET waifu_channel = $2,
-        waifu_rate = $3,
-        last_waifu = $4
+        	waifu_rate = $3,
+        	last_waifu = $4
         "#,
 		guild_id_i64,
 		channel_id_i64,
@@ -842,11 +831,13 @@ pub async fn set_word_react(
 		let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 		query!(
 			r#"
-			WITH ensure_guild AS (SELECT ensure_guild($1))
 			INSERT INTO guild_word_reaction (guild_id, word, content, media, emoji_id, guild_emoji)
-            VALUES ($1, $2, $3, $4, $5, $6)
+			VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (guild_id)
-            DO UPDATE SET content = $3, media = $4, emoji_id = $5, guild_emoji = $6
+            DO UPDATE SET content = $3,
+            	media = $4,
+            	emoji_id = $5,
+            	guild_emoji = $6
             "#,
 			guild_id_i64,
 			word,
@@ -887,9 +878,8 @@ pub async fn set_word_track(
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_word_tracking (guild_id, word)
-        VALUES ($1, $2)
+		VALUES ($1, $2)
         ON CONFLICT (guild_id, word)
         DO UPDATE SET count = 0
         "#,

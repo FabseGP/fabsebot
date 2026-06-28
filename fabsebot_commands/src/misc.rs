@@ -267,7 +267,6 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, global_chat)
 		VALUES ($1, FALSE)
         ON CONFLICT (guild_id)
@@ -295,9 +294,8 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	let channel_id_i64 = i64::from(ctx.channel_id());
 	query!(
 		r#"
-		WITH ensure_guild AS (SELECT ensure_guild($1))
 		INSERT INTO guild_settings (guild_id, global_chat, global_chat_channel)
-        VALUES ($1, TRUE, $2)
+		VALUES ($1, TRUE, $2)
         ON CONFLICT (guild_id)
         DO UPDATE SET global_chat = TRUE,
         global_chat_channel = $2
