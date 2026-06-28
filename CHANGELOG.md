@@ -191,6 +191,7 @@ All notable changes to this project will be documented in this file.
 - New message for failed playlist queue
 - Precompute i64 ids
 - Ensure user exist
+- Drop unused db fields & functions
 
 ### 💼 Other
 
@@ -277,6 +278,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Unused imports
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
