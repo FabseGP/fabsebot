@@ -190,6 +190,7 @@ All notable changes to this project will be documented in this file.
 - Sqlx prepare
 - New message for failed playlist queue
 - Precompute i64 ids
+- Ensure user exist
 
 ### 💼 Other
 
@@ -276,6 +277,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Unused imports
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
