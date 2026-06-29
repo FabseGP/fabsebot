@@ -28,7 +28,7 @@ jobs:
           components: rust-src
           rustflags: ""
           cache: false
-      - name: Cache sccache directory
+      - name: Setup cache
         uses: actions/cache@v6
         with:
           path: ~/.cache/sccache
