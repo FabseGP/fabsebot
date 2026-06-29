@@ -27,10 +27,16 @@ jobs:
           toolchain: nightly-2026-06-13
           components: rust-src
           rustflags: ""
+          cache: false
+      - name: Cache sccache directory
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/sccache
+          key: sccache-${{ matrix.runner }}-${{ matrix.features }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            sccache-${{ matrix.runner }}-${{ matrix.features }}-
       - name: Build
         run: cargo build --release --features ${{ matrix.features }}
-        env:
-          CARGO_BUILD_RUSTC_WRAPPER: ""
       - name: Upload artifact
         uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
