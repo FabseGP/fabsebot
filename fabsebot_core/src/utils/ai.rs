@@ -24,7 +24,7 @@ use crate::{
 	utils::{
 		helpers::{
 			discord_message_link, encode_image, fetch_and_parse, get_gif, get_waifu, image_uri,
-			non_empty_vec, user_roles_joined,
+			member_pfp, non_empty_vec, user_roles_joined,
 		},
 		voice::get_configured_songbird_handler,
 	},
@@ -374,8 +374,8 @@ async fn tool_calling(
 					.search_members(&ctx.http, &args.query, NonMaxU16::new(1))
 					.await && let Some(member) = members.first()
 					&& let Some(roles) = member.roles(&ctx.cache)
-					&& let Some(avatar) = member.avatar_url().or_else(|| member.user.avatar_url())
 				{
+					let avatar = member_pfp(member);
 					let roles_joined = user_roles_pfp(&roles, &avatar, &mut chat_vec).await?;
 					let username = member.display_name();
 					format!(

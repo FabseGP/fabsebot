@@ -36,7 +36,7 @@ use crate::{
 		ai::ai_chatbot,
 		helpers::{
 			channel_counter, discord_message_link, get_gif, get_waifu, media_gallery,
-			message_container, separator, text_display, thumbnail_section,
+			message_container, separator, text_display, thumbnail_section, user_pfp,
 		},
 		voice::{add_song, add_voice_events},
 		webhook::{spoiler_message, webhook_find},
@@ -202,7 +202,6 @@ async fn global_chats(
 	if let Some(global_chat_channel) = channel_id
 		&& i64::from(new_message.channel_id) == global_chat_channel
 		&& global_chat
-		&& let Some(avatar) = new_message.author.avatar_url()
 	{
 		let bot_data: Arc<Data> = ctx.data();
 		channel_counter("global_chat".to_owned());
@@ -267,17 +266,11 @@ async fn global_chats(
 						new_message.timestamp
 					);
 					text.truncate(MESSAGE_LIMIT);
-					if let Some(avatar) = replied_message.author.avatar_url() {
-						let thumbnail_section = thumbnail_section(text, avatar);
-						container = container
-							.add_component(separator())
-							.add_component(thumbnail_section);
-					} else {
-						let text_display = text_display(text);
-						container = container
-							.add_component(separator())
-							.add_component(text_display);
-					}
+					let avatar = user_pfp(&replied_message.author);
+					let thumbnail_section = thumbnail_section(text, avatar);
+					container = container
+						.add_component(separator())
+						.add_component(thumbnail_section);
 					if let Some(attachment) = replied_message
 						.attachments
 						.iter()
@@ -288,12 +281,13 @@ async fn global_chats(
 					}
 				}
 				let component = [CreateComponent::Container(container)];
+				let avatar = user_pfp(&new_message.author);
 				let message = ExecuteWebhook::default()
 					.with_components(true)
 					.flags(MessageFlags::IS_COMPONENTS_V2)
 					.username(new_message.author.display_name())
 					.components(&component)
-					.avatar_url(&avatar);
+					.avatar_url(avatar);
 				if let Err(err) = webhook.execute(&ctx.http, false, message).await {
 					error!("Failed to execute webhook: {err}");
 					chat_channel
@@ -327,13 +321,9 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 			&& let Some(channel_name) = channel.guild().map(|g| g.base.name)
 		{
 			let ref_msg = channel_id.message(&ctx.http, message_id).await?;
-			if ref_msg.poll.is_none()
-				&& let Some(author_avatar) = ref_msg.author.avatar_url()
-			{
-				let thumbnail_display = [thumbnail_section(
-					ref_msg.author.display_name(),
-					&author_avatar,
-				)];
+			if ref_msg.poll.is_none() {
+				let avatar = user_pfp(&ref_msg.author);
+				let thumbnail_display = [thumbnail_section(ref_msg.author.display_name(), &avatar)];
 				let reply_display = text_display(&ref_msg.content);
 				let timestamp = ref_msg.timestamp.to_string();
 				let time_display = text_display(&timestamp);

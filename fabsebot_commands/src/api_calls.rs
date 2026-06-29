@@ -14,7 +14,7 @@ use fabsebot_core::{
 		helpers::{
 			fetch_and_parse, get_gifs, get_waifu, media_gallery, member_pfp, non_empty_string,
 			non_empty_vec, paginate_container, reply_container, text_display, thumbnail_section,
-			true_bool, user_banner, visit_page_button,
+			true_bool, user_banner, user_pfp, visit_page_button,
 		},
 	},
 };
@@ -679,9 +679,8 @@ pub async fn roast_user(
 
 	let mut chat_vec = Vec::with_capacity(3);
 
-	if let Some(avatar) = user.avatar_url() {
-		uri_content(&avatar, &mut chat_vec).await?;
-	}
+	uri_content(&user_pfp(&user), &mut chat_vec).await?;
+
 	if let Some(banner) = &user_banner(ctx.http(), user.id).await {
 		uri_content(banner, &mut chat_vec).await?;
 	}
@@ -745,7 +744,7 @@ pub async fn roast(
 	let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
 	let messages_string = {
-		let mut result = String::new();
+		let mut result = String::with_capacity(1024);
 		let mut result_count: u32 = 0;
 		let mut missing_match_count: u32 = 0;
 

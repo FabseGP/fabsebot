@@ -214,7 +214,7 @@ pub async fn bot_start(
 			.time_to_idle(Duration::from_hours(12))
 			.build(),
 		guilds: Cache::builder()
-			.max_capacity(1000)
+			.max_capacity(100)
 			.time_to_idle(Duration::from_hours(12))
 			.build(),
 		app_emojis: Cache::builder()

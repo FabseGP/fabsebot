@@ -8,7 +8,7 @@ use tracing::warn;
 
 use crate::{
 	config::types::{HTTP_CLIENT, WebhookMap, utils_config},
-	utils::helpers::{channel_counter, text_display},
+	utils::helpers::{channel_counter, text_display, user_pfp},
 };
 
 const FABSEBOT_WEBHOOK_NAME: &str = "fabsebot";
@@ -53,9 +53,7 @@ pub async fn spoiler_message(
 		&& i64::from(message.channel_id) == spoiler_channel
 	{
 		channel_counter("spoiler".to_owned());
-		let Some(avatar_url) = message.author.avatar_url() else {
-			bail!("Avatar not found");
-		};
+		let avatar_url = user_pfp(&message.author);
 		let webhook = webhook_find(ctx, message.guild_id, message.channel_id, data).await?;
 		let username = message.author.display_name();
 		for (i, payload) in message.attachments.iter().enumerate() {

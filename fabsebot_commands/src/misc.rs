@@ -399,20 +399,18 @@ pub async fn help(
 			return Ok(());
 		}
 	} else {
-		let commands: String =
-			ctx.framework()
-				.options()
-				.commands
-				.iter()
-				.fold(String::new(), |mut output, cmd| {
-					let _ = writeln!(
-						output,
-						"`{}` - {}",
-						cmd.name,
-						cmd.description.as_deref().unwrap_or("No description")
-					);
-					output
-				});
+		let commands: String = ctx.framework().options().commands.iter().fold(
+			String::with_capacity(2048),
+			|mut output, cmd| {
+				let _ = writeln!(
+					output,
+					"`{}` - {}",
+					cmd.name,
+					cmd.description.as_deref().unwrap_or("No description")
+				);
+				output
+			},
+		);
 
 		let mut text = format!(
 			"# Available commands\n**Description:**\n{commands}\n*Use /help <command> for \
@@ -829,9 +827,8 @@ async fn quote_internal(
 	ctx.defer().await?;
 	let mut image_handle = {
 		let (avatar_url, author_name, text) = if let Some((reply, guild_id)) = reply {
-			let (url, name) = if reply.webhook_id.is_some()
-				&& let Some(avatar) = reply.author.avatar_url()
-			{
+			let (url, name) = if reply.webhook_id.is_some() {
+				let avatar = user_pfp(&reply.author);
 				(avatar, reply.author.name.clone())
 			} else {
 				let member = guild_id.member(&ctx.http(), reply.author.id).await?;

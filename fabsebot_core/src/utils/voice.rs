@@ -208,6 +208,31 @@ impl PlaybackHandler {
 		(thumbnail_section, primary_row, visit_button)
 	}
 
+	async fn pause_song(handler_lock: Arc<Mutex<Call>>) -> AResult<()> {
+		let current_track = get_configured_songbird_handler(&handler_lock)
+			.await
+			.queue()
+			.current();
+		if let Some(current_track) = current_track {
+			match current_track.get_info().await.map(|t| t.playing) {
+				Ok(state) => match state {
+					PlayMode::Pause => {
+						current_track.play()?;
+					}
+					PlayMode::Play => {
+						current_track.pause()?;
+					}
+					_ => {}
+				},
+				Err(err) => {
+					warn!("Failed to get track state. {err}");
+				}
+			}
+		}
+
+		Ok(())
+	}
+
 	async fn handle_interaction<'a>(
 		&self,
 		interaction: ComponentInteraction,
@@ -217,7 +242,7 @@ impl PlaybackHandler {
 		history_shown: &mut bool,
 		history_container: &mut Option<CreateContainer<'a>>,
 		track: &TrackPlayData,
-		track_guilds: &[i64],
+		track_guilds: Option<&Vec<i64>>,
 		container: &CreateContainer<'a>,
 		action_row: &CreateContainerComponent<'a>,
 	) -> AResult<()> {
@@ -230,13 +255,42 @@ impl PlaybackHandler {
 		if interaction.data.custom_id.ends_with('s') {
 			let handler = get_configured_songbird_handler(&handler_lock).await;
 			let queue = handler.queue();
-			if queue.len() > 1 {
+			if !queue.is_empty() {
 				queue.skip()?;
 				drop(handler);
-				for guild_id in track_guilds {
-					if *guild_id == i64::from(self.guild_id) {
-						continue;
+				if let Some(track_guilds) = track_guilds {
+					for guild_id in track_guilds {
+						if let Some(handler_lock) = bot_data
+							.music_manager
+							.get(GuildId::from(guild_id.cast_unsigned()))
+						{
+							get_configured_songbird_handler(&handler_lock)
+								.await
+								.queue()
+								.skip()?;
+						}
 					}
+				}
+			}
+		} else if interaction.data.custom_id.ends_with('p') {
+			Self::pause_song(handler_lock).await?;
+			if let Some(track_guilds) = track_guilds {
+				for guild_id in track_guilds {
+					if let Some(handler_lock) = bot_data
+						.music_manager
+						.get(GuildId::from(guild_id.cast_unsigned()))
+					{
+						Self::pause_song(handler_lock).await?;
+					}
+				}
+			}
+		} else if interaction.data.custom_id.ends_with('c') {
+			get_configured_songbird_handler(&handler_lock)
+				.await
+				.queue()
+				.stop();
+			if let Some(track_guilds) = track_guilds {
+				for guild_id in track_guilds {
 					if let Some(handler_lock) = bot_data
 						.music_manager
 						.get(GuildId::from(guild_id.cast_unsigned()))
@@ -244,60 +298,9 @@ impl PlaybackHandler {
 						get_configured_songbird_handler(&handler_lock)
 							.await
 							.queue()
-							.skip()?;
+							.stop();
 					}
 				}
-			}
-		} else if interaction.data.custom_id.ends_with('p') {
-			for guild_id in track_guilds {
-				let handler_lock = if *guild_id == i64::from(self.guild_id) {
-					handler_lock.clone()
-				} else if let Some(handler_lock) = bot_data
-					.music_manager
-					.get(GuildId::new(guild_id.cast_unsigned()))
-				{
-					handler_lock
-				} else {
-					continue;
-				};
-				let Some(current_track) = get_configured_songbird_handler(&handler_lock)
-					.await
-					.queue()
-					.current()
-				else {
-					continue;
-				};
-				match current_track.get_info().await.map(|t| t.playing) {
-					Ok(state) => match state {
-						PlayMode::Pause => {
-							current_track.play()?;
-						}
-						PlayMode::Play => {
-							current_track.pause()?;
-						}
-						_ => {}
-					},
-					Err(err) => {
-						warn!("Failed to get track state. {err}");
-					}
-				}
-			}
-		} else if interaction.data.custom_id.ends_with('c') {
-			for guild_id in track_guilds {
-				let handler_lock = if *guild_id == i64::from(self.guild_id) {
-					handler_lock.clone()
-				} else if let Some(handler_lock) = bot_data
-					.music_manager
-					.get(GuildId::new(guild_id.cast_unsigned()))
-				{
-					handler_lock
-				} else {
-					continue;
-				};
-				get_configured_songbird_handler(&handler_lock)
-					.await
-					.queue()
-					.stop();
 			}
 		} else if interaction.data.custom_id.ends_with('l') {
 			let container = if *lyrics_shown {
@@ -346,7 +349,7 @@ impl PlaybackHandler {
 				} else {
 					let queue_history =
 						get_queue_history(i64::from(self.guild_id), &bot_data.db).await?;
-					let mut history_string = String::with_capacity(1024);
+					let mut history_string = String::with_capacity(2048);
 					writeln!(
 						history_string,
 						"# History of {} last played songs",
@@ -458,9 +461,12 @@ impl PlaybackHandler {
 			.stream();
 
 		let track_guilds = if self.global {
-			get_matching_guild_plays(track_uuid, &bot_data.db).await?
+			Some(
+				get_matching_guild_plays(track_uuid, i64::from(self.guild_id), &bot_data.db)
+					.await?,
+			)
 		} else {
-			vec![i64::from(self.guild_id)]
+			None
 		};
 
 		loop {
@@ -474,7 +480,7 @@ impl PlaybackHandler {
 						&mut history_shown,
 						&mut history_embed,
 						track_data,
-						&track_guilds,
+						track_guilds.as_ref(),
 						&full_container,
 						&action_row
 					)
@@ -893,15 +899,23 @@ impl DBUserIDExt for DBUserID {
 	}
 }
 
-async fn get_matching_guild_plays(uuid: Uuid, conn: &Pool<Postgres>) -> AResult<Vec<i64>> {
+async fn get_matching_guild_plays(
+	uuid: Uuid,
+	guild_id: i64,
+	conn: &Pool<Postgres>,
+) -> AResult<Vec<i64>> {
 	let track_guilds = query_scalar!(
 		r#"
-    	SELECT DISTINCT guild_id
-    	FROM song_plays
-    	WHERE track_uuid = $1
+    	SELECT DISTINCT sp.guild_id
+    	FROM song_plays sp
+    	JOIN guild_settings gs ON gs.guild_id = sp.guild_id
+    	WHERE sp.track_uuid = $1
+    		AND sp.guild_id != $2
+    		AND gs.current_voice_channel IS NOT NULL
         LIMIT 10
     	"#,
 		uuid,
+		guild_id
 	)
 	.fetch_all(conn)
 	.await?;
