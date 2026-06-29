@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tUPDATE guild_settings\n        SET quotes_channel = $2\n        WHERE guild_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e6045d31be96fa62defe95dba6b71c92486dcf2dacf3ac2f9a78cfbd2d16e087"
+}

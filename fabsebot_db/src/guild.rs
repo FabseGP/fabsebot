@@ -17,10 +17,9 @@ pub async fn set_music_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
-		INSERT INTO guild_settings (guild_id, music_channel)
-        VALUES ($1, $2)
-        ON CONFLICT (guild_id)
-        DO UPDATE SET music_channel = $2
+		UPDATE guild_settings
+		SET music_channel = $2
+		WHERE guild_id = $1
         "#,
 		guild_id,
 		channel_id
@@ -39,10 +38,9 @@ pub async fn set_spoiler_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
-		INSERT INTO guild_settings (guild_id, spoiler_channel)
-        VALUES ($1, $2)
-        ON CONFLICT (guild_id)
-        DO UPDATE SET spoiler_channel = $2
+		UPDATE guild_settings
+		SET spoiler_channel = $2
+		WHERE guild_id = $1
         "#,
 		guild_id,
 		channel_id
@@ -61,10 +59,9 @@ pub async fn set_current_voice_channel(
 ) -> AResult<()> {
 	query!(
 		r#"
-		INSERT INTO guild_settings (guild_id, current_voice_channel)
-        VALUES ($1, $2)
-        ON CONFLICT (guild_id)
-        DO UPDATE SET current_voice_channel = $2
+		UPDATE guild_settings
+		SET current_voice_channel = $2
+		WHERE guild_id = $1
 		"#,
 		guild_id,
 		channel_id,

@@ -771,10 +771,9 @@ pub async fn try_voice(
 	if global {
 		query!(
 			r#"
-			INSERT INTO guild_settings (guild_id, global_call)
-            VALUES ($1, TRUE)
-            ON CONFLICT (guild_id)
-            DO UPDATE SET global_call = TRUE, global_music = TRUE
+			UPDATE guild_settings
+			SET global_call = TRUE, global_music = TRUE
+			WHERE guild_id = $1
             "#,
 			i64::from(guild_id),
 		)

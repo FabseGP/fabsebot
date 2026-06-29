@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\t\t\tUPDATE guild_settings\n\t\t\t\t\tSET last_waifu = $2\n\t\t\t\t\tWHERE guild_id = $1\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6fb6060d5163cb220128c31596933d508a636a23159c77ccc8b8e96c6cce22d9"
+}

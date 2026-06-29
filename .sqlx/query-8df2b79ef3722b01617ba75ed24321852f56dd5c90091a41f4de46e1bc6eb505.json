@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tUPDATE guild_settings\n\t\tSET music_channel = $2\n\t\tWHERE guild_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8df2b79ef3722b01617ba75ed24321852f56dd5c90091a41f4de46e1bc6eb505"
+}

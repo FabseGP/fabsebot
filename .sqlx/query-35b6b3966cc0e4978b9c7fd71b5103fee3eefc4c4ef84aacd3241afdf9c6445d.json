@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tUPDATE user_settings\n        SET afk = TRUE, afk_reason = $3,\n    \t\tpinged_links = '[]'::jsonb\n    \tWHERE guild_id = $1 AND user_id = $2\n    \t",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "35b6b3966cc0e4978b9c7fd71b5103fee3eefc4c4ef84aacd3241afdf9c6445d"
+}

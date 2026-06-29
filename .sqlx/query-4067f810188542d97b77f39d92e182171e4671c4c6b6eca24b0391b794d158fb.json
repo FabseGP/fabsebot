@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tUPDATE guild_settings\n        SET chatbot_role = $2\n        WHERE guild_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4067f810188542d97b77f39d92e182171e4671c4c6b6eca24b0391b794d158fb"
+}

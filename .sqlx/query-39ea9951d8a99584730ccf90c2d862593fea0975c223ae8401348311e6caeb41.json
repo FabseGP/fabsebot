@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tUPDATE guild_settings\n        SET dead_chat_rate = $2, \n        \tdead_chat_channel = $3,\n        \tlast_dead_chat = $4\n        WHERE guild_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "39ea9951d8a99584730ccf90c2d862593fea0975c223ae8401348311e6caeb41"
+}
