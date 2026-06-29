@@ -5,7 +5,6 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use fastrand::usize;
 use image::{ImageFormat, guess_format, load_from_memory};
 use metrics::counter;
-use mini_moka::sync::Cache;
 use poise::{CreateReply, serenity_prelude::Channel};
 use reqwest::{Response, Result as RResult};
 use serde::{
@@ -17,9 +16,9 @@ use serenity::{
 		Context, CreateActionRow, CreateAllowedMentions, CreateButton, CreateComponent,
 		CreateContainer, CreateContainerComponent, CreateMediaGallery, CreateMediaGalleryItem,
 		CreateMessage, CreateSection, CreateSectionAccessory, CreateSectionComponent,
-		CreateSeparator, CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, Emoji,
-		EmojiId, GuildId, Http, Member, Message, MessageFlags, Permissions, ReactionType, Role,
-		User, UserId,
+		CreateSeparator, CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, EmojiId,
+		GuildId, Http, Member, Message, MessageFlags, Permissions, ReactionType, Role, User,
+		UserId,
 	},
 	builder::{CreateInteractionResponse, EditMessage},
 	collector::ComponentInteractionCollector,
@@ -40,7 +39,7 @@ use winnow::{
 use crate::{
 	config::{
 		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
-		types::{Error, HTTP_CLIENT, SContext, client_data, utils_config},
+		types::{EmojisMap, Error, HTTP_CLIENT, SContext, UsersMap, client_data, utils_config},
 	},
 	errors::commands::HTTPError,
 	log_error,
@@ -333,24 +332,25 @@ pub async fn get_waifu(ctx: &Context) -> String {
 async fn send_emoji(
 	ctx: &Context,
 	content: &str,
-	emojis: &Cache<u64, Arc<Emoji>>,
+	emojis: &EmojisMap,
 	target_emoji: u64,
 ) -> Option<String> {
-	let (emoji_name, emoji_id, is_animated) = if let Some(app_emoji) = emojis.get(&target_emoji) {
-		(
-			app_emoji.name.to_string(),
-			app_emoji.id,
-			app_emoji.animated(),
-		)
-	} else {
-		match get_app_emoji(ctx, target_emoji).await {
-			Ok(emoji) => emoji,
-			Err(err) => {
-				error!("{}", err);
-				return None;
+	let (emoji_name, emoji_id, is_animated) =
+		if let Some(app_emoji) = emojis.get(&EmojiId::new(target_emoji)) {
+			(
+				app_emoji.name.to_string(),
+				app_emoji.id,
+				app_emoji.animated(),
+			)
+		} else {
+			match get_app_emoji(ctx, target_emoji).await {
+				Ok(emoji) => emoji,
+				Err(err) => {
+					error!("{}", err);
+					return None;
+				}
 			}
-		}
-	};
+		};
 	let emoji_string = format!(
 		"<{}:{}:{}>",
 		if is_animated { "a" } else { "" },
@@ -452,11 +452,29 @@ pub fn user_pfp(user: &User) -> String {
 		.unwrap_or_else(|| user.default_avatar_url())
 }
 
-pub async fn user_banner(http: &Http, user_id: UserId) -> Option<String> {
-	match http.get_user(user_id).await {
+pub async fn get_user(http: &Http, users: &UsersMap, user_id: UserId) -> AResult<Arc<User>> {
+	let user = if let Some(user) = users.get(&user_id) {
+		user
+	} else {
+		match http.get_user(user_id).await {
+			Ok(user) => {
+				let arc_user = Arc::new(user);
+				users.insert(user_id, arc_user.clone());
+				arc_user
+			}
+			Err(err) => {
+				bail!("Failed to fetch user: {err}");
+			}
+		}
+	};
+	Ok(user)
+}
+
+pub async fn user_banner(http: &Http, users: &UsersMap, user_id: UserId) -> Option<String> {
+	match get_user(http, users, user_id).await {
 		Ok(user) => user.banner_url(),
 		Err(err) => {
-			warn!("Failed to fetch user: {err}");
+			warn!("{err}");
 			None
 		}
 	}

@@ -10,8 +10,11 @@ use mini_moka::sync::Cache;
 use poise::Context as PContext;
 use reqwest::Client;
 use serde::Serialize;
-use serenity::all::{
-	Context, Emoji, EmojiId, GenericChannelId, GuildId, ShardId, ShardRunnerMetadata, Webhook,
+use serenity::{
+	all::{
+		Context, Emoji, EmojiId, GenericChannelId, GuildId, ShardId, ShardRunnerMetadata, Webhook,
+	},
+	model::{id::UserId, user::User},
 };
 use songbird::Songbird;
 use sqlx::PgPool;
@@ -26,7 +29,6 @@ use crate::{
 	},
 };
 
-pub type WebhookMap = Cache<GenericChannelId, Webhook>;
 pub type AIChats = Arc<Mutex<AIChatContext>>;
 
 #[derive(Default)]
@@ -114,15 +116,20 @@ impl AIChatMessage {
 	}
 }
 
+pub type WebhookMap = Cache<GenericChannelId, Webhook>;
+pub type UsersMap = Cache<UserId, Arc<User>>;
+pub type EmojisMap = Cache<EmojiId, Arc<Emoji>>;
+
 pub struct Data {
 	pub db: PgPool,
 	pub music_manager: Arc<Songbird>,
 	pub channel_webhooks: WebhookMap,
 	pub guilds: Cache<GuildId, Arc<GuildCache>>,
-	pub app_emojis: Cache<EmojiId, Arc<Emoji>>,
+	pub app_emojis: EmojisMap,
 	pub state_tracker: AtomicBool,
 	pub lavalink_client: LavalinkClient,
 	pub track_signals: DashMap<u64, Sender<TrackSignal>>,
+	pub users: UsersMap,
 }
 
 pub type Error = AError;

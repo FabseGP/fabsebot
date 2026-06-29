@@ -681,7 +681,7 @@ pub async fn roast_user(
 
 	uri_content(&user_pfp(&user), &mut chat_vec).await?;
 
-	if let Some(banner) = &user_banner(ctx.http(), user.id).await {
+	if let Some(banner) = &user_banner(ctx.http(), &ctx.data().users, user.id).await {
 		uri_content(banner, &mut chat_vec).await?;
 	}
 
@@ -720,7 +720,7 @@ pub async fn roast(
 		&mut chat_vec,
 	)
 	.await?;
-	if let Some(banner) = &user_banner(ctx.http(), member.user.id).await {
+	if let Some(banner) = &user_banner(ctx.http(), &ctx.data().users, member.user.id).await {
 		uri_content(banner, &mut chat_vec).await?;
 	}
 

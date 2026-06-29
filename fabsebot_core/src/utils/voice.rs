@@ -25,7 +25,7 @@ use serenity::{
 	all::{
 		ButtonStyle, ChannelId, Colour, ComponentInteraction, ComponentInteractionCollector,
 		Context as SerenityContext, CreateActionRow, CreateButton, CreateContainer, CreateMessage,
-		EditMessage, GenericChannelId, GuildId, MessageId, UserId,
+		EditMessage, GenericChannelId, GuildId, Http, MessageId, UserId,
 	},
 	async_trait,
 	builder::CreateContainerComponent,
@@ -58,14 +58,14 @@ use crate::{
 			EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, FALLBACK_MUSIC_THUMBNAIL,
 			INVALID_TRACK_SOURCE, MESSAGE_LIMIT, NOT_IN_VOICE_CHAN_MSG, QUEUEING_MSG,
 		},
-		types::{Data, HTTP_CLIENT, SContext},
+		types::{Data, HTTP_CLIENT, SContext, UsersMap},
 	},
 	errors::commands::MusicError,
 	events::interaction::build_feedback_action_row,
 	log_error,
 	stats::counters::METRICS,
 	utils::helpers::{
-		edit_message_container, get_lyrics, reply_container, separator, text_display,
+		edit_message_container, get_lyrics, get_user, reply_container, separator, text_display,
 		thumbnail_section, visit_page_button,
 	},
 };
@@ -245,6 +245,7 @@ impl PlaybackHandler {
 		track_guilds: Option<&Vec<i64>>,
 		container: &CreateContainer<'a>,
 		action_row: &CreateContainerComponent<'a>,
+		users: &UsersMap,
 	) -> AResult<()> {
 		interaction.defer(&self.serenity_context.http).await?;
 
@@ -364,7 +365,7 @@ impl PlaybackHandler {
 								} else {
 									let http_name = track
 										.requested_by
-										.get_author_name(&self.serenity_context)
+										.get_author_name(&self.serenity_context.http, users)
 										.await;
 									author_names.insert(track.requested_by, http_name.clone());
 									http_name
@@ -418,7 +419,7 @@ impl PlaybackHandler {
 
 		let author_name = track_data
 			.requested_by
-			.get_author_name(&self.serenity_context)
+			.get_author_name(&self.serenity_context.http, &bot_data.users)
 			.await;
 
 		let (thumbnail_section, action_row, visit_button) =
@@ -482,7 +483,8 @@ impl PlaybackHandler {
 						track_data,
 						track_guilds.as_ref(),
 						&full_container,
-						&action_row
+						&action_row,
+						&bot_data.users
 					)
 					.await?;
 				},
@@ -870,15 +872,13 @@ type DBUserID = i64;
 
 #[async_trait]
 trait DBUserIDExt {
-	async fn get_author_name(&self, serenity_context: &SerenityContext) -> String;
+	async fn get_author_name(&self, http: &Http, users: &UsersMap) -> String;
 }
 
 #[async_trait]
 impl DBUserIDExt for DBUserID {
-	async fn get_author_name(&self, serenity_context: &SerenityContext) -> String {
-		serenity_context
-			.http
-			.get_user(UserId::new(self.cast_unsigned()))
+	async fn get_author_name(&self, http: &Http, users: &UsersMap) -> String {
+		get_user(http, users, UserId::new(self.cast_unsigned()))
 			.await
 			.map_or_else(
 				|_| "Unknown".to_owned(),

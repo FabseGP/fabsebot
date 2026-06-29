@@ -214,7 +214,7 @@ pub async fn bot_start(
 			.time_to_idle(Duration::from_hours(12))
 			.build(),
 		guilds: Cache::builder()
-			.max_capacity(100)
+			.max_capacity(1000)
 			.time_to_idle(Duration::from_hours(12))
 			.build(),
 		app_emojis: Cache::builder()
@@ -224,6 +224,10 @@ pub async fn bot_start(
 		state_tracker: AtomicBool::new(true),
 		lavalink_client,
 		track_signals: DashMap::new(),
+		users: Cache::builder()
+			.max_capacity(100)
+			.time_to_idle(Duration::from_hours(12))
+			.build(),
 	});
 	let additional_prefix: &'static str =
 		Box::leak(format!("hey {}", bot_config.username).into_boxed_str());

@@ -28,14 +28,14 @@ use crate::{
 			FABSEMAN_WEBHOOK_NAME, FABSEMAN_WEBHOOK_PFP, FAILED_SONG_FETCH, FLOPPAGANDA_GIF,
 			MESSAGE_LIMIT, QUEUEING_MSG,
 		},
-		types::{AIChats, Data, GuildCache, WebhookMap, utils_config},
+		types::{AIChats, Data, GuildCache, UsersMap, WebhookMap, utils_config},
 	},
 	log_error,
 	stats::counters::METRICS,
 	utils::{
 		ai::ai_chatbot,
 		helpers::{
-			channel_counter, discord_message_link, get_gif, get_waifu, media_gallery,
+			channel_counter, discord_message_link, get_gif, get_user, get_waifu, media_gallery,
 			message_container, separator, text_display, thumbnail_section, user_pfp,
 		},
 		voice::{add_song, add_voice_events},
@@ -361,6 +361,7 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 
 async fn user_queries(
 	ctx: &SContext,
+	users: &UsersMap,
 	new_message: &Message,
 	guild_id: i64,
 	author_settings: UserSettings,
@@ -470,10 +471,12 @@ async fn user_queries(
 
 		for mentioned_user_settings in mentioned_settings {
 			if mentioned_user_settings.afk
-				&& let Ok(user) = ctx
-					.http
-					.get_user(UserId::new(mentioned_user_settings.user_id.cast_unsigned()))
-					.await
+				&& let Ok(user) = get_user(
+					&ctx.http,
+					users,
+					UserId::new(mentioned_user_settings.user_id.cast_unsigned()),
+				)
+				.await
 			{
 				let reason = mentioned_user_settings
 					.afk_reason
@@ -591,6 +594,7 @@ async fn db_queries(
 
 	user_queries(
 		ctx,
+		&bot_data.users,
 		new_message,
 		guild_id_i64,
 		author_settings,
