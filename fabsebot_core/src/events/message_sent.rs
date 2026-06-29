@@ -209,7 +209,8 @@ async fn global_chats(
 			r#"
 			SELECT guild_id, global_chat_channel FROM guild_settings
 			WHERE global_chat IS TRUE
-			AND guild_id != $1
+				AND guild_id != $1
+				AND global_chat_channel IS NOT NULL
 			LIMIT 10
 			"#,
 			guild_id
