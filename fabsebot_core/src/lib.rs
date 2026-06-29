@@ -210,23 +210,23 @@ pub async fn bot_start(
 		db: postgres_pool,
 		music_manager: music_manager.clone(),
 		channel_webhooks: Cache::builder()
-			.max_capacity(100)
-			.time_to_idle(Duration::from_hours(12))
+			.max_capacity(1000)
+			.time_to_idle(Duration::from_hours(24))
 			.build(),
 		guilds: Cache::builder()
 			.max_capacity(1000)
-			.time_to_idle(Duration::from_hours(12))
+			.time_to_idle(Duration::from_hours(24))
 			.build(),
 		app_emojis: Cache::builder()
 			.max_capacity(1000)
-			.time_to_idle(Duration::from_hours(12))
+			.time_to_idle(Duration::from_hours(24))
 			.build(),
 		state_tracker: AtomicBool::new(true),
 		lavalink_client,
 		track_signals: DashMap::new(),
 		users: Cache::builder()
-			.max_capacity(100)
-			.time_to_idle(Duration::from_hours(12))
+			.max_capacity(1000)
+			.time_to_idle(Duration::from_hours(24))
 			.build(),
 	});
 	let additional_prefix: &'static str =

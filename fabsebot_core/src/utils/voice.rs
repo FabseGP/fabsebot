@@ -1,5 +1,5 @@
 use std::{
-	collections::{HashMap, VecDeque},
+	collections::VecDeque,
 	fmt::Write as _,
 	sync::{
 		Arc,
@@ -356,20 +356,12 @@ impl PlaybackHandler {
 						"# History of {} last played songs",
 						queue_history.len()
 					)?;
-					let mut author_names: HashMap<i64, String> = HashMap::new();
 					for track in queue_history {
 						if let Some(title) = track.title {
-							let author_name =
-								if let Some(name) = author_names.get(&track.requested_by) {
-									name.clone()
-								} else {
-									let http_name = track
-										.requested_by
-										.get_author_name(&self.serenity_context.http, users)
-										.await;
-									author_names.insert(track.requested_by, http_name.clone());
-									http_name
-								};
+							let author_name = track
+								.requested_by
+								.get_author_name(&self.serenity_context.http, users)
+								.await;
 							writeln!(
 								history_string,
 								"**{title}:** *{author_name} - {}*",
