@@ -65,6 +65,7 @@ All notable changes to this project will be documented in this file.
 - Fully migrated to components V2!
 - Propagate HTTP error codes
 - Improved reliability... hopefully
+- Add user cache
 
 ### 🐛 Bug Fixes
 
@@ -195,6 +196,7 @@ All notable changes to this project will be documented in this file.
 - Avoid duplicate http-calls
 - Assume guild_settings & user_settings is populated
 - Check for not null global_chat_channel
+- No more need of hashmap for author_names
 
 ### 💼 Other
 
@@ -288,6 +290,7 @@ All notable changes to this project will be documented in this file.
 - Split into functions
 - *(chore)* Update changelog
 - Drop global_music-field
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
