@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tUPDATE guild_settings\n        SET dead_chat_rate = NULL,\n        dead_chat_channel = NULL,\n        last_dead_chat = NULL,\n        quotes_channel = NULL,\n        spoiler_channel = NULL,\n        prefix = NULL,\n        ai_chat_channel = NULL,\n        global_chat_channel = NULL,\n        global_chat = FALSE,\n        global_call = FALSE,\n        music_channel = NULL,\n        waifu_channel = NULL,\n        waifu_rate = NULL,\n        last_waifu = NULL,\n        chatbot_role = NULL,\n        current_voice_channel = NULL\n    \tWHERE guild_id = $1\n    \t",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "94de2767cd3f205c2dc2592c9e99c0fe5f7ae3dd5a0af7629babffd6cb566993"
+}

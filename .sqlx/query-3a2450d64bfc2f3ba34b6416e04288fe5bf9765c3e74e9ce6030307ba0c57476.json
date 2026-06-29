@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\t\t\tSELECT EXISTS(SELECT 1 FROM guild_settings\n\t\t\t\tWHERE guild_id != $1\n\t\t\t\tAND global_chat IS TRUE)\n\t\t\t\t",
+  "query": "\n\t\t\t\tSELECT EXISTS(SELECT 1 FROM guild_settings\n\t\t\t\tWHERE guild_id != $1\n\t\t\t\t\tAND global_chat IS TRUE\n\t\t\t\t\tAND global_chat_channel IS NOT NULL)\n\t\t\t\t",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "43acb14c52ffad7d65341066161aee6b6bb5f6bb73b4928b3169663eeb3dca87"
+  "hash": "3a2450d64bfc2f3ba34b6416e04288fe5bf9765c3e74e9ce6030307ba0c57476"
 }

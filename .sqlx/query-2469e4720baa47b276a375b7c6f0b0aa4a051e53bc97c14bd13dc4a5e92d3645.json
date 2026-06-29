@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\t\tSELECT guild_id FROM guild_settings\n\t\t\tWHERE global_music IS TRUE\n\t\t\tAND guild_id != $1\n\t\t\tLIMIT 10\n\t\t\t",
+  "query": "\n\t\t\tSELECT guild_id FROM guild_settings\n\t\t\tWHERE global_call IS TRUE\n\t\t\t\tAND current_voice_channel IS NOT NULL\n\t\t\t\tAND guild_id != $1\n\t\t\tLIMIT 10\n\t\t\t",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "2fa9580eeffd14f8c86eb0dbe3ad6022fe1ea8208bdbf2a934257a3bb1f85333"
+  "hash": "2469e4720baa47b276a375b7c6f0b0aa4a051e53bc97c14bd13dc4a5e92d3645"
 }

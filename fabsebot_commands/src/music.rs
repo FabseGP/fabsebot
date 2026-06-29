@@ -216,7 +216,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	query!(
 		r#"
 		UPDATE guild_settings
-		SET global_music = FALSE, global_call = FALSE
+		SET global_call = FALSE
 		WHERE guild_id = $1
         "#,
 		i64::from(guild_id),
@@ -269,7 +269,7 @@ pub async fn play_song(
 
 	let is_global = query_scalar!(
 		r#"
-		SELECT global_music FROM guild_settings
+		SELECT global_call FROM guild_settings
 		WHERE guild_id = $1
 		"#,
 		guild_id_i64
@@ -281,8 +281,9 @@ pub async fn play_song(
 		let guild_global_playback = query_scalar!(
 			r#"
 			SELECT guild_id FROM guild_settings
-			WHERE global_music IS TRUE
-			AND guild_id != $1
+			WHERE global_call IS TRUE
+				AND current_voice_channel IS NOT NULL
+				AND guild_id != $1
 			LIMIT 10
 			"#,
 			guild_id_i64

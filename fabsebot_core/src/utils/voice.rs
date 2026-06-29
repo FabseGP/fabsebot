@@ -774,19 +774,6 @@ pub async fn try_voice(
 	guild_id: GuildId,
 	global: bool,
 ) -> AResult<Arc<Mutex<Call>>> {
-	if global {
-		query!(
-			r#"
-			UPDATE guild_settings
-			SET global_call = TRUE, global_music = TRUE
-			WHERE guild_id = $1
-            "#,
-			i64::from(guild_id),
-		)
-		.execute(&ctx.data().db)
-		.await?;
-	}
-
 	let handler_lock = if let Some(lock) = ctx.data().music_manager.get(guild_id) {
 		lock
 	} else {
@@ -806,6 +793,7 @@ pub async fn try_voice(
 	set_current_voice_channel(
 		i64::from(guild_id),
 		i64::from(ctx.channel_id().expect_channel()),
+		global,
 		&ctx.data().db,
 	)
 	.await?;

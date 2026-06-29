@@ -55,16 +55,19 @@ pub async fn set_spoiler_channel(
 pub async fn set_current_voice_channel(
 	guild_id: i64,
 	channel_id: i64,
+	global: bool,
 	conn: &Pool<Postgres>,
 ) -> AResult<()> {
 	query!(
 		r#"
 		UPDATE guild_settings
-		SET current_voice_channel = $2
+		SET current_voice_channel = $2,
+			global_call = $3
 		WHERE guild_id = $1
 		"#,
 		guild_id,
 		channel_id,
+		global
 	)
 	.execute(conn)
 	.await
@@ -100,7 +103,6 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
         ai_chat_channel = NULL,
         global_chat_channel = NULL,
         global_chat = FALSE,
-        global_music = FALSE,
         global_call = FALSE,
         music_channel = NULL,
         waifu_channel = NULL,

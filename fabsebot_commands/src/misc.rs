@@ -309,7 +309,8 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 				r#"
 				SELECT EXISTS(SELECT 1 FROM guild_settings
 				WHERE guild_id != $1
-				AND global_chat IS TRUE)
+					AND global_chat IS TRUE
+					AND global_chat_channel IS NOT NULL)
 				"#,
 				guild_id_i64
 			)
