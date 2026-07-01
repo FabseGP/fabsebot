@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tWITH updated AS (\n    \t\tUPDATE user_settings\n    \t\tSET message_count = message_count + 1\n    \t\tWHERE guild_id = $1\n    \t\tAND user_id = $2\n    \t\tRETURNING afk_reason, pinged_links, afk\n\t\t)\n\t\tSELECT afk_reason,\n    \t\tpinged_links as \"pinged_links: Json<Vec<PingedLink>>\"\n\t\tFROM updated\n\t\tWHERE afk = TRUE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "afk_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "afk_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pinged_links: Json<Vec<PingedLink>>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "user_settings",
+            "name": "pinged_links"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "c1854a01040a9764cda90f8898443fce14c923a8ec311e772cc54a084666b93e"
+}

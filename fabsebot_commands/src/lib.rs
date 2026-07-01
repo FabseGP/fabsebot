@@ -2,10 +2,7 @@
 
 use anyhow::Result as AResult;
 use fabsebot_core::{
-	config::{
-		constants::HUMAN_ONLY_MSG,
-		types::{Data, Error, SContext},
-	},
+	config::types::{Data, Error, SContext},
 	errors::commands::InteractionError,
 	utils::helpers::correct_permissions,
 };
@@ -77,7 +74,6 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		music::leave_lavalink(),
 		music::play_song(),
 		music::play_lavalink(),
-		music::seek_song(),
 		music::text_to_voice(),
 		settings::configure_server_settings(),
 		settings::reset_user_settings(),
@@ -92,7 +88,7 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 
 pub async fn require_human(ctx: SContext<'_>, user: &User) -> AResult<()> {
 	if user.bot() {
-		ctx.reply(HUMAN_ONLY_MSG).await?;
+		ctx.reply("**Invalid target, get some friends**").await?;
 		return Err(InteractionError::NotHuman.into());
 	}
 	Ok(())

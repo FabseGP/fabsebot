@@ -825,7 +825,7 @@ pub async fn set_word_react(
 			r#"
 			INSERT INTO guild_word_reaction (guild_id, word, content, media, emoji_id, guild_emoji)
 			VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (guild_id)
+            ON CONFLICT (guild_id, word)
             DO UPDATE SET content = $3,
             	media = $4,
             	emoji_id = $5,

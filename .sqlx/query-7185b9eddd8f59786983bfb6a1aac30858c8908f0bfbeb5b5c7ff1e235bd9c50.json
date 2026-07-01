@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\t\t\tUPDATE guild_settings\n\t\t\t\tSET GLOBAL_CALL = TRUE\n\t\t\t\tWHERE guild_id = $1\n\t\t\t\t",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7185b9eddd8f59786983bfb6a1aac30858c8908f0bfbeb5b5c7ff1e235bd9c50"
+}

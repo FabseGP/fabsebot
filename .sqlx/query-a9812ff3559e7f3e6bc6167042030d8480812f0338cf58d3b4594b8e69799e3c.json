@@ -1,98 +1,88 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\t\tSELECT guild_id, last_waifu, waifu_rate, waifu_channel,\n\t\t\tlast_dead_chat, dead_chat_rate, dead_chat_channel\n\t\t\tFROM guild_settings\n\t\t\tWHERE waifu_channel IS NOT NULL\n\t\t\tOR dead_chat_channel IS NOT NULL\n\t\t\t",
+  "query": "\n\t\tSELECT spoiler_channel, ai_chat_channel, global_chat_channel,\n\t\t\tmusic_channel, chatbot_role, global_chat\n\t\tFROM guild_settings\n\t\tWHERE guild_id = $1\n\t\t\tAND (spoiler_channel IS NOT NULL\n\t\t\tOR ai_chat_channel IS NOT NULL\n\t\t\tOR global_chat_channel IS NOT NULL\n\t\t\tOR music_channel IS NOT NULL\n\t\t\tOR global_chat IS TRUE)\n\t\t",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "guild_id",
+        "name": "spoiler_channel",
         "type_info": "Int8",
         "origin": {
           "Table": {
             "table": "guild_settings",
-            "name": "guild_id"
+            "name": "spoiler_channel"
           }
         }
       },
       {
         "ordinal": 1,
-        "name": "last_waifu",
+        "name": "ai_chat_channel",
         "type_info": "Int8",
         "origin": {
           "Table": {
             "table": "guild_settings",
-            "name": "last_waifu"
+            "name": "ai_chat_channel"
           }
         }
       },
       {
         "ordinal": 2,
-        "name": "waifu_rate",
+        "name": "global_chat_channel",
         "type_info": "Int8",
         "origin": {
           "Table": {
             "table": "guild_settings",
-            "name": "waifu_rate"
+            "name": "global_chat_channel"
           }
         }
       },
       {
         "ordinal": 3,
-        "name": "waifu_channel",
+        "name": "music_channel",
         "type_info": "Int8",
         "origin": {
           "Table": {
             "table": "guild_settings",
-            "name": "waifu_channel"
+            "name": "music_channel"
           }
         }
       },
       {
         "ordinal": 4,
-        "name": "last_dead_chat",
-        "type_info": "Int8",
+        "name": "chatbot_role",
+        "type_info": "Text",
         "origin": {
           "Table": {
             "table": "guild_settings",
-            "name": "last_dead_chat"
+            "name": "chatbot_role"
           }
         }
       },
       {
         "ordinal": 5,
-        "name": "dead_chat_rate",
-        "type_info": "Int8",
+        "name": "global_chat",
+        "type_info": "Bool",
         "origin": {
           "Table": {
             "table": "guild_settings",
-            "name": "dead_chat_rate"
-          }
-        }
-      },
-      {
-        "ordinal": 6,
-        "name": "dead_chat_channel",
-        "type_info": "Int8",
-        "origin": {
-          "Table": {
-            "table": "guild_settings",
-            "name": "dead_chat_channel"
+            "name": "global_chat"
           }
         }
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8"
+      ]
     },
     "nullable": [
-      false,
       true,
       true,
       true,
       true,
       true,
-      true
+      false
     ]
   },
-  "hash": "3e368fba22f4565ced072b4f8db6e381b435d32097098086095f8d1c417511f7"
+  "hash": "a9812ff3559e7f3e6bc6167042030d8480812f0338cf58d3b4594b8e69799e3c"
 }

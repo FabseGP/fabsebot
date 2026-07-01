@@ -20,7 +20,6 @@ rayon = { workspace = true }
 reqwest = { workspace = true, default-features = false, features = ["http3", "json", "multipart", "query", "rustls", "zstd"] }
 serde = { workspace = true }
 serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "temp_cache", "transport_compression_zstd"] }
-songbird = { workspace = true, features = ["builtin-queue", "receive"] }
 sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio", "time", "uuid"] }
 systemstat = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

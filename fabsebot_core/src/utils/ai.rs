@@ -4,6 +4,7 @@ use anyhow::{Result as AResult, anyhow};
 use bytes::Bytes;
 use image::{ImageFormat, guess_format};
 use jiff::{Timestamp, tz::TimeZone};
+use reqwest::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use serenity::{
@@ -246,6 +247,7 @@ pub async fn ai_chatbot(
 			guild_id,
 			Some(message),
 			true,
+			&utils_config().fabseserver.text_model_large,
 		)
 		.await
 	};
@@ -310,8 +312,8 @@ async fn tool_calling(
 	ctx: &SContext,
 	message: Option<&Message>,
 	guild_id: GuildId,
+	text_model: &str,
 ) -> AResult<String> {
-	let utils_config = utils_config();
 	let tool_content = response
 		.choices
 		.first()
@@ -327,7 +329,7 @@ async fn tool_calling(
 		let mut chat_vec = Vec::with_capacity(1);
 		let tool_output = match tool.function.name {
 			ToolCalls::Web => {
-				internet_search(&args.query, &utils_config.fabseserver.search).await?
+				internet_search(&args.query, &utils_config().fabseserver.search).await?
 			}
 			ToolCalls::Gif => get_gif(ctx, &args.query).await,
 			ToolCalls::Time => {
@@ -393,7 +395,7 @@ async fn tool_calling(
 		conversations.push(AIChatMessage::tool(chat_vec, tool.id.clone()));
 	}
 
-	let final_resp = ai_response_internal(conversations, true, true).await?;
+	let final_resp = ai_response_internal(conversations, true, true, text_model).await?;
 	final_resp.extract_content()
 }
 
@@ -670,12 +672,12 @@ async fn ai_response_internal(
 	messages: &[AIChatMessage],
 	tools_calling: bool,
 	force_no_tools: bool,
+	text_model: &str,
 ) -> AResult<AIResponse> {
-	let utils_config = utils_config();
 	let tools_list = tools_calling.then_some(get_available_tools());
 	let tool_choice = force_no_tools.then_some(ToolChoice::None);
 	let request = ChatRequest {
-		model: &utils_config.fabseserver.text_gen_model,
+		model: text_model,
 		messages,
 		tools: tools_list.as_ref(),
 		tool_choice,
@@ -683,7 +685,7 @@ async fn ai_response_internal(
 
 	fetch_and_parse::<AIResponse>(
 		HTTP_CLIENT
-			.post(&utils_config.fabseserver.llm_host_text)
+			.post(&utils_config().fabseserver.llm_host_text)
 			.json(&request)
 			.send(),
 	)
@@ -696,14 +698,18 @@ pub async fn ai_response(
 	guild_id: GuildId,
 	message: Option<&Message>,
 	tools: bool,
+	text_model: &str,
 ) -> AResult<String> {
-	let response = ai_response_internal(messages, tools, false).await?;
+	let response = ai_response_internal(messages, tools, false, text_model).await?;
 
 	let output = if tools
 		&& response.has_tool_calls()
 		&& let Ok(tool_calls) = response.get_tool_calls()
 	{
-		tool_calling(&response, tool_calls, messages, ctx, message, guild_id).await?
+		tool_calling(
+			&response, tool_calls, messages, ctx, message, guild_id, text_model,
+		)
+		.await?
 	} else {
 		response.extract_content()?
 	};
@@ -728,11 +734,11 @@ struct NormalizationOptions {
 	unit_normalization: bool,
 }
 
-pub async fn ai_voice(prompt: &str) -> AResult<Bytes> {
+pub async fn ai_voice(prompt: &str) -> Result<Bytes, Error> {
 	let utils_config = utils_config();
 	let request = AIVoiceRequest {
 		input: &prompt.replace('\'', ""),
-		model: &utils_config.fabseserver.text_to_speech_model,
+		model: &utils_config.fabseserver.tts_model,
 		voice: "af_heart",
 		response_format: "wav",
 		return_timestamps: false,
@@ -748,5 +754,5 @@ pub async fn ai_voice(prompt: &str) -> AResult<Bytes> {
 		.send()
 		.await?;
 
-	Ok(resp.bytes().await?)
+	resp.bytes().await
 }

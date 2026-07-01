@@ -1,5 +1,4 @@
-use anyhow::{Context as _, Result as AResult};
-use sqlx::{Pool, Postgres, Transaction, query, query_as};
+use sqlx::{Error, Pool, Postgres, Transaction, postgres::PgQueryResult, query, query_as};
 
 pub struct GuildSettings {
 	pub spoiler_channel: Option<i64>,
@@ -14,7 +13,7 @@ pub async fn set_music_channel(
 	guild_id: i64,
 	channel_id: i64,
 	conn: &Pool<Postgres>,
-) -> AResult<()> {
+) -> Result<PgQueryResult, Error> {
 	query!(
 		r#"
 		UPDATE guild_settings
@@ -26,16 +25,13 @@ pub async fn set_music_channel(
 	)
 	.execute(conn)
 	.await
-	.context("Failed to set music channel")?;
-
-	Ok(())
 }
 
 pub async fn set_spoiler_channel(
 	guild_id: i64,
 	channel_id: i64,
 	conn: &Pool<Postgres>,
-) -> AResult<()> {
+) -> Result<PgQueryResult, Error> {
 	query!(
 		r#"
 		UPDATE guild_settings
@@ -47,33 +43,6 @@ pub async fn set_spoiler_channel(
 	)
 	.execute(conn)
 	.await
-	.context("Failed to set spoiler channel")?;
-
-	Ok(())
-}
-
-pub async fn set_current_voice_channel(
-	guild_id: i64,
-	channel_id: i64,
-	global: bool,
-	conn: &Pool<Postgres>,
-) -> AResult<()> {
-	query!(
-		r#"
-		UPDATE guild_settings
-		SET current_voice_channel = $2,
-			global_call = $3
-		WHERE guild_id = $1
-		"#,
-		guild_id,
-		channel_id,
-		global
-	)
-	.execute(conn)
-	.await
-	.context("Failed to set current voice channel")?;
-
-	Ok(())
 }
 
 pub struct WordReactions {
@@ -90,7 +59,10 @@ pub struct WordTracking {
 	pub count: i64,
 }
 
-pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>) -> AResult<()> {
+pub async fn reset_guild(
+	guild_id: i64,
+	tx: &mut Transaction<'static, Postgres>,
+) -> Result<PgQueryResult, Error> {
 	query!(
 		r#"
 		UPDATE guild_settings
@@ -108,8 +80,7 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
         waifu_channel = NULL,
         waifu_rate = NULL,
         last_waifu = NULL,
-        chatbot_role = NULL,
-        current_voice_channel = NULL
+        chatbot_role = NULL
     	WHERE guild_id = $1
     	"#,
 		guild_id
@@ -133,12 +104,10 @@ pub async fn reset_guild(guild_id: i64, tx: &mut Transaction<'static, Postgres>)
 		guild_id
 	)
 	.execute(tx.as_mut())
-	.await?;
-
-	Ok(())
+	.await
 }
 
-pub async fn delete_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
+pub async fn delete_guild(guild_id: i64, conn: &Pool<Postgres>) -> Result<PgQueryResult, Error> {
 	query!(
 		r#"
 		DELETE FROM guilds
@@ -147,41 +116,50 @@ pub async fn delete_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
 		guild_id
 	)
 	.execute(conn)
-	.await?;
-
-	Ok(())
+	.await
 }
 
-pub async fn insert_guild(guild_id: i64, conn: &Pool<Postgres>) -> AResult<()> {
-	query!(
-		r#"
-		INSERT INTO guilds (guild_id)
-        VALUES ($1)
-        ON CONFLICT (guild_id)
-        DO NOTHING
-        "#,
-		guild_id
-	)
-	.execute(conn)
-	.await?;
-
-	Ok(())
-}
-
-pub async fn insert_guild_settings(guild_id: i64, conn: &Pool<Postgres>) -> AResult<GuildSettings> {
-	let guild_settings = query_as!(
+pub async fn fetch_guild_settings(
+	guild_id: i64,
+	conn: &Pool<Postgres>,
+) -> Result<Option<GuildSettings>, Error> {
+	query_as!(
 		GuildSettings,
 		r#"
-		INSERT INTO guild_settings (guild_id)
-		VALUES ($1)
-		ON CONFLICT (guild_id)
-		DO UPDATE SET guild_id = guild_settings.guild_id
-		RETURNING spoiler_channel, ai_chat_channel, global_chat_channel,
+		SELECT spoiler_channel, ai_chat_channel, global_chat_channel,
 			music_channel, chatbot_role, global_chat
+		FROM guild_settings
+		WHERE guild_id = $1
+			AND (spoiler_channel IS NOT NULL
+			OR ai_chat_channel IS NOT NULL
+			OR global_chat_channel IS NOT NULL
+			OR music_channel IS NOT NULL
+			OR global_chat IS TRUE)
 		"#,
 		guild_id
 	)
-	.fetch_one(conn)
-	.await?;
-	Ok(guild_settings)
+	.fetch_optional(conn)
+	.await
+}
+
+pub async fn insert_guild_settings(
+	guild_id: i64,
+	conn: &Pool<Postgres>,
+) -> Result<PgQueryResult, Error> {
+	query!(
+		r#"
+		WITH ensured_guild AS (
+			INSERT INTO guilds (guild_id)
+			VALUES ($1)
+			ON CONFLICT (guild_id) DO NOTHING
+		)
+		INSERT INTO guild_settings (guild_id)
+		VALUES ($1)
+		ON CONFLICT (guild_id)
+		DO NOTHING
+		"#,
+		guild_id
+	)
+	.execute(conn)
+	.await
 }

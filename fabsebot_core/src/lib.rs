@@ -51,6 +51,8 @@ use crate::{
 };
 
 const PING_INTERVAL_SEC: u64 = 60;
+const CACHE_CAPACITY: u64 = 1000;
+const CACHE_TIME_TO_IDLE_HOURS: u64 = 24;
 
 pub async fn log_error(output: &str, ctx: &SContext) {
 	error!("{output}");
@@ -114,7 +116,7 @@ pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
 			last_dead_chat, dead_chat_rate, dead_chat_channel
 			FROM guild_settings
 			WHERE waifu_channel IS NOT NULL
-			OR dead_chat_channel IS NOT NULL
+				OR dead_chat_channel IS NOT NULL
 			"#
 		)
 		.fetch_all(&bot_data.db)
@@ -210,23 +212,23 @@ pub async fn bot_start(
 		db: postgres_pool,
 		music_manager: music_manager.clone(),
 		channel_webhooks: Cache::builder()
-			.max_capacity(1000)
-			.time_to_idle(Duration::from_hours(24))
+			.max_capacity(CACHE_CAPACITY)
+			.time_to_idle(Duration::from_hours(CACHE_TIME_TO_IDLE_HOURS))
 			.build(),
 		guilds: Cache::builder()
-			.max_capacity(1000)
-			.time_to_idle(Duration::from_hours(24))
+			.max_capacity(CACHE_CAPACITY)
+			.time_to_idle(Duration::from_hours(CACHE_TIME_TO_IDLE_HOURS))
 			.build(),
 		app_emojis: Cache::builder()
-			.max_capacity(1000)
-			.time_to_idle(Duration::from_hours(24))
+			.max_capacity(CACHE_CAPACITY)
+			.time_to_idle(Duration::from_hours(CACHE_TIME_TO_IDLE_HOURS))
 			.build(),
 		state_tracker: AtomicBool::new(true),
 		lavalink_client,
 		track_signals: DashMap::new(),
 		users: Cache::builder()
-			.max_capacity(1000)
-			.time_to_idle(Duration::from_hours(24))
+			.max_capacity(CACHE_CAPACITY)
+			.time_to_idle(Duration::from_hours(CACHE_TIME_TO_IDLE_HOURS))
 			.build(),
 	});
 	let additional_prefix: &'static str =

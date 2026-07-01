@@ -49,3 +49,8 @@ harness = false
 [features]
 simd-avx = ["symphonia/opt-simd-avx"]
 simd-neon = ["symphonia/opt-simd-neon"]
+
+[package.metadata.cargo-machete]
+ignored = [
+    "symphonia"  
+]

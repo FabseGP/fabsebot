@@ -1,4 +1,4 @@
-use std::{clone::Clone, io::Cursor, result::Result};
+use std::{clone::Clone, io::Cursor, result::Result, sync::LazyLock};
 
 use ab_glyph::{FontArc, PxScale};
 use anyhow::Result as AResult;
@@ -14,7 +14,7 @@ use imageproc::drawing::{draw_text_mut, text_size};
 use rayon::prelude::*;
 use textwrap::wrap;
 
-use crate::config::constants::{DEFAULT_THEME, EMOJI_FONT, THEMES};
+use crate::config::constants::{DEFAULT_THEME, THEMES};
 
 const QUOTE_WIDTH: u32 = 1200;
 const QUOTE_HEIGHT: u32 = 630;
@@ -32,6 +32,10 @@ const DEFAULT_WRAP_LENGTH: usize = 80;
 const FONT_SIZE_DECREMENT: f32 = 2.0;
 const WRAP_LENGTH_DECREMENT: usize = 5;
 const LINE_SPACING: u32 = 10;
+
+static EMOJI_FONT: LazyLock<FontArc> = LazyLock::new(|| {
+	FontArc::try_from_slice(include_bytes!("../../../fonts/NotoEmoji-Regular.ttf")).unwrap()
+});
 
 struct FontMetrics {
 	line_height: u32,

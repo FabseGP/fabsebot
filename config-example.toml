@@ -33,9 +33,10 @@
 #llm_host_text =
 #llm_host_tts =
 #llm_host_stt =
-#text_gen_model =
-#text_to_speech_model = 
-#speech_to_text_model =
+#text_model_small =
+#text_model_large
+#tts_model = 
+#stt =
 
 [API-Info]
 #gif_token =

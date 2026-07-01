@@ -1,7 +1,8 @@
 use anyhow::{Result as AResult, bail};
+use fabsebot_db::guild::GuildSettings;
 use serde::Serialize;
 use serenity::all::{
-	Channel, Context as SContext, CreateAttachment, CreateComponent, CreateContainer,
+	Channel, Context as SContext, CreateAttachment, CreateComponent, CreateContainer, Error,
 	ExecuteWebhook, GenericChannelId, GuildId, Message, MessageFlags, Webhook,
 };
 use tracing::warn;
@@ -19,7 +20,7 @@ pub async fn webhook_components<'a>(
 	webhook: Webhook,
 	ctx: &SContext,
 	component: &'a [CreateComponent<'a>],
-) -> AResult<()> {
+) -> Result<Option<Message>, Error> {
 	webhook
 		.execute(
 			&ctx.http,
@@ -29,9 +30,7 @@ pub async fn webhook_components<'a>(
 				.flags(MessageFlags::IS_COMPONENTS_V2)
 				.components(component),
 		)
-		.await?;
-
-	Ok(())
+		.await
 }
 
 pub async fn error_hook(ctx: &SContext, output: &str) -> AResult<()> {
@@ -46,10 +45,11 @@ pub async fn error_hook(ctx: &SContext, output: &str) -> AResult<()> {
 pub async fn spoiler_message(
 	ctx: &SContext,
 	message: &Message,
-	channel_id: Option<i64>,
+	settings: Option<&GuildSettings>,
 	data: WebhookMap,
 ) -> AResult<()> {
-	if let Some(spoiler_channel) = channel_id
+	if let Some(settings) = settings
+		&& let Some(spoiler_channel) = settings.spoiler_channel
 		&& i64::from(message.channel_id) == spoiler_channel
 	{
 		channel_counter("spoiler".to_owned());

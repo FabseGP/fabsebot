@@ -1391,7 +1391,6 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serenity",
- "songbird",
  "sqlx",
  "systemstat",
  "tokio",

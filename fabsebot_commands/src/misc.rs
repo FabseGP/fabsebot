@@ -5,9 +5,8 @@ use anyhow::{Context as _, Result as AResult};
 use fabsebot_core::{
 	config::{
 		constants::{
-			ANIMATED_QUOTE_VEC, AUTHOR_FONT, CONTENT_FONT, DEFAULT_THEME, FONTS, MESSAGE_LIMIT,
-			QUOTE_ANIMATED_FILENAME, QUOTE_STATIC_FILENAME, RANDOM_THEME, STATIC_QUOTE_VEC, THEMES,
-			TSUNDERE_REPLY,
+			ANIMATED_QUOTE_VEC, AUTHOR_FONT, CONTENT_FONT, DEFAULT_THEME, EMPTY_REPLY_MSG, FONTS,
+			MESSAGE_LIMIT, MISSING_REPLY_MSG, STATIC_QUOTE_VEC, THEMES,
 		},
 		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, utils_config},
 	},
@@ -268,7 +267,7 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	query!(
 		r#"
 		UPDATE guild_settings
-		SET global_chat = FALSE
+		SET global_chat = FALSE, global_chat_channel = NULL
 		WHERE guild_id = $1
         "#,
 		guild_id_i64,
@@ -285,8 +284,8 @@ pub async fn global_chat_end(ctx: SContext<'_>) -> Result<(), Error> {
 	prefix_command,
 	slash_command,
 	guild_only,
-	required_bot_permissions = "CONNECT | SPEAK | VIEW_CHANNEL | SEND_MESSAGES | \
-	                            SEND_MESSAGES_IN_THREADS"
+	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | \
+	                            MANAGE_WEBHOOKS"
 )]
 pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
@@ -309,14 +308,13 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 				r#"
 				SELECT EXISTS(SELECT 1 FROM guild_settings
 				WHERE guild_id != $1
-					AND global_chat IS TRUE
-					AND global_chat_channel IS NOT NULL)
+					AND global_chat IS TRUE)
 				"#,
 				guild_id_i64
 			)
-			.fetch_one(&ctx.data().db)
+			.fetch_optional(&ctx.data().db)
 			.await?
-			.unwrap_or(false);
+			.is_some();
 			if has_other_calls {
 				return Ok::<_, Error>(true);
 			}
@@ -325,19 +323,19 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 	})
 	.await;
 	let response = if result.is_ok() {
-		"Connected to global call!"
+		"Connected to global chat!"
 	} else {
 		query!(
 			r#"
-			UPDATE guild_settings SET global_chat = FALSE,
-			global_chat_channel = NULL
+			UPDATE guild_settings
+			SET global_chat = FALSE, global_chat_channel = NULL
 			WHERE guild_id = $1
 			"#,
 			guild_id_i64
 		)
 		.execute(&ctx.data().db)
 		.await?;
-		"No one joined the call within 1 minute 😢"
+		"No one joined the chat within 1 minute 😢"
 	};
 
 	message
@@ -512,15 +510,28 @@ async fn ohitsyou_internal(ctx: &SContext<'_>) -> AResult<()> {
 	let mut messages = vec![AIChatMessage::system(role), AIChatMessage::user(prompt)];
 	let guild_id = ctx.guild_id().unwrap();
 
-	let resp = match ai_response(&mut messages, ctx.serenity_context(), guild_id, None, false).await
+	let resp = match ai_response(
+		&mut messages,
+		ctx.serenity_context(),
+		guild_id,
+		None,
+		false,
+		&utils_config().fabseserver.text_model_small,
+	)
+	.await
 	{
 		Ok(resp) => resp,
 		Err(err) => {
-			ctx.reply(TSUNDERE_REPLY).await?;
+			ctx.reply(
+				"Ugh, fine. It's nice to see you again, I suppose... for now, don't get any ideas \
+				 thinking this means I actually like you or anything",
+			)
+			.await?;
 			return Err(AIError::UnexpectedResponse(err).into());
 		}
 	};
 	ctx.reply(resp).await?;
+
 	Ok(())
 }
 
@@ -568,7 +579,7 @@ impl ImageInfo {
 		author_name: String,
 		content: String,
 		is_animated: bool,
-	) -> Result<Self, Error> {
+	) -> AResult<Self> {
 		let content_font = FONTS.get(CONTENT_FONT).unwrap();
 		let author_font = FONTS.get(AUTHOR_FONT).unwrap();
 		let author_name_clone = author_name.clone();
@@ -689,9 +700,9 @@ impl ImageInfo {
 			avatar_position,
 			current_theme_name: DEFAULT_THEME.to_owned(),
 			filename: if is_animated {
-				QUOTE_ANIMATED_FILENAME
+				"quote.gif"
 			} else {
-				QUOTE_STATIC_FILENAME
+				"quote.avif"
 			}
 			.to_owned(),
 		})
@@ -720,7 +731,7 @@ impl ImageInfo {
 	}
 
 	async fn random_theme(&mut self) -> Result<(), Error> {
-		(self.img, self.text_colour) = get_theme(RANDOM_THEME);
+		(self.img, self.text_colour) = get_theme("random");
 		self.image_gen().await?;
 
 		Ok(())
@@ -1048,7 +1059,7 @@ pub async fn quote_menu(
 	#[description = "Message"] msg: Message,
 ) -> Result<(), Error> {
 	if msg.content.is_empty() {
-		ctx.reply("Bruh, this message is empty").await?;
+		ctx.reply(EMPTY_REPLY_MSG).await?;
 		return Err(InteractionError::EmptyMessage.into());
 	}
 	quote_internal(ctx, &msg, None).await?;
@@ -1069,12 +1080,12 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 		.await?;
 
 	let Some(ref reply) = msg.referenced_message else {
-		ctx.reply("Bruh, reply to a message").await?;
+		ctx.reply(MISSING_REPLY_MSG).await?;
 		return Err(InteractionError::MissingReply.into());
 	};
 
 	if reply.content.is_empty() {
-		ctx.reply("Bruh, this message is empty").await?;
+		ctx.reply(EMPTY_REPLY_MSG).await?;
 		return Err(InteractionError::EmptyMessage.into());
 	}
 
@@ -1103,6 +1114,10 @@ pub async fn respond(
 	ctx: SContext<'_>,
 	#[description = "Message"] message: Message,
 ) -> Result<(), Error> {
+	if message.content.is_empty() {
+		ctx.reply(EMPTY_REPLY_MSG).await?;
+		return Err(InteractionError::EmptyMessage.into());
+	}
 	ctx.defer().await?;
 	let role =
 		"Mock this Discord message someone posted. Just give the roast, nothing else.".to_owned();
@@ -1112,7 +1127,15 @@ pub async fn respond(
 	let mut messages = vec![AIChatMessage::system(role), AIChatMessage::user(prompt)];
 	let guild_id = ctx.guild_id().unwrap();
 
-	let resp = match ai_response(&mut messages, ctx.serenity_context(), guild_id, None, false).await
+	let resp = match ai_response(
+		&mut messages,
+		ctx.serenity_context(),
+		guild_id,
+		None,
+		false,
+		&utils_config().fabseserver.text_model_small,
+	)
+	.await
 	{
 		Ok(resp) => resp,
 		Err(err) => {

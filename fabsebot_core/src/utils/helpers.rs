@@ -16,31 +16,26 @@ use serenity::{
 		Context, CreateActionRow, CreateAllowedMentions, CreateButton, CreateComponent,
 		CreateContainer, CreateContainerComponent, CreateMediaGallery, CreateMediaGalleryItem,
 		CreateMessage, CreateSection, CreateSectionAccessory, CreateSectionComponent,
-		CreateSeparator, CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, EmojiId,
-		GuildId, Http, Member, Message, MessageFlags, Permissions, ReactionType, Role, User,
-		UserId,
+		CreateSeparator, CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, GuildId,
+		Http, Member, Message, MessageFlags, Permissions, ReactionType, Role, User, UserId,
 	},
 	builder::{CreateInteractionResponse, EditMessage},
 	collector::ComponentInteractionCollector,
-	futures::StreamExt as _,
+	futures::{StreamExt as _, channel::mpsc::TrySendError},
 	gateway::ShardRunnerMessage,
 	model::{application::ButtonStyle, id::ShardId},
 	small_fixed_array::FixedString,
 };
-use tracing::{error, warn};
+use tracing::warn;
 use winnow::{
 	ModalResult, Parser as _,
 	ascii::digit1,
-	combinator::{delimited, preceded, separated_pair},
+	combinator::{preceded, separated_pair},
 	error::{ContextError, ErrMode},
-	token::take_till,
 };
 
 use crate::{
-	config::{
-		constants::{FALLBACK_GIF, FALLBACK_GIF_TITLE, FALLBACK_WAIFU},
-		types::{EmojisMap, Error, HTTP_CLIENT, SContext, UsersMap, client_data, utils_config},
-	},
+	config::types::{Error, HTTP_CLIENT, SContext, UsersMap, client_data, utils_config},
 	errors::commands::HTTPError,
 	log_error,
 	stats::counters::METRICS,
@@ -141,12 +136,10 @@ pub fn thumbnail_section<'a>(
 	))
 }
 
-pub fn visit_page_button<'a>(url: impl Into<Cow<'a, str>>) -> CreateContainerComponent<'a> {
-	CreateContainerComponent::ActionRow(CreateActionRow::Buttons(Cow::Owned(vec![
-		CreateButton::new_link(url)
-			.label("Visit page")
-			.emoji(ReactionType::Unicode(FixedString::from_str_trunc("🌐"))),
-	])))
+pub fn visit_page_button<'a>(url: impl Into<Cow<'a, str>>) -> CreateButton<'a> {
+	CreateButton::new_link(url)
+		.label("Visit page")
+		.emoji(ReactionType::Unicode(FixedString::from_str_trunc("🌐")))
 }
 
 pub fn media_gallery<'a>(url: impl Into<Cow<'a, str>>) -> CreateContainerComponent<'a> {
@@ -249,7 +242,10 @@ pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(String, String)> {
 			let output = format!("# Failed to fetch gifs\n{error}");
 			counter!(METRICS.gifs_errors.clone()).increment(1);
 			log_error(&output, ctx).await;
-			vec![(FALLBACK_GIF.to_owned(), FALLBACK_GIF_TITLE.to_owned())]
+			vec![(
+				"https://i.postimg.cc/zffntsGs/tenor.gif".to_owned(),
+				"Sucks to be you".to_owned(),
+			)]
 		}
 	}
 }
@@ -324,58 +320,9 @@ pub async fn get_waifu(ctx: &Context) -> String {
 			let output = format!("# Failed to fetch waifu\n{error}");
 			counter!(METRICS.waifu_errors.clone()).increment(1);
 			log_error(&output, ctx).await;
-			FALLBACK_WAIFU.to_owned()
+			"https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned()
 		}
 	}
-}
-
-async fn send_emoji(
-	ctx: &Context,
-	content: &str,
-	emojis: &EmojisMap,
-	target_emoji: u64,
-) -> Option<String> {
-	let (emoji_name, emoji_id, is_animated) =
-		if let Some(app_emoji) = emojis.get(&EmojiId::new(target_emoji)) {
-			(
-				app_emoji.name.to_string(),
-				app_emoji.id,
-				app_emoji.animated(),
-			)
-		} else {
-			match get_app_emoji(ctx, target_emoji).await {
-				Ok(emoji) => emoji,
-				Err(err) => {
-					error!("{}", err);
-					return None;
-				}
-			}
-		};
-	let emoji_string = format!(
-		"<{}:{}:{}>",
-		if is_animated { "a" } else { "" },
-		emoji_name,
-		emoji_id
-	);
-	let count = content.matches(&emoji_name).count();
-	Some(emoji_string.repeat(count))
-}
-
-async fn get_app_emoji(ctx: &Context, target_emoji: u64) -> AResult<(String, EmojiId, bool)> {
-	let app_emojis = ctx.get_application_emojis().await?;
-
-	let Some(app_emoji) = app_emojis
-		.iter()
-		.find(|emoji| emoji.id.get() == target_emoji)
-	else {
-		bail!("Missing emoji");
-	};
-
-	Ok((
-		app_emoji.name.to_string(),
-		app_emoji.id,
-		app_emoji.animated(),
-	))
 }
 
 pub struct DiscordMessageLink {
@@ -384,19 +331,8 @@ pub struct DiscordMessageLink {
 	pub message: u64,
 }
 
-struct DiscordEmoji {
-	emoji_name: String,
-	emoji_id: u64,
-}
-
 fn discord_id(input: &mut &str) -> ModalResult<u64> {
 	digit1.parse_to().parse_next(input)
-}
-
-fn emoji_name(input: &mut &str) -> ModalResult<String> {
-	take_till(0.., |c| c == ':')
-		.map(ToOwned::to_owned)
-		.parse_next(input)
 }
 
 pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink> {
@@ -423,16 +359,6 @@ pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink>
 		guild,
 		channel,
 		message,
-	})
-}
-
-fn discord_emoji(input: &mut &str) -> ModalResult<DiscordEmoji> {
-	let (name, id) =
-		delimited("<:", separated_pair(emoji_name, ':', discord_id), ">").parse_next(input)?;
-
-	Ok(DiscordEmoji {
-		emoji_name: name,
-		emoji_id: id,
 	})
 }
 
@@ -634,19 +560,11 @@ where
 	Ok(())
 }
 
-fn shard_restart(shard_id: ShardId) {
-	let response = client_data().runners.get(&shard_id).map_or_else(
-		|| {
-			warn!("No shard runner found in runners map");
-			"Rip, shard doesn't exist!"
-		},
-		|runner| {
-			if let Err(err) = runner.tx.unbounded_send(ShardRunnerMessage::Restart) {
-				warn!("Failed to queue restart of shard: {:?}", err);
-				"Rip, failed to restart shard!"
-			} else {
-				"Woah shard restarted!"
-			}
-		},
-	);
+fn shard_restart(shard_id: ShardId) -> Result<(), Box<TrySendError<ShardRunnerMessage>>> {
+	if let Some(shard_runner) = client_data().runners.get(&shard_id) {
+		shard_runner
+			.tx
+			.unbounded_send(ShardRunnerMessage::Restart)?;
+	}
+	Ok(())
 }

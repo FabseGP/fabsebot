@@ -23,6 +23,7 @@ use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use serenity::{
 	all::{Attachment, Colour, CreateAttachment, CreateContainer, Member, MessageId, User},
+	builder::{CreateActionRow, CreateContainerComponent},
 	futures::StreamExt as _,
 };
 use sqlx::query_scalar;
@@ -134,7 +135,15 @@ pub async fn ai_text(
 
 	let mut messages = vec![AIChatMessage::system(role), AIChatMessage::user(chat_vec)];
 
-	let resp = match ai_response(&mut messages, ctx.serenity_context(), guild_id, None, true).await
+	let resp = match ai_response(
+		&mut messages,
+		ctx.serenity_context(),
+		guild_id,
+		None,
+		true,
+		&utils_config().fabseserver.text_model_large,
+	)
+	.await
 	{
 		Ok(resp) => resp,
 		Err(err) => {
@@ -314,7 +323,9 @@ pub async fn anime(
 			let thumbnail_section = vec![thumbnail_section(text, &entry.images.webp.image_url)];
 			let button = visit_page_button(&entry.url);
 			CreateContainer::new(thumbnail_section)
-				.add_component(button)
+				.add_component(CreateContainerComponent::ActionRow(
+					CreateActionRow::Buttons(Cow::Owned(vec![button])),
+				))
 				.accent_colour(Colour::ORANGE)
 		},
 	)
@@ -598,7 +609,9 @@ pub async fn manga(
 			let thumbnail_section = vec![thumbnail_section(text, &entry.images.webp.image_url)];
 			let button = visit_page_button(&entry.url);
 			CreateContainer::new(thumbnail_section)
-				.add_component(button)
+				.add_component(CreateContainerComponent::ActionRow(
+					CreateActionRow::Buttons(Cow::Owned(vec![button])),
+				))
 				.accent_colour(Colour::ORANGE)
 		},
 	)
@@ -643,7 +656,15 @@ async fn roast_internal(
 	let guild_id = ctx.guild_id().unwrap();
 	let mut messages = vec![AIChatMessage::system(role), user_message];
 
-	let resp = match ai_response(&mut messages, ctx.serenity_context(), guild_id, None, false).await
+	let resp = match ai_response(
+		&mut messages,
+		ctx.serenity_context(),
+		guild_id,
+		None,
+		false,
+		&utils_config().fabseserver.text_model_small,
+	)
+	.await
 	{
 		Ok(resp) => resp,
 		Err(err) => {
@@ -1033,13 +1054,15 @@ pub async fn wiki(
 		}
 	};
 
-	let button = visit_page_button(&data.content_urls.desktop.page);
+	let button = [visit_page_button(&data.content_urls.desktop.page)];
 	let text = format!("# {}\n{}", data.title, data.extract);
 	let image = data.originalimage.map_or_else(|| "https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Wikipedia-logo-v2.svg/3840px-Wikipedia-logo-v2.svg.png".to_owned(), |i| i.source);
 	let thumbnail_section = [thumbnail_section(&text, &image)];
 
 	let container = CreateContainer::new(&thumbnail_section)
-		.add_component(button)
+		.add_component(CreateContainerComponent::ActionRow(
+			CreateActionRow::Buttons(Cow::Borrowed(&button)),
+		))
 		.accent_colour(Colour::DARK_GOLD);
 
 	ctx.send(reply_container(container)).await?;

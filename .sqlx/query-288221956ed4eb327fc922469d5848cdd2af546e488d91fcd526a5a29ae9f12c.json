@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n\t\tWITH ensured_guild AS (\n\t\t\tINSERT INTO guilds (guild_id)\n\t\t\tVALUES ($1)\n\t\t\tON CONFLICT (guild_id) DO NOTHING\n\t\t)\n\t\tINSERT INTO guild_settings (guild_id)\n\t\tVALUES ($1)\n\t\tON CONFLICT (guild_id)\n\t\tDO NOTHING\n\t\t",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "288221956ed4eb327fc922469d5848cdd2af546e488d91fcd526a5a29ae9f12c"
+}

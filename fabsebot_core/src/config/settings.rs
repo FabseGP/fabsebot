@@ -25,9 +25,10 @@ pub struct ServerConfig {
 	pub llm_host_text: String,
 	pub llm_host_tts: String,
 	pub llm_host_stt: String,
-	pub text_gen_model: String,
-	pub text_to_speech_model: String,
-	pub speech_to_text_model: String,
+	pub text_model_small: String,
+	pub text_model_large: String,
+	pub tts_model: String,
+	pub stt_model: String,
 }
 
 #[derive(Deserialize)]

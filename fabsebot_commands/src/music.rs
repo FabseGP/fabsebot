@@ -1,8 +1,6 @@
-use core::time::Duration;
-
 use fabsebot_core::{
 	config::{
-		constants::{FAILED_SONG_FETCH, MISSING_METADATA_MSG, MISSING_REPLY_MSG, QUEUEING_MSG},
+		constants::{FAILED_SONG_FETCH, MISSING_REPLY_MSG, NOT_IN_VOICE_CHAN_MSG, QUEUEING_MSG},
 		types::{Error, HTTP_CLIENT, SContext},
 	},
 	errors::commands::{AIError, InteractionError, MusicError},
@@ -10,18 +8,14 @@ use fabsebot_core::{
 		ai::ai_voice,
 		helpers::{fetch_and_parse, non_empty_vec},
 		voice::{
-			TrackSignal, add_playlist, add_song, get_configured_songbird_handler, lavalink_delete,
-			lavalink_join, lavalink_play, queue_payload, remove_handler, try_voice,
+			add_playlist, add_youtube_song, lavalink_delete, lavalink_join, lavalink_play,
+			queue_payload, remove_handler, try_voice,
 		},
 	},
 };
 use poise::CreateReply;
 use serde::Deserialize;
-use serenity::{
-	all::{CreateMessage, GenericChannelId, GuildId, MessageId},
-	builder::EditMessage,
-};
-use sqlx::{query, query_scalar};
+use serenity::all::MessageId;
 use tokio::process::Command;
 use url::Url;
 
@@ -61,17 +55,15 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 	} else if let Ok(msg) = ctx
 		.channel_id()
 		.message(&ctx.http(), MessageId::new(ctx.id()))
-		.await && let Some(reply) = msg.referenced_message.map(|r| r.content)
+		.await && let Some(reply) = msg.referenced_message
+		&& !reply.content.is_empty()
 	{
-		reply.into_string()
+		reply.content.into_string()
 	} else {
 		ctx.reply(MISSING_REPLY_MSG).await?;
 		return Err(InteractionError::EmptyMessage.into());
 	};
-	let guild_id = ctx.guild_id().unwrap();
-	let handler_lock = try_voice(ctx, guild_id, false).await?;
-	let _typing = ctx.defer_or_broadcast().await;
-
+	let (_typing, _guild_id, handler_lock) = try_voice(ctx, false).await?;
 	let bytes = match ai_voice(&payload).await {
 		Ok(resp) => resp,
 		Err(err) => {
@@ -79,10 +71,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 			return Err(AIError::TTSFailed(err).into());
 		}
 	};
-
-	ctx.reply("Here we go").await?;
-
-	queue_payload(handler_lock, bytes).await;
+	queue_payload(&ctx, handler_lock, bytes).await?;
 
 	Ok(())
 }
@@ -101,9 +90,7 @@ pub async fn add_deezer_playlist(
 	#[rest]
 	playlist_id: String,
 ) -> Result<(), Error> {
-	let guild_id = ctx.guild_id().unwrap();
-	let handler_lock = try_voice(ctx, guild_id, false).await?;
-	let _typing = ctx.defer_or_broadcast().await;
+	let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
 	let payload: DeezerResponse = match fetch_and_parse(
 		HTTP_CLIENT
 			.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
@@ -123,8 +110,7 @@ pub async fn add_deezer_playlist(
 		.iter()
 		.map(|d| format!("{} {}", d.title, d.artist.name))
 		.collect();
-
-	add_playlist(ctx, i64::from(guild_id), urls, handler_lock).await?;
+	add_playlist(ctx, guild_id, urls, handler_lock).await?;
 
 	Ok(())
 }
@@ -143,9 +129,7 @@ pub async fn add_youtube_playlist(
 	#[rest]
 	playlist_url: String,
 ) -> Result<(), Error> {
-	let guild_id = ctx.guild_id().unwrap();
-	let handler_lock = try_voice(ctx, guild_id, false).await?;
-	let _typing = ctx.defer_or_broadcast().await;
+	let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
 	let yt_dlp_output = match Command::new("yt-dlp")
 		.args([
 			"--flat-playlist",
@@ -163,14 +147,12 @@ pub async fn add_youtube_playlist(
 			return Err(MusicError::FailedFetchPlaylist(err).into());
 		}
 	};
-
 	let urls: Vec<String> = String::from_utf8(yt_dlp_output.stdout)?
 		.lines()
 		.filter(|line| Url::parse(line).is_ok())
 		.map(ToString::to_string)
 		.collect();
-
-	add_playlist(ctx, i64::from(guild_id), urls, handler_lock).await?;
+	add_playlist(ctx, guild_id, urls, handler_lock).await?;
 
 	Ok(())
 }
@@ -191,11 +173,10 @@ pub async fn join_voice(
 ) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
 	if ctx.data().music_manager.get(guild_id).is_some() {
-		ctx.reply("Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection")
-			.await?;
+		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
 		return Ok(());
 	}
-	let _handler_lock = try_voice(ctx, guild_id, global).await?;
+	let (_typing, _guild_id, _handler_lock) = try_voice(ctx, global).await?;
 
 	Ok(())
 }
@@ -211,22 +192,7 @@ pub async fn join_voice(
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
 	remove_handler(ctx, guild_id).await?;
-
 	ctx.reply("Left voice channel, don't forget me").await?;
-	query!(
-		r#"
-		UPDATE guild_settings
-		SET global_call = FALSE
-		WHERE guild_id = $1
-        "#,
-		i64::from(guild_id),
-	)
-	.execute(&ctx.data().db)
-	.await?;
-
-	if let Some((_, tx)) = ctx.data().track_signals.remove(&guild_id.get()) {
-		tx.send(TrackSignal::Disconnected)?;
-	}
 
 	Ok(())
 }
@@ -245,19 +211,18 @@ pub async fn play_song(
 	#[rest]
 	url: String,
 ) -> Result<(), Error> {
-	let guild_id = ctx.guild_id().unwrap();
-	let handler_lock = try_voice(ctx, guild_id, false).await?;
+	let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
 	let reply = ctx.reply(QUEUEING_MSG).await?;
 	let msg = reply.message().await?;
-	let guild_id_i64 = i64::from(guild_id);
-	if let Err(err) = add_song(
-		&ctx.data().db,
-		guild_id_i64,
+	if let Err(err) = add_youtube_song(
+		url,
+		handler_lock,
+		guild_id,
 		i64::from(msg.id),
 		i64::from(msg.channel_id),
 		i64::from(ctx.author().id),
-		url.clone(),
-		handler_lock.clone(),
+		&ctx.data().db,
+		Some(&ctx),
 	)
 	.await
 	{
@@ -266,124 +231,6 @@ pub async fn play_song(
 			.await?;
 		return Err(err);
 	}
-
-	let is_global = query_scalar!(
-		r#"
-		SELECT global_call FROM guild_settings
-		WHERE guild_id = $1
-		"#,
-		guild_id_i64
-	)
-	.fetch_one(&ctx.data().db)
-	.await?;
-
-	if is_global {
-		let guild_global_playback = query_scalar!(
-			r#"
-			SELECT guild_id FROM guild_settings
-			WHERE global_call IS TRUE
-				AND current_voice_channel IS NOT NULL
-				AND guild_id != $1
-			LIMIT 10
-			"#,
-			guild_id_i64
-		)
-		.fetch_all(&ctx.data().db)
-		.await?;
-
-		for global_guild in guild_global_playback {
-			let Some(global_handler_lock) = ctx
-				.data()
-				.music_manager
-				.get(GuildId::new(global_guild.cast_unsigned()))
-			else {
-				continue;
-			};
-			if let Some(id) = get_configured_songbird_handler(&handler_lock)
-				.await
-				.current_channel()
-				&& let Ok(channel) = ctx
-					.http()
-					.get_channel(GenericChannelId::new(id.get()))
-					.await && let Some(guild_channel) = channel.guild()
-			{
-				let mut msg = guild_channel
-					.send_message(ctx.http(), CreateMessage::default().content(QUEUEING_MSG))
-					.await?;
-				if let Err(err) = add_song(
-					&ctx.data().db,
-					global_guild,
-					i64::from(msg.id),
-					i64::from(msg.channel_id),
-					i64::from(ctx.author().id),
-					url.clone(),
-					global_handler_lock,
-				)
-				.await
-				{
-					msg.edit(ctx.http(), EditMessage::new().content(FAILED_SONG_FETCH))
-						.await?;
-					return Err(err);
-				}
-			}
-		}
-	}
-	Ok(())
-}
-
-/// Seek current playing song
-#[poise::command(
-	prefix_command,
-	slash_command,
-	guild_only,
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
-	                            CONNECT"
-)]
-pub async fn seek_song(
-	ctx: SContext<'_>,
-	#[description = "Seconds to seek, i.e. '-20' or '+20'"] seconds: String,
-) -> Result<(), Error> {
-	let guild_id = ctx.guild_id().unwrap();
-	let handler_lock = try_voice(ctx, guild_id, false).await?;
-	let seconds_value = match seconds.parse::<i64>() {
-		Ok(value) => value,
-		Err(err) => {
-			ctx.reply("Bruh, provide a valid number with a sign (e.g. '+20' or '-20')!")
-				.await?;
-			return Err(MusicError::InvalidSeek(err).into());
-		}
-	};
-	let _typing = ctx.defer_or_broadcast().await;
-	let Some(current_playback) = get_configured_songbird_handler(&handler_lock)
-		.await
-		.queue()
-		.current()
-	else {
-		ctx.reply(MISSING_METADATA_MSG).await?;
-		return Err(MusicError::UnknownQueueTrack.into());
-	};
-	let current_playback_info = match current_playback.get_info().await {
-		Ok(info) => info,
-		Err(err) => {
-			ctx.reply("No info about current song :/").await?;
-			return Err(MusicError::MissingTrackData(err).into());
-		}
-	};
-	let current_position = current_playback_info.position;
-	let new_position = if seconds_value.is_negative() {
-		current_position.saturating_sub(Duration::from_secs(seconds_value.abs().cast_unsigned()))
-	} else {
-		current_position.saturating_add(Duration::from_secs(seconds_value.cast_unsigned()))
-	};
-	let reply = if new_position.is_zero() {
-		"Bruh, wanting to seek more seconds backwards than what have been played"
-	} else if let Err(err) = current_playback.seek_async(new_position).await {
-		ctx.reply("Failed to seek song :/").await?;
-		return Err(MusicError::FailedSeek(err).into());
-	} else {
-		"Song seeked"
-	};
-	ctx.reply(reply).await?;
 
 	Ok(())
 }

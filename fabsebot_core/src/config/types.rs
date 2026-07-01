@@ -128,7 +128,7 @@ pub struct Data {
 	pub app_emojis: EmojisMap,
 	pub state_tracker: AtomicBool,
 	pub lavalink_client: LavalinkClient,
-	pub track_signals: DashMap<u64, Sender<TrackSignal>>,
+	pub track_signals: DashMap<u64, (Sender<TrackSignal>, bool)>,
 	pub users: UsersMap,
 }
 

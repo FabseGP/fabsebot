@@ -5,7 +5,7 @@ use serenity::all::{
 	ButtonStyle, ComponentInteraction, Context as SContext, CreateActionRow, CreateButton,
 	CreateComponent, CreateContainer, CreateContainerComponent, CreateInputText,
 	CreateInteractionResponse, CreateInteractionResponseMessage, CreateLabel, CreateModal,
-	CreateModalComponent, CreateTextDisplay, GuildId, InputText, InputTextStyle, Label,
+	CreateModalComponent, CreateTextDisplay, Error, GuildId, InputText, InputTextStyle, Label,
 	LabelComponent, ModalComponent, ModalInteraction, Webhook,
 };
 
@@ -80,7 +80,7 @@ pub async fn handle_feedback_modal_reply(
 pub async fn handle_feedback_modal_button(
 	ctx: &SContext,
 	interaction: &ComponentInteraction,
-) -> AResult<()> {
+) -> Result<(), Error> {
 	let bot_name = &utils_config().bot_name;
 	interaction
 		.create_response(
@@ -108,7 +108,5 @@ pub async fn handle_feedback_modal_button(
 				]),
 			),
 		)
-		.await?;
-
-	Ok(())
+		.await
 }
