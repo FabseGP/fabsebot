@@ -46,7 +46,7 @@ use sqlx::{
 use tokio::{
 	select, spawn,
 	sync::{
-		Mutex, MutexGuard,
+		Mutex,
 		watch::{self, Receiver},
 	},
 };
@@ -224,11 +224,7 @@ impl PlaybackHandler {
 	}
 
 	async fn pause_song(handler_lock: Arc<Mutex<Call>>) -> AResult<()> {
-		let Some(current_track) = get_configured_songbird_handler(&handler_lock)
-			.await
-			.queue()
-			.current()
-		else {
+		let Some(current_track) = handler_lock.lock().await.queue().current() else {
 			return Ok(());
 		};
 		match current_track.get_info().await.map(|t| t.playing) {
@@ -254,11 +250,7 @@ impl PlaybackHandler {
 		seek_type: SeekType,
 		song_duration: i64,
 	) -> AResult<()> {
-		let Some(current_track) = get_configured_songbird_handler(&handler_lock)
-			.await
-			.queue()
-			.current()
-		else {
+		let Some(current_track) = handler_lock.lock().await.queue().current() else {
 			return Ok(());
 		};
 		let song_info = current_track.get_info().await?;
@@ -300,7 +292,7 @@ impl PlaybackHandler {
 		let bot_data: Arc<Data> = self.serenity_context.data();
 
 		if interaction.data.custom_id.ends_with('s') {
-			let handler = get_configured_songbird_handler(&handler_lock).await;
+			let handler = handler_lock.lock().await;
 			let queue = handler.queue();
 			if !queue.is_empty() {
 				queue.skip()?;
@@ -311,10 +303,7 @@ impl PlaybackHandler {
 							.music_manager
 							.get(GuildId::from(guild_id.cast_unsigned()))
 						{
-							get_configured_songbird_handler(&handler_lock)
-								.await
-								.queue()
-								.skip()?;
+							handler_lock.lock().await.queue().skip()?;
 						}
 					}
 				}
@@ -332,20 +321,14 @@ impl PlaybackHandler {
 				}
 			}
 		} else if interaction.data.custom_id.ends_with('c') {
-			get_configured_songbird_handler(&handler_lock)
-				.await
-				.queue()
-				.stop();
+			handler_lock.lock().await.queue().stop();
 			if let Some(track_guilds) = track_guilds {
 				for guild_id in track_guilds {
 					if let Some(handler_lock) = bot_data
 						.music_manager
 						.get(GuildId::from(guild_id.cast_unsigned()))
 					{
-						get_configured_songbird_handler(&handler_lock)
-							.await
-							.queue()
-							.stop();
+						handler_lock.lock().await.queue().stop();
 					}
 				}
 			}
@@ -457,10 +440,7 @@ impl PlaybackHandler {
 		let Some(handler_lock) = bot_data.music_manager.get(self.guild_id) else {
 			bail!("Not in a voice channel?");
 		};
-		let queue_size = get_configured_songbird_handler(&handler_lock)
-			.await
-			.queue()
-			.len();
+		let queue_size = handler_lock.lock().await.queue().len();
 
 		let track_data = &queue_data.track_data;
 
@@ -687,12 +667,6 @@ pub async fn add_voice_events(
 	);
 }
 
-pub async fn get_configured_songbird_handler(handler_lock: &Mutex<Call>) -> MutexGuard<'_, Call> {
-	let mut handler = handler_lock.lock().await;
-	handler.set_bitrate(Bitrate::Max);
-	handler
-}
-
 #[must_use]
 fn youtube_source(url: &str) -> bool {
 	Url::parse(url).is_ok_and(|parsed_url| {
@@ -723,7 +697,8 @@ pub async fn queue_payload(
 ) -> AResult<()> {
 	ctx.reply("Payload queued").await?;
 	let queue_data = Arc::new(QueueData::default());
-	get_configured_songbird_handler(&handler_lock)
+	handler_lock
+		.lock()
 		.await
 		.enqueue(Track::new_with_data(Input::from(payload), queue_data))
 		.await;
@@ -765,7 +740,8 @@ async fn queue_song(
 		payload_type: PayloadType::Song,
 	});
 
-	get_configured_songbird_handler(&handler_lock)
+	handler_lock
+		.lock()
 		.await
 		.enqueue(Track::new_with_uuid_and_data(input, uuid, queue_data))
 		.await;
@@ -806,6 +782,7 @@ async fn join_handler(
 			return Err(err.into());
 		}
 	};
+	handler_lock.lock().await.set_bitrate(Bitrate::Max);
 
 	Ok(handler_lock)
 }

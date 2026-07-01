@@ -22,12 +22,9 @@ use crate::{
 		constants::CONTENT_LIMIT,
 		types::{AIChatContext, AIChatMessage, AIChats, HTTP_CLIENT, utils_config},
 	},
-	utils::{
-		helpers::{
-			discord_message_link, encode_image, fetch_and_parse, get_gif, get_waifu, image_uri,
-			member_pfp, non_empty_vec, user_roles_joined,
-		},
-		voice::get_configured_songbird_handler,
+	utils::helpers::{
+		discord_message_link, encode_image, fetch_and_parse, get_gif, get_waifu, image_uri,
+		member_pfp, non_empty_vec, user_roles_joined,
 	},
 };
 
@@ -273,7 +270,8 @@ pub async fn ai_chatbot(
 			if let Some(handler_lock) = voice_handle {
 				match ai_voice(&response).await {
 					Ok(bytes) => {
-						get_configured_songbird_handler(&handler_lock)
+						handler_lock
+							.lock()
 							.await
 							.enqueue_input(Input::from(bytes))
 							.await;
