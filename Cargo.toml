@@ -71,7 +71,7 @@ image = { version = "0.25.10", default-features = false, features = ["avif", "gi
 imageproc = { version = "0.27.0", default-features = false, features = ["rayon", "text"] }
 jiff = "0.2.28"
 lavalink-rs = { git = "https://gitlab.com/FabseGP02/lavalink-rs.git", branch = "update-songbird", default-features = false, features = ["macros", "serenity", "songbird", "tungstenite-rustls-native-roots" ] }
-metrics = { version = "0.24.3" }
+metrics = "0.24.3"
 mini-moka = { git = "https://github.com/moka-rs/mini-moka.git", branch = "v0.11.x" }
 #poise = { git = "https://github.com/serenity-rs/poise.git", branch = "serenity-next" }
 poise = { git = "https://github.com/FabseGP/poise.git", branch = "update-deps" }
@@ -99,17 +99,17 @@ workspace = true
 fabsebot_commands = { path = "fabsebot_commands" }
 fabsebot_core = { path = "fabsebot_core" }
 fabsebot_db = { path = "fabsebot_db" }
-anyhow = { workspace = true }
+anyhow.workspace = true
 metrics-exporter-prometheus = { version = "0.18.1", default-features = false, features = ["http-listener"] }
 mimalloc = "0.1.52"
 tokio = { workspace = true, features = ["rt-multi-thread"] }
-tokio-metrics = { version = "0.5.0" }
+tokio-metrics = "0.5.0"
 toml = "1.1.2"
-tracing = { workspace = true }
+tracing.workspace = true
 tracing-subscriber = "0.3.23"
-fastrand = { workspace = true }
+fastrand.workspace = true
 tracing-loki-but-better = { git = "https://codeberg.org/tazz4843/tracing-loki", branch = "main", features = ["rustls"] } 
-url = { workspace = true }
+url.workspace = true
 rustls = { version = "0.23.40", default-features = false }
 
 [profile.release]
