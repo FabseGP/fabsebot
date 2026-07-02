@@ -36,7 +36,7 @@ use songbird::{
 	Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
 	Songbird, TrackEvent,
 	driver::Bitrate,
-	input::{Input, YoutubeDl, cached::Compressed},
+	input::{Compose as _, Input, LiveInput, YoutubeDl, cached::Compressed},
 	tracks::{PlayMode, Track},
 };
 use sqlx::{
@@ -1156,13 +1156,14 @@ pub async fn add_youtube_song(
 	conn: &Pool<Postgres>,
 	ctx: Option<&SContext<'_>>,
 ) -> AResult<()> {
-	let src = if youtube_source(&url) {
+	let mut src = if youtube_source(&url) {
 		YoutubeDl::new(HTTP_CLIENT.clone(), url)
 	} else {
 		YoutubeDl::new_search(HTTP_CLIENT.clone(), url)
 	};
-	let mut input = Input::from(src);
-	let metadata = input.aux_metadata().await?;
+	let audio = src.create_async().await?;
+	let metadata = src.aux_metadata().await?;
+	let input = Input::Live(LiveInput::Raw(audio), Some(Box::new(src)));
 	let compressed = Compressed::new(input, Bitrate::Max).await?;
 	let new_input = Input::from(compressed.new_handle());
 

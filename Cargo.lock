@@ -5146,7 +5146,7 @@ dependencies = [
 [[package]]
 name = "songbird"
 version = "0.6.0"
-source = "git+https://github.com/FabseGP/songbird.git?branch=update-deps#5326cedcb62f1b63828ca2d75bbf15a529c003ba"
+source = "git+https://github.com/FabseGP/songbird.git?branch=update-deps#649a95077d3acc3cc9c605a7615468d6c794742c"
 dependencies = [
  "aead",
  "aes-gcm",
