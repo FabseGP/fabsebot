@@ -36,7 +36,7 @@ use songbird::{
 	Call, CoreEvent, Event as SongBirdEvent, EventContext, EventHandler as VoiceEventHandler,
 	Songbird, TrackEvent,
 	driver::Bitrate,
-	input::{AuxMetadata, Input, YoutubeDl, cached::Compressed},
+	input::{Input, YoutubeDl, cached::Compressed},
 	tracks::{PlayMode, Track},
 };
 use sqlx::{
@@ -511,22 +511,29 @@ impl PlaybackHandler {
 
 		loop {
 			select! {
-				Some(interaction) = collector_stream.next() => {
-					self.handle_interaction(
-						interaction,
-						handler_lock.clone(),
-						&mut lyrics_shown,
-						&mut lyrics_container,
-						&mut history_shown,
-						&mut history_embed,
-						track_data,
-						track_guilds.as_ref(),
-						&full_container,
-						&primary_row,
-						&secondary_row,
-						&bot_data.users
-					)
-					.await?;
+				interaction = collector_stream.next() => {
+					match interaction {
+						Some(interaction) => {
+							self.handle_interaction(
+								interaction,
+								handler_lock.clone(),
+								&mut lyrics_shown,
+								&mut lyrics_container,
+								&mut history_shown,
+								&mut history_embed,
+								track_data,
+								track_guilds.as_ref(),
+								&full_container,
+								&primary_row,
+								&secondary_row,
+								&bot_data.users
+							)
+							.await?;
+						}
+						None => {
+							break;
+						}
+					}
 				},
 				result = receiver.changed() => {
 					match result {
@@ -574,8 +581,7 @@ impl VoiceEventHandler for PlaybackHandler {
 					continue;
 				}
 				if state.playing == PlayMode::Play {
-					let first_play = queue_data.first_play.load(Ordering::Relaxed);
-					if first_play {
+					if queue_data.first_play.swap(false, Ordering::Relaxed) {
 						let self_clone = self.clone();
 						let track_watch = bot_data
 							.track_signals
@@ -593,7 +599,6 @@ impl VoiceEventHandler for PlaybackHandler {
 								error!("Failed to update song info: {err}");
 							}
 						});
-						queue_data.first_play.store(false, Ordering::Relaxed);
 					}
 				} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
 					let track_watch = bot_data.track_signals.get(&self.guild_id.get()).unwrap();
@@ -676,7 +681,7 @@ fn youtube_source(url: &str) -> bool {
 	})
 }
 
-#[derive(PartialEq, Default)]
+#[derive(PartialEq, Default, Clone)]
 enum PayloadType {
 	Song,
 	#[default]
@@ -688,6 +693,16 @@ struct QueueData {
 	track_data: TrackPlayData,
 	first_play: AtomicBool,
 	payload_type: PayloadType,
+}
+
+impl Clone for QueueData {
+	fn clone(&self) -> Self {
+		Self {
+			track_data: self.track_data.clone(),
+			first_play: AtomicBool::new(self.first_play.load(Ordering::Relaxed)),
+			payload_type: self.payload_type.clone(),
+		}
+	}
 }
 
 pub async fn queue_payload(
@@ -707,43 +722,30 @@ pub async fn queue_payload(
 }
 
 async fn queue_song(
-	metadata: AuxMetadata,
+	queue_data: QueueData,
 	input: Input,
 	handler_lock: Arc<Mutex<Call>>,
 	guild_id: i64,
 	pool: &Pool<Postgres>,
-	message_id: i64,
-	channel_id: i64,
-	author_id: i64,
 ) -> AResult<()> {
-	let uuid = metadata
+	let uuid = queue_data
+		.track_data
 		.source_url
 		.as_ref()
 		.map_or_else(Uuid::new_v4, |url| {
 			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
 		});
 
-	insert_guild_play(uuid, &metadata, guild_id, author_id, pool).await?;
-
-	let queue_data = Arc::new(QueueData {
-		track_data: TrackPlayData {
-			title: metadata.title,
-			artist: metadata.artist,
-			source_url: metadata.source_url,
-			duration_sec: metadata.duration.map(|d| d.as_secs().cast_signed()),
-			thumbnail_url: metadata.thumbnail,
-			requested_by: author_id,
-			requested_channel: channel_id,
-			request_message_id: message_id,
-		},
-		first_play: AtomicBool::new(true),
-		payload_type: PayloadType::Song,
-	});
+	insert_guild_play(uuid, &queue_data, guild_id, pool).await?;
 
 	handler_lock
 		.lock()
 		.await
-		.enqueue(Track::new_with_uuid_and_data(input, uuid, queue_data))
+		.enqueue(Track::new_with_uuid_and_data(
+			input,
+			uuid,
+			Arc::new(queue_data),
+		))
 		.await;
 
 	Ok(())
@@ -878,7 +880,7 @@ pub async fn remove_handler(ctx: SContext<'_>, guild_id: GuildId) -> AResult<()>
 	Ok(())
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct TrackPlayData {
 	title: Option<String>,
 	artist: Option<String>,
@@ -892,9 +894,8 @@ struct TrackPlayData {
 
 async fn insert_guild_play(
 	uuid: Uuid,
-	metadata: &AuxMetadata,
+	queue_data: &QueueData,
 	guild_id: i64,
-	author_id: i64,
 	conn: &Pool<Postgres>,
 ) -> Result<PgQueryResult, Error> {
 	query!(
@@ -910,12 +911,12 @@ async fn insert_guild_play(
     	"#,
 		uuid,
 		guild_id,
-		author_id,
-		metadata.title,
-		metadata.artist,
-		metadata.source_url,
-		metadata.duration.map(|d| d.as_secs().cast_signed()),
-		metadata.thumbnail
+		queue_data.track_data.requested_by,
+		queue_data.track_data.title,
+		queue_data.track_data.artist,
+		queue_data.track_data.source_url,
+		queue_data.track_data.duration_sec,
+		queue_data.track_data.thumbnail_url
 	)
 	.execute(conn)
 	.await
@@ -1090,7 +1091,7 @@ async fn global_songs(
 	guild_id: GuildId,
 	ctx: &SContext<'_>,
 	compressed: Compressed,
-	metadata: AuxMetadata,
+	mut queue_data: QueueData,
 ) -> AResult<()> {
 	let Some(is_global) = ctx.data().track_signals.get(&guild_id.get()).map(|t| t.1) else {
 		return Ok(());
@@ -1111,31 +1112,32 @@ async fn global_songs(
 			else {
 				continue;
 			};
-			if let Some(id) = global_handler_lock.lock().await.current_channel()
-				&& let Ok(channel) = ctx
-					.http()
-					.get_channel(GenericChannelId::new(id.get()))
-					.await && let Some(guild_channel) = channel.guild()
+			let Some(channel_id) = global_handler_lock.lock().await.current_channel() else {
+				continue;
+			};
+			if let Ok(channel) = ctx
+				.http()
+				.get_channel(GenericChannelId::new(channel_id.get()))
+				.await && let Some(guild_channel) = channel.guild()
 			{
 				let mut msg = guild_channel
 					.send_message(ctx.http(), CreateMessage::default().content(QUEUEING_MSG))
 					.await?;
 				let input = Input::from(compressed.new_handle());
+				queue_data.track_data.requested_channel = i64::from(msg.channel_id);
+				queue_data.track_data.request_message_id = i64::from(msg.id);
 				if let Err(err) = queue_song(
-					metadata.clone(),
+					queue_data.clone(),
 					input,
-					global_handler_lock.clone(),
+					global_handler_lock,
 					global_guild.cast_signed(),
 					&ctx.data().db,
-					i64::from(msg.id),
-					i64::from(msg.channel_id),
-					i64::from(ctx.author().id),
 				)
 				.await
 				{
+					warn!("Failed to queue global song: {err}");
 					msg.edit(ctx.http(), EditMessage::new().content(FAILED_SONG_FETCH))
 						.await?;
-					return Err(err);
 				}
 			}
 		}
@@ -1164,20 +1166,32 @@ pub async fn add_youtube_song(
 	let compressed = Compressed::new(input, Bitrate::Max).await?;
 	let new_input = Input::from(compressed.new_handle());
 
+	let queue_data = QueueData {
+		track_data: TrackPlayData {
+			title: metadata.title,
+			artist: metadata.artist,
+			source_url: metadata.source_url,
+			duration_sec: metadata.duration.map(|d| d.as_secs().cast_signed()),
+			thumbnail_url: metadata.thumbnail,
+			requested_by: author_id,
+			requested_channel: channel_id,
+			request_message_id: msg_id,
+		},
+		first_play: AtomicBool::new(true),
+		payload_type: PayloadType::Song,
+	};
+
 	queue_song(
-		metadata.clone(),
+		queue_data.clone(),
 		new_input,
 		handler_lock,
 		i64::from(guild_id),
 		conn,
-		msg_id,
-		channel_id,
-		author_id,
 	)
 	.await?;
 
 	if let Some(ctx) = ctx {
-		global_songs(guild_id, ctx, compressed, metadata).await?;
+		global_songs(guild_id, ctx, compressed, queue_data).await?;
 	}
 
 	Ok(())
