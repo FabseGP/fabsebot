@@ -37,7 +37,7 @@ use songbird::{
 	Songbird, TrackEvent,
 	driver::Bitrate,
 	input::{Compose as _, Input, LiveInput, YoutubeDl, cached::Compressed},
-	tracks::{PlayMode, Track},
+	tracks::{LoopState, PlayMode, Track},
 };
 use sqlx::{
 	Error, Pool, Postgres, postgres::PgQueryResult, query, query_as, query_scalar,
@@ -211,6 +211,9 @@ impl PlaybackHandler {
 		]));
 
 		let additional_buttons = vec![
+			CreateButton::new(format!("{msg_id}_r"))
+				.style(ButtonStyle::Secondary)
+				.label("Enable/Disable loop"),
 			CreateButton::new(format!("{msg_id}_l"))
 				.style(ButtonStyle::Secondary)
 				.label("Show/Hide lyrics"),
@@ -238,7 +241,27 @@ impl PlaybackHandler {
 				_ => {}
 			},
 			Err(err) => {
-				warn!("Failed to get track state. {err}");
+				warn!("Failed to get track info. {err}");
+			}
+		}
+
+		Ok(())
+	}
+
+	async fn loop_song(handler_lock: Arc<Mutex<Call>>) -> AResult<()> {
+		let Some(current_track) = handler_lock.lock().await.queue().current() else {
+			return Ok(());
+		};
+		match current_track.get_info().await.map(|t| t.loops) {
+			Ok(loops) => {
+				if loops == LoopState::Infinite {
+					current_track.disable_loop()?;
+				} else {
+					current_track.enable_loop()?;
+				}
+			}
+			Err(err) => {
+				warn!("Failed to get track info. {err}");
 			}
 		}
 
@@ -421,10 +444,42 @@ impl PlaybackHandler {
 			&& let Some(duration) = track.duration_sec
 		{
 			Self::seek_song(handler_lock, SeekType::Backwards, duration).await?;
+			if let Some(track_guilds) = track_guilds {
+				for guild_id in track_guilds {
+					if let Some(handler_lock) = bot_data
+						.music_manager
+						.get(GuildId::from(guild_id.cast_unsigned()))
+					{
+						Self::seek_song(handler_lock, SeekType::Backwards, duration).await?;
+					}
+				}
+			}
 		} else if interaction.data.custom_id.ends_with('f')
 			&& let Some(duration) = track.duration_sec
 		{
 			Self::seek_song(handler_lock, SeekType::Forward, duration).await?;
+			if let Some(track_guilds) = track_guilds {
+				for guild_id in track_guilds {
+					if let Some(handler_lock) = bot_data
+						.music_manager
+						.get(GuildId::from(guild_id.cast_unsigned()))
+					{
+						Self::seek_song(handler_lock, SeekType::Forward, duration).await?;
+					}
+				}
+			}
+		} else if interaction.data.custom_id.ends_with('r') {
+			Self::loop_song(handler_lock).await?;
+			if let Some(track_guilds) = track_guilds {
+				for guild_id in track_guilds {
+					if let Some(handler_lock) = bot_data
+						.music_manager
+						.get(GuildId::from(guild_id.cast_unsigned()))
+					{
+						Self::loop_song(handler_lock).await?;
+					}
+				}
+			}
 		}
 
 		Ok(())
