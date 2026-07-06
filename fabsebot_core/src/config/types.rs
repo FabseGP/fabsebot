@@ -19,26 +19,20 @@ use serenity::{
 use songbird::Songbird;
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
-use tokio::sync::{Mutex, watch::Sender};
+use tokio::sync::{mpsc, watch::Sender};
 
 use crate::{
 	config::settings::{APIConfig, HTTPAgent, ServerConfig},
 	utils::{
-		ai::{ContentPart, ToolCall},
+		ai::{AIQueuePayload, ContentPart, ToolCall},
 		voice::TrackSignal,
 	},
 };
 
-pub type AIChats = Arc<Mutex<AIChatContext>>;
+pub type AIQueue = mpsc::Sender<AIQueuePayload>;
 
-#[derive(Default)]
 pub struct GuildCache {
-	pub ai_chats: AIChats,
-}
-
-#[derive(Default)]
-pub struct AIChatContext {
-	pub messages: Vec<AIChatMessage>,
+	pub ai_queue: AIQueue,
 }
 
 #[derive(Serialize)]

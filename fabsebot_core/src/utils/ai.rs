@@ -4,6 +4,7 @@ use anyhow::{Result as AResult, anyhow};
 use bytes::Bytes;
 use image::{ImageFormat, guess_format};
 use jiff::{Timestamp, tz::TimeZone};
+use metrics::counter;
 use reqwest::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
@@ -13,20 +14,24 @@ use serenity::{
 	small_fixed_array::FixedString,
 };
 use songbird::{Call, input::Input};
-use tokio::sync::Mutex;
-use tracing::warn;
+use tokio::sync::{Mutex, mpsc};
+use tracing::{error, warn};
 use winnow::Parser as _;
 
 use crate::{
 	config::{
 		constants::CONTENT_LIMIT,
-		types::{AIChatContext, AIChatMessage, AIChats, HTTP_CLIENT, utils_config},
+		types::{AIChatMessage, HTTP_CLIENT, utils_config},
 	},
+	log_error,
+	stats::counters::METRICS,
 	utils::helpers::{
 		discord_message_link, encode_image, fetch_and_parse, get_gif, get_waifu, image_uri,
-		member_pfp, non_empty_vec, user_roles_joined,
+		member_pfp, non_empty_vec, url_bytes, user_roles_joined,
 	},
 };
+
+type AIChats = Vec<AIChatMessage>;
 
 #[derive(Deserialize)]
 struct SearchResult {
@@ -125,19 +130,52 @@ pub fn image_content(chat_vec: &mut Vec<ContentPart>, content: &[u8]) -> AResult
 	Ok(())
 }
 
-pub async fn ai_chatbot(
+pub struct AIQueuePayload {
+	pub ctx: SContext,
+	pub message: Message,
+	pub chatbot_role: String,
+	pub guild_id: GuildId,
+	pub voice_handle: Option<Arc<Mutex<Call>>>,
+}
+
+pub async fn ai_task(mut rx: mpsc::Receiver<AIQueuePayload>) {
+	let mut conversations = AIChats::default();
+
+	while let Some(data) = rx.recv().await {
+		if let Err(error) = ai_chatbot(
+			&data.ctx,
+			&data.message,
+			data.chatbot_role,
+			data.guild_id,
+			&mut conversations,
+			data.voice_handle,
+		)
+		.await
+		{
+			let output = format!("# Failed to send AI-chat\n{error}");
+			counter!(METRICS.chatbot_errors.clone()).increment(1);
+			log_error(&output, &data.ctx).await;
+			if let Err(err) = data
+				.message
+				.reply(&data.ctx.http, "Go out and touch some grass...")
+				.await
+			{
+				error!("Failed to send message: {err}");
+			}
+		}
+	}
+}
+
+async fn ai_chatbot(
 	ctx: &SContext,
 	message: &Message,
 	chatbot_role: String,
 	guild_id: GuildId,
-	conversations: AIChats,
+	conversations: &mut AIChats,
 	voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> AResult<()> {
 	if message.content.eq_ignore_ascii_case("clear") {
-		{
-			let mut conversations = conversations.lock().await;
-			*conversations = AIChatContext::default();
-		}
+		conversations.clear();
 		message.reply(&ctx.http, "Conversation cleared!").await?;
 		return Ok(());
 	}
@@ -164,7 +202,8 @@ pub async fn ai_chatbot(
 	for attachment in &message.attachments {
 		if let Some(content_type) = attachment.content_type.as_deref()
 			&& content_type.starts_with("image")
-			&& let Err(err) = image_content(&mut chat_vec, &attachment.download().await?)
+			&& let Ok(bytes) = url_bytes(&attachment.url).await
+			&& let Err(err) = image_content(&mut chat_vec, &bytes)
 		{
 			writeln!(
 				system_content,
@@ -230,26 +269,22 @@ pub async fn ai_chatbot(
 		),
 	});
 
-	let mut conversations = conversations.lock().await;
+	if conversations.is_empty() {
+		let system_msg = AIChatMessage::system(chatbot_role);
+		conversations.push(system_msg);
+	}
+	conversations.push(AIChatMessage::user(chat_vec));
 
-	let response_opt = {
-		if conversations.messages.is_empty() {
-			let system_msg = AIChatMessage::system(chatbot_role);
-			conversations.messages.push(system_msg);
-		}
-		conversations.messages.push(AIChatMessage::user(chat_vec));
-		ai_response(
-			&mut conversations.messages,
-			ctx,
-			guild_id,
-			Some(message),
-			true,
-			&utils_config().fabseserver.text_model_large,
-		)
-		.await
-	};
-
-	match response_opt {
+	match ai_response(
+		conversations,
+		ctx,
+		guild_id,
+		Some(message),
+		true,
+		&utils_config().fabseserver.text_model_large,
+	)
+	.await
+	{
 		Ok(response) => {
 			if response.len() >= CONTENT_LIMIT {
 				let mut start = 0;
@@ -281,13 +316,10 @@ pub async fn ai_chatbot(
 					}
 				}
 			}
-			conversations
-				.messages
-				.push(AIChatMessage::assistant(response));
+			conversations.push(AIChatMessage::assistant(response));
 		}
 		Err(err) => {
-			*conversations = AIChatContext::default();
-			drop(conversations);
+			conversations.clear();
 			return Err(err);
 		}
 	}

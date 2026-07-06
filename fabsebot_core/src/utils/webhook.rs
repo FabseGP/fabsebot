@@ -1,15 +1,18 @@
 use anyhow::{Result as AResult, bail};
 use fabsebot_db::guild::GuildSettings;
 use serde::Serialize;
-use serenity::all::{
-	Channel, Context as SContext, CreateAttachment, CreateComponent, CreateContainer, Error,
-	ExecuteWebhook, GenericChannelId, GuildId, Message, MessageFlags, Webhook,
+use serenity::{
+	all::{
+		Channel, Context as SContext, CreateComponent, CreateContainer, Error, ExecuteWebhook,
+		GenericChannelId, GuildId, Message, MessageFlags, Webhook,
+	},
+	builder::CreateAttachment,
 };
 use tracing::warn;
 
 use crate::{
-	config::types::{HTTP_CLIENT, WebhookMap, utils_config},
-	utils::helpers::{channel_counter, text_display, user_pfp},
+	config::types::{WebhookMap, utils_config},
+	utils::helpers::{channel_counter, text_display, url_bytes, user_pfp},
 };
 
 const FABSEBOT_WEBHOOK_NAME: &str = "fabsebot";
@@ -53,39 +56,25 @@ pub async fn spoiler_message(
 		&& i64::from(message.channel_id) == spoiler_channel
 	{
 		channel_counter("spoiler".to_owned());
-		let avatar_url = user_pfp(&message.author);
 		let webhook = webhook_find(ctx, message.guild_id, message.channel_id, data).await?;
+		let avatar_url = user_pfp(&message.author);
 		let username = message.author.display_name();
-		for (i, payload) in message.attachments.iter().enumerate() {
-			let download_bytes = match HTTP_CLIENT
-				.get(payload.url.as_str())
-				.send()
-				.await?
-				.bytes()
-				.await
-			{
-				Ok(bytes) => bytes,
-				Err(err) => {
-					warn!("Couldn't download attachment: {err}");
-					continue;
-				}
+		let mut webhook_execute = ExecuteWebhook::default()
+			.username(username)
+			.avatar_url(avatar_url.as_str());
+		if !message.content.is_empty() {
+			webhook_execute = webhook_execute.content(message.content.as_str());
+		}
+		for attachment in &message.attachments {
+			let Ok(bytes) = url_bytes(&attachment.url).await else {
+				continue;
 			};
-
-			let attachment =
-				CreateAttachment::bytes(download_bytes, format!("SPOILER_{}", payload.filename));
-
-			let mut webhook_execute = ExecuteWebhook::default()
-				.username(username)
-				.avatar_url(avatar_url.as_str())
-				.add_file(attachment);
-
-			if i == 0 {
-				webhook_execute = webhook_execute.content(message.content.as_str());
-			}
-
-			webhook.execute(&ctx.http, false, webhook_execute).await?;
+			webhook_execute = webhook_execute.add_file(
+				CreateAttachment::bytes(bytes, attachment.filename.clone()).spoiler(true),
+			);
 		}
 
+		webhook.execute(&ctx.http, false, webhook_execute).await?;
 		message.delete(&ctx.http, None).await?;
 	}
 

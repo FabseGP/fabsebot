@@ -102,7 +102,7 @@ async fn configure_channels(
 	if let Some(spoiler_channel) = spoiler_channel_opt {
 		let spoiler_channel_id_i64 = i64::from(spoiler_channel.id());
 		set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, &ctx.data().db).await?;
-		let permissions = Permissions::MANAGE_WEBHOOKS;
+		let permissions = Permissions::MANAGE_WEBHOOKS | Permissions::MANAGE_MESSAGES;
 		correct_permissions(&ctx, guild_id, permissions).await?;
 		spoiler_channel
 			.id()

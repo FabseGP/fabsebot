@@ -8,14 +8,14 @@ use fabsebot_core::{
 			ANIMATED_QUOTE_VEC, AUTHOR_FONT, CONTENT_FONT, DEFAULT_THEME, EMPTY_REPLY_MSG, FONTS,
 			MESSAGE_LIMIT, MISSING_REPLY_MSG, STATIC_QUOTE_VEC, THEMES,
 		},
-		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, SYSTEM_STATS, utils_config},
+		types::{AIChatMessage, Error, SContext, SYSTEM_STATS, utils_config},
 	},
 	errors::commands::{AIError, GuildError, InteractionError},
 	utils::{
 		ai::{ContentPart, ai_response},
 		helpers::{
-			image_uri_fetch, media_gallery, member_pfp, reply_container, separator, text_display,
-			thumbnail_section, user_pfp,
+			image_uri, media_gallery, member_pfp, reply_container, separator, text_display,
+			thumbnail_section, url_bytes, user_pfp,
 		},
 		image::{
 			QuoteImageConfig, TextLayout, avatar_position, get_theme, quote_animated_image,
@@ -156,14 +156,18 @@ pub async fn bot_personalize(
 		.bio(bio.map(Cow::from))
 		.audit_log_reason("Requested by either an admin or mod");
 
-	if let Some(new_avatar) = avatar {
-		let data_uri = image_uri_fetch(&new_avatar).await?;
-		let encoded_avatar = DataUri::from_base64(Cow::from(data_uri))?;
+	if let Some(new_avatar) = avatar
+		&& let Ok(bytes) = url_bytes(&new_avatar).await
+		&& let Ok(uri) = image_uri(&bytes, None)
+	{
+		let encoded_avatar = DataUri::from_base64(Cow::from(uri))?;
 		edited_member = edited_member.avatar(Some(encoded_avatar));
 	}
-	if let Some(new_banner) = banner {
-		let data_uri = image_uri_fetch(&new_banner).await?;
-		let encoded_banner = DataUri::from_base64(Cow::from(data_uri))?;
+	if let Some(new_banner) = banner
+		&& let Ok(bytes) = url_bytes(&new_banner).await
+		&& let Ok(uri) = image_uri(&bytes, None)
+	{
+		let encoded_banner = DataUri::from_base64(Cow::from(uri))?;
 		edited_member = edited_member.banner(Some(encoded_banner));
 	}
 
@@ -857,13 +861,7 @@ async fn quote_internal(
 			)
 		};
 		let (avatar_image, is_animated) = (
-			HTTP_CLIENT
-				.get(&avatar_url)
-				.send()
-				.await?
-				.bytes()
-				.await?
-				.to_vec(),
+			url_bytes(&avatar_url).await?.to_vec(),
 			avatar_url.contains(".gif") || avatar_url.contains("format=gif"),
 		);
 

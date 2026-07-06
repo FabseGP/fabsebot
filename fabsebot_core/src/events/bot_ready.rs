@@ -13,15 +13,7 @@ use crate::{
 pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()> {
 	let bot_data: Arc<Data> = ctx.data();
 
-	let first_startup = bot_data.state_tracker.load(Ordering::Relaxed);
-
-	if first_startup {
-		if let Ok(app_emojis) = ctx.get_application_emojis().await {
-			for emoji in app_emojis {
-				bot_data.app_emojis.insert(emoji.id, Arc::new(emoji));
-			}
-		}
-
+	if bot_data.state_tracker.swap(false, Ordering::Relaxed) {
 		if BOT_CONTEXT.set(ctx.clone()).is_err() {
 			error!("BOT_CONTEXT already initialized");
 		}
@@ -29,8 +21,6 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 		let bot_data_clone = bot_data.clone();
 
 		spawn(async move { periodic_task(bot_data_clone).await });
-
-		bot_data.state_tracker.store(false, Ordering::Relaxed);
 	}
 
 	let user_count = ctx

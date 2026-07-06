@@ -19,7 +19,11 @@ use serenity::{
 };
 use songbird::{Call, Songbird};
 use sqlx::{Pool, Postgres, query, query_as, types::Json};
-use tokio::{sync::Mutex, task::spawn, try_join};
+use tokio::{
+	sync::{Mutex, mpsc},
+	task::spawn,
+	try_join,
+};
 use tracing::{error, warn};
 use winnow::Parser as _;
 
@@ -28,15 +32,15 @@ use crate::{
 		constants::{
 			DEFAULT_BOT_ROLE, EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, MESSAGE_LIMIT, QUEUEING_MSG,
 		},
-		types::{AIChats, Data, GuildCache, UsersMap, WebhookMap, utils_config},
+		types::{AIQueue, Data, GuildCache, UsersMap, WebhookMap, utils_config},
 	},
 	log_error,
 	stats::counters::METRICS,
 	utils::{
-		ai::ai_chatbot,
+		ai::{AIQueuePayload, ai_task},
 		helpers::{
-			channel_counter, discord_message_link, get_gif, get_user, get_waifu, media_gallery,
-			message_container, separator, text_display, thumbnail_section, user_pfp,
+			channel_counter, discord_message_link, get_emoji, get_gif, get_user, get_waifu,
+			media_gallery, message_container, separator, text_display, thumbnail_section, user_pfp,
 		},
 		voice::{add_voice_events, add_youtube_song},
 		webhook::{spoiler_message, webhook_find},
@@ -120,87 +124,96 @@ async fn easter_eggs(
 }
 
 async fn queue_track(
-	ctx: SContext,
-	new_message: Message,
+	ctx: &SContext,
+	new_message: &Message,
 	music_manager: Arc<Songbird>,
 	guild_id: GuildId,
+	settings: Option<&GuildSettings>,
 ) -> AResult<()> {
-	channel_counter("music".to_owned());
-	let handler_lock = if let Some(lock) = music_manager.get(guild_id) {
-		lock
-	} else if let Ok(voice_state) = guild_id
-		.get_user_voice_state(&ctx.http, new_message.author.id)
-		.await && let Some(channel_id) = voice_state.channel_id
-		&& let Ok(lock) = music_manager.join(guild_id, channel_id).await
+	if let Some(settings) = settings
+		&& let Some(music_channel) = settings.music_channel
+		&& i64::from(new_message.channel_id) == music_channel
+		&& !new_message.content.starts_with('#')
 	{
-		add_voice_events(&ctx, guild_id, new_message.channel_id, lock.clone(), false).await;
-		lock
-	} else {
-		new_message.reply(&ctx.http, EMPTY_VOICE_CHAN_MSG).await?;
-		return Ok(());
-	};
-	let mut msg = new_message.reply(&ctx.http, QUEUEING_MSG).await?;
-	let bot_data: Arc<Data> = ctx.data();
-	spawn(async move {
-		if let Err(err) = add_youtube_song(
-			new_message.content.into_string(),
-			handler_lock,
-			guild_id,
-			i64::from(msg.id),
-			i64::from(msg.channel_id),
-			i64::from(new_message.author.id),
-			&bot_data.db,
-			None,
-		)
-		.await
+		channel_counter("music".to_owned());
+		let handler_lock = if let Some(lock) = music_manager.get(guild_id) {
+			lock
+		} else if let Ok(voice_state) = guild_id
+			.get_user_voice_state(&ctx.http, new_message.author.id)
+			.await && let Some(channel_id) = voice_state.channel_id
+			&& let Ok(lock) = music_manager.join(guild_id, channel_id).await
 		{
-			if let Err(err) = msg
-				.edit(&ctx.http, EditMessage::new().content(FAILED_SONG_FETCH))
-				.await
+			add_voice_events(ctx, guild_id, new_message.channel_id, lock.clone(), false).await;
+			lock
+		} else {
+			new_message.reply(&ctx.http, EMPTY_VOICE_CHAN_MSG).await?;
+			return Ok(());
+		};
+		let mut msg = new_message.reply(&ctx.http, QUEUEING_MSG).await?;
+		let bot_data: Arc<Data> = ctx.data();
+		let (content, author_id) = (new_message.content.to_string(), new_message.author.id);
+		let ctx_clone = ctx.clone();
+		spawn(async move {
+			if let Err(err) = add_youtube_song(
+				content,
+				handler_lock,
+				guild_id,
+				i64::from(msg.id),
+				i64::from(msg.channel_id),
+				i64::from(author_id),
+				&bot_data.db,
+				None,
+			)
+			.await
 			{
-				error!("Failed to send message: {err}");
+				if let Err(err) = msg
+					.edit(
+						&ctx_clone.http,
+						EditMessage::new().content(FAILED_SONG_FETCH),
+					)
+					.await
+				{
+					error!("Failed to send message: {err}");
+				}
+				let output = format!("# Failed to queue song\n{err}");
+				counter!(METRICS.music_queue_errors.clone()).increment(1);
+				log_error(&output, &ctx_clone).await;
 			}
-			let output = format!("# Failed to queue song\n{err}");
-			counter!(METRICS.music_queue_errors.clone()).increment(1);
-			log_error(&output, &ctx).await;
-		}
-	});
+		});
+	}
 
 	Ok(())
 }
 
-fn ai_chats(
-	ctx: SContext,
-	new_message: Message,
-	ai_chats: AIChats,
-	music_manager: Option<Arc<Mutex<Call>>>,
+async fn ai_chats(
+	ctx: &SContext,
+	message: &Message,
+	ai_queue: AIQueue,
+	voice_handle: Option<Arc<Mutex<Call>>>,
 	guild_id: GuildId,
-	chatbot_role: String,
-) {
-	channel_counter("chatbot".to_owned());
+	settings: Option<&GuildSettings>,
+) -> AResult<()> {
+	if let Some(settings) = settings
+		&& let Some(ai_chat_channel) = settings.ai_chat_channel
+		&& i64::from(message.channel_id) == ai_chat_channel
+		&& !message.content.starts_with('#')
+	{
+		channel_counter("chatbot".to_owned());
 
-	spawn(async move {
-		if let Err(error) = ai_chatbot(
-			&ctx,
-			&new_message,
-			chatbot_role,
+		let payload = AIQueuePayload {
+			message: message.clone(),
+			chatbot_role: settings
+				.chatbot_role
+				.clone()
+				.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
 			guild_id,
-			ai_chats,
-			music_manager,
-		)
-		.await
-		{
-			let output = format!("# Failed to send AI-chat\n{error}");
-			counter!(METRICS.chatbot_errors.clone()).increment(1);
-			log_error(&output, &ctx).await;
-			if let Err(err) = new_message
-				.reply(&ctx.http, "Go out and touch some grass...")
-				.await
-			{
-				error!("Failed to send message: {err}");
-			}
-		}
-	});
+			ctx: ctx.clone(),
+			voice_handle,
+		};
+
+		ai_queue.send(payload).await?;
+	}
+	Ok(())
 }
 
 async fn global_chats(
@@ -563,20 +576,11 @@ async fn guild_queries(
 				&& let Ok(guild_emoji) = guild_id.emoji(&ctx.http, emoji_id_typed).await
 			{
 				(guild_emoji.animated(), guild_emoji.id, guild_emoji.name)
-			} else if let Some(cache_emoji) = bot_data
-				.app_emojis
-				.get(&EmojiId::new(emoji_id.cast_unsigned()))
-			{
-				(
-					cache_emoji.animated(),
-					cache_emoji.id,
-					cache_emoji.name.clone(),
-				)
 			} else {
-				match ctx.get_application_emoji(emoji_id_typed).await {
-					Ok(http_emoji) => (http_emoji.animated(), http_emoji.id, http_emoji.name),
+				match get_emoji(ctx, &bot_data.app_emojis, emoji_id_typed).await {
+					Ok(emoji) => (emoji.animated(), emoji.id, emoji.name.clone()),
 					Err(err) => {
-						error!("Failed to get app emojis: {err}");
+						error!("{err}");
 						continue;
 					}
 				}
@@ -673,7 +677,11 @@ pub async fn handle_message(
 	} else {
 		insert_guild_settings(guild_id_i64, &bot_data.db).await?;
 		insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
-		let cache = Arc::new(GuildCache::default());
+		let channel = mpsc::channel(100);
+		let cache = Arc::new(GuildCache {
+			ai_queue: channel.0,
+		});
+		spawn(async move { ai_task(channel.1).await });
 		bot_data.guilds.insert(guild_id, cache.clone());
 		cache
 	};
@@ -682,37 +690,6 @@ pub async fn handle_message(
 		fetch_guild_settings(guild_id_i64, &bot_data.db),
 		fetch_user_settings(guild_id_i64, user_id_i64, &bot_data.db)
 	)?;
-
-	if let Some(settings) = &guild_settings
-		&& !new_message.content.starts_with('#')
-	{
-		if let Some(music_channel) = settings.music_channel
-			&& i64::from(new_message.channel_id) == music_channel
-		{
-			queue_track(
-				ctx.clone(),
-				new_message.clone(),
-				bot_data.music_manager.clone(),
-				guild_id,
-			)
-			.await?;
-		}
-		if let Some(ai_chat_channel) = settings.ai_chat_channel
-			&& i64::from(new_message.channel_id) == ai_chat_channel
-		{
-			ai_chats(
-				ctx.clone(),
-				new_message.clone(),
-				guild_cache.ai_chats.clone(),
-				bot_data.music_manager.get(guild_id),
-				guild_id,
-				settings
-					.chatbot_role
-					.clone()
-					.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
-			);
-		}
-	}
 
 	let content = new_message.content.to_lowercase();
 
@@ -726,7 +703,22 @@ pub async fn handle_message(
 			guild_settings.as_ref(),
 			bot_data.channel_webhooks.clone()
 		),
-		global_chats(ctx, new_message, guild_settings.as_ref(), guild_id_i64)
+		global_chats(ctx, new_message, guild_settings.as_ref(), guild_id_i64),
+		ai_chats(
+			ctx,
+			new_message,
+			guild_cache.ai_queue.clone(),
+			bot_data.music_manager.get(guild_id),
+			guild_id,
+			guild_settings.as_ref()
+		),
+		queue_track(
+			ctx,
+			new_message,
+			bot_data.music_manager.clone(),
+			guild_id,
+			guild_settings.as_ref()
+		)
 	)?;
 
 	db_queries(

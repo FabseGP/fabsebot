@@ -2,6 +2,7 @@ use std::{borrow::Cow, io::Cursor, sync::Arc, time::Duration};
 
 use anyhow::{Result as AResult, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use bytes::Bytes;
 use fastrand::usize;
 use image::{ImageFormat, guess_format, load_from_memory};
 use metrics::counter;
@@ -23,7 +24,11 @@ use serenity::{
 	collector::ComponentInteractionCollector,
 	futures::{StreamExt as _, channel::mpsc::TrySendError},
 	gateway::ShardRunnerMessage,
-	model::{application::ButtonStyle, id::ShardId},
+	model::{
+		application::ButtonStyle,
+		guild::Emoji,
+		id::{EmojiId, ShardId},
+	},
 	small_fixed_array::FixedString,
 };
 use tracing::warn;
@@ -35,7 +40,7 @@ use winnow::{
 };
 
 use crate::{
-	config::types::{Error, HTTP_CLIENT, SContext, UsersMap, client_data, utils_config},
+	config::types::{EmojisMap, Error, HTTP_CLIENT, SContext, UsersMap, client_data, utils_config},
 	errors::commands::HTTPError,
 	log_error,
 	stats::counters::METRICS,
@@ -389,11 +394,33 @@ pub async fn get_user(http: &Http, users: &UsersMap, user_id: UserId) -> AResult
 				arc_user
 			}
 			Err(err) => {
-				bail!("Failed to fetch user: {err}");
+				bail!("Failed to fetch emoji: {err}");
 			}
 		}
 	};
 	Ok(user)
+}
+
+pub async fn get_emoji(
+	ctx: &Context,
+	emojis: &EmojisMap,
+	emoji_id: EmojiId,
+) -> AResult<Arc<Emoji>> {
+	let emoji = if let Some(emoji) = emojis.get(&emoji_id) {
+		emoji
+	} else {
+		match ctx.get_application_emoji(emoji_id).await {
+			Ok(emoji) => {
+				let arc_emoji = Arc::new(emoji);
+				emojis.insert(emoji_id, arc_emoji.clone());
+				arc_emoji
+			}
+			Err(err) => {
+				bail!("Failed to fetch user: {err}");
+			}
+		}
+	};
+	Ok(emoji)
 }
 
 pub async fn user_banner(http: &Http, users: &UsersMap, user_id: UserId) -> Option<String> {
@@ -413,11 +440,6 @@ pub fn user_roles_joined(roles: &[Role]) -> String {
 		.map(|role| role.name.as_str())
 		.intersperse(", ")
 		.collect::<String>()
-}
-
-pub async fn image_uri_fetch(url: &str) -> AResult<String> {
-	let image_bytes = HTTP_CLIENT.get(url).send().await?.bytes().await?;
-	image_uri(&image_bytes, None)
 }
 
 pub fn image_uri(content: &[u8], format: Option<&str>) -> AResult<String> {
@@ -567,4 +589,11 @@ fn shard_restart(shard_id: ShardId) -> Result<(), Box<TrySendError<ShardRunnerMe
 			.unbounded_send(ShardRunnerMessage::Restart)?;
 	}
 	Ok(())
+}
+
+pub async fn url_bytes(url: &str) -> AResult<Bytes> {
+	let data = HTTP_CLIENT.get(url).send().await?;
+	let bytes = data.bytes().await?;
+
+	Ok(bytes)
 }

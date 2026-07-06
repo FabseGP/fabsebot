@@ -14,7 +14,7 @@ use fabsebot_core::{
 		helpers::{
 			fetch_and_parse, get_gifs, get_waifu, media_gallery, member_pfp, non_empty_string,
 			non_empty_vec, paginate_container, reply_container, text_display, thumbnail_section,
-			true_bool, user_banner, user_pfp, visit_page_button,
+			true_bool, url_bytes, user_banner, user_pfp, visit_page_button,
 		},
 	},
 };
@@ -122,7 +122,8 @@ pub async fn ai_text(
 	if let Some(attachment) = attachment
 		&& let Some(content_type) = attachment.content_type.as_deref()
 		&& content_type.starts_with("image")
-		&& let Err(err) = image_content(&mut chat_vec, &attachment.download().await?)
+		&& let Ok(bytes) = url_bytes(&attachment.url).await
+		&& let Err(err) = image_content(&mut chat_vec, &bytes)
 	{
 		ctx.reply("Why you give me an invalid image format >:(")
 			.await?;

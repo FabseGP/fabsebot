@@ -4890,7 +4890,7 @@ dependencies = [
 [[package]]
 name = "serenity"
 version = "0.12.5"
-source = "git+https://github.com/serenity-rs/serenity.git?branch=next#d58eb74f3b88ab8876f5506fe973934ab1f10bf6"
+source = "git+https://github.com/serenity-rs/serenity.git?branch=next#3f603a25eac44439d11385442b612e249ca5caa2"
 dependencies = [
  "aformat",
  "arrayvec",
