@@ -29,7 +29,7 @@ serde_json.workspace = true
 serenity = { workspace = true, default-features = false, features = ["cache", "rustls_backend", "temp_cache", "transport_compression_zstd"] }
 songbird = { workspace = true, features = ["builtin-queue", "receive"] }
 sqlx = { workspace = true, default-features = false, features = ["macros", "postgres", "runtime-tokio", "time", "uuid"] }
-symphonia = { workspace = true, default-features = false, features = ["aac", "isomp4", "mkv", "pcm", "wav"] }
+symphonia = { workspace = true, features = ["aac", "isomp4", "mkv", "pcm", "wav", "ogg", "vorbis", "flac", "mp3"] }
 systemstat.workspace = true
 textwrap.workspace = true
 thiserror.workspace = true

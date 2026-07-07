@@ -6,16 +6,16 @@ use fabsebot_core::{
 	errors::commands::{AIError, InteractionError, MusicError},
 	utils::{
 		ai::ai_voice,
-		helpers::{fetch_and_parse, non_empty_vec},
+		helpers::{fetch_and_parse, non_empty_vec, url_bytes},
 		voice::{
-			add_playlist, add_youtube_song, lavalink_delete, lavalink_join, lavalink_play,
-			queue_payload, remove_handler, try_voice,
+			PayloadType, add_payload, add_playlist, add_youtube_song, lavalink_delete,
+			lavalink_join, lavalink_play, remove_handler, try_voice,
 		},
 	},
 };
 use poise::CreateReply;
 use serde::Deserialize;
-use serenity::all::MessageId;
+use serenity::{all::MessageId, model::channel::Attachment};
 use tokio::process::Command;
 use url::Url;
 
@@ -63,7 +63,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 		ctx.reply(MISSING_REPLY_MSG).await?;
 		return Err(InteractionError::EmptyMessage.into());
 	};
-	let (_typing, _guild_id, handler_lock) = try_voice(ctx, false).await?;
+	let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
 	let bytes = match ai_voice(&payload).await {
 		Ok(resp) => resp,
 		Err(err) => {
@@ -71,12 +71,19 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 			return Err(AIError::TTSFailed(err).into());
 		}
 	};
-	queue_payload(&ctx, handler_lock, bytes).await?;
+	add_payload(
+		&ctx,
+		handler_lock,
+		bytes,
+		PayloadType::TextToVoice,
+		guild_id,
+	)
+	.await?;
 
 	Ok(())
 }
 
-/// Play all songs in a playlist from Deezer
+/// Add all songs in a playlist from Deezer to queue
 #[poise::command(
 	prefix_command,
 	slash_command,
@@ -115,7 +122,7 @@ pub async fn add_deezer_playlist(
 	Ok(())
 }
 
-/// Play all songs in a playlist from ``YouTube``
+/// Add all songs in a playlist from ``YouTube`` to queue
 #[poise::command(
 	prefix_command,
 	slash_command,
@@ -197,7 +204,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 
-/// Play song / add song to queue in the current voice channel
+/// Add song to queue in the current voice channel
 #[poise::command(
 	prefix_command,
 	slash_command,
@@ -268,7 +275,7 @@ pub async fn leave_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 
-/// Play song / add song to queue in the current voice channel (lavalink)
+/// Add song to queue in the current voice channel (lavalink)
 #[poise::command(
 	prefix_command,
 	guild_only,
@@ -283,6 +290,30 @@ pub async fn play_lavalink(
 ) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
 	lavalink_play(ctx, guild_id, url).await?;
+
+	Ok(())
+}
+
+/// Add a custom audio file to queue
+#[poise::command(
+	slash_command,
+	install_context = "Guild | User",
+	interaction_context = "Guild | PrivateChannel"
+)]
+pub async fn play_file(ctx: SContext<'_>, attachment: Attachment) -> Result<(), Error> {
+	if let Some(content_type) = attachment.content_type.as_deref()
+		&& content_type.starts_with("audio")
+	{
+		let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
+		if let Ok(bytes) = url_bytes(&attachment.url).await {
+			add_payload(&ctx, handler_lock, bytes, PayloadType::Custom, guild_id).await?;
+		} else {
+			ctx.reply("Failed to fetch attachment :/").await?;
+		}
+	} else {
+		ctx.reply("Why you give me an invalid audio format >:(")
+			.await?;
+	}
 
 	Ok(())
 }

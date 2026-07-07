@@ -134,7 +134,6 @@ pub struct AIQueuePayload {
 	pub ctx: SContext,
 	pub message: Message,
 	pub chatbot_role: String,
-	pub guild_id: GuildId,
 	pub voice_handle: Option<Arc<Mutex<Call>>>,
 }
 
@@ -145,8 +144,7 @@ pub async fn ai_task(mut rx: mpsc::Receiver<AIQueuePayload>) {
 		if let Err(error) = ai_chatbot(
 			&data.ctx,
 			&data.message,
-			data.chatbot_role,
-			data.guild_id,
+			&data.chatbot_role,
 			&mut conversations,
 			data.voice_handle,
 		)
@@ -169,8 +167,7 @@ pub async fn ai_task(mut rx: mpsc::Receiver<AIQueuePayload>) {
 async fn ai_chatbot(
 	ctx: &SContext,
 	message: &Message,
-	chatbot_role: String,
-	guild_id: GuildId,
+	chatbot_role: &str,
 	conversations: &mut AIChats,
 	voice_handle: Option<Arc<Mutex<Call>>>,
 ) -> AResult<()> {
@@ -180,6 +177,7 @@ async fn ai_chatbot(
 		return Ok(());
 	}
 
+	let guild_id = message.guild_id.unwrap();
 	let typing = message
 		.channel_id
 		.start_typing(Arc::<Http>::clone(&ctx.http));
@@ -263,14 +261,14 @@ async fn ai_chatbot(
 	};
 	chat_vec.push(ContentPart::Text {
 		text: format!(
-			"[Context: {}] Message sent at {} by {author_name} (also known as {author_nick}): \
-			 {content_safe}",
-			system_content, message.timestamp,
+			"[Context: {system_content}] Message sent at {} by {author_name} (also known as \
+			 {author_nick}): {content_safe}",
+			message.timestamp,
 		),
 	});
 
 	if conversations.is_empty() {
-		let system_msg = AIChatMessage::system(chatbot_role);
+		let system_msg = AIChatMessage::system(chatbot_role.to_owned());
 		conversations.push(system_msg);
 	}
 	conversations.push(AIChatMessage::user(chat_vec));

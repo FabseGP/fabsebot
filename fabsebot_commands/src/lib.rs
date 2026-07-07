@@ -73,6 +73,7 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		music::leave_voice(),
 		music::leave_lavalink(),
 		music::play_song(),
+		music::play_file(),
 		music::play_lavalink(),
 		music::text_to_voice(),
 		settings::configure_server_settings(),

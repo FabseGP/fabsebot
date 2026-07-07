@@ -64,6 +64,7 @@ use crate::{
 	},
 	errors::commands::MusicError,
 	events::interaction::build_feedback_action_row,
+	log_error,
 	stats::counters::METRICS,
 	utils::helpers::{
 		edit_message_container, get_lyrics, get_user, reply_container, separator, text_display,
@@ -170,6 +171,7 @@ impl PlaybackHandler {
 		msg_id: MessageId,
 		metadata: &'a TrackPlayData,
 		queue_size: usize,
+		payload_type: &PayloadType,
 	) -> (
 		CreateContainerComponent<'a>,
 		CreateContainerComponent<'a>,
@@ -192,36 +194,67 @@ impl PlaybackHandler {
 
 		let thumbnail_section = thumbnail_section(text, thumbnail);
 
-		let primary_row = CreateContainerComponent::ActionRow(CreateActionRow::buttons(vec![
-			CreateButton::new(format!("{msg_id}_s"))
-				.style(ButtonStyle::Primary)
-				.label("Skip"),
+		let (primary_len, additional_len) = if *payload_type == PayloadType::Song {
+			(5, 3)
+		} else {
+			(1, 2)
+		};
+
+		let mut primary_buttons = Vec::with_capacity(primary_len);
+
+		primary_buttons.push(
 			CreateButton::new(format!("{msg_id}_p"))
 				.style(ButtonStyle::Primary)
 				.label("Pause/Unpause"),
-			CreateButton::new(format!("{msg_id}_c"))
-				.style(ButtonStyle::Primary)
-				.label("Stop & clear queue"),
-			CreateButton::new(format!("{msg_id}_f"))
-				.style(ButtonStyle::Primary)
-				.label("Seek forward 10s"),
-			CreateButton::new(format!("{msg_id}_b"))
-				.style(ButtonStyle::Primary)
-				.label("Seek backwards 10s"),
-		]));
+		);
 
-		let additional_buttons = vec![
+		if *payload_type == PayloadType::Song {
+			primary_buttons.push(
+				CreateButton::new(format!("{msg_id}_c"))
+					.style(ButtonStyle::Primary)
+					.label("Stop & clear queue"),
+			);
+			primary_buttons.push(
+				CreateButton::new(format!("{msg_id}_s"))
+					.style(ButtonStyle::Primary)
+					.label("Skip"),
+			);
+			primary_buttons.push(
+				CreateButton::new(format!("{msg_id}_f"))
+					.style(ButtonStyle::Primary)
+					.label("Seek forward 10s"),
+			);
+			primary_buttons.push(
+				CreateButton::new(format!("{msg_id}_b"))
+					.style(ButtonStyle::Primary)
+					.label("Seek backwards 10s"),
+			);
+		}
+
+		let primary_row =
+			CreateContainerComponent::ActionRow(CreateActionRow::buttons(primary_buttons));
+
+		let mut additional_buttons = Vec::with_capacity(additional_len);
+
+		additional_buttons.push(
 			CreateButton::new(format!("{msg_id}_r"))
 				.style(ButtonStyle::Secondary)
 				.label("Enable/Disable loop"),
-			CreateButton::new(format!("{msg_id}_l"))
-				.style(ButtonStyle::Secondary)
-				.label("Show/Hide lyrics"),
+		);
+		additional_buttons.push(
 			CreateButton::new(format!("{msg_id}_h"))
 				.style(ButtonStyle::Secondary)
 				.label("Show/Hide song history"),
-			visit_page_button(url),
-		];
+		);
+
+		if metadata.title.is_some() {
+			additional_buttons.push(
+				CreateButton::new(format!("{msg_id}_l"))
+					.style(ButtonStyle::Secondary)
+					.label("Show/Hide lyrics"),
+			);
+			additional_buttons.push(visit_page_button(url));
+		}
 
 		(thumbnail_section, primary_row, additional_buttons)
 	}
@@ -317,7 +350,7 @@ impl PlaybackHandler {
 		if interaction.data.custom_id.ends_with('s') {
 			let handler = handler_lock.lock().await;
 			let queue = handler.queue();
-			if !queue.is_empty() {
+			if queue.len() > 1 {
 				queue.skip()?;
 				drop(handler);
 				if let Some(track_guilds) = track_guilds {
@@ -507,10 +540,15 @@ impl PlaybackHandler {
 			.get_author_name(&self.serenity_context.http, &bot_data.users)
 			.await;
 
-		let (thumbnail_section, primary_row, additional_buttons) =
-			Self::create_components(&author_name, message_id, track_data, queue_size);
+		let (thumbnail_section, primary_row, additional_buttons) = Self::create_components(
+			&author_name,
+			message_id,
+			track_data,
+			queue_size,
+			&queue_data.payload_type,
+		);
 
-		let base_container = CreateContainer::new(vec![thumbnail_section])
+		let mut base_container = CreateContainer::new(vec![thumbnail_section])
 			.add_component(separator())
 			.accent_colour(Colour::RED);
 
@@ -608,16 +646,18 @@ impl PlaybackHandler {
 			}
 		}
 
-		let visit_button = vec![additional_buttons.get(2).unwrap().clone()];
-		let final_container = base_container.add_component(CreateContainerComponent::ActionRow(
-			CreateActionRow::buttons(visit_button),
-		));
+		if queue_data.payload_type == PayloadType::Song {
+			let visit_button = vec![additional_buttons.get(2).unwrap().clone()];
+			base_container = base_container.add_component(CreateContainerComponent::ActionRow(
+				CreateActionRow::buttons(visit_button),
+			));
+		}
 
 		channel_id
 			.edit_message(
 				&self.serenity_context.http,
 				message_id,
-				edit_message_container(final_container),
+				edit_message_container(base_container),
 			)
 			.await?;
 
@@ -632,37 +672,15 @@ impl VoiceEventHandler for PlaybackHandler {
 			let bot_data: Arc<Data> = self.serenity_context.data();
 			for (state, handle) in *tracks {
 				let queue_data: Arc<QueueData> = handle.data();
-				if queue_data.payload_type != PayloadType::Song {
-					continue;
-				}
-				if state.playing == PlayMode::Play {
-					if queue_data.first_play.swap(false, Ordering::Relaxed) {
-						let self_clone = self.clone();
-						let track_watch = bot_data
-							.track_signals
-							.get(&self.guild_id.get())
-							.unwrap()
-							.0
-							.subscribe();
-						let track_uuid = handle.uuid();
-						let queue_data_clone = queue_data.clone();
-						spawn(async move {
-							if let Err(err) = self_clone
-								.update_info(queue_data_clone, track_watch, track_uuid)
-								.await
-							{
-								error!("Failed to update song info: {err}");
-							}
-						});
-					}
-				} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
-					let track_watch = bot_data.track_signals.get(&self.guild_id.get()).unwrap();
-					if let Err(err) = track_watch.0.send(TrackSignal::Ended(handle.uuid())) {
-						error!("Failed to broadcast track ending: {err}");
-					}
-				} else if let PlayMode::Errored(error) = &state.playing {
-					error!("Failed to play track: {error}");
-					counter!(METRICS.prefix_errors.clone()).increment(1);
+				if let PlayMode::Errored(error) = &state.playing
+					&& queue_data.first_error.swap(false, Ordering::Relaxed)
+				{
+					counter!(METRICS.music_queue_errors.clone()).increment(1);
+					log_error(
+						&format!("# Failed to play track\n{error}"),
+						&self.serenity_context,
+					)
+					.await;
 					let text_display = [text_display("# Track errored on playback :/")];
 					let container =
 						CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
@@ -677,6 +695,33 @@ impl VoiceEventHandler for PlaybackHandler {
 					.await
 					{
 						error!("Failed to notify user about track error: {err}");
+					}
+				} else if queue_data.payload_type != PayloadType::TextToVoice {
+					if state.playing == PlayMode::Play {
+						if queue_data.first_play.swap(false, Ordering::Relaxed) {
+							let self_clone = self.clone();
+							let track_watch = bot_data
+								.track_signals
+								.get(&self.guild_id.get())
+								.unwrap()
+								.0
+								.subscribe();
+							let track_uuid = handle.uuid();
+							let queue_data_clone = queue_data.clone();
+							spawn(async move {
+								if let Err(err) = self_clone
+									.update_info(queue_data_clone, track_watch, track_uuid)
+									.await
+								{
+									error!("Failed to update song info: {err}");
+								}
+							});
+						}
+					} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
+						let track_watch = bot_data.track_signals.get(&self.guild_id.get()).unwrap();
+						if let Err(err) = track_watch.0.send(TrackSignal::Ended(handle.uuid())) {
+							error!("Failed to broadcast track ending: {err}");
+						}
 					}
 				}
 			}
@@ -736,17 +781,17 @@ fn youtube_source(url: &str) -> bool {
 	})
 }
 
-#[derive(PartialEq, Default, Clone)]
-enum PayloadType {
+#[derive(PartialEq, Eq, Clone)]
+pub enum PayloadType {
 	Song,
-	#[default]
 	Custom,
+	TextToVoice,
 }
 
-#[derive(Default)]
 struct QueueData {
 	track_data: TrackPlayData,
 	first_play: AtomicBool,
+	first_error: AtomicBool,
 	payload_type: PayloadType,
 }
 
@@ -755,33 +800,58 @@ impl Clone for QueueData {
 		Self {
 			track_data: self.track_data.clone(),
 			first_play: AtomicBool::new(self.first_play.load(Ordering::Relaxed)),
+			first_error: AtomicBool::new(self.first_error.load(Ordering::Relaxed)),
 			payload_type: self.payload_type.clone(),
 		}
 	}
 }
 
-pub async fn queue_payload(
+pub async fn add_payload(
 	ctx: &SContext<'_>,
 	handler_lock: Arc<Mutex<Call>>,
 	payload: Bytes,
+	payload_type: PayloadType,
+	guild_id: GuildId,
 ) -> AResult<()> {
-	ctx.reply("Payload queued").await?;
-	let queue_data = Arc::new(QueueData::default());
-	handler_lock
-		.lock()
-		.await
-		.enqueue(Track::new_with_data(Input::from(payload), queue_data))
-		.await;
+	let reply = ctx.reply("Payload queued").await?;
+	let msg = reply.message().await?;
+
+	let queue_data = QueueData {
+		track_data: TrackPlayData {
+			requested_channel: i64::from(msg.channel_id),
+			request_message_id: i64::from(msg.id),
+			requested_by: i64::from(ctx.author().id),
+			..Default::default()
+		},
+		first_error: AtomicBool::new(true),
+		first_play: AtomicBool::new(true),
+		payload_type,
+	};
+
+	let input = Input::from(payload);
+	let compressed = Compressed::new(input, Bitrate::Max).await?;
+	let new_input = Input::from(compressed.new_handle());
+
+	enqueue(
+		queue_data.clone(),
+		new_input,
+		handler_lock,
+		i64::from(guild_id),
+		None,
+	)
+	.await?;
+
+	global_queue(guild_id, ctx, compressed, queue_data).await?;
 
 	Ok(())
 }
 
-async fn queue_song(
+async fn enqueue(
 	queue_data: QueueData,
 	input: Input,
 	handler_lock: Arc<Mutex<Call>>,
 	guild_id: i64,
-	pool: &Pool<Postgres>,
+	pool: Option<&Pool<Postgres>>,
 ) -> AResult<()> {
 	let uuid = queue_data
 		.track_data
@@ -791,7 +861,9 @@ async fn queue_song(
 			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
 		});
 
-	insert_guild_play(uuid, &queue_data, guild_id, pool).await?;
+	if let Some(pool) = pool {
+		insert_guild_play(uuid, &queue_data, guild_id, pool).await?;
+	}
 
 	handler_lock
 		.lock()
@@ -1142,7 +1214,7 @@ pub async fn lavalink_play(ctx: SContext<'_>, guild_id: GuildId, input: String) 
 	Ok(())
 }
 
-async fn global_songs(
+async fn global_queue(
 	guild_id: GuildId,
 	ctx: &SContext<'_>,
 	compressed: Compressed,
@@ -1181,12 +1253,12 @@ async fn global_songs(
 				let input = Input::from(compressed.new_handle());
 				queue_data.track_data.requested_channel = i64::from(msg.channel_id);
 				queue_data.track_data.request_message_id = i64::from(msg.id);
-				if let Err(err) = queue_song(
+				if let Err(err) = enqueue(
 					queue_data.clone(),
 					input,
 					global_handler_lock,
 					global_guild.cast_signed(),
-					&ctx.data().db,
+					Some(&ctx.data().db),
 				)
 				.await
 				{
@@ -1234,20 +1306,21 @@ pub async fn add_youtube_song(
 			request_message_id: msg_id,
 		},
 		first_play: AtomicBool::new(true),
+		first_error: AtomicBool::new(true),
 		payload_type: PayloadType::Song,
 	};
 
-	queue_song(
+	enqueue(
 		queue_data.clone(),
 		new_input,
 		handler_lock,
 		i64::from(guild_id),
-		conn,
+		Some(conn),
 	)
 	.await?;
 
 	if let Some(ctx) = ctx {
-		global_songs(guild_id, ctx, compressed, queue_data).await?;
+		global_queue(guild_id, ctx, compressed, queue_data).await?;
 	}
 
 	Ok(())

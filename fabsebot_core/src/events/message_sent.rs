@@ -127,7 +127,6 @@ async fn queue_track(
 	ctx: &SContext,
 	new_message: &Message,
 	music_manager: Arc<Songbird>,
-	guild_id: GuildId,
 	settings: Option<&GuildSettings>,
 ) -> AResult<()> {
 	if let Some(settings) = settings
@@ -135,6 +134,7 @@ async fn queue_track(
 		&& i64::from(new_message.channel_id) == music_channel
 		&& !new_message.content.starts_with('#')
 	{
+		let guild_id = new_message.guild_id.unwrap();
 		channel_counter("music".to_owned());
 		let handler_lock = if let Some(lock) = music_manager.get(guild_id) {
 			lock
@@ -190,7 +190,6 @@ async fn ai_chats(
 	message: &Message,
 	ai_queue: AIQueue,
 	voice_handle: Option<Arc<Mutex<Call>>>,
-	guild_id: GuildId,
 	settings: Option<&GuildSettings>,
 ) -> AResult<()> {
 	if let Some(settings) = settings
@@ -199,18 +198,15 @@ async fn ai_chats(
 		&& !message.content.starts_with('#')
 	{
 		channel_counter("chatbot".to_owned());
-
 		let payload = AIQueuePayload {
 			message: message.clone(),
 			chatbot_role: settings
 				.chatbot_role
 				.clone()
 				.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
-			guild_id,
 			ctx: ctx.clone(),
 			voice_handle,
 		};
-
 		ai_queue.send(payload).await?;
 	}
 	Ok(())
@@ -709,14 +705,12 @@ pub async fn handle_message(
 			new_message,
 			guild_cache.ai_queue.clone(),
 			bot_data.music_manager.get(guild_id),
-			guild_id,
 			guild_settings.as_ref()
 		),
 		queue_track(
 			ctx,
 			new_message,
 			bot_data.music_manager.clone(),
-			guild_id,
 			guild_settings.as_ref()
 		)
 	)?;
