@@ -68,6 +68,7 @@ All notable changes to this project will be documented in this file.
 - Add user cache
 - Welp another refactoring
 - Add track looping
+- Add play_file-command
 
 ### 🐛 Bug Fixes
 
@@ -303,6 +304,7 @@ All notable changes to this project will be documented in this file.
 - Rename step
 - *(chore)* Update changelog
 - Formatting
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
