@@ -880,13 +880,15 @@ async fn enqueue(
 
 async fn join_container(ctx: &SContext<'_>) -> AResult<()> {
 	let playback_info = "# I've joined the party!\n## Commands:\n
-	- **/play_song**: *Queue a new song from a YouTube url or from a search*
+	- **/play_song**: *Queue a song from YouTube with an url or from a search*
+	- **/play_file**: *Queue a custom audio file*
 	- **/text_to_voice**: *Make the bot say smth either by providing an input or replying to a \
 	                     message*
 	- **/leave_voice**: *Make the bot leave the party*
-	- **/add_youtube_playlist**: *Add songs in a YouTube-playlist*
-	- **/add_deezer_playlist**: *Add songs in a Deezer-playlist*\n### NEW: *Set a music channel with \
-	                     /configure_server_settings and I'll listen to your song requests there*";
+	- **/add_youtube_playlist**: *Queue songs in a YouTube-playlist*
+	- **/add_deezer_playlist**: *Queue songs in a Deezer-playlist*\n### NEW: *Set a music channel \
+	                     with /configure_server_settings and I'll listen to your song requests \
+	                     there*";
 
 	let text = [text_display(playback_info)];
 
