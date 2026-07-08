@@ -636,7 +636,7 @@ pub async fn guild_cache(
 	insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
 
 	let ai_channel = mpsc::channel(20);
-	let music_channel = mpsc::channel(50);
+	let music_channel = mpsc::channel(5);
 	let (music_signal_tx, music_signal_rx) = watch::channel::<TrackSignal>(TrackSignal::Idle);
 	let (music_status_tx, music_status_rx) =
 		watch::channel::<ConnectionStatus>(ConnectionStatus::Disconnected);
