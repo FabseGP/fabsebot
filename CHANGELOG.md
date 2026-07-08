@@ -69,6 +69,7 @@ All notable changes to this project will be documented in this file.
 - Welp another refactoring
 - Add track looping
 - Add play_file-command
+- Migrate to lavalink... damn you bot protections!
 
 ### 🐛 Bug Fixes
 
@@ -305,6 +306,7 @@ All notable changes to this project will be documented in this file.
 - Rename step
 - *(chore)* Update changelog
 - Formatting
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
