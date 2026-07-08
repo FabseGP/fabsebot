@@ -20,7 +20,7 @@ use songbird::Songbird;
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
 use tokio::sync::{
-	mpsc,
+	Mutex, mpsc,
 	watch::{self},
 };
 use uuid::Uuid;
@@ -141,6 +141,7 @@ pub struct Data {
 	pub state_tracker: AtomicBool,
 	pub lavalink_client: LavalinkClient,
 	pub users: UsersMap,
+	pub guild_cache_lock: Arc<Mutex<()>>,
 }
 
 pub type Error = AError;

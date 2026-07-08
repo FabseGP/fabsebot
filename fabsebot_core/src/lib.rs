@@ -31,6 +31,7 @@ use tokio::{
 	select,
 	signal::unix::{SignalKind, signal},
 	spawn,
+	sync::Mutex,
 	time::interval,
 };
 use tracing::{error, warn};
@@ -228,6 +229,7 @@ pub async fn bot_start(
 			.max_capacity(CACHE_CAPACITY)
 			.time_to_idle(Duration::from_hours(CACHE_TIME_TO_IDLE_HOURS))
 			.build(),
+		guild_cache_lock: Arc::new(Mutex::new(())),
 	});
 	let additional_prefix: &'static str =
 		Box::leak(format!("hey {}", bot_config.username).into_boxed_str());

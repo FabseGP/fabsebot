@@ -621,34 +621,43 @@ pub async fn guild_cache(
 	user_id_i64: i64,
 	ctx: &Context,
 ) -> AResult<Arc<GuildCache>> {
-	let cache = if let Some(cache) = bot_data.guilds.get(&guild_id) {
-		cache
-	} else {
-		let ai_channel = mpsc::channel(20);
-		let music_channel = mpsc::channel(50);
-		let (music_signal_tx, music_signal_rx) = watch::channel::<TrackSignal>(TrackSignal::Idle);
-		let (music_status_tx, music_status_rx) =
-			watch::channel::<ConnectionStatus>(ConnectionStatus::Disconnected);
-		let cache = Arc::new(GuildCache {
-			ai_queue: ai_channel.0,
-			music_data: MusicData {
-				queue: music_channel.0,
-				global: AtomicBool::new(false),
-				track_signals: (music_signal_tx, music_signal_rx),
-				connection_signals: (music_status_tx, music_status_rx),
-			},
-		});
-		bot_data.guilds.insert(guild_id, cache.clone());
-		let ctx_clone_1 = ctx.clone();
-		let ctx_clone_2 = ctx.clone();
-		let music_manager_clone = bot_data.music_manager.clone();
-		spawn(async move { ai_task(ai_channel.1, ctx_clone_1, music_manager_clone).await });
-		spawn(async move { music_task(music_channel.1, ctx_clone_2, guild_id).await });
-		let guild_id_i64 = i64::from(guild_id);
-		insert_guild_settings(guild_id_i64, &bot_data.db).await?;
-		insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
-		cache
-	};
+	if let Some(cache) = bot_data.guilds.get(&guild_id) {
+		return Ok(cache);
+	}
+
+	let _guard = bot_data.guild_cache_lock.lock().await;
+
+	if let Some(cache) = bot_data.guilds.get(&guild_id) {
+		return Ok(cache);
+	}
+
+	let guild_id_i64 = i64::from(guild_id);
+	insert_guild_settings(guild_id_i64, &bot_data.db).await?;
+	insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
+
+	let ai_channel = mpsc::channel(20);
+	let music_channel = mpsc::channel(50);
+	let (music_signal_tx, music_signal_rx) = watch::channel::<TrackSignal>(TrackSignal::Idle);
+	let (music_status_tx, music_status_rx) =
+		watch::channel::<ConnectionStatus>(ConnectionStatus::Disconnected);
+	let cache = Arc::new(GuildCache {
+		ai_queue: ai_channel.0,
+		music_data: MusicData {
+			queue: music_channel.0,
+			global: AtomicBool::new(false),
+			track_signals: (music_signal_tx, music_signal_rx),
+			connection_signals: (music_status_tx, music_status_rx),
+		},
+	});
+
+	let ctx_clone_1 = ctx.clone();
+	let ctx_clone_2 = ctx.clone();
+	let music_manager_clone = bot_data.music_manager.clone();
+
+	spawn(async move { ai_task(ai_channel.1, ctx_clone_1, music_manager_clone).await });
+	spawn(async move { music_task(music_channel.1, ctx_clone_2, guild_id).await });
+
+	bot_data.guilds.insert(guild_id, cache.clone());
 
 	Ok(cache)
 }
