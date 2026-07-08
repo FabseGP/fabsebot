@@ -206,6 +206,7 @@ All notable changes to this project will be documented in this file.
 - Global music playback works!
 - Fetch metadata after creating audio stream (avoids calling yt-dlp again)
 - Mention play_file in join-container
+- Insert guild cache earlier
 
 ### 💼 Other
 
@@ -306,6 +307,7 @@ All notable changes to this project will be documented in this file.
 - Rename step
 - *(chore)* Update changelog
 - Formatting
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
