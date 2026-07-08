@@ -1,45 +1,20 @@
 use fabsebot_core::{
 	config::{
-		constants::{FAILED_SONG_FETCH, MISSING_REPLY_MSG, NOT_IN_VOICE_CHAN_MSG, QUEUEING_MSG},
-		types::{Error, HTTP_CLIENT, SContext},
+		constants::{FAILED_SONG_FETCH, MISSING_REPLY_MSG, QUEUEING_MSG},
+		types::{Error, SContext},
 	},
-	errors::commands::{AIError, InteractionError, MusicError},
+	errors::commands::{AIError, InteractionError},
 	utils::{
 		ai::ai_voice,
-		helpers::{fetch_and_parse, non_empty_vec, url_bytes},
+		helpers::url_bytes,
 		voice::{
-			PayloadType, add_payload, add_playlist, add_youtube_song, lavalink_delete,
-			lavalink_join, lavalink_play, remove_handler, try_voice,
+			PayloadType, add_payload, add_youtube_song, check_in_channel, lavalink_play,
+			lavalink_try_join, remove_handler, try_voice,
 		},
 	},
 };
 use poise::CreateReply;
-use serde::Deserialize;
 use serenity::{all::MessageId, model::channel::Attachment};
-use tokio::process::Command;
-use url::Url;
-
-#[derive(Deserialize)]
-struct DeezerResponse {
-	tracks: DeezerData,
-}
-
-#[derive(Deserialize)]
-struct DeezerData {
-	#[serde(deserialize_with = "non_empty_vec")]
-	data: Vec<DeezerTracks>,
-}
-
-#[derive(Deserialize)]
-struct DeezerTracks {
-	title: String,
-	artist: DeezerArtist,
-}
-
-#[derive(Deserialize)]
-struct DeezerArtist {
-	name: String,
-}
 
 /// Text to voice, duh
 #[poise::command(
@@ -83,7 +58,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 	Ok(())
 }
 
-/// Add all songs in a playlist from Deezer to queue
+/// Join the current voice channel (old implementation)
 #[poise::command(
 	prefix_command,
 	slash_command,
@@ -91,96 +66,13 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
-pub async fn add_deezer_playlist(
-	ctx: SContext<'_>,
-	#[description = "ID of the playlist in mind"]
-	#[rest]
-	playlist_id: String,
-) -> Result<(), Error> {
-	let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
-	let payload: DeezerResponse = match fetch_and_parse(
-		HTTP_CLIENT
-			.get(format!("https://api.deezer.com/playlist/{playlist_id}"))
-			.send(),
-	)
-	.await
-	{
-		Ok(resp) => resp,
-		Err(err) => {
-			ctx.reply("Invalid id for Deezer playlist").await?;
-			return Err(err);
-		}
-	};
-	let urls: Vec<String> = payload
-		.tracks
-		.data
-		.iter()
-		.map(|d| format!("{} {}", d.title, d.artist.name))
-		.collect();
-	add_playlist(ctx, guild_id, urls, handler_lock).await?;
-
-	Ok(())
-}
-
-/// Add all songs in a playlist from ``YouTube`` to queue
-#[poise::command(
-	prefix_command,
-	slash_command,
-	guild_only,
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
-	                            CONNECT"
-)]
-pub async fn add_youtube_playlist(
-	ctx: SContext<'_>,
-	#[description = "Url playlist in mind"]
-	#[rest]
-	playlist_url: String,
-) -> Result<(), Error> {
-	let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
-	let yt_dlp_output = match Command::new("yt-dlp")
-		.args([
-			"--flat-playlist",
-			"--print",
-			"url",
-			"--no-warnings",
-			&playlist_url,
-		])
-		.output()
-		.await
-	{
-		Ok(res) => res,
-		Err(err) => {
-			ctx.reply("YouTube bailed out :/").await?;
-			return Err(MusicError::FailedFetchPlaylist(err).into());
-		}
-	};
-	let urls: Vec<String> = String::from_utf8(yt_dlp_output.stdout)?
-		.lines()
-		.filter(|line| Url::parse(line).is_ok())
-		.map(ToString::to_string)
-		.collect();
-	add_playlist(ctx, guild_id, urls, handler_lock).await?;
-
-	Ok(())
-}
-
-/// Join the current voice channel
-#[poise::command(
-	prefix_command,
-	slash_command,
-	guild_only,
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
-	                            CONNECT"
-)]
-pub async fn join_voice(
+pub async fn join_voice_old(
 	ctx: SContext<'_>,
 	#[description = "Allow music playback across guilds"]
 	#[flag]
 	global: bool,
 ) -> Result<(), Error> {
-	let guild_id = ctx.guild_id().unwrap();
-	if ctx.data().music_manager.get(guild_id).is_some() {
-		ctx.reply(NOT_IN_VOICE_CHAN_MSG).await?;
+	if check_in_channel(ctx).await.is_err() {
 		return Ok(());
 	}
 	let (_typing, _guild_id, _handler_lock) = try_voice(ctx, global).await?;
@@ -198,13 +90,20 @@ pub async fn join_voice(
 )]
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
-	remove_handler(ctx, guild_id).await?;
+	if let Err(err) = remove_handler(ctx.serenity_context(), guild_id).await {
+		ctx.reply(
+			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
+			 first",
+		)
+		.await?;
+		return Err(err);
+	}
 	ctx.reply("Left voice channel, don't forget me").await?;
 
 	Ok(())
 }
 
-/// Add song to queue in the current voice channel
+/// Old implementation, prone to blocking from YouTube
 #[poise::command(
 	prefix_command,
 	slash_command,
@@ -212,7 +111,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
-pub async fn play_song(
+pub async fn play_song_old(
 	ctx: SContext<'_>,
 	#[description = "YouTube link or query to search"]
 	#[rest]
@@ -242,54 +141,59 @@ pub async fn play_song(
 	Ok(())
 }
 
-/// Join the current voice channel (lavalink)
+/// Join the current voice channel
 #[poise::command(
 	prefix_command,
+	slash_command,
 	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
-pub async fn join_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = ctx.guild_id().unwrap();
-	if ctx.data().music_manager.get(guild_id).is_some() {
-		ctx.reply("Bruh, I'm already in a voice channel! Use /leave_voice to drop the connection")
-			.await?;
+pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
+	let Ok(guild_id) = check_in_channel(ctx).await else {
 		return Ok(());
-	}
-	lavalink_join(ctx, guild_id).await?;
-	Ok(())
-}
-
-/// Leave the current voice channel (lavalink)
-#[poise::command(
-	prefix_command,
-	guild_only,
-	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | CONNECT \
-	                            | SPEAK"
-)]
-pub async fn leave_lavalink(ctx: SContext<'_>) -> Result<(), Error> {
-	let guild_id = ctx.guild_id().unwrap();
-	remove_handler(ctx, guild_id).await?;
-	lavalink_delete(ctx, guild_id).await?;
+	};
+	let (_typing, _player_context) =
+		lavalink_try_join(ctx.serenity_context(), guild_id, ctx.author().id, Some(ctx)).await?;
 
 	Ok(())
 }
 
-/// Add song to queue in the current voice channel (lavalink)
+/// Add song(s) to queue in the current voice channel
 #[poise::command(
 	prefix_command,
+	slash_command,
 	guild_only,
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS | SPEAK | \
 	                            CONNECT"
 )]
-pub async fn play_lavalink(
+pub async fn play_song(
 	ctx: SContext<'_>,
-	#[description = "YouTube link or query to search"]
+	#[description = "YouTube link to song or playlist OR query to search"]
 	#[rest]
 	url: String,
 ) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
-	lavalink_play(ctx, guild_id, url).await?;
+	let (_typing, player_context) =
+		lavalink_try_join(ctx.serenity_context(), guild_id, ctx.author().id, Some(ctx)).await?;
+	let reply = ctx.reply(QUEUEING_MSG).await?;
+	let msg = reply.message().await?;
+	if let Err(err) = lavalink_play(
+		ctx.serenity_context(),
+		guild_id,
+		i64::from(msg.id),
+		i64::from(msg.channel_id),
+		i64::from(ctx.author().id),
+		url,
+		player_context,
+	)
+	.await
+	{
+		reply
+			.edit(ctx, CreateReply::new().content(FAILED_SONG_FETCH))
+			.await?;
+		return Err(err);
+	}
 
 	Ok(())
 }

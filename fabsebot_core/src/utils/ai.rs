@@ -13,7 +13,7 @@ use serenity::{
 	nonmax::NonMaxU16,
 	small_fixed_array::FixedString,
 };
-use songbird::{Call, input::Input};
+use songbird::{Call, Songbird, input::Input};
 use tokio::sync::{Mutex, mpsc};
 use tracing::{error, warn};
 use winnow::Parser as _;
@@ -131,31 +131,33 @@ pub fn image_content(chat_vec: &mut Vec<ContentPart>, content: &[u8]) -> AResult
 }
 
 pub struct AIQueuePayload {
-	pub ctx: SContext,
 	pub message: Message,
 	pub chatbot_role: String,
-	pub voice_handle: Option<Arc<Mutex<Call>>>,
 }
 
-pub async fn ai_task(mut rx: mpsc::Receiver<AIQueuePayload>) {
+pub async fn ai_task(
+	mut rx: mpsc::Receiver<AIQueuePayload>,
+	ctx: SContext,
+	music_manager: Arc<Songbird>,
+) {
 	let mut conversations = AIChats::default();
 
 	while let Some(data) = rx.recv().await {
 		if let Err(error) = ai_chatbot(
-			&data.ctx,
+			&ctx,
 			&data.message,
 			&data.chatbot_role,
 			&mut conversations,
-			data.voice_handle,
+			music_manager.get(data.message.guild_id.unwrap()),
 		)
 		.await
 		{
 			let output = format!("# Failed to send AI-chat\n{error}");
 			counter!(METRICS.chatbot_errors.clone()).increment(1);
-			log_error(&output, &data.ctx).await;
+			log_error(&output, &ctx).await;
 			if let Err(err) = data
 				.message
-				.reply(&data.ctx.http, "Go out and touch some grass...")
+				.reply(&ctx.http, "Go out and touch some grass...")
 				.await
 			{
 				error!("Failed to send message: {err}");

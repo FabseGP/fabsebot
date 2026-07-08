@@ -19,20 +19,38 @@ use serenity::{
 use songbird::Songbird;
 use sqlx::PgPool;
 use systemstat::{Platform as _, System};
-use tokio::sync::{mpsc, watch::Sender};
+use tokio::sync::{
+	mpsc,
+	watch::{self},
+};
+use uuid::Uuid;
 
 use crate::{
 	config::settings::{APIConfig, HTTPAgent, ServerConfig},
 	utils::{
 		ai::{AIQueuePayload, ContentPart, ToolCall},
-		voice::TrackSignal,
+		voice::{ConnectionStatus, QueueData, TrackSignal},
 	},
 };
 
 pub type AIQueue = mpsc::Sender<AIQueuePayload>;
 
+pub type MusicQueueData = (Arc<QueueData>, Option<Uuid>, Option<String>);
+pub type MusicQueue = mpsc::Sender<MusicQueueData>;
+
+pub struct MusicData {
+	pub queue: MusicQueue,
+	pub global: AtomicBool,
+	pub track_signals: (watch::Sender<TrackSignal>, watch::Receiver<TrackSignal>),
+	pub connection_signals: (
+		watch::Sender<ConnectionStatus>,
+		watch::Receiver<ConnectionStatus>,
+	),
+}
+
 pub struct GuildCache {
 	pub ai_queue: AIQueue,
+	pub music_data: MusicData,
 }
 
 #[derive(Serialize)]
@@ -122,7 +140,6 @@ pub struct Data {
 	pub app_emojis: EmojisMap,
 	pub state_tracker: AtomicBool,
 	pub lavalink_client: LavalinkClient,
-	pub track_signals: DashMap<u64, (Sender<TrackSignal>, bool)>,
 	pub users: UsersMap,
 }
 

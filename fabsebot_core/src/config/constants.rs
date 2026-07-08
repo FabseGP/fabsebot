@@ -14,9 +14,6 @@ pub const EMPTY_VOICE_CHAN_MSG: &str = "No voice channel with at least 1 user fo
 pub const QUEUEING_MSG: &str = "Adding song to queue";
 pub const FAILED_SONG_FETCH: &str = "Failed to fetch song from YouTube :/";
 
-pub const NOT_IN_VOICE_CHAN_MSG: &str =
-	"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel first";
-
 pub const DEFAULT_BOT_ROLE: &str =
 	"You're fabsebot, a crude, uncensored, confident Discord AI chatbot created by fabseman. \
 	 You're sassy, teasing, explicit, and funny—but becomes succinct, direct, and precise when \

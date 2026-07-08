@@ -1,8 +1,14 @@
-use std::{borrow::Cow, io::Cursor, sync::Arc, time::Duration};
+use std::{
+	borrow::Cow,
+	io::Cursor,
+	sync::{Arc, atomic::AtomicBool},
+	time::Duration,
+};
 
 use anyhow::{Result as AResult, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
+use fabsebot_db::{guild::insert_guild_settings, user::insert_user_settings};
 use fastrand::usize;
 use image::{ImageFormat, guess_format, load_from_memory};
 use metrics::counter;
@@ -31,6 +37,10 @@ use serenity::{
 	},
 	small_fixed_array::FixedString,
 };
+use tokio::{
+	spawn,
+	sync::{mpsc, watch},
+};
 use tracing::warn;
 use winnow::{
 	ModalResult, Parser as _,
@@ -40,10 +50,17 @@ use winnow::{
 };
 
 use crate::{
-	config::types::{EmojisMap, Error, HTTP_CLIENT, SContext, UsersMap, client_data, utils_config},
+	config::types::{
+		Data, EmojisMap, Error, GuildCache, HTTP_CLIENT, MusicData, SContext, UsersMap,
+		client_data, utils_config,
+	},
 	errors::commands::HTTPError,
 	log_error,
 	stats::counters::METRICS,
+	utils::{
+		ai::ai_task,
+		voice::{ConnectionStatus, TrackSignal, music_task},
+	},
 };
 
 const DISCORD_CHANNEL_DEFAULT_PREFIX: &str = "https://discord.com/channels/";
@@ -596,4 +613,40 @@ pub async fn url_bytes(url: &str) -> AResult<Bytes> {
 	let bytes = data.bytes().await?;
 
 	Ok(bytes)
+}
+
+pub async fn guild_cache(
+	bot_data: Arc<Data>,
+	guild_id: GuildId,
+	user_id_i64: i64,
+	ctx: &Context,
+) -> AResult<Arc<GuildCache>> {
+	if let Some(cache) = bot_data.guilds.get(&guild_id) {
+		Ok(cache)
+	} else {
+		let guild_id_i64 = i64::from(guild_id);
+		insert_guild_settings(guild_id_i64, &bot_data.db).await?;
+		insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
+		let ai_channel = mpsc::channel(20);
+		let music_channel = mpsc::channel(10);
+		let (music_signal_tx, music_signal_rx) = watch::channel::<TrackSignal>(TrackSignal::Idle);
+		let (music_status_tx, music_status_rx) =
+			watch::channel::<ConnectionStatus>(ConnectionStatus::Disconnected);
+		let cache = Arc::new(GuildCache {
+			ai_queue: ai_channel.0,
+			music_data: MusicData {
+				queue: music_channel.0,
+				global: AtomicBool::new(false),
+				track_signals: (music_signal_tx, music_signal_rx),
+				connection_signals: (music_status_tx, music_status_rx),
+			},
+		});
+		let ctx_clone_1 = ctx.clone();
+		let ctx_clone_2 = ctx.clone();
+		let music_manager_clone = bot_data.music_manager.clone();
+		spawn(async move { ai_task(ai_channel.1, ctx_clone_1, music_manager_clone).await });
+		spawn(async move { music_task(music_channel.1, ctx_clone_2, guild_id).await });
+		bot_data.guilds.insert(guild_id, cache.clone());
+		Ok(cache)
+	}
 }

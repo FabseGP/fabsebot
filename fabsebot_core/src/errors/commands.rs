@@ -1,5 +1,3 @@
-use std::io::Error as IOError;
-
 use anyhow::Error as AError;
 use base64::DecodeError as DError;
 use reqwest::Error as RError;
@@ -43,12 +41,4 @@ pub enum AIError {
 	TTSFailed(#[source] RError),
 	#[error("Unexpected response: {0}")]
 	UnexpectedResponse(#[source] AError),
-}
-
-#[derive(Error, Debug)]
-pub enum MusicError {
-	#[error("Failed to fetch YouTube-playlist: {0}")]
-	FailedFetchPlaylist(#[source] IOError),
-	#[error("Not in voice channel")]
-	NotInVoiceChan,
 }
