@@ -207,6 +207,7 @@ All notable changes to this project will be documented in this file.
 - Fetch metadata after creating audio stream (avoids calling yt-dlp again)
 - Mention play_file in join-container
 - Insert guild cache earlier
+- Serialize guild_cache-func
 
 ### 💼 Other
 
@@ -307,6 +308,7 @@ All notable changes to this project will be documented in this file.
 - Rename step
 - *(chore)* Update changelog
 - Formatting
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
