@@ -210,6 +210,7 @@ All notable changes to this project will be documented in this file.
 - Serialize guild_cache-func
 - Reduce music channel size
 - Clean urls with &pp= parameter
+- Cleanup lavalink player on disconnect
 
 ### 💼 Other
 
@@ -310,6 +311,7 @@ All notable changes to this project will be documented in this file.
 - Rename step
 - *(chore)* Update changelog
 - Formatting
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
