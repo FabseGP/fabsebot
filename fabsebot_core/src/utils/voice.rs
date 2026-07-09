@@ -89,22 +89,27 @@ impl DriverDisconnectHandler {
 impl VoiceEventHandler for DriverDisconnectHandler {
 	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
 		if let EventContext::DriverDisconnect(disconnect_data) = ctx {
-			self.bot_data
+			if let Err(err) = self
+				.bot_data
 				.music_manager
 				.remove(disconnect_data.guild_id)
 				.await
-				.ok()?;
+			{
+				error!("Failed to remove call: {err}");
+			}
 			let guild_cache = self
 				.bot_data
 				.guilds
 				.get(&GuildId::from(disconnect_data.guild_id.get()))
 				.unwrap();
-			guild_cache
+			if let Err(err) = guild_cache
 				.music_data
 				.connection_signals
 				.0
 				.send(ConnectionStatus::Disconnected)
-				.ok()?;
+			{
+				error!("Failed to notify about disconnect: {err}");
+			}
 		}
 		None
 	}
@@ -132,14 +137,17 @@ impl VoiceEventHandler for ClientDisconnectHandler {
 			let user_id = UserId::new(client_data.user_id.0);
 			match user_id.to_user(&self.serenity_context.http).await {
 				Ok(user) => {
-					self.channel_id
+					if let Err(err) = self
+						.channel_id
 						.send_message(
 							&self.serenity_context.http,
 							CreateMessage::default()
 								.content(format!("Bye {}", user.display_name())),
 						)
 						.await
-						.ok()?;
+					{
+						error!("Failed to send message: {err}");
+					}
 				}
 				Err(err) => {
 					warn!("Failed to fetch user: {err}");
@@ -709,7 +717,7 @@ async fn update_info(
 						break;
 					}
 					Ok(()) => {
-						match &*track_receiver.borrow() {
+						match &*track_receiver.borrow_and_update() {
 							TrackSignal::Ended(uuid)
 								if let Some(track_uuid) = track_uuid
 									&& uuid == &track_uuid =>
@@ -734,7 +742,7 @@ async fn update_info(
 						break;
 					}
 					Ok(()) => {
-						if *status_receiver.borrow() == ConnectionStatus::Disconnected {
+						if *status_receiver.borrow_and_update() == ConnectionStatus::Disconnected {
 							break;
 						}
 					}
@@ -1103,15 +1111,19 @@ pub async fn try_voice(
 ) -> AResult<(Option<Typing>, GuildId, Arc<Mutex<Call>>)> {
 	let typing = ctx.defer_or_broadcast().await?;
 	let guild_id = ctx.guild_id().unwrap();
+	let player_context_opt = ctx
+		.data()
+		.lavalink_client
+		.get_player_context(guild_id)
+		.is_none();
 	let handler_lock = if let Some(lock) = ctx.data().music_manager.get(guild_id)
-		&& ctx
-			.data()
-			.lavalink_client
-			.get_player_context(guild_id)
-			.is_none()
+		&& player_context_opt
 	{
 		lock
 	} else {
+		if !player_context_opt {
+			ctx.data().lavalink_client.delete_player(guild_id).await?;
+		}
 		let handler_lock = voice_channel(ctx, guild_id).await?;
 		let guild_cache = guild_cache(
 			ctx.data(),
@@ -1129,7 +1141,7 @@ pub async fn try_voice(
 			ctx.channel_id(),
 			handler_lock.clone(),
 			global,
-			guild_cache,
+			guild_cache.clone(),
 		)
 		.await?;
 		if global {
@@ -1153,6 +1165,15 @@ pub async fn try_voice(
 pub async fn remove_handler(ctx: &SerenityContext, guild_id: GuildId) -> AResult<()> {
 	let bot_data: Arc<Data> = ctx.data();
 	bot_data.music_manager.remove(guild_id).await?;
+
+	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
+
+	let tx = guild_cache.music_data.connection_signals.0.clone();
+
+	if !tx.is_closed() {
+		tx.send(ConnectionStatus::Disconnected)?;
+	}
+
 	if bot_data
 		.lavalink_client
 		.get_player_context(guild_id)
@@ -1160,8 +1181,6 @@ pub async fn remove_handler(ctx: &SerenityContext, guild_id: GuildId) -> AResult
 	{
 		bot_data.lavalink_client.delete_player(guild_id).await?;
 	}
-
-	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
 
 	if guild_cache.music_data.global.load(Ordering::Relaxed) {
 		query!(
@@ -1174,12 +1193,6 @@ pub async fn remove_handler(ctx: &SerenityContext, guild_id: GuildId) -> AResult
 		)
 		.execute(&bot_data.db)
 		.await?;
-	}
-
-	let tx = guild_cache.music_data.connection_signals.0.clone();
-
-	if !tx.is_closed() {
-		tx.send(ConnectionStatus::Disconnected)?;
 	}
 
 	Ok(())
@@ -1301,6 +1314,7 @@ pub async fn setup_lavalink(host: String, password: String, bot_id: LavaUserId) 
 	let events = events::Events {
 		track_start: Some(track_start),
 		track_end: Some(track_end),
+		player_update: Some(player_update),
 		..Default::default()
 	};
 
@@ -1397,7 +1411,7 @@ pub async fn lavalink_play(
 	let bot_data: Arc<Data> = ctx.data();
 	let lava_client = bot_data.lavalink_client.clone();
 	let query = if youtube_source(input) {
-		if input.contains("playlist?list") {
+		if input.contains("playlist?list=") {
 			input
 		} else {
 			let clean_url = input.split_once("&pp=").map_or(input, |(b, _)| b);
@@ -1498,6 +1512,42 @@ pub async fn track_end(_client: LavalinkClient, _session_id: String, event: &eve
 		.send(TrackSignal::Finished(event.track.info.identifier.clone()))
 	{
 		error!("Failed to broadcast track ending: {err}");
+	}
+}
+
+#[hook]
+pub async fn player_update(
+	client: LavalinkClient,
+	_session_id: String,
+	event: &events::PlayerUpdate,
+) {
+	if !event.state.connected {
+		let bot_data: Arc<Data> = bot_context().data();
+		let guild_id = GuildId::from(event.guild_id.0);
+		let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
+		if *guild_cache.music_data.connection_signals.1.borrow()
+			== ConnectionStatus::LavalinkConnected
+			&& bot_data.music_manager.get(guild_id).is_some()
+			&& bot_data
+				.lavalink_client
+				.get_player_context(guild_id)
+				.is_some()
+		{
+			if let Err(err) = bot_data.music_manager.remove(guild_id).await {
+				error!("Failed to remove call: {err}");
+			}
+			if let Err(err) = client.delete_player(event.guild_id).await {
+				error!("Failed to delete player: {err}");
+			}
+			if let Err(err) = guild_cache
+				.music_data
+				.connection_signals
+				.0
+				.send(ConnectionStatus::Disconnected)
+			{
+				error!("Failed to notify about disconnection: {err}");
+			}
+		}
 	}
 }
 
