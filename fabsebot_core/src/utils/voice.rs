@@ -1529,10 +1529,7 @@ pub async fn player_update(
 		if *guild_cache.music_data.connection_signals.1.borrow()
 			== ConnectionStatus::LavalinkConnected
 			&& bot_data.music_manager.get(guild_id).is_some()
-			&& bot_data
-				.lavalink_client
-				.get_player_context(guild_id)
-				.is_some()
+			&& client.get_player_context(event.guild_id).is_some()
 		{
 			if let Err(err) = bot_data.music_manager.remove(guild_id).await {
 				error!("Failed to remove call: {err}");
