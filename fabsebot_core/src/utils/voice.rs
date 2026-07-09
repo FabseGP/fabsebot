@@ -1164,7 +1164,6 @@ pub async fn try_voice(
 
 pub async fn remove_handler(ctx: &SerenityContext, guild_id: GuildId) -> AResult<()> {
 	let bot_data: Arc<Data> = ctx.data();
-	bot_data.music_manager.remove(guild_id).await?;
 
 	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
 
@@ -1173,6 +1172,8 @@ pub async fn remove_handler(ctx: &SerenityContext, guild_id: GuildId) -> AResult
 	if !tx.is_closed() {
 		tx.send(ConnectionStatus::Disconnected)?;
 	}
+
+	bot_data.music_manager.remove(guild_id).await?;
 
 	if bot_data
 		.lavalink_client
