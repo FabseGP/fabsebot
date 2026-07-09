@@ -746,7 +746,7 @@ async fn update_info(
 	if queue_data.payload_type == PayloadType::Song
 		|| queue_data.payload_type == PayloadType::Lavalink
 	{
-		let visit_button = vec![additional_buttons.get(2).unwrap().clone()];
+		let visit_button = vec![additional_buttons.last().unwrap().clone()];
 		base_container = base_container.add_component(CreateContainerComponent::ActionRow(
 			CreateActionRow::buttons(visit_button),
 		));
@@ -1391,17 +1391,22 @@ pub async fn lavalink_play(
 	msg_id: i64,
 	channel_id: i64,
 	author_id: i64,
-	input: String,
+	input: &str,
 	player: PlayerContext,
 ) -> AResult<()> {
 	let bot_data: Arc<Data> = ctx.data();
 	let lava_client = bot_data.lavalink_client.clone();
-	let query = if youtube_source(&input) && input.contains("playlist?list") {
-		input
+	let query = if youtube_source(input) {
+		if input.contains("playlist?list") {
+			input
+		} else {
+			let clean_url = input.split_once("&pp=").map_or(input, |(b, _)| b);
+			&SearchEngines::YouTube.to_query(clean_url)?
+		}
 	} else {
-		SearchEngines::YouTube.to_query(&input)?
+		&SearchEngines::YouTube.to_query(input)?
 	};
-	let loaded_tracks = lava_client.load_tracks(guild_id, &query).await?;
+	let loaded_tracks = lava_client.load_tracks(guild_id, query).await?;
 
 	let mut tracks: Vec<TrackInQueue> = match loaded_tracks.data {
 		Some(TrackLoadData::Track(track)) => vec![TrackInQueue::from(track)],
@@ -1417,7 +1422,7 @@ pub async fn lavalink_play(
 			bail!("{}:{}:{}", err.severity, err.message, err.cause);
 		}
 		_ => {
-			bail!("Failed to load track");
+			bail!("Failed to load track: {input}");
 		}
 	};
 

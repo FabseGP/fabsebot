@@ -184,7 +184,7 @@ pub async fn play_song(
 		i64::from(msg.id),
 		i64::from(msg.channel_id),
 		i64::from(ctx.author().id),
-		url,
+		&url,
 		player_context,
 	)
 	.await
