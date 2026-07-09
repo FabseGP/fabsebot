@@ -211,6 +211,7 @@ All notable changes to this project will be documented in this file.
 - Reduce music channel size
 - Clean urls with &pp= parameter
 - Cleanup lavalink player on disconnect
+- Signal disconnect earlier
 
 ### 💼 Other
 
@@ -311,6 +312,7 @@ All notable changes to this project will be documented in this file.
 - Rename step
 - *(chore)* Update changelog
 - Formatting
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
