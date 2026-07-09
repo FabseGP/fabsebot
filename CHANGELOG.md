@@ -209,6 +209,7 @@ All notable changes to this project will be documented in this file.
 - Insert guild cache earlier
 - Serialize guild_cache-func
 - Reduce music channel size
+- Clean urls with &pp= parameter
 
 ### 💼 Other
 
@@ -309,6 +310,7 @@ All notable changes to this project will be documented in this file.
 - Rename step
 - *(chore)* Update changelog
 - Formatting
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
