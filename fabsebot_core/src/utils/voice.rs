@@ -1352,6 +1352,7 @@ pub async fn lavalink_try_join(
 		&& let Some(guild_cache) = bot_data.guilds.get(&guild_id)
 		&& *guild_cache.music_data.connection_signals.1.borrow()
 			== ConnectionStatus::LavalinkConnected
+		&& bot_data.music_manager.get(guild_id).is_some()
 	{
 		player
 	} else {
