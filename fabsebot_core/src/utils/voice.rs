@@ -1096,9 +1096,17 @@ async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mute
 	Ok(handler_lock)
 }
 
-pub async fn check_in_channel(ctx: SContext<'_>) -> AResult<GuildId> {
+pub async fn check_in_channel(ctx: SContext<'_>, lavalink: bool) -> AResult<GuildId> {
 	let guild_id = ctx.guild_id().unwrap();
-	if ctx.data().music_manager.get(guild_id).is_some() {
+	let lavalink_context = if lavalink {
+		ctx.data()
+			.lavalink_client
+			.get_player_context(guild_id)
+			.is_some()
+	} else {
+		true
+	};
+	if ctx.data().music_manager.get(guild_id).is_some() && lavalink_context {
 		ctx.reply(ALREADY_IN_VOICE_CHAN_MSG).await?;
 		bail!("");
 	}

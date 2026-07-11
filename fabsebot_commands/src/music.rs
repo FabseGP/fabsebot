@@ -72,7 +72,7 @@ pub async fn join_voice_old(
 	#[flag]
 	global: bool,
 ) -> Result<(), Error> {
-	if check_in_channel(ctx).await.is_err() {
+	if check_in_channel(ctx, false).await.is_err() {
 		return Ok(());
 	}
 	let (_typing, _guild_id, _handler_lock) = try_voice(ctx, global).await?;
@@ -150,7 +150,7 @@ pub async fn play_song_old(
 	                            CONNECT"
 )]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
-	let Ok(guild_id) = check_in_channel(ctx).await else {
+	let Ok(guild_id) = check_in_channel(ctx, true).await else {
 		return Ok(());
 	};
 	let (_typing, _player_context) =
