@@ -213,6 +213,7 @@ All notable changes to this project will be documented in this file.
 - Cleanup lavalink player on disconnect
 - Signal disconnect earlier
 - Only reuse conn if in voice channel
+- Check lavalink context on join
 
 ### 💼 Other
 
@@ -325,6 +326,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Use passed client
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 
