@@ -637,16 +637,16 @@ pub async fn guild_cache(
 
 	let ai_channel = mpsc::channel(20);
 	let music_channel = mpsc::channel(5);
-	let (music_signal_tx, music_signal_rx) = watch::channel::<TrackSignal>(TrackSignal::Idle);
-	let (music_status_tx, music_status_rx) =
+	let (music_signal_tx, _music_signal_rx) = watch::channel::<TrackSignal>(TrackSignal::Idle);
+	let (music_status_tx, _music_status_rx) =
 		watch::channel::<ConnectionStatus>(ConnectionStatus::Disconnected);
 	let cache = Arc::new(GuildCache {
 		ai_queue: ai_channel.0,
 		music_data: MusicData {
 			queue: music_channel.0,
 			global: AtomicBool::new(false),
-			track_signals: (music_signal_tx, music_signal_rx),
-			connection_signals: (music_status_tx, music_status_rx),
+			track_signals: music_signal_tx,
+			connection_signals: music_status_tx,
 		},
 	});
 

@@ -42,32 +42,25 @@ pub type MusicQueue = mpsc::Sender<MusicQueueData>;
 pub struct MusicData {
 	pub queue: MusicQueue,
 	pub global: AtomicBool,
-	pub track_signals: (watch::Sender<TrackSignal>, watch::Receiver<TrackSignal>),
-	pub connection_signals: (
-		watch::Sender<ConnectionStatus>,
-		watch::Receiver<ConnectionStatus>,
-	),
+	pub track_signals: watch::Sender<TrackSignal>,
+	pub connection_signals: watch::Sender<ConnectionStatus>,
 }
 
 impl MusicData {
 	pub fn connected(&self) {
-		if let Err(err) = self.connection_signals.0.send(ConnectionStatus::Connected) {
+		if let Err(err) = self.connection_signals.send(ConnectionStatus::Connected) {
 			error!("Failed to notify about connected status: {err}");
 		}
 	}
 
 	pub fn disconnected(&self) {
-		if let Err(err) = self
-			.connection_signals
-			.0
-			.send(ConnectionStatus::Disconnected)
-		{
+		if let Err(err) = self.connection_signals.send(ConnectionStatus::Disconnected) {
 			error!("Failed to notify about disconnected status: {err}");
 		}
 	}
 
 	pub fn is_disconnected(&self) -> bool {
-		*self.connection_signals.0.borrow() == ConnectionStatus::Disconnected
+		*self.connection_signals.borrow() == ConnectionStatus::Disconnected
 	}
 }
 

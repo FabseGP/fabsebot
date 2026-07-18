@@ -709,7 +709,7 @@ async fn update_info(
 						break;
 					}
 					Ok(()) => {
-						match &*track_receiver.borrow_and_update() {
+						match &*track_receiver.borrow() {
 							TrackSignal::Ended(uuid)
 								if let Some(track_uuid) = track_uuid
 									&& uuid == &track_uuid =>
@@ -734,7 +734,7 @@ async fn update_info(
 						break;
 					}
 					Ok(()) => {
-						if *status_receiver.borrow_and_update() == ConnectionStatus::Disconnected {
+						if *status_receiver.borrow() == ConnectionStatus::Disconnected {
 							break;
 						}
 					}
@@ -836,7 +836,6 @@ impl VoiceEventHandler for PlaybackHandler {
 						if let Err(err) = guild_cache
 							.music_data
 							.track_signals
-							.0
 							.send(TrackSignal::Ended(handle.uuid()))
 						{
 							error!("Failed to broadcast track ending: {err}");
@@ -1493,7 +1492,6 @@ pub async fn track_end(_client: LavalinkClient, _session_id: String, event: &eve
 	if let Err(err) = guild_cache
 		.music_data
 		.track_signals
-		.0
 		.send(TrackSignal::Finished(event.track.info.identifier.clone()))
 	{
 		error!("Failed to broadcast track ending: {err}");
@@ -1636,8 +1634,8 @@ pub async fn music_task(
 ) {
 	let bot_data: Arc<Data> = ctx.data();
 	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
-	let mut track_watch = guild_cache.music_data.track_signals.0.subscribe();
-	let mut connection_watch = guild_cache.music_data.connection_signals.0.subscribe();
+	let mut track_watch = guild_cache.music_data.track_signals.subscribe();
+	let mut connection_watch = guild_cache.music_data.connection_signals.subscribe();
 	while let Some(data) = rx.recv().await {
 		track_watch.mark_unchanged();
 		connection_watch.mark_unchanged();
