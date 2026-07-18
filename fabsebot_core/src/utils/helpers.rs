@@ -210,50 +210,55 @@ pub fn edit_message_container(container: CreateContainer<'_>) -> EditMessage<'_>
 
 #[derive(Deserialize)]
 struct GifResponse {
+	data: GifData,
+}
+
+#[derive(Deserialize)]
+struct GifData {
 	#[serde(deserialize_with = "non_empty_vec")]
-	results: Vec<GifResult>,
+	data: Vec<GifResult>,
 }
 
 #[derive(Deserialize)]
 struct GifResult {
-	media_formats: MediaFormat,
-	content_description: String,
+	title: String,
+	file: MediaQuality,
+}
+
+#[derive(Deserialize)]
+struct MediaQuality {
+	hd: MediaFormat,
 }
 
 #[derive(Deserialize)]
 struct MediaFormat {
-	gif: Option<GifObject>,
+	webp: MediaUrl,
 }
 
 #[derive(Deserialize)]
-struct GifObject {
+struct MediaUrl {
 	url: String,
 }
 
 async fn fetch_gifs_internal(input: &str) -> AResult<Vec<(String, String)>> {
 	let urls: GifResponse = fetch_and_parse(
 		HTTP_CLIENT
-			.get("https://tenor.googleapis.com/v2/search")
+			.get(utils_config().api.gif_url.as_str())
 			.query(&[
+				("per_page", "40"),
 				("q", input),
-				("key", utils_config().api.gif_token.as_str()),
-				("contentfilter", "medium"),
-				("limit", "40"),
-				("media_filter", "minimal"),
+				("content_filter", "medium"),
+				("format_filter", "webp"),
 			])
 			.send(),
 	)
 	.await?;
 
 	Ok(urls
-		.results
+		.data
+		.data
 		.into_iter()
-		.filter_map(|result| {
-			result
-				.media_formats
-				.gif
-				.map(|media| (media.url, result.content_description))
-		})
+		.map(|result| (result.file.hd.webp.url, result.title))
 		.collect())
 }
 

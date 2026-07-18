@@ -33,7 +33,7 @@ pub struct ServerConfig {
 
 #[derive(Deserialize)]
 pub struct APIConfig {
-	pub gif_token: String,
+	pub gif_url: String,
 	pub cloudflare_token: String,
 	pub cloudflare_image_gen: String,
 }

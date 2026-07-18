@@ -39,8 +39,7 @@
 #stt =
 
 [API-Info]
-#gif_token =
-#giphy_token =
+#gif_url =
 #cloudflare_token =
 #cloudflare_image_gen = 
 
