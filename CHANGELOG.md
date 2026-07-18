@@ -70,6 +70,7 @@ All notable changes to this project will be documented in this file.
 - Add track looping
 - Add play_file-command
 - Migrate to lavalink... damn you bot protections!
+- Rip tenor... had to migrate to klipy ew
 
 ### 🐛 Bug Fixes
 
@@ -328,6 +329,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Use passed client
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
