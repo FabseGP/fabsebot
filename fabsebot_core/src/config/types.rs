@@ -23,6 +23,7 @@ use tokio::sync::{
 	Mutex, mpsc,
 	watch::{self},
 };
+use tracing::error;
 use uuid::Uuid;
 
 use crate::{
@@ -46,6 +47,28 @@ pub struct MusicData {
 		watch::Sender<ConnectionStatus>,
 		watch::Receiver<ConnectionStatus>,
 	),
+}
+
+impl MusicData {
+	pub fn connected(&self) {
+		if let Err(err) = self.connection_signals.0.send(ConnectionStatus::Connected) {
+			error!("Failed to notify about connected status: {err}");
+		}
+	}
+
+	pub fn disconnected(&self) {
+		if let Err(err) = self
+			.connection_signals
+			.0
+			.send(ConnectionStatus::Disconnected)
+		{
+			error!("Failed to notify about disconnected status: {err}");
+		}
+	}
+
+	pub fn is_disconnected(&self) -> bool {
+		*self.connection_signals.0.borrow() == ConnectionStatus::Disconnected
+	}
 }
 
 pub struct GuildCache {

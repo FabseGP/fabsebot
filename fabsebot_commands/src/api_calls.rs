@@ -282,7 +282,7 @@ pub async fn anime(
 
 	let json: AniMangaResponse<AnimeSpecific> = match fetch_and_parse(
 		HTTP_CLIENT
-			.get("https://api.jikan.moe/v4/anime")
+			.get("https://api.tenrai.org/v1/anime")
 			.query(&[("q", anime.as_str()), ("limit", "5")])
 			.send(),
 	)
@@ -572,7 +572,7 @@ pub async fn manga(
 
 	let json: AniMangaResponse<MangaSpecific> = match fetch_and_parse(
 		HTTP_CLIENT
-			.get("https://api.jikan.moe/v4/manga")
+			.get("https://api.tenrai.org/v1/manga")
 			.query(&[("q", manga.as_str()), ("limit", "5")])
 			.send(),
 	)
