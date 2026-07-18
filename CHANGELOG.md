@@ -214,6 +214,7 @@ All notable changes to this project will be documented in this file.
 - Signal disconnect earlier
 - Only reuse conn if in voice channel
 - Check lavalink context on join
+- Bye jikan api + stricter track and connection signals handling
 
 ### 💼 Other
 
@@ -326,6 +327,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Use passed client
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
