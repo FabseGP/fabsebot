@@ -32,12 +32,12 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 				"command" => ctx.command().name.clone(),
 			)
 			.increment(1);
-			log_error(&output, ctx.serenity_context()).await;
+			log_error(output, ctx.serenity_context()).await;
 		}
 		FrameworkError::DynamicPrefix { error, ctx, .. } => {
 			let output = format!("# Error in dynamic prefix\n{error}");
 			counter!(METRICS.prefix_errors.clone()).increment(1);
-			log_error(&output, ctx.framework.serenity_context).await;
+			log_error(output, ctx.framework.serenity_context).await;
 		}
 		FrameworkError::MissingBotPermissions {
 			missing_permissions,
@@ -52,7 +52,7 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 				warn!("Failed to notify user about missing bot permissions: {err}");
 			}
 			counter!(METRICS.bot_permissions_errors.clone()).increment(1);
-			log_error(&output, ctx.serenity_context()).await;
+			log_error(output, ctx.serenity_context()).await;
 		}
 		FrameworkError::MissingUserPermissions {
 			missing_permissions: Some(missing_permissions),
@@ -67,7 +67,7 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 				warn!("Failed to notify user about missing user permissions: {err}");
 			}
 			counter!(METRICS.user_permissions_errors.clone()).increment(1);
-			log_error(&output, ctx.serenity_context()).await;
+			log_error(output, ctx.serenity_context()).await;
 		}
 		_ => {}
 	}
@@ -119,7 +119,7 @@ impl SEventHandler for EventHandler {
 				if let Err(error) = handle_ready(ctx, data_about_bot).await {
 					let output = format!("# Error handling connection to Discord\n{error}");
 					counter!(METRICS.ready_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
+					log_error(output, ctx).await;
 				}
 			}
 			FullEvent::Message { new_message, .. } => {
@@ -129,7 +129,7 @@ impl SEventHandler for EventHandler {
 				{
 					let output = format!("# Error handling sent message\n{error}");
 					counter!(METRICS.message_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
+					log_error(output, ctx).await;
 				}
 			}
 			FullEvent::GuildDelete { incomplete, .. } => {
@@ -138,7 +138,7 @@ impl SEventHandler for EventHandler {
 				{
 					let output = format!("# Error handling deleted guild\n{error}");
 					counter!(METRICS.deleted_guild_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
+					log_error(output, ctx).await;
 				}
 			}
 
@@ -160,7 +160,7 @@ impl SEventHandler for EventHandler {
 				{
 					let output = format!("# Error handling deleted message\n{error}");
 					counter!(METRICS.messages_deleted_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
+					log_error(output, ctx).await;
 				}
 			}
 			FullEvent::InteractionCreate { interaction, .. } => {
@@ -171,7 +171,7 @@ impl SEventHandler for EventHandler {
 				{
 					let output = format!("# Error handling feedback modal\n{error}");
 					counter!(METRICS.feedback_modal_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
+					log_error(output, ctx).await;
 				}
 				if let Some(modal_interaction) = interaction.as_modal_submit()
 					&& modal_interaction.data.custom_id == FEEDBACK_MODAL_CUSTOM_ID
@@ -181,7 +181,7 @@ impl SEventHandler for EventHandler {
 				{
 					let output = format!("# Error handling feedback reply\n{error}");
 					counter!(METRICS.feedback_reply_errors.clone()).increment(1);
-					log_error(&output, ctx).await;
+					log_error(output, ctx).await;
 				}
 			}
 			_ => {}

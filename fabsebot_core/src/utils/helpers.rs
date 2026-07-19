@@ -268,7 +268,7 @@ pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(String, String)> {
 		Err(error) => {
 			let output = format!("# Failed to fetch gifs\n{error}");
 			counter!(METRICS.gifs_errors.clone()).increment(1);
-			log_error(&output, ctx).await;
+			log_error(output, ctx).await;
 			vec![(
 				"https://i.postimg.cc/zffntsGs/tenor.gif".to_owned(),
 				"Sucks to be you".to_owned(),
@@ -313,7 +313,7 @@ pub async fn get_lyrics(ctx: &Context, track_name: &str, artist_name: &str) -> O
 		Err(error) => {
 			let output = format!("# Failed to fetch lyrics\n{error}");
 			counter!(METRICS.lyrics_errors.clone()).increment(1);
-			log_error(&output, ctx).await;
+			log_error(output, ctx).await;
 			None
 		}
 	}
@@ -346,7 +346,7 @@ pub async fn get_waifu(ctx: &Context) -> String {
 		Err(error) => {
 			let output = format!("# Failed to fetch waifu\n{error}");
 			counter!(METRICS.waifu_errors.clone()).increment(1);
-			log_error(&output, ctx).await;
+			log_error(output, ctx).await;
 			"https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned()
 		}
 	}
@@ -641,7 +641,7 @@ pub async fn guild_cache(
 	insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
 
 	let ai_channel = mpsc::channel(20);
-	let music_channel = mpsc::channel(5);
+	let music_channel = mpsc::channel(2);
 	let (music_signal_tx, _music_signal_rx) = watch::channel::<TrackSignal>(TrackSignal::Idle);
 	let (music_status_tx, _music_status_rx) =
 		watch::channel::<ConnectionStatus>(ConnectionStatus::Disconnected);

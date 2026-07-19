@@ -47,8 +47,8 @@ pub struct MusicData {
 }
 
 impl MusicData {
-	pub fn connected(&self) {
-		if let Err(err) = self.connection_signals.send(ConnectionStatus::Connected) {
+	pub fn connected(&self, status: ConnectionStatus) {
+		if let Err(err) = self.connection_signals.send(status) {
 			error!("Failed to notify about connected status: {err}");
 		}
 	}
@@ -61,6 +61,14 @@ impl MusicData {
 
 	pub fn is_disconnected(&self) -> bool {
 		*self.connection_signals.borrow() == ConnectionStatus::Disconnected
+	}
+
+	pub fn is_songbird_connected(&self) -> bool {
+		*self.connection_signals.borrow() == ConnectionStatus::SongbirdConnected
+	}
+
+	pub fn is_lavalink_connected(&self) -> bool {
+		*self.connection_signals.borrow() == ConnectionStatus::LavalinkConnected
 	}
 }
 

@@ -38,6 +38,7 @@ use tracing::{error, warn};
 
 use crate::{
 	config::{
+		constants::MESSAGE_LIMIT,
 		settings::BotConfig,
 		types::{CLIENT_DATA, ClientData, Data, Error as SError, HTTP_CLIENT, bot_context},
 	},
@@ -54,9 +55,10 @@ const PING_INTERVAL_SEC: u64 = 60;
 const CACHE_CAPACITY: u64 = 1000;
 const CACHE_TIME_TO_IDLE_HOURS: u64 = 24;
 
-pub async fn log_error(output: &str, ctx: &SContext) {
+pub async fn log_error(mut output: String, ctx: &SContext) {
 	error!("{output}");
-	if let Err(err) = error_hook(ctx, output).await {
+	output.truncate(MESSAGE_LIMIT);
+	if let Err(err) = error_hook(ctx, &output).await {
 		error!("Failed to send error to webhook: {err}");
 	}
 }

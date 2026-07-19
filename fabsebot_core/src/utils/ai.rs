@@ -154,7 +154,7 @@ pub async fn ai_task(
 		{
 			let output = format!("# Failed to send AI-chat\n{error}");
 			counter!(METRICS.chatbot_errors.clone()).increment(1);
-			log_error(&output, &ctx).await;
+			log_error(output, &ctx).await;
 			if let Err(err) = data
 				.message
 				.reply(&ctx.http, "Go out and touch some grass...")
