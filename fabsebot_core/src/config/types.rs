@@ -24,7 +24,6 @@ use tokio::sync::{
 	watch::{self},
 };
 use tracing::error;
-use uuid::Uuid;
 
 use crate::{
 	config::settings::{APIConfig, HTTPAgent, ServerConfig},
@@ -36,7 +35,7 @@ use crate::{
 
 pub type AIQueue = mpsc::Sender<AIQueuePayload>;
 
-pub type MusicQueueData = (Arc<QueueData>, Option<Uuid>, Option<String>);
+pub type MusicQueueData = Arc<QueueData>;
 pub type MusicQueue = mpsc::Sender<MusicQueueData>;
 
 pub struct MusicData {
@@ -69,6 +68,10 @@ impl MusicData {
 
 	pub fn is_lavalink_connected(&self) -> bool {
 		*self.connection_signals.borrow() == ConnectionStatus::LavalinkConnected
+	}
+
+	pub fn has_track_exception(&self) -> bool {
+		*self.track_signals.borrow() == TrackSignal::Exception
 	}
 }
 

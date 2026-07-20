@@ -595,8 +595,6 @@ async fn update_info(
 	queue_data: Arc<QueueData>,
 	mut track_receiver: Receiver<TrackSignal>,
 	mut status_receiver: Receiver<ConnectionStatus>,
-	track_uuid: Option<Uuid>,
-	track_identifier: Option<String>,
 	serenity_context: SerenityContext,
 	guild_id: GuildId,
 ) -> AResult<()> {
@@ -664,14 +662,22 @@ async fn update_info(
 		})
 		.stream();
 
-	let track_guilds = if let Some(track_uuid) = track_uuid
-		&& let Some(guild_cache) = bot_data.guilds.get(&guild_id)
+	let track_guilds = if let Some(guild_cache) = bot_data.guilds.get(&guild_id)
 		&& guild_cache.music_data.global.load(Ordering::Relaxed)
 	{
-		Some(get_matching_guild_plays(track_uuid, i64::from(guild_id), &bot_data.db).await?)
+		Some(
+			get_matching_guild_plays(
+				queue_data.track_data.uuid,
+				i64::from(guild_id),
+				&bot_data.db,
+			)
+			.await?,
+		)
 	} else {
 		None
 	};
+
+	let mut track_exception = false;
 
 	loop {
 		select! {
@@ -710,19 +716,16 @@ async fn update_info(
 					}
 					Ok(()) => {
 						match &*track_receiver.borrow() {
-							TrackSignal::Ended(uuid)
-								if let Some(track_uuid) = track_uuid
-									&& uuid == &track_uuid =>
+							TrackSignal::Exception =>
+							{
+								track_exception = true;
+								break;
+							}
+							TrackSignal::Ended =>
 							{
 								break;
 							}
-							TrackSignal::Finished(identifier)
-								if let Some(ref track_identifier) = track_identifier
-									&& identifier == track_identifier =>
-							{
-								break;
-							}
-							_ => {}
+							TrackSignal::Idle => {}
 						}
 					}
 				}
@@ -743,7 +746,10 @@ async fn update_info(
 		}
 	}
 
-	if track_data.source_url.is_some() {
+	if track_exception {
+		let text_display = vec![text_display("# Track errored on playback :/")];
+		base_container = CreateContainer::new(text_display).accent_colour(Colour::ORANGE);
+	} else if track_data.source_url.is_some() {
 		let visit_button = vec![additional_buttons.last().unwrap().clone()];
 		base_container = base_container.add_component(CreateContainerComponent::ActionRow(
 			CreateActionRow::buttons(visit_button),
@@ -762,21 +768,18 @@ async fn update_info(
 	Ok(())
 }
 
-async fn track_error(
-	ctx: &SerenityContext,
-	error: &str,
-	channel_id: GenericChannelId,
-	message_id: MessageId,
-) -> AResult<()> {
+async fn track_error(ctx: &SerenityContext, error: &str, guild_id: GuildId) {
+	let bot_data: Arc<Data> = ctx.data();
+	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
+	if let Err(err) = guild_cache
+		.music_data
+		.track_signals
+		.send(TrackSignal::Exception)
+	{
+		error!("Failed to broadcast track exception: {err}");
+	}
 	counter!(METRICS.music_queue_errors.clone()).increment(1);
 	log_error(format!("# Failed to play track\n{error}"), ctx).await;
-	let text_display = [text_display("# Track errored on playback :/")];
-	let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
-	channel_id
-		.edit_message(&ctx.http, message_id, edit_message_container(container))
-		.await?;
-
-	Ok(())
 }
 
 #[derive(Clone)]
@@ -816,37 +819,16 @@ impl VoiceEventHandler for PlaybackHandler {
 				if let PlayMode::Errored(error) = &state.playing
 					&& queue_data.first_error.swap(false, Ordering::Relaxed)
 				{
-					if let Err(err) = track_error(
-						&self.serenity_context,
-						&error.to_string(),
-						queue_data.track_data.requested_channel,
-						queue_data.track_data.request_message_id,
-					)
-					.await
-					{
-						error!("Failed to notify user about track error: {err}");
-					}
+					track_error(&self.serenity_context, &error.to_string(), self.guild_id).await;
 				} else if queue_data.payload_type != PayloadType::TextToVoice {
 					if state.playing == PlayMode::Play {
-						if queue_data.first_play.swap(false, Ordering::Relaxed) {
-							let track_uuid = handle.uuid();
-							if let Err(err) = self
-								.music_queue
-								.send((queue_data, Some(track_uuid), None))
-								.await
-							{
-								error!("Failed to queue track: {err}");
-							}
-						}
-					} else if state.playing == PlayMode::End || state.playing == PlayMode::Stop {
-						let guild_cache = bot_data.guilds.get(&self.guild_id).unwrap();
-						if let Err(err) = guild_cache
-							.music_data
-							.track_signals
-							.send(TrackSignal::Ended(handle.uuid()))
+						if queue_data.first_play.swap(false, Ordering::Relaxed)
+							&& let Err(err) = self.music_queue.send(queue_data).await
 						{
-							error!("Failed to broadcast track ending: {err}");
+							error!("Failed to queue track: {err}");
 						}
+					} else if state.playing == PlayMode::End {
+						notify_end(bot_data.clone(), self.guild_id);
 					}
 				}
 			}
@@ -855,9 +837,10 @@ impl VoiceEventHandler for PlaybackHandler {
 	}
 }
 
+#[derive(PartialEq, Eq)]
 pub enum TrackSignal {
-	Ended(Uuid),
-	Finished(String),
+	Ended,
+	Exception,
 	Idle,
 }
 
@@ -985,6 +968,12 @@ pub async fn add_payload(
 	Ok(())
 }
 
+fn track_uuid(url: Option<&String>) -> Uuid {
+	url.as_ref().map_or_else(Uuid::new_v4, |url| {
+		Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
+	})
+}
+
 async fn enqueue(
 	queue_data: QueueData,
 	input: Input,
@@ -992,16 +981,8 @@ async fn enqueue(
 	guild_id: i64,
 	pool: Option<&Pool<Postgres>>,
 ) -> AResult<()> {
-	let uuid = queue_data
-		.track_data
-		.source_url
-		.as_ref()
-		.map_or_else(Uuid::new_v4, |url| {
-			Uuid::new_v5(&Uuid::NAMESPACE_URL, url.as_bytes())
-		});
-
 	if let Some(pool) = pool {
-		insert_guild_play(uuid, &queue_data, guild_id, pool).await?;
+		insert_guild_play(&queue_data, guild_id, pool).await?;
 	}
 
 	handler_lock
@@ -1009,7 +990,7 @@ async fn enqueue(
 		.await
 		.enqueue(Track::new_with_uuid_and_data(
 			input,
-			uuid,
+			queue_data.track_data.uuid,
 			Arc::new(queue_data),
 		))
 		.await;
@@ -1192,10 +1173,10 @@ struct TrackPlayData {
 	requested_by: DBUserID,
 	requested_channel: GenericChannelId,
 	request_message_id: MessageId,
+	uuid: Uuid,
 }
 
 async fn insert_guild_play(
-	uuid: Uuid,
 	queue_data: &QueueData,
 	guild_id: i64,
 	conn: &Pool<Postgres>,
@@ -1211,7 +1192,7 @@ async fn insert_guild_play(
     	INSERT INTO song_plays (track_uuid, guild_id, requested_by)
     	VALUES ($1, $2, $3)
     	"#,
-		uuid,
+		queue_data.track_data.uuid,
 		guild_id,
 		queue_data.track_data.requested_by,
 		queue_data.track_data.title,
@@ -1386,6 +1367,7 @@ pub async fn lavalink_play(
 	author_id: i64,
 	input: &str,
 	player: PlayerContext,
+	pool: &Pool<Postgres>,
 ) -> AResult<()> {
 	let bot_data: Arc<Data> = ctx.data();
 	let lava_client = bot_data.lavalink_client.clone();
@@ -1422,6 +1404,7 @@ pub async fn lavalink_play(
 	for track in &mut tracks {
 		let track_info = track.track.info.clone();
 		let duration = Duration::from_millis(track_info.length);
+		let uuid = track_uuid(track_info.uri.as_ref());
 		let queue_data = QueueData {
 			track_data: TrackPlayData {
 				title: Some(track_info.title),
@@ -1432,11 +1415,13 @@ pub async fn lavalink_play(
 				requested_by: author_id,
 				requested_channel: channel_id,
 				request_message_id: msg_id,
+				uuid,
 			},
 			first_play: AtomicBool::new(true),
 			first_error: AtomicBool::new(true),
 			payload_type: PayloadType::Lavalink,
 		};
+		insert_guild_play(&queue_data, guild_id.get().cast_signed(), pool).await?;
 		let json = to_value(queue_data)?;
 		track.track.user_data = Some(json);
 	}
@@ -1466,31 +1451,29 @@ async fn track_start(_client: LavalinkClient, _session_id: String, event: &event
 		&& let Err(err) = guild_cache
 			.music_data
 			.queue
-			.send((
-				Arc::new(queue_data),
-				None,
-				Some(event.track.info.identifier.clone()),
-			))
+			.send(Arc::new(queue_data))
 			.await
 	{
 		error!("Failed to send track data: {err}");
 	}
 }
 
-#[hook]
-async fn track_end(_client: LavalinkClient, _session_id: String, event: &events::TrackEnd) {
-	let bot_data: Arc<Data> = bot_context().data();
-	let guild_cache = bot_data
-		.guilds
-		.get(&GuildId::from(event.guild_id.0))
-		.unwrap();
-	if let Err(err) = guild_cache
-		.music_data
-		.track_signals
-		.send(TrackSignal::Finished(event.track.info.identifier.clone()))
+fn notify_end(bot_data: Arc<Data>, guild_id: GuildId) {
+	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
+	if !guild_cache.music_data.has_track_exception()
+		&& let Err(err) = guild_cache
+			.music_data
+			.track_signals
+			.send(TrackSignal::Ended)
 	{
 		error!("Failed to broadcast track ending: {err}");
 	}
+}
+
+#[hook]
+async fn track_end(_client: LavalinkClient, _session_id: String, event: &events::TrackEnd) {
+	let bot_data: Arc<Data> = bot_context().data();
+	notify_end(bot_data, GuildId::from(event.guild_id.0));
 }
 
 #[hook]
@@ -1507,16 +1490,7 @@ async fn track_exception(
 			"{}:{}:{}",
 			event.exception.severity, event.exception.message, event.exception.cause
 		);
-		if let Err(err) = track_error(
-			bot_context(),
-			&error,
-			queue_data.track_data.requested_channel,
-			queue_data.track_data.request_message_id,
-		)
-		.await
-		{
-			error!("Failed to notify user about track error: {err}");
-		}
+		track_error(bot_context(), &error, GuildId::from(event.guild_id.0)).await;
 	}
 }
 
@@ -1548,18 +1522,16 @@ async fn global_queue(
 ) -> AResult<()> {
 	let guild_cache = ctx.data().guilds.get(&guild_id).unwrap();
 	if guild_cache.music_data.global.load(Ordering::Relaxed) {
-		let guild_global_playback: Vec<u64> = ctx
+		let guild_global_playback: Vec<GuildId> = ctx
 			.data()
 			.guilds
 			.iter()
-			.filter(|t| t.music_data.global.load(Ordering::Relaxed) && *t.key() != guild_id.get())
-			.map(|t| t.key().get())
+			.filter(|t| t.music_data.global.load(Ordering::Relaxed) && *t.key() != guild_id)
+			.map(|t| *t.key())
 			.collect();
 
 		for global_guild in guild_global_playback {
-			let Some(global_handler_lock) =
-				ctx.data().music_manager.get(GuildId::new(global_guild))
-			else {
+			let Some(global_handler_lock) = ctx.data().music_manager.get(global_guild) else {
 				continue;
 			};
 			let Some(channel_id) = global_handler_lock.lock().await.current_channel() else {
@@ -1580,7 +1552,7 @@ async fn global_queue(
 					queue_data.clone(),
 					input,
 					global_handler_lock,
-					global_guild.cast_signed(),
+					global_guild.get().cast_signed(),
 					Some(&ctx.data().db),
 				)
 				.await
@@ -1617,6 +1589,8 @@ pub async fn add_youtube_song(
 	let compressed = Compressed::new(input, Bitrate::Max).await?;
 	let new_input = Input::from(compressed.new_handle());
 
+	let uuid = track_uuid(metadata.source_url.as_ref());
+
 	let queue_data = QueueData {
 		track_data: TrackPlayData {
 			title: metadata.title,
@@ -1627,6 +1601,7 @@ pub async fn add_youtube_song(
 			requested_by: author_id,
 			requested_channel: channel_id,
 			request_message_id: msg_id,
+			uuid,
 		},
 		first_play: AtomicBool::new(true),
 		first_error: AtomicBool::new(true),
@@ -1662,11 +1637,9 @@ pub async fn music_task(
 		track_watch.mark_unchanged();
 		connection_watch.mark_unchanged();
 		if let Err(err) = update_info(
-			data.0,
+			data,
 			track_watch.clone(),
 			connection_watch.clone(),
-			data.1,
-			data.2,
 			ctx.clone(),
 			guild_id,
 		)

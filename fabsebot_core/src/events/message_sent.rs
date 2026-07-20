@@ -120,6 +120,7 @@ async fn queue_track(
 	ctx: &SContext,
 	new_message: &Message,
 	settings: Option<&GuildSettings>,
+	conn: &Pool<Postgres>,
 ) -> AResult<()> {
 	if let Some(settings) = settings
 		&& let Some(music_channel) = settings.music_channel
@@ -143,6 +144,7 @@ async fn queue_track(
 			i64::from(new_message.author.id),
 			&new_message.content,
 			player_context,
+			conn,
 		)
 		.await
 		{
@@ -659,7 +661,7 @@ pub async fn handle_message(
 			guild_cache.ai_queue.clone(),
 			guild_settings.as_ref()
 		),
-		queue_track(ctx, new_message, guild_settings.as_ref())
+		queue_track(ctx, new_message, guild_settings.as_ref(), &bot_data.db)
 	)?;
 
 	db_queries(

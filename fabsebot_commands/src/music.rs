@@ -186,6 +186,7 @@ pub async fn play_song(
 		i64::from(ctx.author().id),
 		&url,
 		player_context,
+		&ctx.data().db,
 	)
 	.await
 	{
