@@ -138,8 +138,8 @@ async fn queue_track(
 		if let Err(err) = lavalink_play(
 			ctx,
 			guild_id,
-			i64::from(msg.id),
-			i64::from(msg.channel_id),
+			msg.id,
+			msg.channel_id,
 			i64::from(new_message.author.id),
 			&new_message.content,
 			player_context,

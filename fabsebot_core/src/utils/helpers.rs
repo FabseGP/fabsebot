@@ -416,7 +416,7 @@ pub async fn get_user(http: &Http, users: &UsersMap, user_id: UserId) -> AResult
 				arc_user
 			}
 			Err(err) => {
-				bail!("Failed to fetch emoji: {err}");
+				bail!("Failed to fetch user: {err}");
 			}
 		}
 	};

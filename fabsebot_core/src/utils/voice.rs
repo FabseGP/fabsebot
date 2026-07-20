@@ -611,9 +611,6 @@ async fn update_info(
 
 	let track_data = &queue_data.track_data;
 
-	let channel_id = GenericChannelId::new(track_data.requested_channel.cast_unsigned());
-	let message_id = MessageId::new(track_data.request_message_id.cast_unsigned());
-
 	let author_name = track_data
 		.requested_by
 		.get_author_name(&serenity_context.http, &bot_data.users)
@@ -621,7 +618,7 @@ async fn update_info(
 
 	let (thumbnail_section, primary_row, additional_buttons) = create_components(
 		&author_name,
-		message_id,
+		track_data.request_message_id,
 		track_data,
 		queue_size,
 		&queue_data.payload_type,
@@ -640,10 +637,11 @@ async fn update_info(
 		.add_component(separator())
 		.add_component(secondary_row.clone());
 
-	channel_id
+	track_data
+		.requested_channel
 		.edit_message(
 			&serenity_context.http,
-			message_id,
+			track_data.request_message_id,
 			edit_message_container(full_container.clone()),
 		)
 		.await?;
@@ -752,10 +750,11 @@ async fn update_info(
 		));
 	}
 
-	channel_id
+	track_data
+		.requested_channel
 		.edit_message(
 			&serenity_context.http,
-			message_id,
+			track_data.request_message_id,
 			edit_message_container(base_container),
 		)
 		.await?;
@@ -766,19 +765,15 @@ async fn update_info(
 async fn track_error(
 	ctx: &SerenityContext,
 	error: &str,
-	channel_id: u64,
-	message_id: u64,
+	channel_id: GenericChannelId,
+	message_id: MessageId,
 ) -> AResult<()> {
 	counter!(METRICS.music_queue_errors.clone()).increment(1);
 	log_error(format!("# Failed to play track\n{error}"), ctx).await;
 	let text_display = [text_display("# Track errored on playback :/")];
 	let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
-	GenericChannelId::new(channel_id)
-		.edit_message(
-			&ctx.http,
-			MessageId::new(message_id),
-			edit_message_container(container),
-		)
+	channel_id
+		.edit_message(&ctx.http, message_id, edit_message_container(container))
 		.await?;
 
 	Ok(())
@@ -824,8 +819,8 @@ impl VoiceEventHandler for PlaybackHandler {
 					if let Err(err) = track_error(
 						&self.serenity_context,
 						&error.to_string(),
-						queue_data.track_data.requested_channel.cast_unsigned(),
-						queue_data.track_data.request_message_id.cast_unsigned(),
+						queue_data.track_data.requested_channel,
+						queue_data.track_data.request_message_id,
 					)
 					.await
 					{
@@ -962,8 +957,8 @@ pub async fn add_payload(
 
 	let queue_data = QueueData {
 		track_data: TrackPlayData {
-			requested_channel: i64::from(msg.channel_id),
-			request_message_id: i64::from(msg.id),
+			requested_channel: msg.channel_id,
+			request_message_id: msg.id,
 			requested_by: i64::from(ctx.author().id),
 			..Default::default()
 		},
@@ -1195,8 +1190,8 @@ struct TrackPlayData {
 	duration_sec: Option<i64>,
 	thumbnail_url: Option<String>,
 	requested_by: DBUserID,
-	requested_channel: i64,
-	request_message_id: i64,
+	requested_channel: GenericChannelId,
+	request_message_id: MessageId,
 }
 
 async fn insert_guild_play(
@@ -1386,8 +1381,8 @@ pub async fn lavalink_try_join(
 pub async fn lavalink_play(
 	ctx: &SerenityContext,
 	guild_id: GuildId,
-	msg_id: i64,
-	channel_id: i64,
+	msg_id: MessageId,
+	channel_id: GenericChannelId,
 	author_id: i64,
 	input: &str,
 	player: PlayerContext,
@@ -1515,8 +1510,8 @@ async fn track_exception(
 		if let Err(err) = track_error(
 			bot_context(),
 			&error,
-			queue_data.track_data.requested_channel.cast_unsigned(),
-			queue_data.track_data.request_message_id.cast_unsigned(),
+			queue_data.track_data.requested_channel,
+			queue_data.track_data.request_message_id,
 		)
 		.await
 		{
@@ -1579,8 +1574,8 @@ async fn global_queue(
 					.send_message(ctx.http(), CreateMessage::default().content(QUEUEING_MSG))
 					.await?;
 				let input = Input::from(compressed.new_handle());
-				queue_data.track_data.requested_channel = i64::from(msg.channel_id);
-				queue_data.track_data.request_message_id = i64::from(msg.id);
+				queue_data.track_data.requested_channel = msg.channel_id;
+				queue_data.track_data.request_message_id = msg.id;
 				if let Err(err) = enqueue(
 					queue_data.clone(),
 					input,
@@ -1605,8 +1600,8 @@ pub async fn add_youtube_song(
 	url: String,
 	handler_lock: Arc<Mutex<Call>>,
 	guild_id: GuildId,
-	msg_id: i64,
-	channel_id: i64,
+	msg_id: MessageId,
+	channel_id: GenericChannelId,
 	author_id: i64,
 	conn: &Pool<Postgres>,
 	ctx: Option<&SContext<'_>>,
