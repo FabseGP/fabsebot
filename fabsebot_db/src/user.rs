@@ -4,7 +4,7 @@ use sqlx::{Error, Pool, Postgres, postgres::PgQueryResult, query, query_as, type
 #[derive(Serialize, Deserialize)]
 pub struct PingedLink {
 	pub link: String,
-	pub author: String,
+	pub author_id: i64,
 }
 
 pub struct UserSettings {

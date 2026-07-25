@@ -21,7 +21,7 @@ pub async fn anonymous(
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
 	ctx.send(
-		CreateReply::default()
+		CreateReply::new()
 			.ephemeral(true)
 			.content("with big power comes big responsibility"),
 	)
@@ -46,7 +46,7 @@ pub async fn user_dm(
 ) -> Result<(), Error> {
 	if user.bot() {
 		ctx.send(
-			CreateReply::default()
+			CreateReply::new()
 				.content("... really, a bot?")
 				.ephemeral(true),
 		)
@@ -54,10 +54,10 @@ pub async fn user_dm(
 		return Ok(());
 	}
 	user.id
-		.direct_message(ctx.http(), CreateMessage::default().content(message))
+		.direct_message(ctx.http(), CreateMessage::new().content(message))
 		.await?;
 	ctx.send(
-		CreateReply::default()
+		CreateReply::new()
 			.content("DM sent successfully, RUN!")
 			.ephemeral(true),
 	)
@@ -84,14 +84,14 @@ pub async fn user_misuse(
 		ctx.serenity_context(),
 		ctx.guild_id(),
 		ctx.channel_id(),
-		ctx.data().channel_webhooks.clone(),
+		&ctx.data().channel_webhooks,
 	)
 	.await
 	{
 		Ok(webhook) => webhook,
 		Err(err) => {
 			ctx.send(
-				CreateReply::default()
+				CreateReply::new()
 					.content("No misuse for now")
 					.ephemeral(true),
 			)
@@ -100,7 +100,7 @@ pub async fn user_misuse(
 		}
 	};
 	ctx.send(
-		CreateReply::default()
+		CreateReply::new()
 			.content("you're going to hell")
 			.ephemeral(true),
 	)
@@ -109,7 +109,7 @@ pub async fn user_misuse(
 		.execute(
 			ctx.http(),
 			false,
-			ExecuteWebhook::default()
+			ExecuteWebhook::new()
 				.username(member.display_name())
 				.avatar_url(avatar_url)
 				.content(message),

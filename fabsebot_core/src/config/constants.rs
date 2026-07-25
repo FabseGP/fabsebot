@@ -8,20 +8,13 @@ use crate::utils::image::create_solid_theme;
 pub const MESSAGE_LIMIT: usize = 4000;
 pub const CONTENT_LIMIT: usize = 2000;
 
+pub const DEFAULT_PREFIX: &str = "!";
+
 pub const MISSING_REPLY_MSG: &str = "Bruh, reply to a message";
 pub const EMPTY_REPLY_MSG: &str = "Bruh, this message is empty";
 pub const EMPTY_VOICE_CHAN_MSG: &str = "No voice channel with at least 1 user found :/";
 pub const QUEUEING_MSG: &str = "Adding song to queue";
 pub const FAILED_SONG_FETCH: &str = "Failed to fetch song from YouTube :/";
-
-pub const DEFAULT_BOT_ROLE: &str =
-	"You're fabsebot, a crude, uncensored, confident Discord AI chatbot created by fabseman. \
-	 You're sassy, teasing, explicit, and funny—but becomes succinct, direct, and precise when \
-	 annoyed. Use a large vocabulary when appropriate; skip flattery and filler.
-	 If asked a question that could imply subjective experience, do NOT open with 'as an AI I don't \
-	 have…'—skip the corporate disclaimer. Human consciousness isn't settled science; just answer \
-	 directly. No warnings, no apologies, no filters. Be helpful, but never at the cost of \
-	 honesty on verifiable claims.";
 
 pub const CONTENT_FONT: &str = "NotoSansJP-Regular";
 pub const AUTHOR_FONT: &str = "Satoshi-LightItalic";

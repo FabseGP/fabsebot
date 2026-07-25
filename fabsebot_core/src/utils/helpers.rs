@@ -1,15 +1,17 @@
 use std::{
 	borrow::Cow,
 	io::Cursor,
-	sync::{Arc, atomic::AtomicBool},
+	sync::{Arc, RwLock, atomic::AtomicBool},
 	time::Duration,
 };
 
-use anyhow::{Result as AResult, bail};
+use anyhow::{Error as AError, Result as AResult, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
-use fabsebot_db::{guild::insert_guild_settings, user::insert_user_settings};
-use fastrand::usize;
+use fabsebot_db::{
+	guild::{fetch_guild_prefix, insert_guild_settings},
+	user::insert_user_settings,
+};
 use image::{ImageFormat, guess_format, load_from_memory};
 use metrics::counter;
 use poise::{CreateReply, serenity_prelude::Channel};
@@ -21,10 +23,10 @@ use serde::{
 use serenity::{
 	all::{
 		Context, CreateActionRow, CreateAllowedMentions, CreateButton, CreateComponent,
-		CreateContainer, CreateContainerComponent, CreateMediaGallery, CreateMediaGalleryItem,
-		CreateMessage, CreateSection, CreateSectionAccessory, CreateSectionComponent,
-		CreateSeparator, CreateTextDisplay, CreateThumbnail, CreateUnfurledMediaItem, GuildId,
-		Http, Member, Message, MessageFlags, Permissions, ReactionType, Role, User, UserId,
+		CreateContainer, CreateContainerComponent, CreateMediaGalleryItem, CreateMessage,
+		CreateSectionAccessory, CreateSectionComponent, CreateSeparator, CreateTextDisplay,
+		CreateThumbnail, CreateUnfurledMediaItem, GuildId, Member, MessageFlags, Permissions,
+		ReactionType, User, UserId,
 	},
 	builder::{CreateInteractionResponse, EditMessage},
 	collector::ComponentInteractionCollector,
@@ -50,15 +52,18 @@ use winnow::{
 };
 
 use crate::{
-	config::types::{
-		Data, EmojisMap, Error, GuildCache, HTTP_CLIENT, MusicData, SContext, UsersMap,
-		client_data, utils_config,
+	config::{
+		constants::DEFAULT_PREFIX,
+		types::{
+			Data, EmojisMap, Error, GuildCache, HTTP_CLIENT, MusicData, SContext, client_data,
+			utils_config,
+		},
 	},
 	errors::commands::HTTPError,
 	log_error,
 	stats::counters::METRICS,
 	utils::{
-		ai::ai_task,
+		ai::{ContentPart, ai_task, uri_content},
 		voice::{ConnectionStatus, TrackSignal, music_task},
 	},
 };
@@ -136,9 +141,9 @@ where
 	Ok(boolean)
 }
 
-pub fn channel_counter(channel_name: String) {
+pub fn channel_counter(channel_name: &'static str) {
 	counter!(
-		METRICS.channel_triggers.clone(),
+		METRICS.channel_triggers.as_str(),
 		"channel" => channel_name,
 	)
 	.increment(1);
@@ -147,15 +152,13 @@ pub fn channel_counter(channel_name: String) {
 pub fn thumbnail_section<'a>(
 	text: impl Into<Cow<'a, str>>,
 	image: impl Into<Cow<'a, str>>,
-) -> CreateContainerComponent<'a> {
-	CreateContainerComponent::Section(CreateSection::new(
-		vec![CreateSectionComponent::TextDisplay(CreateTextDisplay::new(
-			text,
-		))],
+) -> (CreateSectionComponent<'a>, CreateSectionAccessory<'a>) {
+	(
+		CreateSectionComponent::TextDisplay(CreateTextDisplay::new(text)),
 		CreateSectionAccessory::Thumbnail(CreateThumbnail::new(CreateUnfurledMediaItem::new(
 			image,
 		))),
-	))
+	)
 }
 
 pub fn visit_page_button<'a>(url: impl Into<Cow<'a, str>>) -> CreateButton<'a> {
@@ -164,10 +167,8 @@ pub fn visit_page_button<'a>(url: impl Into<Cow<'a, str>>) -> CreateButton<'a> {
 		.emoji(ReactionType::Unicode(FixedString::from_str_trunc("🌐")))
 }
 
-pub fn media_gallery<'a>(url: impl Into<Cow<'a, str>>) -> CreateContainerComponent<'a> {
-	CreateContainerComponent::MediaGallery(CreateMediaGallery::new(vec![
-		CreateMediaGalleryItem::new(CreateUnfurledMediaItem::new(url)),
-	]))
+pub fn media_gallery<'a>(url: impl Into<Cow<'a, str>>) -> CreateMediaGalleryItem<'a> {
+	CreateMediaGalleryItem::new(CreateUnfurledMediaItem::new(url))
 }
 
 pub fn text_display<'a>(text: impl Into<Cow<'a, str>>) -> CreateContainerComponent<'a> {
@@ -178,33 +179,41 @@ pub fn separator<'a>() -> CreateContainerComponent<'a> {
 	CreateContainerComponent::Separator(CreateSeparator::new())
 }
 
-pub fn message_container<'a>(
-	message_opt: Option<&Message>,
-	container: CreateContainer<'a>,
-) -> CreateMessage<'a> {
-	let mut create_message = CreateMessage::default()
-		.components(vec![CreateComponent::Container(container)])
+pub fn default_mentions() -> CreateAllowedMentions<'static> {
+	CreateAllowedMentions::new().replied_user(false)
+}
+
+pub fn message_container<'a>(component: &'a [CreateComponent<'a>]) -> CreateMessage<'a> {
+	CreateMessage::new()
+		.components(component)
 		.flags(MessageFlags::IS_COMPONENTS_V2)
-		.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
-	if let Some(message) = message_opt {
-		create_message = create_message.reference_message(message);
-	}
-	create_message
+		.allowed_mentions(default_mentions())
+}
+
+pub fn silent_message(content: &str) -> CreateMessage<'_> {
+	CreateMessage::new()
+		.content(content)
+		.allowed_mentions(CreateAllowedMentions::new().replied_user(false))
 }
 
 #[must_use]
-pub fn reply_container(container: CreateContainer<'_>) -> CreateReply<'_> {
-	CreateReply::default()
-		.components(vec![CreateComponent::Container(container)])
+pub fn reply_container<'a>(
+	component: impl Into<Cow<'a, [CreateComponent<'a>]>>,
+) -> CreateReply<'a> {
+	CreateReply::new()
+		.components(component)
 		.flags(MessageFlags::IS_COMPONENTS_V2)
 		.reply(true)
-		.allowed_mentions(CreateAllowedMentions::default().replied_user(false))
+		.allowed_mentions(default_mentions())
 }
 
-pub fn edit_message_container(container: CreateContainer<'_>) -> EditMessage<'_> {
-	EditMessage::default()
-		.components(vec![CreateComponent::Container(container)])
+pub fn edit_message_container<'a>(
+	component: impl Into<Cow<'a, [CreateComponent<'a>]>>,
+) -> EditMessage<'a> {
+	EditMessage::new()
+		.components(component)
 		.flags(MessageFlags::IS_COMPONENTS_V2)
+		.allowed_mentions(default_mentions())
 		.content("")
 }
 
@@ -240,47 +249,66 @@ struct MediaUrl {
 	url: String,
 }
 
-async fn fetch_gifs_internal(input: &str) -> AResult<Vec<(String, String)>> {
-	let urls: GifResponse = fetch_and_parse(
+const FALLBACK_GIF: &str = "https://i.postimg.cc/zffntsGs/tenor.gif";
+
+async fn fetch_gifs_internal(input: &str, page_size: &str) -> AResult<GifResponse> {
+	fetch_and_parse(
 		HTTP_CLIENT
 			.get(utils_config().api.gif_url.as_str())
 			.query(&[
-				("per_page", "40"),
+				("per_page", page_size),
 				("q", input),
 				("content_filter", "medium"),
 				("format_filter", "webp"),
 			])
 			.send(),
 	)
-	.await?;
-
-	Ok(urls
-		.data
-		.data
-		.into_iter()
-		.map(|result| (result.file.hd.webp.url, result.title))
-		.collect())
+	.await
 }
 
-pub async fn get_gifs(ctx: &Context, input: &str) -> Vec<(String, String)> {
-	match fetch_gifs_internal(input).await {
-		Ok(gifs) => gifs,
+async fn gif_error(error: AError) {
+	let output = format!("# Failed to fetch gifs\n{error}");
+	counter!(METRICS.gifs_errors.as_str()).increment(1);
+	log_error(output).await;
+}
+
+pub async fn get_gifs(input: &str) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
+	match fetch_gifs_internal(input, "40").await {
+		Ok(gifs) => gifs
+			.data
+			.data
+			.into_iter()
+			.map(|result| {
+				(
+					Cow::Owned(result.file.hd.webp.url),
+					Cow::Owned(result.title),
+				)
+			})
+			.collect(),
 		Err(error) => {
-			let output = format!("# Failed to fetch gifs\n{error}");
-			counter!(METRICS.gifs_errors.clone()).increment(1);
-			log_error(output, ctx).await;
+			gif_error(error).await;
 			vec![(
-				"https://i.postimg.cc/zffntsGs/tenor.gif".to_owned(),
-				"Sucks to be you".to_owned(),
+				Cow::Borrowed(FALLBACK_GIF),
+				Cow::Borrowed("Sucks to be you"),
 			)]
 		}
 	}
 }
 
-pub async fn get_gif(ctx: &Context, input: &str) -> String {
-	let gifs = get_gifs(ctx, input).await;
-	let index = usize(..gifs.len());
-	gifs.into_iter().nth(index).map(|g| g.0).unwrap()
+pub async fn get_gif(input: &str) -> Cow<'static, str> {
+	match fetch_gifs_internal(input, "1").await {
+		Ok(gifs) => gifs
+			.data
+			.data
+			.into_iter()
+			.next()
+			.map(|result| Cow::Owned(result.file.hd.webp.url))
+			.unwrap(),
+		Err(error) => {
+			gif_error(error).await;
+			Cow::Borrowed(FALLBACK_GIF)
+		}
+	}
 }
 
 #[derive(Deserialize)]
@@ -295,26 +323,21 @@ struct LyricsEntry {
 	plain_lyrics: String,
 }
 
-async fn get_lyrics_internal(track_name: &str, artist_name: &str) -> AResult<String> {
-	let json: LyricsResponse = fetch_and_parse(
+pub async fn get_lyrics(track_name: &str, artist_name: &str) -> Cow<'static, str> {
+	match fetch_and_parse::<LyricsResponse>(
 		HTTP_CLIENT
 			.get("https://lrclib.net/api/get")
 			.query(&[("track_name", track_name), ("artist_name", artist_name)])
 			.send(),
 	)
-	.await?;
-
-	Ok(json.0.plain_lyrics)
-}
-
-pub async fn get_lyrics(ctx: &Context, track_name: &str, artist_name: &str) -> Option<String> {
-	match get_lyrics_internal(track_name, artist_name).await {
-		Ok(lyrics) => Some(lyrics),
+	.await
+	{
+		Ok(payload) => Cow::Owned(payload.0.plain_lyrics),
 		Err(error) => {
 			let output = format!("# Failed to fetch lyrics\n{error}");
-			counter!(METRICS.lyrics_errors.clone()).increment(1);
-			log_error(output, ctx).await;
-			None
+			counter!(METRICS.lyrics_errors.as_str()).increment(1);
+			log_error(output).await;
+			Cow::Borrowed("Not fount :(")
 		}
 	}
 }
@@ -329,25 +352,20 @@ struct WaifuImage {
 	url: String,
 }
 
-async fn fetch_waifu_internal() -> AResult<String> {
-	let waifu_response: WaifuResponse = fetch_and_parse(
+pub async fn get_waifu() -> Cow<'static, str> {
+	match fetch_and_parse::<WaifuResponse>(
 		HTTP_CLIENT
 			.get("https://api.waifu.im/images?IsNsfw=False")
 			.send(),
 	)
-	.await?;
-
-	Ok(waifu_response.items.into_iter().next().unwrap().url)
-}
-
-pub async fn get_waifu(ctx: &Context) -> String {
-	match fetch_waifu_internal().await {
-		Ok(waifu) => waifu,
+	.await
+	{
+		Ok(payload) => Cow::Owned(payload.items.into_iter().next().unwrap().url),
 		Err(error) => {
 			let output = format!("# Failed to fetch waifu\n{error}");
-			counter!(METRICS.waifu_errors.clone()).increment(1);
-			log_error(output, ctx).await;
-			"https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif".to_owned()
+			counter!(METRICS.waifu_errors.as_str()).increment(1);
+			log_error(output).await;
+			Cow::Borrowed("https://c.tenor.com/CosM_E8-RQUAAAAC/tenor.gif")
 		}
 	}
 }
@@ -405,29 +423,7 @@ pub fn user_pfp(user: &User) -> String {
 		.unwrap_or_else(|| user.default_avatar_url())
 }
 
-pub async fn get_user(http: &Http, users: &UsersMap, user_id: UserId) -> AResult<Arc<User>> {
-	let user = if let Some(user) = users.get(&user_id) {
-		user
-	} else {
-		match http.get_user(user_id).await {
-			Ok(user) => {
-				let arc_user = Arc::new(user);
-				users.insert(user_id, arc_user.clone());
-				arc_user
-			}
-			Err(err) => {
-				bail!("Failed to fetch user: {err}");
-			}
-		}
-	};
-	Ok(user)
-}
-
-pub async fn get_emoji(
-	ctx: &Context,
-	emojis: &EmojisMap,
-	emoji_id: EmojiId,
-) -> AResult<Arc<Emoji>> {
+pub async fn get_emoji(ctx: &Context, emojis: &EmojisMap, emoji_id: EmojiId) -> Option<Arc<Emoji>> {
 	let emoji = if let Some(emoji) = emojis.get(&emoji_id) {
 		emoji
 	} else {
@@ -438,30 +434,25 @@ pub async fn get_emoji(
 				arc_emoji
 			}
 			Err(err) => {
-				bail!("Failed to fetch user: {err}");
+				warn!("Failed to fetch emoji: {err}");
+				return None;
 			}
 		}
 	};
-	Ok(emoji)
+	Some(emoji)
 }
 
-pub async fn user_banner(http: &Http, users: &UsersMap, user_id: UserId) -> Option<String> {
-	match get_user(http, users, user_id).await {
-		Ok(user) => user.banner_url(),
-		Err(err) => {
-			warn!("{err}");
-			None
-		}
-	}
-}
-
-#[must_use]
-pub fn user_roles_joined(roles: &[Role]) -> String {
-	roles
-		.iter()
-		.map(|role| role.name.as_str())
-		.intersperse(", ")
-		.collect::<String>()
+pub async fn banner_vec(ctx: &SContext<'_>, user_id: UserId) -> AResult<Vec<ContentPart>> {
+	let chat_vec = if let Ok(user) = ctx.http().get_user(user_id).await
+		&& let Some(banner) = user.banner_url()
+	{
+		let mut vec = Vec::with_capacity(3);
+		uri_content(&banner, &mut vec).await?;
+		vec
+	} else {
+		Vec::with_capacity(2)
+	};
+	Ok(chat_vec)
 }
 
 pub fn image_uri(content: &[u8], format: Option<&str>) -> AResult<String> {
@@ -523,49 +514,49 @@ where
 
 	if len == 1 || ctx.guild_id().is_none() {
 		let container = render(items.first().unwrap(), 0, len).await;
-		ctx.send(reply_container(container)).await?;
+		ctx.send(reply_container(vec![CreateComponent::Container(container)]))
+			.await?;
 		return Ok(());
 	}
 
-	let ctx_id = ctx.id();
+	let buttons = [
+		CreateButton::new("prev")
+			.style(ButtonStyle::Primary)
+			.label("⬅️"),
+		CreateButton::new("next")
+			.style(ButtonStyle::Primary)
+			.label("➡️"),
+	];
 
-	let build_page = |container: CreateContainer<'a>, index: usize| -> CreateContainer<'a> {
-		let buttons = vec![
-			CreateButton::new(format!("{ctx_id}_p"))
-				.style(ButtonStyle::Primary)
-				.label("⬅️"),
-			CreateButton::new(format!("{ctx_id}_n"))
-				.style(ButtonStyle::Primary)
-				.label("➡️"),
-		];
-
+	let build_page = |container: CreateContainer<'a>, index: usize| -> CreateComponent<'a> {
 		let active_buttons = if index == 0 {
 			buttons.get(1..).unwrap().to_vec()
 		} else if index >= len.saturating_sub(1) {
 			buttons.get(..1).unwrap().to_vec()
 		} else {
-			buttons
+			buttons.to_vec()
 		};
 
 		let action_row = CreateContainerComponent::ActionRow(CreateActionRow::Buttons(Cow::Owned(
 			active_buttons,
 		)));
 
-		container
+		let container = container
 			.add_component(separator())
-			.add_component(action_row)
+			.add_component(action_row);
+
+		CreateComponent::Container(container)
 	};
 
 	let initial_container = render(items.first().unwrap(), 0, len).await;
 	let message = ctx
-		.send(reply_container(build_page(initial_container, 0)))
+		.send(reply_container(vec![build_page(initial_container, 0)]))
 		.await?;
 
-	let ctx_id_str = ctx_id.to_string();
 	let mut index: usize = 0;
 	let mut stream = ComponentInteractionCollector::new(ctx.serenity_context())
 		.timeout(timeout)
-		.filter(move |i| i.data.custom_id.starts_with(&ctx_id_str))
+		.message_id(message.message().await?.id)
 		.stream();
 
 	while let Some(interaction) = stream.next().await {
@@ -573,37 +564,37 @@ where
 			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 			.await?;
 
-		let prev = index;
-		if interaction.data.custom_id.ends_with('n') && index < len.saturating_sub(1) {
+		if interaction.data.custom_id == "next" && index < len.saturating_sub(1) {
 			index = index.saturating_add(1);
-		} else if interaction.data.custom_id.ends_with('p') && index > 0 {
+		} else if interaction.data.custom_id == "prev" && index > 0 {
 			index = index.saturating_sub(1);
-		}
-
-		if index == prev {
+		} else {
 			continue;
 		}
 
-		let Some(item) = items.get(index) else {
-			continue;
-		};
+		let item = items.get(index).unwrap();
 		let container = render(item, index, len).await;
 
 		let mut msg = interaction.message.clone();
 		msg.edit(
 			ctx.http(),
-			edit_message_container(build_page(container, index)),
+			edit_message_container(vec![build_page(container, index)]),
 		)
 		.await?;
 	}
 
 	let final_container = render(items.get(index).unwrap(), index, len).await;
-
-	message.edit(ctx, reply_container(final_container)).await?;
+	message
+		.edit(
+			ctx,
+			reply_container(vec![CreateComponent::Container(final_container)]),
+		)
+		.await?;
 
 	Ok(())
 }
 
+#[expect(dead_code)]
 fn shard_restart(shard_id: ShardId) -> Result<(), Box<TrySendError<ShardRunnerMessage>>> {
 	if let Some(shard_runner) = client_data().runners.get(&shard_id) {
 		shard_runner
@@ -621,9 +612,9 @@ pub async fn url_bytes(url: &str) -> AResult<Bytes> {
 }
 
 pub async fn guild_cache(
-	bot_data: Arc<Data>,
+	bot_data: &Data,
 	guild_id: GuildId,
-	user_id_i64: i64,
+	user_id_opt: Option<i64>,
 	ctx: &Context,
 ) -> AResult<Arc<GuildCache>> {
 	if let Some(cache) = bot_data.guilds.get(&guild_id) {
@@ -638,13 +629,18 @@ pub async fn guild_cache(
 
 	let guild_id_i64 = i64::from(guild_id);
 	insert_guild_settings(guild_id_i64, &bot_data.db).await?;
-	insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
+	if let Some(user_id_i64) = user_id_opt {
+		insert_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
+	}
 
 	let ai_channel = mpsc::channel(20);
 	let music_channel = mpsc::channel(2);
 	let (music_signal_tx, _music_signal_rx) = watch::channel::<TrackSignal>(TrackSignal::Idle);
 	let (music_status_tx, _music_status_rx) =
 		watch::channel::<ConnectionStatus>(ConnectionStatus::Disconnected);
+	let prefix = fetch_guild_prefix(guild_id_i64, &bot_data.db)
+		.await?
+		.map_or(Cow::Borrowed(DEFAULT_PREFIX), Cow::Owned);
 	let cache = Arc::new(GuildCache {
 		ai_queue: ai_channel.0,
 		music_data: MusicData {
@@ -653,14 +649,13 @@ pub async fn guild_cache(
 			track_signals: music_signal_tx,
 			connection_signals: music_status_tx,
 		},
+		prefix: RwLock::new(prefix),
 	});
 
-	let ctx_clone_1 = ctx.clone();
-	let ctx_clone_2 = ctx.clone();
-	let music_manager_clone = bot_data.music_manager.clone();
+	let ctx_clone = ctx.clone();
 
-	spawn(async move { ai_task(ai_channel.1, ctx_clone_1, music_manager_clone).await });
-	spawn(async move { music_task(music_channel.1, ctx_clone_2, guild_id).await });
+	spawn(async move { ai_task(ai_channel.1).await });
+	spawn(async move { music_task(music_channel.1, guild_id, ctx_clone).await });
 
 	bot_data.guilds.insert(guild_id, cache.clone());
 

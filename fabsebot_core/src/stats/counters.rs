@@ -22,7 +22,6 @@ pub struct Metrics {
 	pub prefix_errors: String,
 	pub message_errors: String,
 	pub deleted_guild_errors: String,
-	pub ready_errors: String,
 	pub messages_deleted_errors: String,
 	pub playback_errors: String,
 	pub feedback_modal_errors: String,
@@ -56,7 +55,6 @@ impl Metrics {
 			prefix_errors: format!("{bot_name}_prefix_errors_total"),
 			message_errors: format!("{bot_name}_message_errors_total"),
 			deleted_guild_errors: format!("{bot_name}_deleted_guild_errors_total"),
-			ready_errors: format!("{bot_name}_ready_errors_total"),
 			messages_deleted_errors: format!("{bot_name}_messages_deleted_errors_total"),
 			playback_errors: format!("{bot_name}_playback_errors_total"),
 			feedback_modal_errors: format!("{bot_name}_feedback_modal_errors_total"),
@@ -72,69 +70,68 @@ impl Metrics {
 		}
 	}
 
-	pub fn describe_all(&self) {
-		describe_counter!(self.commands.clone(), "Counter for commands");
-		describe_counter!(self.command_errors.clone(), "Counter for command errors");
+	pub fn describe_all(&'static self) {
+		describe_counter!(self.commands.as_str(), "Counter for commands");
+		describe_counter!(self.command_errors.as_str(), "Counter for command errors");
 		describe_counter!(
-			self.channel_triggers.clone(),
+			self.channel_triggers.as_str(),
 			"Counter for channel triggers"
 		);
-		describe_counter!(self.words_tracked.clone(), "Counter for words tracked");
-		describe_counter!(self.word_reactions.clone(), "Counter for word reactions");
+		describe_counter!(self.words_tracked.as_str(), "Counter for words tracked");
+		describe_counter!(self.word_reactions.as_str(), "Counter for word reactions");
 		describe_counter!(
-			self.periodic_dead_chat.clone(),
+			self.periodic_dead_chat.as_str(),
 			"Counter for periodic dead chat"
 		);
-		describe_counter!(self.periodic_waifu.clone(), "Counter for periodic waifu");
-		describe_counter!(self.bot_pings.clone(), "Counter for bot pings");
-		describe_counter!(self.floppaganda.clone(), "Counter for floppaganda");
+		describe_counter!(self.periodic_waifu.as_str(), "Counter for periodic waifu");
+		describe_counter!(self.bot_pings.as_str(), "Counter for bot pings");
+		describe_counter!(self.floppaganda.as_str(), "Counter for floppaganda");
 		describe_counter!(
-			self.message_previews.clone(),
+			self.message_previews.as_str(),
 			"Counter for message previews"
 		);
-		describe_counter!(self.user_afks.clone(), "Counter for user afks");
+		describe_counter!(self.user_afks.as_str(), "Counter for user afks");
 		describe_counter!(
-			self.custom_user_pings.clone(),
+			self.custom_user_pings.as_str(),
 			"Counter for custom user pings"
 		);
-		describe_counter!(self.prefix_errors.clone(), "Counter for prefix errors");
-		describe_counter!(self.message_errors.clone(), "Counter for message errors");
+		describe_counter!(self.prefix_errors.as_str(), "Counter for prefix errors");
+		describe_counter!(self.message_errors.as_str(), "Counter for message errors");
 		describe_counter!(
-			self.deleted_guild_errors.clone(),
+			self.deleted_guild_errors.as_str(),
 			"Counter for deleted guild errors"
 		);
-		describe_counter!(self.ready_errors.clone(), "Counter for ready errors");
 		describe_counter!(
-			self.messages_deleted_errors.clone(),
+			self.messages_deleted_errors.as_str(),
 			"Counter for message deletion errors"
 		);
-		describe_counter!(self.playback_errors.clone(), "Counter for playback errors");
+		describe_counter!(self.playback_errors.as_str(), "Counter for playback errors");
 		describe_counter!(
-			self.feedback_modal_errors.clone(),
+			self.feedback_modal_errors.as_str(),
 			"Counter for feedback modal errors"
 		);
 		describe_counter!(
-			self.feedback_reply_errors.clone(),
+			self.feedback_reply_errors.as_str(),
 			"Counter for feedback reply errors"
 		);
 		describe_counter!(
-			self.bot_permissions_errors.clone(),
+			self.bot_permissions_errors.as_str(),
 			"Counter for bot permissions errors"
 		);
 		describe_counter!(
-			self.user_permissions_errors.clone(),
+			self.user_permissions_errors.as_str(),
 			"Counter for user permissions errors"
 		);
-		describe_counter!(self.chatbot_errors.clone(), "Counter for chatbot errors");
+		describe_counter!(self.chatbot_errors.as_str(), "Counter for chatbot errors");
 		describe_counter!(
-			self.music_queue_errors.clone(),
+			self.music_queue_errors.as_str(),
 			"Counter for music queue errors"
 		);
-		describe_counter!(self.waifu_errors.clone(), "Counter for waifu errors");
-		describe_counter!(self.lyrics_errors.clone(), "Counter for lyrics errors");
-		describe_counter!(self.gifs_errors.clone(), "Counter for gifs errors");
+		describe_counter!(self.waifu_errors.as_str(), "Counter for waifu errors");
+		describe_counter!(self.lyrics_errors.as_str(), "Counter for lyrics errors");
+		describe_counter!(self.gifs_errors.as_str(), "Counter for gifs errors");
 		describe_counter!(
-			self.voice_join_errors.clone(),
+			self.voice_join_errors.as_str(),
 			"Counter for voice join errors"
 		);
 	}

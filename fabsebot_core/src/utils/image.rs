@@ -348,60 +348,22 @@ fn convert_to_bw(image: &mut RgbaImage) {
 	});
 }
 
-#[expect(clippy::struct_excessive_bools)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct QuoteImageConfig {
 	pub bw: bool,
 	pub gradient: bool,
-	pub new_font: bool,
 	pub reverse: bool,
 }
 
-pub fn quote_static_image(
-	mut avatar_image: ImageBuffer<Rgba<u8>, Vec<u8>>,
-	author_name: &str,
-	quoted_content: &str,
-	author_font: &FontArc,
-	content_font: &FontArc,
-	text_colour: Rgba<u8>,
-	mut img: ImageBuffer<Rgba<u8>, Vec<u8>>,
-	text_layout: &mut TextLayout,
-	avatar_position: i64,
-	config: QuoteImageConfig,
-	cursor: &mut Cursor<Vec<u8>>,
-) -> AResult<()> {
-	if config.new_font {
-		prepare_text_layout(
-			quoted_content,
-			author_name,
-			content_font,
-			author_font,
-			text_layout,
-		);
-	}
-	if config.bw {
-		convert_to_bw(&mut avatar_image);
-	}
-	if config.gradient {
-		apply_gradient_to_avatar(&mut avatar_image, config.reverse);
-	}
-
-	overlay(&mut img, &avatar_image, avatar_position, 0);
-
-	apply_text_layout(
-		&mut img,
-		text_layout,
-		text_colour,
-		content_font,
-		author_font,
-		config.reverse,
-		author_name,
-	);
-
-	Ok(img.write_to(cursor, STATIC_FORMAT)?)
+#[derive(Clone, PartialEq, Eq)]
+pub enum ImageType {
+	Static(ImageBuffer<Rgba<u8>, Vec<u8>>),
+	Animated,
+	AnimatedPayload(Vec<u8>),
 }
 
-pub fn quote_animated_image(
+pub fn quote_image(
+	image: &mut ImageType,
 	author_name: &str,
 	quoted_content: &str,
 	author_font: &FontArc,
@@ -411,10 +373,11 @@ pub fn quote_animated_image(
 	text_layout: &mut TextLayout,
 	avatar_position: i64,
 	config: QuoteImageConfig,
+	new_font: bool,
 	cursor: &mut Cursor<Vec<u8>>,
-	output: &mut Vec<u8>,
+	buffer: Option<&mut Vec<u8>>,
 ) -> AResult<()> {
-	if config.new_font {
+	if new_font {
 		prepare_text_layout(
 			quoted_content,
 			author_name,
@@ -423,48 +386,66 @@ pub fn quote_animated_image(
 			text_layout,
 		);
 	}
-
-	apply_text_layout(
-		&mut img,
-		text_layout,
-		text_colour,
-		content_font,
-		author_font,
-		config.reverse,
-		author_name,
-	);
-
-	let frames: Vec<_> = GifDecoder::new(cursor)?
-		.into_frames()
-		.take(30)
-		.filter_map(Result::ok)
-		.collect();
-
-	let processed_frames: Vec<_> = frames
-		.par_iter()
-		.map(|frame| {
-			let mut avatar_frame = resize(
-				frame.buffer(),
-				QUOTE_HEIGHT,
-				QUOTE_HEIGHT,
-				FilterType::Nearest,
-			);
+	match image {
+		ImageType::Static(static_image) => {
 			if config.bw {
-				convert_to_bw(&mut avatar_frame);
+				convert_to_bw(static_image);
 			}
 			if config.gradient {
-				apply_gradient_to_avatar(&mut avatar_frame, config.reverse);
+				apply_gradient_to_avatar(static_image, config.reverse);
 			}
+			overlay(&mut img, static_image, avatar_position, 0);
+			apply_text_layout(
+				&mut img,
+				text_layout,
+				text_colour,
+				content_font,
+				author_font,
+				config.reverse,
+				author_name,
+			);
+			Ok(img.write_to(cursor, STATIC_FORMAT)?)
+		}
+		ImageType::Animated | ImageType::AnimatedPayload(_) => {
+			apply_text_layout(
+				&mut img,
+				text_layout,
+				text_colour,
+				content_font,
+				author_font,
+				config.reverse,
+				author_name,
+			);
+			let frames: Vec<_> = GifDecoder::new(cursor)?
+				.into_frames()
+				.take(30)
+				.filter_map(Result::ok)
+				.collect();
+			let processed_frames: Vec<_> = frames
+				.par_iter()
+				.map(|frame| {
+					let mut avatar_frame = resize(
+						frame.buffer(),
+						QUOTE_HEIGHT,
+						QUOTE_HEIGHT,
+						FilterType::Nearest,
+					);
+					if config.bw {
+						convert_to_bw(&mut avatar_frame);
+					}
+					if config.gradient {
+						apply_gradient_to_avatar(&mut avatar_frame, config.reverse);
+					}
 
-			let mut quote_frame = img.clone();
-			overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
-			Frame::from_parts(quote_frame, 0, 0, frame.delay())
-		})
-		.collect();
-
-	let mut encoder = GifEncoder::new_with_speed(output, 10);
-	encoder.set_repeat(Repeat::Infinite)?;
-	encoder.encode_frames(processed_frames)?;
-
-	Ok(())
+					let mut quote_frame = img.clone();
+					overlay(&mut quote_frame, &avatar_frame, avatar_position, 0);
+					Frame::from_parts(quote_frame, 0, 0, frame.delay())
+				})
+				.collect();
+			let mut encoder = GifEncoder::new_with_speed(buffer.unwrap(), 10);
+			encoder.set_repeat(Repeat::Infinite)?;
+			encoder.encode_frames(processed_frames)?;
+			Ok(())
+		}
+	}
 }

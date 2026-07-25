@@ -1,41 +1,41 @@
-use std::{fmt::Write as _, sync::Arc};
+use std::{borrow::Cow, fmt::Write as _, sync::Arc};
 
 use anyhow::Result as AResult;
 use fabsebot_db::{
-	guild::{GuildSettings, WordReactions, fetch_guild_settings},
+	guild::{WordReactions, fetch_guild_settings},
 	user::{PingedLink, UserSettings, UserSettingsLimited, fetch_user_settings},
 };
 use metrics::counter;
 use serde_json::{Value, to_value};
 use serenity::{
 	all::{
-		Colour, Context as SContext, CreateAllowedMentions, CreateContainer, CreateMessage,
-		EmojiId, ExecuteWebhook, GenericChannelId, GuildId, Message, MessageId, ReactionType,
+		Colour, Context as SContext, CreateContainer, EmojiId, ExecuteWebhook, GenericChannelId,
+		GuildId, Message, MessageId, ReactionType,
 	},
-	builder::{CreateComponent, EditMessage},
-	model::{channel::MessageFlags, id::UserId},
+	builder::{
+		CreateComponent, CreateContainerComponent, CreateMediaGallery, CreateSection, EditMessage,
+	},
+	model::channel::MessageFlags,
 };
 use sqlx::{Pool, Postgres, query, query_as, types::Json};
-use tokio::try_join;
-use tracing::{error, warn};
+use tokio::{sync::mpsc::error::SendError, try_join};
+use tracing::error;
 use winnow::Parser as _;
 
 use crate::{
 	config::{
-		constants::{
-			DEFAULT_BOT_ROLE, EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, MESSAGE_LIMIT, QUEUEING_MSG,
-		},
-		types::{AIQueue, Data, UsersMap, WebhookMap, utils_config},
+		constants::{EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, MESSAGE_LIMIT, QUEUEING_MSG},
+		types::{AIQueue, Data, WebhookMap, utils_config},
 	},
 	stats::counters::METRICS,
 	utils::{
 		ai::AIQueuePayload,
 		helpers::{
-			channel_counter, discord_message_link, get_emoji, get_gif, get_user, get_waifu,
-			guild_cache, media_gallery, message_container, separator, text_display,
+			channel_counter, discord_message_link, get_emoji, get_gif, get_waifu, guild_cache,
+			media_gallery, message_container, separator, silent_message, text_display,
 			thumbnail_section, user_pfp,
 		},
-		voice::{lavalink_play, lavalink_try_join},
+		voice::{ContextType, lavalink_play, lavalink_try_join},
 		webhook::{spoiler_message, webhook_find},
 	},
 };
@@ -44,7 +44,7 @@ async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 	if new_message.mentions_user_id(ctx.cache.current_user().id)
 		&& new_message.referenced_message.is_none()
 	{
-		counter!(METRICS.bot_pings.clone()).increment(1);
+		counter!(METRICS.bot_pings.as_str()).increment(1);
 		let (ping_message, ping_payload) = {
 			let utils_config = utils_config();
 			(
@@ -54,58 +54,51 @@ async fn check_bot_ping(ctx: &SContext, new_message: &Message) -> AResult<()> {
 		};
 
 		let text_display = [text_display(ping_message)];
-		let image = media_gallery(ping_payload);
+		let image = [media_gallery(ping_payload)];
 		let container = CreateContainer::new(&text_display)
-			.add_component(image)
+			.add_component(CreateContainerComponent::MediaGallery(
+				CreateMediaGallery::new(&image),
+			))
 			.accent_colour(Colour::BLITZ_BLUE);
+		let component = [CreateComponent::Container(container)];
 
 		new_message
 			.channel_id
-			.send_message(&ctx.http, message_container(Some(new_message), container))
+			.send_message(
+				&ctx.http,
+				message_container(&component).reference_message(new_message),
+			)
 			.await?;
 	}
 
 	Ok(())
 }
 
-async fn easter_eggs(
-	ctx: &SContext,
-	new_message: &Message,
-	content: &str,
-	webhooks: &WebhookMap,
-) -> AResult<()> {
+async fn easter_eggs(ctx: &SContext, new_message: &Message, webhooks: &WebhookMap) -> AResult<()> {
+	let content = new_message.content.to_lowercase();
 	if content == "floppaganda" {
-		counter!(METRICS.floppaganda.clone()).increment(1);
+		counter!(METRICS.floppaganda.as_str()).increment(1);
 		new_message
 			.channel_id
 			.send_message(
 				&ctx.http,
-				CreateMessage::default()
-					.content("https://c.tenor.com/1y6DManILSYAAAAd/tenor.gif")
-					.reference_message(new_message)
-					.allowed_mentions(CreateAllowedMentions::default().replied_user(false)),
+				silent_message("https://c.tenor.com/1y6DManILSYAAAAd/tenor.gif")
+					.reference_message(new_message),
 			)
 			.await?;
 	} else if content == "fabse" || content == "fabseman" {
-		let webhook = match webhook_find(
-			ctx,
-			new_message.guild_id,
-			new_message.channel_id,
-			webhooks.clone(),
-		)
-		.await
-		{
-			Ok(webhook) => webhook,
-			Err(err) => {
-				warn!("{err}");
-				return Ok(());
-			}
-		};
+		let webhook =
+			match webhook_find(ctx, new_message.guild_id, new_message.channel_id, webhooks).await {
+				Ok(webhook) => webhook,
+				Err(err) => {
+					return Err(err);
+				}
+			};
 		webhook
 			.execute(
 				&ctx.http,
 				false,
-				ExecuteWebhook::default()
+				ExecuteWebhook::new()
 					.username("yotsuba")
 					.avatar_url("https://images.uncyc.org/wikinet/thumb/4/40/Yotsuba3.png/1200px-Yotsuba3.png")
 					.content("# such magnificence"),
@@ -116,181 +109,154 @@ async fn easter_eggs(
 	Ok(())
 }
 
-async fn queue_track(
-	ctx: &SContext,
-	new_message: &Message,
-	settings: Option<&GuildSettings>,
-	conn: &Pool<Postgres>,
-) -> AResult<()> {
-	if let Some(settings) = settings
-		&& let Some(music_channel) = settings.music_channel
-		&& i64::from(new_message.channel_id) == music_channel
-		&& !new_message.content.starts_with('#')
+async fn queue_track(ctx: &SContext, new_message: &Message, conn: &Pool<Postgres>) -> AResult<()> {
+	let guild_id = new_message.guild_id.unwrap();
+	channel_counter("music");
+	let Ok((_typing, player_context)) =
+		lavalink_try_join(ContextType::Serenity(ctx), guild_id, new_message.author.id).await
+	else {
+		new_message.reply(&ctx.http, EMPTY_VOICE_CHAN_MSG).await?;
+		return Ok(());
+	};
+	let mut msg = new_message.reply(&ctx.http, QUEUEING_MSG).await?;
+	if let Err(err) = lavalink_play(
+		ctx,
+		guild_id,
+		msg.id,
+		msg.channel_id,
+		new_message.author.id,
+		&new_message.content,
+		player_context,
+		conn,
+	)
+	.await
 	{
-		let guild_id = new_message.guild_id.unwrap();
-		channel_counter("music".to_owned());
-		let Ok((_typing, player_context)) =
-			lavalink_try_join(ctx, guild_id, new_message.author.id, None).await
-		else {
-			new_message.reply(&ctx.http, EMPTY_VOICE_CHAN_MSG).await?;
-			return Ok(());
-		};
-		let mut msg = new_message.reply(&ctx.http, QUEUEING_MSG).await?;
-		if let Err(err) = lavalink_play(
-			ctx,
-			guild_id,
-			msg.id,
-			msg.channel_id,
-			i64::from(new_message.author.id),
-			&new_message.content,
-			player_context,
-			conn,
-		)
-		.await
-		{
-			msg.edit(&ctx.http, EditMessage::new().content(FAILED_SONG_FETCH))
-				.await?;
-			return Err(err);
-		}
+		msg.edit(&ctx.http, EditMessage::new().content(FAILED_SONG_FETCH))
+			.await?;
+		return Err(err);
 	}
 
 	Ok(())
 }
 
+#[expect(clippy::result_large_err)]
 async fn ai_chats(
-	message: &Message,
+	message: Message,
 	ai_queue: AIQueue,
-	settings: Option<&GuildSettings>,
-) -> AResult<()> {
-	if let Some(settings) = settings
-		&& let Some(ai_chat_channel) = settings.ai_chat_channel
-		&& i64::from(message.channel_id) == ai_chat_channel
-		&& !message.content.starts_with('#')
-	{
-		channel_counter("chatbot".to_owned());
-		let payload = AIQueuePayload {
-			message: message.clone(),
-			chatbot_role: settings
-				.chatbot_role
-				.clone()
-				.unwrap_or_else(|| DEFAULT_BOT_ROLE.to_owned()),
-		};
-		ai_queue.send(payload).await?;
-	}
-	Ok(())
+	chatbot_role: Option<String>,
+) -> Result<(), SendError<AIQueuePayload>> {
+	channel_counter("chatbot");
+	let payload = AIQueuePayload {
+		message,
+		chatbot_role,
+	};
+	ai_queue.send(payload).await
 }
 
-async fn global_chats(
-	ctx: &SContext,
-	new_message: &Message,
-	settings: Option<&GuildSettings>,
-	guild_id: i64,
-) -> AResult<()> {
-	if let Some(settings) = settings
-		&& let Some(global_chat_channel) = settings.global_chat_channel
-		&& i64::from(new_message.channel_id) == global_chat_channel
-		&& settings.global_chat
-	{
-		let bot_data: Arc<Data> = ctx.data();
-		channel_counter("global_chat".to_owned());
-		let guild_global_chats = query!(
-			r#"
-			SELECT guild_id, global_chat_channel
-			FROM guild_settings
-			WHERE global_chat IS TRUE
-				AND guild_id != $1
-			LIMIT 10
-			"#,
-			guild_id
-		)
-		.fetch_all(&bot_data.db)
-		.await?;
-		for (guild_id, guild_channel_id) in guild_global_chats.iter().filter_map(|record| {
-			record
-				.global_chat_channel
-				.map(|channel_id| (GuildId::new(record.guild_id.cast_unsigned()), channel_id))
-		}) {
-			let channel_id_type = GenericChannelId::new(guild_channel_id.cast_unsigned());
-			if let Ok(chat_channel) = channel_id_type.to_channel(&ctx.http, Some(guild_id)).await {
-				let webhook = match webhook_find(
-					ctx,
-					new_message.guild_id,
-					chat_channel.id(),
-					bot_data.channel_webhooks.clone(),
-				)
-				.await
-				{
-					Ok(webhook) => webhook,
-					Err(err) => {
-						error!("Failed to find webhook: {err}");
-						chat_channel
-							.id()
-							.say(
-								&ctx.http,
-								format!(
-									"{} sent this: {}",
-									new_message.author.display_name(),
-									new_message.content.as_str()
-								),
-							)
-							.await?;
-						return Ok(());
-					}
-				};
-				let display = [text_display(&new_message.content)];
-				let mut container = CreateContainer::new(&display);
-				if let Some(attachment) = new_message
-					.attachments
-					.iter()
-					.find(|a| a.dimensions().is_some())
-				{
-					let image = media_gallery(&attachment.url);
-					container = container.add_component(separator()).add_component(image);
-				}
-				if let Some(replied_message) = &new_message.referenced_message {
-					let mut text = format!(
-						"# Referencing message sent by {}\n{}\n*Timestamp:*{}",
-						replied_message.author.display_name(),
-						replied_message.content.as_str(),
-						new_message.timestamp
-					);
-					text.truncate(MESSAGE_LIMIT);
-					let avatar = user_pfp(&replied_message.author);
-					let thumbnail_section = thumbnail_section(text, avatar);
-					container = container
-						.add_component(separator())
-						.add_component(thumbnail_section);
-					if let Some(attachment) = replied_message
-						.attachments
-						.iter()
-						.find(|a| a.dimensions().is_some())
-					{
-						let image = media_gallery(&attachment.url);
-						container = container.add_component(separator()).add_component(image);
-					}
-				}
-				let component = [CreateComponent::Container(container)];
-				let avatar = user_pfp(&new_message.author);
-				let message = ExecuteWebhook::default()
-					.with_components(true)
-					.flags(MessageFlags::IS_COMPONENTS_V2)
-					.username(new_message.author.display_name())
-					.components(&component)
-					.avatar_url(avatar);
-				if let Err(err) = webhook.execute(&ctx.http, false, message).await {
-					error!("Failed to execute webhook: {err}");
+async fn global_chats(ctx: &SContext, new_message: &Message, guild_id: i64) -> AResult<()> {
+	let bot_data: Arc<Data> = ctx.data();
+	channel_counter("global_chat");
+	let guild_global_chats = query!(
+		r#"
+		SELECT guild_id, global_chat_channel
+		FROM guild_settings
+		WHERE global_chat IS TRUE
+			AND guild_id != $1
+		LIMIT 10
+		"#,
+		guild_id
+	)
+	.fetch_all(&bot_data.db)
+	.await?;
+	for (guild_id, guild_channel_id) in guild_global_chats.iter().filter_map(|record| {
+		record
+			.global_chat_channel
+			.map(|channel_id| (GuildId::new(record.guild_id.cast_unsigned()), channel_id))
+	}) {
+		let channel_id_type = GenericChannelId::new(guild_channel_id.cast_unsigned());
+		if let Ok(chat_channel) = channel_id_type.to_channel(&ctx.http, Some(guild_id)).await {
+			let webhook = match webhook_find(
+				ctx,
+				Some(guild_id),
+				chat_channel.id(),
+				&bot_data.channel_webhooks,
+			)
+			.await
+			{
+				Ok(webhook) => webhook,
+				Err(err) => {
+					error!("Failed to find webhook: {err}");
 					chat_channel
 						.id()
 						.say(
 							&ctx.http,
 							format!(
 								"{} sent this: {}",
-								new_message.author.display_name(),
+								new_message.author.name,
 								new_message.content.as_str()
 							),
 						)
 						.await?;
+					continue;
 				}
+			};
+			let display = [text_display(&new_message.content)];
+			let mut container = CreateContainer::new(&display);
+			if let Some(attachment) = new_message
+				.attachments
+				.iter()
+				.find(|a| a.dimensions().is_some())
+			{
+				let image = vec![media_gallery(&attachment.url)];
+				container = container.add_component(separator()).add_component(
+					CreateContainerComponent::MediaGallery(CreateMediaGallery::new(image)),
+				);
+			}
+			if let Some(replied_message) = &new_message.referenced_message {
+				let mut text = format!(
+					"# Referencing message sent by {}\n{}\n*Timestamp:*{}",
+					replied_message.author.name,
+					replied_message.content.as_str(),
+					new_message.timestamp
+				);
+				text.truncate(MESSAGE_LIMIT);
+				let avatar = user_pfp(&replied_message.author);
+				let (text, thumbnail) = thumbnail_section(text, avatar);
+				container = container.add_component(separator()).add_component(
+					CreateContainerComponent::Section(CreateSection::new(vec![text], thumbnail)),
+				);
+				if let Some(attachment) = replied_message
+					.attachments
+					.iter()
+					.find(|a| a.dimensions().is_some())
+				{
+					let image = vec![media_gallery(&attachment.url)];
+					container = container.add_component(separator()).add_component(
+						CreateContainerComponent::MediaGallery(CreateMediaGallery::new(image)),
+					);
+				}
+			}
+			let component = [CreateComponent::Container(container)];
+			let avatar = user_pfp(&new_message.author);
+			let message = ExecuteWebhook::new()
+				.with_components(true)
+				.flags(MessageFlags::IS_COMPONENTS_V2)
+				.username(&new_message.author.name)
+				.components(&component)
+				.avatar_url(avatar);
+			if let Err(err) = webhook.execute(&ctx.http, false, message).await {
+				error!("Failed to execute webhook: {err}");
+				chat_channel
+					.id()
+					.say(
+						&ctx.http,
+						format!(
+							"{} sent this: {}",
+							new_message.author.name,
+							new_message.content.as_str()
+						),
+					)
+					.await?;
 			}
 		}
 	}
@@ -298,9 +264,9 @@ async fn global_chats(
 	Ok(())
 }
 
-async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &str) -> AResult<()> {
-	if let Ok(link) = discord_message_link.parse_next(&mut content) {
-		counter!(METRICS.message_previews.clone()).increment(1);
+async fn message_preview(ctx: &SContext, new_message: &Message) -> AResult<()> {
+	if let Ok(link) = discord_message_link.parse_next(&mut new_message.content.as_str()) {
+		counter!(METRICS.message_previews.as_str()).increment(1);
 		let (guild_id, channel_id, message_id) = (
 			GuildId::new(link.guild),
 			GenericChannelId::new(link.channel),
@@ -312,33 +278,45 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 			let ref_msg = channel_id.message(&ctx.http, message_id).await?;
 			if ref_msg.poll.is_none() {
 				let avatar = user_pfp(&ref_msg.author);
-				let thumbnail_display = [thumbnail_section(ref_msg.author.display_name(), &avatar)];
-				let reply_display = text_display(&ref_msg.content);
-				let timestamp = ref_msg.timestamp.to_string();
-				let time_display = text_display(&timestamp);
-				let channel_display = text_display(&channel_name);
-				let mut container = CreateContainer::new(&thumbnail_display)
-					.add_component(separator())
-					.add_component(reply_display)
-					.add_component(separator())
-					.add_component(time_display)
-					.add_component(separator())
-					.add_component(channel_display)
-					.accent_colour(Colour::ORANGE);
+				let mut text = String::with_capacity(usize::from(
+					u16::from(ref_msg.author.name.len()).saturating_add(
+						ref_msg
+							.content
+							.len()
+							.saturating_add(channel_name.len())
+							.saturating_add(32),
+					),
+				));
+				write!(
+					text,
+					"# {}\n**Timestamp:** {}\n**Channel name:**{channel_name}\n{}",
+					ref_msg.author.name, ref_msg.timestamp, ref_msg.content
+				)?;
+				let (text, thumbnail) = thumbnail_section(&text, &avatar);
+				let text_array = [text];
+				let thumbnail_display = [CreateContainerComponent::Section(CreateSection::new(
+					&text_array,
+					thumbnail,
+				))];
+				let mut container =
+					CreateContainer::new(&thumbnail_display).accent_colour(Colour::ORANGE);
 				if let Some(attachment) = ref_msg.attachments.first()
 					&& let Some(content_type) = &attachment.content_type
 					&& (content_type.starts_with("image") || content_type.starts_with("video"))
 				{
-					let image = media_gallery(attachment.url.as_str());
-					container = container.add_component(image);
+					let image = vec![media_gallery(attachment.url.as_str())];
+					container = container.add_component(CreateContainerComponent::MediaGallery(
+						CreateMediaGallery::new(image),
+					));
 				}
-				let mut preview_message = message_container(None, container);
+				let component = [CreateComponent::Container(container)];
+				let mut message = message_container(&component);
 				if ref_msg.channel_id == new_message.channel_id {
-					preview_message = preview_message.reference_message(&ref_msg);
+					message = message.reference_message(&ref_msg);
 				}
 				new_message
 					.channel_id
-					.send_message(&ctx.http, preview_message)
+					.send_message(&ctx.http, message)
 					.await?;
 			}
 		}
@@ -349,7 +327,6 @@ async fn message_preview(ctx: &SContext, new_message: &Message, mut content: &st
 
 async fn user_queries(
 	ctx: &SContext,
-	users: &UsersMap,
 	new_message: &Message,
 	guild_id: i64,
 	author_settings: Option<&UserSettingsLimited>,
@@ -358,22 +335,22 @@ async fn user_queries(
 	let user_id_i64 = i64::from(new_message.author.id);
 
 	if let Some(settings) = author_settings {
-		counter!(METRICS.user_afks.clone()).increment(1);
+		counter!(METRICS.user_afks.as_str()).increment(1);
 		let text = format!(
-			"# Ugh, welcome back {}! Guess I didn't manage to kill you after all",
-			new_message.author.display_name()
+			"# Ugh, welcome back <@{}>! Guess I didn't manage to kill you after all",
+			new_message.author.id
 		);
 		let title_display = [text_display(text)];
 		let mut container = CreateContainer::new(&title_display).accent_colour(Colour::BLITZ_BLUE);
 
 		if !settings.pinged_links.0.is_empty() {
 			let mut list = String::with_capacity(settings.pinged_links.0.len().saturating_add(1));
-
-			writeln!(list, "## Pinged links:")?;
+			list.push_str("## Pinged links:\n");
 
 			for entry in &settings.pinged_links.0 {
-				writeln!(list, "**{}**: {}", entry.author, entry.link)?;
+				writeln!(list, "**<@{}>**: {}", entry.author_id, entry.link)?;
 			}
+			list.truncate(MESSAGE_LIMIT);
 			let text_display = text_display(list);
 
 			container = container
@@ -381,9 +358,13 @@ async fn user_queries(
 				.add_component(text_display);
 		}
 
+		let component = [CreateComponent::Container(container)];
 		new_message
 			.channel_id
-			.send_message(&ctx.http, message_container(Some(new_message), container))
+			.send_message(
+				&ctx.http,
+				message_container(&component).reference_message(new_message),
+			)
 			.await?;
 
 		query!(
@@ -426,20 +407,19 @@ async fn user_queries(
 		.fetch_all(conn)
 		.await?;
 
-		let ping_updates: Vec<(Value, i64)> = mentioned_settings
+		let (entries, user_ids): (Vec<Value>, Vec<i64>) = mentioned_settings
 			.iter()
 			.filter(|s| s.afk)
 			.map(|s| {
 				let entry = PingedLink {
 					link: new_message.link().to_string(),
-					author: new_message.author.display_name().to_owned(),
+					author_id: new_message.author.id.get().cast_signed(),
 				};
 				(to_value(entry).unwrap(), s.user_id)
 			})
-			.collect();
+			.unzip();
 
-		if !ping_updates.is_empty() {
-			let (entries, user_ids): (Vec<Value>, Vec<i64>) = ping_updates.into_iter().unzip();
+		if !entries.is_empty() {
 			query!(
 				r#"
         		UPDATE user_settings
@@ -457,48 +437,48 @@ async fn user_queries(
 		}
 
 		for mentioned_user_settings in mentioned_settings {
-			if mentioned_user_settings.afk
-				&& let Ok(user) = get_user(
-					&ctx.http,
-					users,
-					UserId::new(mentioned_user_settings.user_id.cast_unsigned()),
-				)
-				.await
-			{
+			if mentioned_user_settings.afk {
 				let reason = mentioned_user_settings
 					.afk_reason
 					.as_deref()
 					.unwrap_or("Didn't renew life subscription");
 				new_message
-					.reply(
+					.channel_id
+					.send_message(
 						&ctx.http,
-						format!(
-							"{} is currently dead. Reason: {reason}",
-							user.display_name()
-						),
+						silent_message(&format!(
+							"<@{}> is currently dead. Reason: {reason}",
+							mentioned_user_settings.user_id
+						)),
 					)
 					.await?;
 			}
 			if let Some(ping_content) = &mentioned_user_settings.ping_content {
-				counter!(METRICS.custom_user_pings.clone()).increment(1);
+				counter!(METRICS.custom_user_pings.as_str()).increment(1);
 				let title = format!("# {ping_content}");
 				let text_display = [text_display(&title)];
 				let mut container =
 					CreateContainer::new(&text_display).accent_colour(Colour::BLITZ_BLUE);
 				if let Some(ping_media) = mentioned_user_settings.ping_media {
 					let media = if ping_media.eq_ignore_ascii_case("waifu") {
-						get_waifu(ctx).await
+						get_waifu().await
 					} else if let Some(gif_query) = ping_media.strip_prefix("!gif") {
-						get_gif(ctx, gif_query).await
+						get_gif(gif_query).await
 					} else {
-						ping_media
+						Cow::Owned(ping_media)
 					};
-					let image = media_gallery(media);
-					container = container.add_component(image);
+					let image = vec![media_gallery(media)];
+					container = container.add_component(CreateContainerComponent::MediaGallery(
+						CreateMediaGallery::new(image),
+					));
 				}
+				let component = [CreateComponent::Container(container)];
 				new_message
 					.channel_id
-					.send_message(&ctx.http, message_container(Some(new_message), container))
+					.send_message(
+						&ctx.http,
+						message_container(&component).reference_message(new_message),
+					)
 					.await?;
 			}
 		}
@@ -516,23 +496,29 @@ async fn guild_queries(
 	let bot_data: Arc<Data> = ctx.data();
 
 	for record in word_reactions {
-		counter!(METRICS.word_reactions.clone()).increment(1);
+		counter!(METRICS.word_reactions.as_str()).increment(1);
 		if let Some(content) = &record.content {
 			let title = format!("# {content}");
 			let text_display = [text_display(&title)];
 			let mut container = CreateContainer::new(&text_display).accent_colour(Colour::GOLD);
 			if let Some(reaction_media) = &record.media {
 				let media = if let Some(gif_query) = reaction_media.strip_prefix("!gif") {
-					get_gif(ctx, gif_query).await
+					get_gif(gif_query).await
 				} else {
-					reaction_media.to_owned()
+					Cow::Borrowed(reaction_media.as_str())
 				};
-				let image = media_gallery(media);
-				container = container.add_component(image);
+				let image = vec![media_gallery(media)];
+				container = container.add_component(CreateContainerComponent::MediaGallery(
+					CreateMediaGallery::new(image),
+				));
 			}
+			let component = [CreateComponent::Container(container)];
 			new_message
 				.channel_id
-				.send_message(&ctx.http, message_container(Some(new_message), container))
+				.send_message(
+					&ctx.http,
+					message_container(&component).reference_message(new_message),
+				)
 				.await?;
 		} else if let Some(emoji_id) = &record.emoji_id {
 			let emoji_id_typed = EmojiId::new(emoji_id.cast_unsigned());
@@ -540,14 +526,10 @@ async fn guild_queries(
 				&& let Ok(guild_emoji) = guild_id.emoji(&ctx.http, emoji_id_typed).await
 			{
 				(guild_emoji.animated(), guild_emoji.id, guild_emoji.name)
+			} else if let Some(emoji) = get_emoji(ctx, &bot_data.app_emojis, emoji_id_typed).await {
+				(emoji.animated(), emoji.id, emoji.name.clone())
 			} else {
-				match get_emoji(ctx, &bot_data.app_emojis, emoji_id_typed).await {
-					Ok(emoji) => (emoji.animated(), emoji.id, emoji.name.clone()),
-					Err(err) => {
-						error!("{err}");
-						continue;
-					}
-				}
+				continue;
 			};
 			let reaction = ReactionType::Custom {
 				animated: is_animated,
@@ -572,7 +554,6 @@ async fn db_queries(
 
 	user_queries(
 		ctx,
-		&bot_data.users,
 		new_message,
 		guild_id_i64,
 		author_settings,
@@ -618,7 +599,7 @@ async fn db_queries(
 	)?;
 
 	if updated_words.rows_affected() > 0 {
-		counter!(METRICS.words_tracked.clone()).increment(updated_words.rows_affected());
+		counter!(METRICS.words_tracked.as_str()).increment(updated_words.rows_affected());
 	}
 
 	guild_queries(ctx, new_message, &word_reactions, guild_id).await?;
@@ -636,40 +617,58 @@ pub async fn handle_message(
 	let guild_id_i64 = i64::from(guild_id);
 	let user_id_i64 = i64::from(new_message.author.id);
 
-	let guild_cache = guild_cache(bot_data.clone(), guild_id, user_id_i64, ctx).await?;
+	let guild_settings_opt = fetch_guild_settings(guild_id_i64, &bot_data.db).await?;
 
-	let (guild_settings, author_settings) = try_join!(
-		fetch_guild_settings(guild_id_i64, &bot_data.db),
-		fetch_user_settings(guild_id_i64, user_id_i64, &bot_data.db)
-	)?;
+	if let Some(guild_settings) = guild_settings_opt {
+		let channel_id_i64 = i64::from(new_message.channel_id);
 
-	let content = new_message.content.to_lowercase();
+		if let Some(spoiler_channel) = guild_settings.spoiler_channel
+			&& channel_id_i64 == spoiler_channel
+		{
+			spoiler_message(ctx, new_message, &bot_data.channel_webhooks).await?;
+		}
+
+		if let Some(global_chat_channel) = guild_settings.global_chat_channel
+			&& channel_id_i64 == global_chat_channel
+			&& guild_settings.global_chat
+		{
+			global_chats(ctx, new_message, guild_id_i64).await?;
+		}
+
+		if !new_message.content.starts_with('#') {
+			if let Some(ai_chat_channel) = guild_settings.ai_chat_channel
+				&& channel_id_i64 == ai_chat_channel
+			{
+				let guild_cache = guild_cache(&bot_data, guild_id, Some(user_id_i64), ctx).await?;
+				ai_chats(
+					new_message.clone(),
+					guild_cache.ai_queue.clone(),
+					guild_settings.chatbot_role.clone(),
+				)
+				.await?;
+			}
+			if let Some(music_channel) = guild_settings.music_channel
+				&& channel_id_i64 == music_channel
+			{
+				queue_track(ctx, new_message, &bot_data.db).await?;
+			}
+		}
+	}
 
 	try_join!(
 		check_bot_ping(ctx, new_message),
-		easter_eggs(ctx, new_message, &content, &bot_data.channel_webhooks),
-		message_preview(ctx, new_message, &content),
-		spoiler_message(
-			ctx,
-			new_message,
-			guild_settings.as_ref(),
-			bot_data.channel_webhooks.clone()
-		),
-		global_chats(ctx, new_message, guild_settings.as_ref(), guild_id_i64),
-		ai_chats(
-			new_message,
-			guild_cache.ai_queue.clone(),
-			guild_settings.as_ref()
-		),
-		queue_track(ctx, new_message, guild_settings.as_ref(), &bot_data.db)
+		easter_eggs(ctx, new_message, &bot_data.channel_webhooks),
+		message_preview(ctx, new_message),
 	)?;
+
+	let author_settings_opt = fetch_user_settings(guild_id_i64, user_id_i64, &bot_data.db).await?;
 
 	db_queries(
 		ctx,
 		new_message,
 		guild_id,
 		guild_id_i64,
-		author_settings.as_ref(),
+		author_settings_opt.as_ref(),
 	)
 	.await?;
 

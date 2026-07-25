@@ -5,9 +5,12 @@ use fabsebot_core::{
 	utils::helpers::{edit_message_container, reply_container, separator, text_display},
 };
 use poise::ChoiceParameter;
-use serenity::all::{
-	ButtonStyle, Colour, ComponentInteractionCollector, CreateActionRow, CreateButton,
-	CreateContainer, CreateContainerComponent, CreateInteractionResponse, User,
+use serenity::{
+	all::{
+		ButtonStyle, Colour, ComponentInteractionCollector, CreateActionRow, CreateButton,
+		CreateContainer, CreateContainerComponent, CreateInteractionResponse, User,
+	},
+	builder::CreateComponent,
 };
 
 use crate::require_human;
@@ -32,23 +35,21 @@ impl RpsChoice {
 		)
 	}
 
-	fn button_id(self, ctx_id: u64) -> String {
+	const fn button_id(self) -> &'static str {
 		match self {
-			Self::Rock => format!("{ctx_id}_r"),
-			Self::Paper => format!("{ctx_id}_p"),
-			Self::Scissors => format!("{ctx_id}_s"),
+			Self::Rock => "rock",
+			Self::Paper => "paper",
+			Self::Scissors => "scissors",
 		}
 	}
 
-	fn from_button_id(id: &str) -> Option<Self> {
-		if id.ends_with("_r") {
-			Some(Self::Rock)
-		} else if id.ends_with("_p") {
-			Some(Self::Paper)
-		} else if id.ends_with("_s") {
-			Some(Self::Scissors)
+	fn from_button_id(id: &str) -> Self {
+		if id == "rock" {
+			Self::Rock
+		} else if id == "paper" {
+			Self::Paper
 		} else {
-			None
+			Self::Scissors
 		}
 	}
 
@@ -75,16 +76,14 @@ pub async fn rps(
 ) -> Result<(), Error> {
 	require_human(ctx, &user).await?;
 
-	let guild_id = ctx.guild_id().unwrap();
-	let ctx_id = ctx.id();
 	let buttons = [
-		CreateButton::new(RpsChoice::Rock.button_id(ctx_id))
+		CreateButton::new(RpsChoice::Rock.button_id())
 			.style(ButtonStyle::Primary)
 			.label(RpsChoice::Rock.emoji()),
-		CreateButton::new(RpsChoice::Paper.button_id(ctx_id))
+		CreateButton::new(RpsChoice::Paper.button_id())
 			.style(ButtonStyle::Primary)
 			.label(RpsChoice::Paper.emoji()),
-		CreateButton::new(RpsChoice::Scissors.button_id(ctx_id))
+		CreateButton::new(RpsChoice::Scissors.button_id())
 			.style(ButtonStyle::Primary)
 			.label(RpsChoice::Scissors.emoji()),
 	];
@@ -98,50 +97,40 @@ pub async fn rps(
 			CreateActionRow::Buttons(Cow::Borrowed(&buttons)),
 		))
 		.accent_colour(Colour::ORANGE);
+	let component = [CreateComponent::Container(container)];
 
-	ctx.send(reply_container(container)).await?;
+	let message = ctx.send(reply_container(&component)).await?;
 
-	let ctx_id_str = ctx_id.to_string();
 	if let Some(interaction) = ComponentInteractionCollector::new(ctx.serenity_context())
 		.author_id(user.id)
 		.timeout(Duration::from_mins(1))
-		.filter(move |interaction| interaction.data.custom_id.starts_with(ctx_id_str.as_str()))
+		.message_id(message.message().await?.id)
 		.await
 	{
-		let target_choice = RpsChoice::from_button_id(&interaction.data.custom_id).unwrap();
+		let target_choice = RpsChoice::from_button_id(&interaction.data.custom_id);
 
 		interaction
 			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 			.await?;
 
-		let response = {
-			let title = if choice == target_choice {
-				"You both suck!".to_owned()
-			} else if choice.beats(target_choice) {
-				let mut user_name = ctx
-					.author()
-					.nick_in(ctx.http(), guild_id)
-					.await
-					.unwrap_or_else(|| ctx.author().display_name().to_owned());
-				user_name.push_str(" won!");
-				user_name
+		let response = if choice == target_choice {
+			Cow::Borrowed("You both suck!")
+		} else {
+			let user_id = if choice.beats(target_choice) {
+				ctx.author().id
 			} else {
-				let mut user_name = user
-					.nick_in(ctx.http(), guild_id)
-					.await
-					.unwrap_or_else(|| user.display_name().to_owned());
-				user_name.push_str(" won!");
-				user_name
+				user.id
 			};
-			format!("# {title}\nStill no luck getting a life")
+			Cow::Owned(format!("# <@{user_id}> won!\nStill no luck getting a life"))
 		};
 
 		let mut msg = interaction.message;
 
-		let text_display = [text_display(&response)];
+		let text_display = [text_display(response)];
 		let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
+		let component = [CreateComponent::Container(container)];
 
-		msg.edit(ctx.http(), edit_message_container(container))
+		msg.edit(ctx.http(), edit_message_container(&component))
 			.await?;
 	}
 	Ok(())

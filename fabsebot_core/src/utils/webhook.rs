@@ -1,5 +1,6 @@
+use std::sync::Arc;
+
 use anyhow::{Result as AResult, bail};
-use fabsebot_db::guild::GuildSettings;
 use serde::Serialize;
 use serenity::{
 	all::{
@@ -7,11 +8,11 @@ use serenity::{
 		GenericChannelId, GuildId, Message, MessageFlags, Webhook,
 	},
 	builder::CreateAttachment,
+	http::Http,
 };
-use tracing::warn;
 
 use crate::{
-	config::types::{WebhookMap, utils_config},
+	config::types::{WebhookMap, bot_context, utils_config},
 	utils::helpers::{channel_counter, text_display, url_bytes, user_pfp},
 };
 
@@ -21,14 +22,14 @@ const FABSEBOT_WEBHOOK_PFP: &str =
 
 pub async fn webhook_components<'a>(
 	webhook: Webhook,
-	ctx: &SContext,
+	http: &Http,
 	component: &'a [CreateComponent<'a>],
 ) -> Result<Option<Message>, Error> {
 	webhook
 		.execute(
-			&ctx.http,
+			http,
 			false,
-			ExecuteWebhook::default()
+			ExecuteWebhook::new()
 				.with_components(true)
 				.flags(MessageFlags::IS_COMPONENTS_V2)
 				.components(component),
@@ -36,47 +37,38 @@ pub async fn webhook_components<'a>(
 		.await
 }
 
-pub async fn error_hook(ctx: &SContext, output: &str) -> AResult<()> {
-	let webhook = Webhook::from_url(&ctx.http, &utils_config().error_webhook).await?;
-	let component = CreateComponent::Container(CreateContainer::new(vec![text_display(output)]));
+pub async fn error_hook(output: &str) -> AResult<()> {
+	let http = bot_context().http.clone();
+	let webhook = Webhook::from_url(&http, &utils_config().error_webhook).await?;
+	let display = [text_display(output)];
+	let component = CreateComponent::Container(CreateContainer::new(&display));
 
-	webhook_components(webhook, ctx, &[component]).await?;
+	webhook_components(webhook, &http, &[component]).await?;
 
 	Ok(())
 }
 
-pub async fn spoiler_message(
-	ctx: &SContext,
-	message: &Message,
-	settings: Option<&GuildSettings>,
-	data: WebhookMap,
-) -> AResult<()> {
-	if let Some(settings) = settings
-		&& let Some(spoiler_channel) = settings.spoiler_channel
-		&& i64::from(message.channel_id) == spoiler_channel
-	{
-		channel_counter("spoiler".to_owned());
-		let webhook = webhook_find(ctx, message.guild_id, message.channel_id, data).await?;
-		let avatar_url = user_pfp(&message.author);
-		let username = message.author.display_name();
-		let mut webhook_execute = ExecuteWebhook::default()
-			.username(username)
-			.avatar_url(avatar_url.as_str());
-		if !message.content.is_empty() {
-			webhook_execute = webhook_execute.content(message.content.as_str());
-		}
-		for attachment in &message.attachments {
-			let Ok(bytes) = url_bytes(&attachment.url).await else {
-				continue;
-			};
-			webhook_execute = webhook_execute.add_file(
-				CreateAttachment::bytes(bytes, attachment.filename.clone()).spoiler(true),
-			);
-		}
-
-		webhook.execute(&ctx.http, false, webhook_execute).await?;
-		message.delete(&ctx.http, None).await?;
+pub async fn spoiler_message(ctx: &SContext, message: &Message, data: &WebhookMap) -> AResult<()> {
+	channel_counter("spoiler");
+	let webhook = webhook_find(ctx, message.guild_id, message.channel_id, data).await?;
+	let avatar_url = user_pfp(&message.author);
+	let username = &message.author.name;
+	let mut webhook_execute = ExecuteWebhook::new()
+		.username(username)
+		.avatar_url(avatar_url.as_str());
+	if !message.content.is_empty() {
+		webhook_execute = webhook_execute.content(message.content.as_str());
 	}
+	for attachment in &message.attachments {
+		let Ok(bytes) = url_bytes(&attachment.url).await else {
+			continue;
+		};
+		webhook_execute = webhook_execute
+			.add_file(CreateAttachment::bytes(bytes, attachment.filename.clone()).spoiler(true));
+	}
+
+	webhook.execute(&ctx.http, false, webhook_execute).await?;
+	message.delete(&ctx.http, None).await?;
 
 	Ok(())
 }
@@ -91,8 +83,8 @@ pub async fn webhook_find(
 	ctx: &SContext,
 	guild_id: Option<GuildId>,
 	channel_id: GenericChannelId,
-	cached_webhooks: WebhookMap,
-) -> AResult<Webhook> {
+	cached_webhooks: &WebhookMap,
+) -> AResult<Arc<Webhook>> {
 	if let Some(webhook) = cached_webhooks.get(&channel_id) {
 		return Ok(webhook);
 	}
@@ -122,7 +114,7 @@ pub async fn webhook_find(
 		&& let Some(first_webhook_id) = existing_webhooks.first().map(|w| w.id)
 		&& let Err(err) = ctx.http.delete_webhook(first_webhook_id, None).await
 	{
-		warn!("Failed to delete webhook: {err}");
+		bail!("Failed to delete webhook: {err}");
 	}
 	let webhook_info = WebhookInfo {
 		name: FABSEBOT_WEBHOOK_NAME,
@@ -134,8 +126,9 @@ pub async fn webhook_find(
 		.map_or_else(
 			|err| bail!("Failed to create webhook: {err}"),
 			|webhook| {
-				cached_webhooks.insert(channel_id, webhook.clone());
-				Ok(webhook)
+				let webhook_arc = Arc::new(webhook);
+				cached_webhooks.insert(channel_id, webhook_arc.clone());
+				Ok(webhook_arc)
 			},
 		)
 }

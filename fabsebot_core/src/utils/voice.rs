@@ -1,4 +1,5 @@
 use std::{
+	borrow::Cow,
 	collections::VecDeque,
 	fmt::Write as _,
 	sync::{
@@ -21,16 +22,17 @@ use lavalink_rs::{
 	player_context::{PlayerContext, TrackInQueue},
 };
 use metrics::counter;
+use poise::ReplyHandle;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, to_value};
 use serenity::{
 	all::{
 		ButtonStyle, ChannelId, Colour, ComponentInteraction, ComponentInteractionCollector,
 		Context as SerenityContext, CreateActionRow, CreateButton, CreateContainer, CreateMessage,
-		EditMessage, GenericChannelId, GuildId, Http, MessageId, UserId,
+		EditMessage, Error as SerenityError, GenericChannelId, GuildId, MessageId, UserId,
 	},
 	async_trait,
-	builder::CreateContainerComponent,
+	builder::{CreateComponent, CreateContainerComponent, CreateSection},
 	futures::StreamExt as _,
 	http::Typing,
 };
@@ -58,16 +60,16 @@ use crate::{
 	config::{
 		constants::{EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, MESSAGE_LIMIT, QUEUEING_MSG},
 		types::{
-			Data, GuildCache, HTTP_CLIENT, MusicQueue, MusicQueueData, SContext, UsersMap,
-			bot_context,
+			Data, GuildCache, HTTP_CLIENT, MusicQueue, MusicQueueData, SContext, bot_context,
+			utils_config,
 		},
 	},
-	events::interaction::build_feedback_action_row,
+	events::interaction::FEEDBACK_BUTTON_CUSTOM_ID,
 	log_error,
 	stats::counters::METRICS,
 	utils::helpers::{
-		edit_message_container, get_lyrics, get_user, guild_cache, reply_container, separator,
-		text_display, thumbnail_section, visit_page_button,
+		edit_message_container, get_lyrics, guild_cache, reply_container, separator,
+		silent_message, text_display, thumbnail_section, visit_page_button,
 	},
 };
 
@@ -76,86 +78,66 @@ const ALREADY_IN_VOICE_CHAN_MSG: &str =
 
 #[derive(Clone)]
 struct DriverDisconnectHandler {
-	bot_data: Arc<Data>,
+	music_manager: Arc<Songbird>,
+	guild_cache: Arc<GuildCache>,
 }
 
 impl DriverDisconnectHandler {
-	const fn new(bot_data: Arc<Data>) -> Self {
-		Self { bot_data }
+	const fn new(music_manager: Arc<Songbird>, guild_cache: Arc<GuildCache>) -> Self {
+		Self {
+			music_manager,
+			guild_cache,
+		}
 	}
 }
 
 #[async_trait]
 impl VoiceEventHandler for DriverDisconnectHandler {
-	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
-		if let EventContext::DriverDisconnect(disconnect_data) = ctx {
-			let guild_cache = self
-				.bot_data
-				.guilds
-				.get(&GuildId::from(disconnect_data.guild_id.get()))
-				.unwrap();
-			if guild_cache.music_data.is_songbird_connected() {
-				guild_cache.music_data.disconnected();
-				if let Err(err) = self
-					.bot_data
-					.music_manager
-					.remove(disconnect_data.guild_id)
-					.await
-				{
-					error!("Failed to remove call (songbird): {err}");
-				}
+	async fn act(&self, event: &EventContext<'_>) -> Option<SongBirdEvent> {
+		if let EventContext::DriverDisconnect(disconnect_data) = event
+			&& self.guild_cache.music_data.is_songbird_connected()
+		{
+			self.guild_cache.music_data.disconnected();
+			if let Err(err) = self.music_manager.remove(disconnect_data.guild_id).await {
+				error!("Failed to remove call (songbird): {err}");
 			}
 		}
+
 		None
 	}
 }
 
 #[derive(Clone)]
 struct ClientDisconnectHandler {
-	serenity_context: SerenityContext,
 	channel_id: GenericChannelId,
 }
 
 impl ClientDisconnectHandler {
-	const fn new(serenity_context: SerenityContext, channel_id: GenericChannelId) -> Self {
-		Self {
-			serenity_context,
-			channel_id,
-		}
+	const fn new(channel_id: GenericChannelId) -> Self {
+		Self { channel_id }
 	}
 }
 
 #[async_trait]
 impl VoiceEventHandler for ClientDisconnectHandler {
-	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
-		if let EventContext::ClientDisconnect(client_data) = ctx {
-			let user_id = UserId::new(client_data.user_id.0);
-			match user_id.to_user(&self.serenity_context.http).await {
-				Ok(user) => {
-					if let Err(err) = self
-						.channel_id
-						.send_message(
-							&self.serenity_context.http,
-							CreateMessage::default()
-								.content(format!("Bye {}", user.display_name())),
-						)
-						.await
-					{
-						error!("Failed to send message: {err}");
-					}
-				}
-				Err(err) => {
-					warn!("Failed to fetch user: {err}");
-				}
-			}
+	async fn act(&self, event: &EventContext<'_>) -> Option<SongBirdEvent> {
+		if let EventContext::ClientDisconnect(client_data) = event
+			&& let Err(err) = self
+				.channel_id
+				.send_message(
+					&bot_context().http,
+					silent_message(&format!("Bye <@{}>", client_data.user_id)),
+				)
+				.await
+		{
+			warn!("Failed to send message: {err}");
 		}
 		None
 	}
 }
 
 fn create_components<'a>(
-	author_name: &'a str,
-	msg_id: MessageId,
+	author_id: UserId,
 	metadata: &'a TrackPlayData,
 	queue_size: usize,
 	payload_type: &PayloadType,
@@ -164,84 +146,96 @@ fn create_components<'a>(
 	CreateContainerComponent<'a>,
 	Vec<CreateButton<'a>>,
 ) {
-	let title = metadata.title.as_ref().map_or("Unknown title", |t| t);
-	let artist = metadata.artist.as_ref().map_or("Unknown artist", |a| a);
-	let thumbnail = metadata
-		.thumbnail_url
-		.as_ref()
-		.map_or("https://c.tenor.com/gRnPiR82No4AAAAd/tenor.gif", |t| t);
-	let duration = metadata.duration_sec.unwrap_or(0);
+	let optional_data = metadata.optional_data.as_ref();
 
-	let text = format!(
-		"# {title}\n**Added by:** {author_name}\n**Artist:** {artist}\n**Duration:** \
-		 {duration}s\n**Queue size:** {}",
-		queue_size.saturating_sub(1)
-	);
+	let thumbnail_section = {
+		let (text, thumbnail) = optional_data.map_or_else(
+			|| {
+				thumbnail_section(
+					"# Unknown song data :/",
+					"https://c.tenor.com/gRnPiR82No4AAAAd/tenor.gif",
+				)
+			},
+			|optional_data| {
+				thumbnail_section(
+					format!(
+						"# {}\n**Added by:** <@{author_id}>\n**Artist:** {}\n**Duration:** \
+						 {}s\n**Queue size:** {}",
+						optional_data.title.as_str(),
+						optional_data.artist.as_str(),
+						optional_data.duration_sec,
+						queue_size.saturating_sub(1)
+					),
+					optional_data.thumbnail_url.as_str(),
+				)
+			},
+		);
+		CreateContainerComponent::Section(CreateSection::new(vec![text], thumbnail))
+	};
 
-	let thumbnail_section = thumbnail_section(text, thumbnail);
-
-	let (primary_len, additional_len) = if *payload_type == PayloadType::Song {
-		(5, 4)
-	} else if *payload_type == PayloadType::Lavalink {
-		(5, 3)
-	} else if *payload_type == PayloadType::Custom {
-		(1, 2)
-	} else {
-		(1, 1)
+	let (primary_len, additional_len) = match (payload_type, optional_data.is_some()) {
+		(PayloadType::Song, true) => (5, 4),
+		(PayloadType::Song, false) => (3, 2),
+		(PayloadType::Lavalink, true) => (5, 3),
+		(PayloadType::Lavalink, false) => (3, 1),
+		(PayloadType::Custom, _) => (1, 2),
+		_ => (1, 1),
 	};
 
 	let mut primary_buttons = Vec::with_capacity(primary_len);
+	let mut additional_buttons = Vec::with_capacity(additional_len);
 
 	primary_buttons.push(
-		CreateButton::new(format!("{msg_id}_p"))
+		CreateButton::new("pause")
 			.style(ButtonStyle::Primary)
 			.label("Pause/Unpause"),
 	);
 
 	if *payload_type == PayloadType::Song || *payload_type == PayloadType::Lavalink {
 		primary_buttons.push(
-			CreateButton::new(format!("{msg_id}_c"))
+			CreateButton::new("clear")
 				.style(ButtonStyle::Primary)
 				.label("Stop & clear queue"),
 		);
 		primary_buttons.push(
-			CreateButton::new(format!("{msg_id}_s"))
+			CreateButton::new("skip")
 				.style(ButtonStyle::Primary)
 				.label("Skip"),
 		);
-		primary_buttons.push(
-			CreateButton::new(format!("{msg_id}_f"))
-				.style(ButtonStyle::Primary)
-				.label("Seek forward 10s"),
-		);
-		primary_buttons.push(
-			CreateButton::new(format!("{msg_id}_b"))
-				.style(ButtonStyle::Primary)
-				.label("Seek backwards 10s"),
-		);
+		if optional_data.is_some() {
+			primary_buttons.push(
+				CreateButton::new("forward")
+					.style(ButtonStyle::Primary)
+					.label("Seek forward 10s"),
+			);
+			primary_buttons.push(
+				CreateButton::new("backwards")
+					.style(ButtonStyle::Primary)
+					.label("Seek backwards 10s"),
+			);
+		}
 	}
 
 	let primary_row =
 		CreateContainerComponent::ActionRow(CreateActionRow::buttons(primary_buttons));
 
-	let mut additional_buttons = Vec::with_capacity(additional_len);
-
 	if *payload_type == PayloadType::Song || *payload_type == PayloadType::Custom {
 		additional_buttons.push(
-			CreateButton::new(format!("{msg_id}_r"))
+			CreateButton::new("retry")
 				.style(ButtonStyle::Secondary)
 				.label("Enable/Disable loop"),
 		);
 	}
+
 	additional_buttons.push(
-		CreateButton::new(format!("{msg_id}_h"))
+		CreateButton::new("history")
 			.style(ButtonStyle::Secondary)
 			.label("Show/Hide song history"),
 	);
 
-	if let Some(url) = metadata.source_url.as_ref() {
+	if let Some(url) = optional_data.map(|d| d.source_url.as_str()) {
 		additional_buttons.push(
-			CreateButton::new(format!("{msg_id}_l"))
+			CreateButton::new("lyrics")
 				.style(ButtonStyle::Secondary)
 				.label("Show/Hide lyrics"),
 		);
@@ -251,378 +245,312 @@ fn create_components<'a>(
 	(thumbnail_section, primary_row, additional_buttons)
 }
 
-async fn pause_song(
-	handler_lock: Option<Arc<Mutex<Call>>>,
-	lavalink_context: Option<&PlayerContext>,
-) -> AResult<()> {
-	if let Some(handler_lock) = handler_lock {
-		let Some(current_track) = handler_lock.lock().await.queue().current() else {
-			return Ok(());
-		};
-		match current_track.get_info().await.map(|t| t.playing) {
-			Ok(state) => match state {
-				PlayMode::Pause => {
-					current_track.play()?;
-				}
-				PlayMode::Play => {
-					current_track.pause()?;
-				}
-				_ => {}
-			},
-			Err(err) => {
-				warn!("Failed to get track info. {err}");
+enum PlayerAction {
+	Pause,
+	Skip,
+	Clear,
+	SeekForward(i64),
+	SeekBackward(i64),
+	Loop,
+}
+
+enum AudioBackend {
+	Songbird(Arc<Mutex<Call>>),
+	Lavalink(PlayerContext),
+}
+
+impl AudioBackend {
+	async fn apply(&self, action: &PlayerAction) -> AResult<()> {
+		match action {
+			PlayerAction::Pause => self.pause_song().await,
+			PlayerAction::Skip => self.skip_song().await,
+			PlayerAction::Clear => self.clear_queue().await,
+			PlayerAction::SeekForward(duration) => {
+				self.seek_song(SeekType::Forward, *duration).await
 			}
-		}
-	} else {
-		let context = lavalink_context.unwrap();
-		let player_info = context.get_player().await?;
-		context.set_pause(!player_info.paused).await?;
-	}
-
-	Ok(())
-}
-
-async fn clear_queue(
-	handler_lock: Option<Arc<Mutex<Call>>>,
-	lavalink_context: Option<&PlayerContext>,
-) -> AResult<()> {
-	if let Some(handler_lock) = handler_lock {
-		handler_lock.lock().await.queue().stop();
-	} else {
-		let context = lavalink_context.unwrap();
-		context.get_queue().clear()?;
-		context.stop_now().await?;
-	}
-
-	Ok(())
-}
-
-async fn skip_song(
-	handler_lock: Option<Arc<Mutex<Call>>>,
-	lavalink_context: Option<&PlayerContext>,
-) -> AResult<()> {
-	if let Some(handler_lock) = handler_lock {
-		let handler = handler_lock.lock().await;
-		let queue = handler.queue();
-		if queue.len() > 1 {
-			queue.skip()?;
-		}
-	} else {
-		let context = lavalink_context.unwrap();
-		let queue_size = context.get_queue().get_count().await?;
-		if queue_size > 0 {
-			context.skip()?;
+			PlayerAction::SeekBackward(duration) => {
+				self.seek_song(SeekType::Backwards, *duration).await
+			}
+			PlayerAction::Loop => self.loop_song().await,
 		}
 	}
 
-	Ok(())
-}
-
-async fn loop_song(handler_lock: Option<Arc<Mutex<Call>>>) -> AResult<()> {
-	if let Some(handler_lock) = handler_lock {
-		let Some(current_track) = handler_lock.lock().await.queue().current() else {
-			return Ok(());
-		};
-		match current_track.get_info().await.map(|t| t.loops) {
-			Ok(loops) => {
-				if loops == LoopState::Infinite {
-					current_track.disable_loop()?;
-				} else {
-					current_track.enable_loop()?;
+	async fn pause_song(&self) -> AResult<()> {
+		match self {
+			Self::Songbird(lock) => {
+				let Some(current_track) = lock.lock().await.queue().current() else {
+					return Ok(());
+				};
+				match current_track.get_info().await.map(|t| t.playing) {
+					Ok(PlayMode::Pause) => current_track.play()?,
+					Ok(PlayMode::Play) => current_track.pause()?,
+					Err(err) => {
+						warn!("Failed to get track info. {err}");
+					}
+					_ => {}
 				}
 			}
-			Err(err) => {
-				warn!("Failed to get track info. {err}");
+			Self::Lavalink(ctx) => {
+				let player_info = ctx.get_player().await?;
+				ctx.set_pause(!player_info.paused).await?;
 			}
 		}
+		Ok(())
 	}
-	Ok(())
+
+	async fn clear_queue(&self) -> AResult<()> {
+		match self {
+			Self::Songbird(lock) => {
+				lock.lock().await.queue().stop();
+			}
+			Self::Lavalink(ctx) => {
+				ctx.get_queue().clear()?;
+				ctx.stop_now().await?;
+			}
+		}
+		Ok(())
+	}
+
+	async fn skip_song(&self) -> AResult<()> {
+		match self {
+			Self::Songbird(lock) => {
+				lock.lock().await.queue().skip()?;
+			}
+			Self::Lavalink(ctx) => {
+				let queue_size = ctx.get_queue().get_count().await?;
+				if queue_size > 0 {
+					ctx.skip()?;
+				}
+			}
+		}
+		Ok(())
+	}
+
+	async fn loop_song(&self) -> AResult<()> {
+		match self {
+			Self::Songbird(lock) => {
+				let Some(current_track) = lock.lock().await.queue().current() else {
+					return Ok(());
+				};
+				match current_track.get_info().await.map(|t| t.loops) {
+					Ok(loops) => {
+						if loops == LoopState::Infinite {
+							current_track.disable_loop()?;
+						} else {
+							current_track.enable_loop()?;
+						}
+					}
+					Err(err) => {
+						warn!("Failed to get track info. {err}");
+					}
+				}
+			}
+			Self::Lavalink(_ctx) => return Ok(()),
+		}
+		Ok(())
+	}
+
+	async fn seek_song(&self, seek_type: SeekType, song_duration: i64) -> AResult<()> {
+		let seek_amount = Duration::from_secs(10);
+		match self {
+			Self::Songbird(lock) => {
+				let Some(current_track) = lock.lock().await.queue().current() else {
+					return Ok(());
+				};
+				let song_info = current_track.get_info().await?;
+				let target = match seek_type {
+					SeekType::Forward => song_info
+						.position
+						.saturating_add(seek_amount)
+						.min(Duration::from_secs(song_duration.cast_unsigned())),
+					SeekType::Backwards => song_info.position.saturating_sub(seek_amount),
+				};
+				current_track.seek_async(target).await?;
+			}
+			Self::Lavalink(ctx) => {
+				let player_info = ctx.get_player().await?;
+				if let Some(track) = player_info.track {
+					let current_position = Duration::from_millis(player_info.state.position);
+					let track_duration = Duration::from_millis(track.info.length);
+					let new_duration = match seek_type {
+						SeekType::Forward => current_position
+							.saturating_add(seek_amount)
+							.min(track_duration),
+						SeekType::Backwards => current_position.saturating_sub(seek_amount),
+					};
+					ctx.set_position(new_duration).await?;
+				}
+			}
+		}
+		Ok(())
+	}
 }
 
-fn fetch_context(
-	bot_data: Arc<Data>,
-	guild_id: GuildId,
-) -> (Option<Arc<Mutex<Call>>>, Option<PlayerContext>) {
+fn fetch_context(bot_data: &Data, guild_id: GuildId) -> AudioBackend {
 	bot_data
 		.lavalink_client
 		.get_player_context(guild_id)
-		.map_or_else(
-			|| {
-				bot_data
-					.music_manager
-					.get(guild_id)
-					.map_or_else(|| (None, None), |handler_lock| (Some(handler_lock), None))
-			},
-			|context| (None, Some(context)),
-		)
+		.map(AudioBackend::Lavalink)
+		.or_else(|| {
+			bot_data
+				.music_manager
+				.get(guild_id)
+				.map(AudioBackend::Songbird)
+		})
+		.unwrap()
 }
 
-async fn seek_song(
-	handler_lock: Option<Arc<Mutex<Call>>>,
-	lavalink_context: Option<&PlayerContext>,
-	seek_type: SeekType,
-	song_duration: i64,
+async fn apply_to_all_guilds(
+	bot_data: &Data,
+	track_guilds: &[i64],
+	action: PlayerAction,
 ) -> AResult<()> {
-	let seek_amount = Duration::from_secs(10);
-	if let Some(handler_lock) = handler_lock {
-		let Some(current_track) = handler_lock.lock().await.queue().current() else {
-			return Ok(());
-		};
-		let song_info = current_track.get_info().await?;
-		let target = if seek_type == SeekType::Forward {
-			song_info
-				.position
-				.saturating_add(seek_amount)
-				.min(Duration::from_secs(song_duration.cast_unsigned()))
-		} else if seek_type == SeekType::Backwards {
-			song_info.position.saturating_sub(seek_amount)
-		} else {
-			warn!("Unknown seek type");
-			return Ok(());
-		};
-		current_track.seek_async(target).await?;
-	} else {
-		let context = lavalink_context.unwrap();
-		let player_info = context.get_player().await?;
-		if let Some(track) = player_info.track {
-			let current_position = Duration::from_millis(player_info.state.position);
-			let track_duration = Duration::from_millis(track.info.length);
-			let new_duration = if seek_type == SeekType::Forward {
-				current_position
-					.saturating_add(seek_amount)
-					.min(track_duration)
-			} else if seek_type == SeekType::Backwards {
-				current_position.saturating_sub(seek_amount)
-			} else {
-				warn!("Unknown seek type");
-				return Ok(());
-			};
-			context.set_position(new_duration).await?;
-		}
+	for &gid in track_guilds {
+		let backend = fetch_context(bot_data, GuildId::from(gid.cast_unsigned()));
+		backend.apply(&action).await?;
 	}
-
 	Ok(())
 }
 
 async fn handle_interaction<'a>(
 	interaction: ComponentInteraction,
-	handler_lock: Option<Arc<Mutex<Call>>>,
-	lavalink_context: Option<&PlayerContext>,
 	lyrics_shown: &mut bool,
 	lyrics_container: &mut Option<CreateContainer<'a>>,
 	history_shown: &mut bool,
 	history_container: &mut Option<CreateContainer<'a>>,
 	track: &TrackPlayData,
-	track_guilds: Option<&Vec<i64>>,
+	track_guilds: &[i64],
 	container: &CreateContainer<'a>,
 	primary_row: &CreateContainerComponent<'a>,
 	secondary_row: &CreateContainerComponent<'a>,
-	users: &UsersMap,
-	serenity_context: &SerenityContext,
 	guild_id: GuildId,
 ) -> AResult<()> {
-	interaction.defer(&serenity_context.http).await?;
+	let ctx = bot_context();
+	interaction.defer(&ctx.http).await?;
 
 	let mut msg = interaction.message;
 
-	let bot_data: Arc<Data> = serenity_context.data();
-
-	if interaction.data.custom_id.ends_with('s') {
-		skip_song(handler_lock, lavalink_context).await?;
-		if let Some(track_guilds) = track_guilds {
-			for guild_id in track_guilds {
-				let (handler_lock, lavalink_context) =
-					fetch_context(bot_data.clone(), GuildId::from(guild_id.cast_unsigned()));
-				skip_song(handler_lock, lavalink_context.as_ref()).await?;
-			}
-		}
-	} else if interaction.data.custom_id.ends_with('p') {
-		pause_song(handler_lock, lavalink_context).await?;
-		if let Some(track_guilds) = track_guilds {
-			for guild_id in track_guilds {
-				let (handler_lock, lavalink_context) =
-					fetch_context(bot_data.clone(), GuildId::from(guild_id.cast_unsigned()));
-				pause_song(handler_lock, lavalink_context.as_ref()).await?;
-			}
-		}
-	} else if interaction.data.custom_id.ends_with('c') {
-		clear_queue(handler_lock, lavalink_context).await?;
-		if let Some(track_guilds) = track_guilds {
-			for guild_id in track_guilds {
-				let (handler_lock, lavalink_context) =
-					fetch_context(bot_data.clone(), GuildId::from(guild_id.cast_unsigned()));
-				clear_queue(handler_lock, lavalink_context.as_ref()).await?;
-			}
-		}
-	} else if interaction.data.custom_id.ends_with('l') {
-		let container = if *lyrics_shown {
-			*lyrics_shown = false;
-			container.clone()
-		} else {
-			*lyrics_shown = true;
-			*history_shown = false;
-			if let Some(container) = &lyrics_container {
-				container.clone()
-			} else {
-				let lyrics = if let Some(title) = &track.title
-					&& let Some(artist) = &track.artist
-					&& let Some(lyrics) = get_lyrics(serenity_context, title, artist).await
-				{
-					lyrics
-				} else {
-					"Not found :(".to_owned()
-				};
-				let mut text = format!("# Lyrics\n{lyrics}");
-				text.truncate(MESSAGE_LIMIT);
-				let text_display = vec![text_display(text)];
-				let container = CreateContainer::new(text_display)
-					.add_component(separator())
-					.add_component(primary_row.clone())
-					.add_component(separator())
-					.add_component(secondary_row.clone())
-					.accent_colour(Colour::BLUE);
-				*lyrics_container = Some(container.clone());
-				container
-			}
-		};
-		msg.edit(
-			serenity_context.http.clone(),
-			edit_message_container(container),
+	if interaction.data.custom_id == "skip" {
+		apply_to_all_guilds(&ctx.data, track_guilds, PlayerAction::Skip).await?;
+	} else if interaction.data.custom_id == "pause" {
+		apply_to_all_guilds(&ctx.data, track_guilds, PlayerAction::Pause).await?;
+	} else if interaction.data.custom_id == "clear" {
+		apply_to_all_guilds(&ctx.data, track_guilds, PlayerAction::Clear).await?;
+	} else if interaction.data.custom_id == "backwards" {
+		apply_to_all_guilds(
+			&ctx.data,
+			track_guilds,
+			PlayerAction::SeekBackward(track.optional_data.as_ref().unwrap().duration_sec),
 		)
 		.await?;
-	} else if interaction.data.custom_id.ends_with('h') {
-		let container = if *history_shown {
-			*history_shown = false;
-			container.clone()
+	} else if interaction.data.custom_id == "forward" {
+		apply_to_all_guilds(
+			&ctx.data,
+			track_guilds,
+			PlayerAction::SeekForward(track.optional_data.as_ref().unwrap().duration_sec),
+		)
+		.await?;
+	} else if interaction.data.custom_id == "retry" {
+		apply_to_all_guilds(&ctx.data, track_guilds, PlayerAction::Loop).await?;
+	} else {
+		if interaction.data.custom_id == "lyrics" {
+			if *lyrics_shown {
+				*lyrics_shown = false;
+			} else if let Some(optional_data) = &track.optional_data {
+				*lyrics_shown = true;
+				*history_shown = false;
+				if lyrics_container.is_none() {
+					let lyrics = get_lyrics(&optional_data.title, &optional_data.artist).await;
+					let mut text = format!("# Lyrics\n{lyrics}");
+					text.truncate(MESSAGE_LIMIT);
+					let text_display = vec![text_display(text)];
+					let container = CreateContainer::new(text_display)
+						.add_component(separator())
+						.add_component(primary_row.clone())
+						.add_component(separator())
+						.add_component(secondary_row.clone())
+						.accent_colour(Colour::BLUE);
+					*lyrics_container = Some(container);
+				}
+			}
 		} else {
-			*history_shown = true;
-			*lyrics_shown = false;
-			if let Some(container) = &history_container {
-				container.clone()
+			if *history_shown {
+				*history_shown = false;
 			} else {
-				let queue_history = get_queue_history(i64::from(guild_id), &bot_data.db).await?;
-				let mut history_string = String::with_capacity(2048);
-				writeln!(
-					history_string,
-					"# History of {} last played songs",
-					queue_history.len()
-				)?;
-				for track in queue_history {
-					if let Some(title) = track.title {
-						let author_name = track
-							.requested_by
-							.get_author_name(&serenity_context.http, users)
-							.await;
+				*history_shown = true;
+				*lyrics_shown = false;
+				if history_container.is_none() {
+					let queue_history =
+						get_queue_history(i64::from(guild_id), &ctx.data.db).await?;
+					let mut history_string = String::with_capacity(MESSAGE_LIMIT);
+					writeln!(
+						history_string,
+						"# History of {} last played songs",
+						queue_history.len()
+					)?;
+					for track in queue_history {
 						writeln!(
 							history_string,
-							"**{title}:** *{author_name} - {}*",
+							"**{}:** *<@{}> - {}*",
+							track.title,
+							track.requested_by,
 							track.played_at.to_utc().truncate_to_second()
 						)?;
 					}
+					history_string.truncate(MESSAGE_LIMIT);
+					let text_display = vec![text_display(history_string)];
+					let container = CreateContainer::new(text_display)
+						.add_component(separator())
+						.add_component(primary_row.clone())
+						.add_component(separator())
+						.add_component(secondary_row.clone())
+						.accent_colour(Colour::BLUE);
+					*history_container = Some(container);
 				}
-				history_string.truncate(MESSAGE_LIMIT);
-				let text_display = vec![text_display(history_string)];
-				let container = CreateContainer::new(text_display)
-					.add_component(separator())
-					.add_component(primary_row.clone())
-					.add_component(separator())
-					.add_component(secondary_row.clone())
-					.accent_colour(Colour::BLUE);
-				*history_container = Some(container.clone());
-				container
 			}
+		}
+		let new_container = if *history_shown {
+			history_container.as_ref().unwrap().clone()
+		} else if *lyrics_shown {
+			lyrics_container.as_ref().unwrap().clone()
+		} else {
+			container.clone()
 		};
 		msg.edit(
-			serenity_context.http.clone(),
-			edit_message_container(container),
+			ctx.http.clone(),
+			edit_message_container(vec![CreateComponent::Container(new_container)]),
 		)
 		.await?;
-	} else if interaction.data.custom_id.ends_with('b')
-		&& let Some(duration) = track.duration_sec
-	{
-		seek_song(
-			handler_lock,
-			lavalink_context,
-			SeekType::Backwards,
-			duration,
-		)
-		.await?;
-		if let Some(track_guilds) = track_guilds {
-			for guild_id in track_guilds {
-				let (handler_lock, lavalink_context) =
-					fetch_context(bot_data.clone(), GuildId::from(guild_id.cast_unsigned()));
-				seek_song(
-					handler_lock,
-					lavalink_context.as_ref(),
-					SeekType::Backwards,
-					duration,
-				)
-				.await?;
-			}
-		}
-	} else if interaction.data.custom_id.ends_with('f')
-		&& let Some(duration) = track.duration_sec
-	{
-		seek_song(handler_lock, lavalink_context, SeekType::Forward, duration).await?;
-		if let Some(track_guilds) = track_guilds {
-			for guild_id in track_guilds {
-				let (handler_lock, lavalink_context) =
-					fetch_context(bot_data.clone(), GuildId::from(guild_id.cast_unsigned()));
-				seek_song(
-					handler_lock,
-					lavalink_context.as_ref(),
-					SeekType::Forward,
-					duration,
-				)
-				.await?;
-			}
-		}
-	} else if interaction.data.custom_id.ends_with('r') {
-		loop_song(handler_lock).await?;
-		if let Some(track_guilds) = track_guilds {
-			for guild_id in track_guilds {
-				let (handler_lock, _lavalink_context) =
-					fetch_context(bot_data.clone(), GuildId::from(guild_id.cast_unsigned()));
-				loop_song(handler_lock).await?;
-			}
-		}
 	}
-
 	Ok(())
 }
 
 async fn update_info(
-	queue_data: Arc<QueueData>,
+	queue_data: &QueueData,
 	mut track_receiver: Receiver<TrackSignal>,
 	mut status_receiver: Receiver<ConnectionStatus>,
-	serenity_context: SerenityContext,
 	guild_id: GuildId,
+	serenity_context: &SerenityContext,
 ) -> AResult<()> {
 	let bot_data: Arc<Data> = serenity_context.data();
-	let (handler_lock, lavalink_context) = fetch_context(bot_data.clone(), guild_id);
 
-	let queue_size = if let Some(context) = &lavalink_context {
-		context.get_queue().get_count().await?
-	} else {
-		handler_lock.as_ref().unwrap().lock().await.queue().len()
+	let queue_size = match &fetch_context(&bot_data, guild_id) {
+		AudioBackend::Lavalink(ctx) => ctx.get_queue().get_count().await?,
+		AudioBackend::Songbird(lock) => lock.lock().await.queue().len(),
 	};
 
 	let track_data = &queue_data.track_data;
 
-	let author_name = track_data
-		.requested_by
-		.get_author_name(&serenity_context.http, &bot_data.users)
-		.await;
-
 	let (thumbnail_section, primary_row, additional_buttons) = create_components(
-		&author_name,
-		track_data.request_message_id,
+		track_data.requested_by,
 		track_data,
 		queue_size,
 		&queue_data.payload_type,
 	);
 
-	let mut base_container = CreateContainer::new(vec![thumbnail_section])
+	let thumbnail_slice = [thumbnail_section];
+
+	let mut base_container = CreateContainer::new(&thumbnail_slice)
 		.add_component(separator())
 		.accent_colour(Colour::RED);
 
@@ -635,16 +563,16 @@ async fn update_info(
 		.add_component(separator())
 		.add_component(secondary_row.clone());
 
+	let full_component = [CreateComponent::Container(full_container.clone())];
+
 	track_data
 		.requested_channel
 		.edit_message(
 			&serenity_context.http,
 			track_data.request_message_id,
-			edit_message_container(full_container.clone()),
+			edit_message_container(&full_component),
 		)
 		.await?;
-
-	let message_id_copy = track_data.request_message_id.to_string();
 
 	let mut lyrics_shown = false;
 	let mut history_shown = false;
@@ -652,29 +580,22 @@ async fn update_info(
 	let mut lyrics_container: Option<CreateContainer> = None;
 	let mut history_embed: Option<CreateContainer> = None;
 
-	let mut collector_stream = ComponentInteractionCollector::new(&serenity_context)
+	let mut collector_stream = ComponentInteractionCollector::new(serenity_context)
 		.timeout(Duration::from_hours(2))
-		.filter(move |interaction| {
-			interaction
-				.data
-				.custom_id
-				.starts_with(message_id_copy.as_str())
-		})
+		.message_id(track_data.request_message_id)
 		.stream();
 
-	let track_guilds = if let Some(guild_cache) = bot_data.guilds.get(&guild_id)
-		&& guild_cache.music_data.global.load(Ordering::Relaxed)
-	{
-		Some(
-			get_matching_guild_plays(
-				queue_data.track_data.uuid,
-				i64::from(guild_id),
-				&bot_data.db,
+	let track_guilds = {
+		let guild_id_i64 = i64::from(guild_id);
+		let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
+		if guild_cache.music_data.global.load(Ordering::Relaxed) {
+			Cow::Owned(
+				get_matching_guild_plays(queue_data.track_data.uuid, guild_id_i64, &bot_data.db)
+					.await?,
 			)
-			.await?,
-		)
-	} else {
-		None
+		} else {
+			Cow::Borrowed(&[guild_id_i64][..])
+		}
 	};
 
 	let mut track_exception = false;
@@ -686,19 +607,15 @@ async fn update_info(
 					Some(interaction) => {
 						handle_interaction(
 							interaction,
-							handler_lock.clone(),
-							lavalink_context.as_ref(),
 							&mut lyrics_shown,
 							&mut lyrics_container,
 							&mut history_shown,
 							&mut history_embed,
 							track_data,
-							track_guilds.as_ref(),
+							&track_guilds,
 							&full_container,
 							&primary_row,
 							&secondary_row,
-							&bot_data.users,
-							&serenity_context,
 							guild_id
 						)
 						.await?;
@@ -709,68 +626,68 @@ async fn update_info(
 				}
 			},
 			result = track_receiver.changed() => {
-				match result {
-					Err(err) => {
-						error!("Sender dropped: {err}");
-						break;
-					}
-					Ok(()) => {
-						match &*track_receiver.borrow() {
-							TrackSignal::Exception =>
-							{
-								track_exception = true;
-								break;
-							}
-							TrackSignal::Ended =>
-							{
-								break;
-							}
-							TrackSignal::Idle => {}
+				if result.is_ok() {
+					match &*track_receiver.borrow() {
+						TrackSignal::Exception =>
+						{
+							track_exception = true;
+							break;
 						}
+						TrackSignal::Ended =>
+						{
+							break;
+						}
+						TrackSignal::Idle => {}
 					}
+				} else {
+					break
 				}
 			},
 			result = status_receiver.changed() => {
-				match result {
-					Err(err) => {
-						error!("Sender dropped: {err}");
-						break;
+				if result.is_ok() {
+					if *status_receiver.borrow() == ConnectionStatus::Disconnected {
+						break
 					}
-					Ok(()) => {
-						if *status_receiver.borrow() == ConnectionStatus::Disconnected {
-							break;
-						}
-					}
+				} else {
+					break
 				}
 			},
 		}
 	}
 
 	if track_exception {
-		let text_display = vec![text_display("# Track errored on playback :/")];
-		base_container = CreateContainer::new(text_display).accent_colour(Colour::ORANGE);
-	} else if track_data.source_url.is_some() {
-		let visit_button = vec![additional_buttons.last().unwrap().clone()];
+		let text_display = [text_display("# Track errored on playback :/")];
+		let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
+		let component = [CreateComponent::Container(container)];
+		track_data
+			.requested_channel
+			.edit_message(
+				&serenity_context.http,
+				track_data.request_message_id,
+				edit_message_container(&component),
+			)
+			.await?;
+	} else if track_data.optional_data.is_some() {
+		let visit_button = [additional_buttons.last().unwrap().clone()];
 		base_container = base_container.add_component(CreateContainerComponent::ActionRow(
-			CreateActionRow::buttons(visit_button),
+			CreateActionRow::buttons(&visit_button),
 		));
+		let component = [CreateComponent::Container(base_container)];
+		track_data
+			.requested_channel
+			.edit_message(
+				&serenity_context.http,
+				track_data.request_message_id,
+				edit_message_container(&component),
+			)
+			.await?;
 	}
-
-	track_data
-		.requested_channel
-		.edit_message(
-			&serenity_context.http,
-			track_data.request_message_id,
-			edit_message_container(base_container),
-		)
-		.await?;
 
 	Ok(())
 }
 
-async fn track_error(ctx: &SerenityContext, error: &str, guild_id: GuildId) {
-	let bot_data: Arc<Data> = ctx.data();
-	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
+async fn track_error(error: &str, guild_id: GuildId) {
+	let guild_cache = bot_context().data.guilds.get(&guild_id).unwrap();
 	if let Err(err) = guild_cache
 		.music_data
 		.track_signals
@@ -778,15 +695,14 @@ async fn track_error(ctx: &SerenityContext, error: &str, guild_id: GuildId) {
 	{
 		error!("Failed to broadcast track exception: {err}");
 	}
-	counter!(METRICS.music_queue_errors.clone()).increment(1);
-	log_error(format!("# Failed to play track\n{error}"), ctx).await;
+	counter!(METRICS.music_queue_errors.as_str()).increment(1);
+	log_error(format!("# Failed to play track\n{error}")).await;
 }
 
 #[derive(Clone)]
 struct PlaybackHandler {
-	serenity_context: SerenityContext,
-	guild_id: GuildId,
 	music_queue: MusicQueue,
+	guild_id: GuildId,
 }
 
 #[derive(PartialEq)]
@@ -796,30 +712,24 @@ enum SeekType {
 }
 
 impl PlaybackHandler {
-	const fn new(
-		serenity_context: SerenityContext,
-		guild_id: GuildId,
-		music_queue: MusicQueue,
-	) -> Self {
+	const fn new(guild_id: GuildId, music_queue: MusicQueue) -> Self {
 		Self {
-			serenity_context,
-			guild_id,
 			music_queue,
+			guild_id,
 		}
 	}
 }
 
 #[async_trait]
 impl VoiceEventHandler for PlaybackHandler {
-	async fn act(&self, ctx: &EventContext<'_>) -> Option<SongBirdEvent> {
-		if let EventContext::Track(tracks) = ctx {
-			let bot_data: Arc<Data> = self.serenity_context.data();
+	async fn act(&self, event: &EventContext<'_>) -> Option<SongBirdEvent> {
+		if let EventContext::Track(tracks) = event {
 			for (state, handle) in *tracks {
 				let queue_data: Arc<QueueData> = handle.data();
 				if let PlayMode::Errored(error) = &state.playing
 					&& queue_data.first_error.swap(false, Ordering::Relaxed)
 				{
-					track_error(&self.serenity_context, &error.to_string(), self.guild_id).await;
+					track_error(&error.to_string(), self.guild_id).await;
 				} else if queue_data.payload_type != PayloadType::TextToVoice {
 					if state.playing == PlayMode::Play {
 						if queue_data.first_play.swap(false, Ordering::Relaxed)
@@ -828,7 +738,7 @@ impl VoiceEventHandler for PlaybackHandler {
 							error!("Failed to queue track: {err}");
 						}
 					} else if state.playing == PlayMode::End {
-						notify_end(bot_data.clone(), self.guild_id);
+						notify_end(self.guild_id);
 					}
 				}
 			}
@@ -855,10 +765,10 @@ async fn add_voice_events(
 	ctx: &SerenityContext,
 	guild_id: GuildId,
 	channel_id: GenericChannelId,
-	handler_lock: Arc<Mutex<Call>>,
+	handler_lock: &Mutex<Call>,
 	global: bool,
 	guild_cache: Arc<GuildCache>,
-) -> AResult<()> {
+) {
 	let bot_data: Arc<Data> = ctx.data();
 
 	guild_cache
@@ -870,26 +780,24 @@ async fn add_voice_events(
 
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Play),
-		PlaybackHandler::new(ctx.clone(), guild_id, guild_cache.music_data.queue.clone()),
+		PlaybackHandler::new(guild_id, guild_cache.music_data.queue.clone()),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::End),
-		PlaybackHandler::new(ctx.clone(), guild_id, guild_cache.music_data.queue.clone()),
+		PlaybackHandler::new(guild_id, guild_cache.music_data.queue.clone()),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Track(TrackEvent::Error),
-		PlaybackHandler::new(ctx.clone(), guild_id, guild_cache.music_data.queue.clone()),
+		PlaybackHandler::new(guild_id, guild_cache.music_data.queue.clone()),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Core(CoreEvent::DriverDisconnect),
-		DriverDisconnectHandler::new(bot_data),
+		DriverDisconnectHandler::new(bot_data.music_manager.clone(), guild_cache.clone()),
 	);
 	handler.add_global_event(
 		SongBirdEvent::Core(CoreEvent::ClientDisconnect),
-		ClientDisconnectHandler::new(ctx.clone(), channel_id),
+		ClientDisconnectHandler::new(channel_id),
 	);
-
-	Ok(())
 }
 
 #[must_use]
@@ -930,7 +838,7 @@ impl Clone for QueueData {
 
 pub async fn add_payload(
 	ctx: &SContext<'_>,
-	handler_lock: Arc<Mutex<Call>>,
+	handler_lock: &Mutex<Call>,
 	payload: Bytes,
 	payload_type: PayloadType,
 	guild_id: GuildId,
@@ -942,7 +850,7 @@ pub async fn add_payload(
 		track_data: TrackPlayData {
 			requested_channel: msg.channel_id,
 			request_message_id: msg.id,
-			requested_by: i64::from(ctx.author().id),
+			requested_by: ctx.author().id,
 			..Default::default()
 		},
 		first_error: AtomicBool::new(true),
@@ -963,7 +871,7 @@ pub async fn add_payload(
 	)
 	.await?;
 
-	global_queue(guild_id, ctx, compressed, queue_data).await?;
+	global_queue(guild_id, compressed, queue_data).await?;
 
 	Ok(())
 }
@@ -977,12 +885,12 @@ fn track_uuid(url: Option<&String>) -> Uuid {
 async fn enqueue(
 	queue_data: QueueData,
 	input: Input,
-	handler_lock: Arc<Mutex<Call>>,
+	handler_lock: &Mutex<Call>,
 	guild_id: i64,
-	pool: Option<&Pool<Postgres>>,
+	global_play_opt: Option<(&Pool<Postgres>, i64)>,
 ) -> AResult<()> {
-	if let Some(pool) = pool {
-		insert_guild_play(&queue_data, guild_id, pool).await?;
+	if let Some((pool, author_id)) = global_play_opt {
+		insert_guild_play(&queue_data, guild_id, pool, author_id).await?;
 	}
 
 	handler_lock
@@ -998,7 +906,7 @@ async fn enqueue(
 	Ok(())
 }
 
-async fn join_container(ctx: &SContext<'_>) -> AResult<()> {
+async fn join_container<'a>(ctx: &SContext<'a>) -> Result<ReplyHandle<'a>, SerenityError> {
 	let playback_info = "# I've joined the party!\n## Commands:\n
 	- **/play_song**: *Queue a song or playlist from YouTube with an url OR search for a song*
 	- **/play_song_old**: *Old implementation, prone to blocking from YouTube*
@@ -1010,22 +918,28 @@ async fn join_container(ctx: &SContext<'_>) -> AResult<()> {
 
 	let text = [text_display(playback_info)];
 
+	let feedback_action_row =
+		CreateContainerComponent::ActionRow(CreateActionRow::Buttons(Cow::Borrowed(&[
+			CreateButton::new(FEEDBACK_BUTTON_CUSTOM_ID)
+				.label(format!("Give feedback on {}", utils_config().bot_name))
+				.style(ButtonStyle::Secondary),
+		])));
+
 	let container = CreateContainer::new(&text)
 		.add_component(separator())
-		.add_component(build_feedback_action_row())
+		.add_component(feedback_action_row)
 		.accent_colour(Colour::GOLD);
+	let component = [CreateComponent::Container(container)];
 
-	ctx.send(reply_container(container)).await?;
-
-	Ok(())
+	ctx.send(reply_container(&component)).await
 }
 
-async fn configure_handler(handler_lock: Arc<Mutex<Call>>) {
+async fn configure_handler(handler_lock: &Mutex<Call>) {
 	handler_lock.lock().await.set_bitrate(Bitrate::Max);
 }
 
 async fn join_handler(
-	music_manager: Arc<Songbird>,
+	music_manager: &Songbird,
 	guild_id: GuildId,
 	channel_id: ChannelId,
 ) -> AResult<Arc<Mutex<Call>>> {
@@ -1035,7 +949,7 @@ async fn join_handler(
 			return Err(err.into());
 		}
 	};
-	configure_handler(handler_lock.clone()).await;
+	configure_handler(&handler_lock).await;
 
 	Ok(handler_lock)
 }
@@ -1056,14 +970,13 @@ async fn voice_channel_id(ctx: SContext<'_>) -> AResult<ChannelId> {
 
 async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
 	let channel_id = voice_channel_id(ctx).await?;
-	let handler_lock =
-		match join_handler(ctx.data().music_manager.clone(), guild_id, channel_id).await {
-			Ok(lock) => lock,
-			Err(err) => {
-				ctx.reply("I don't wanna join").await?;
-				return Err(err);
-			}
-		};
+	let handler_lock = match join_handler(&ctx.data().music_manager, guild_id, channel_id).await {
+		Ok(lock) => lock,
+		Err(err) => {
+			ctx.reply("I don't wanna join").await?;
+			return Err(err);
+		}
+	};
 	Ok(handler_lock)
 }
 
@@ -1091,9 +1004,9 @@ pub async fn try_voice(
 	let typing = ctx.defer_or_broadcast().await?;
 	let guild_id = ctx.guild_id().unwrap();
 	let guild_cache = guild_cache(
-		ctx.data(),
+		&ctx.data(),
 		guild_id,
-		ctx.author().id.get().cast_signed(),
+		Some(ctx.author().id.get().cast_signed()),
 		ctx.serenity_context(),
 	)
 	.await?;
@@ -1115,11 +1028,11 @@ pub async fn try_voice(
 			ctx.serenity_context(),
 			guild_id,
 			ctx.channel_id(),
-			handler_lock.clone(),
+			&handler_lock,
 			global,
-			guild_cache.clone(),
+			guild_cache,
 		)
-		.await?;
+		.await;
 		if global {
 			query!(
 				r#"
@@ -1138,8 +1051,8 @@ pub async fn try_voice(
 	Ok((typing, guild_id, handler_lock))
 }
 
-pub async fn remove_handler(ctx: &SerenityContext, guild_id: GuildId) -> AResult<()> {
-	let bot_data: Arc<Data> = ctx.data();
+pub async fn remove_handler(guild_id: GuildId) -> AResult<()> {
+	let bot_data = bot_context().data.clone();
 
 	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
 
@@ -1164,13 +1077,18 @@ pub async fn remove_handler(ctx: &SerenityContext, guild_id: GuildId) -> AResult
 }
 
 #[derive(Default, Clone, Serialize, Deserialize)]
+struct OptionalTrackData {
+	title: String,
+	artist: String,
+	source_url: String,
+	duration_sec: i64,
+	thumbnail_url: String,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
 struct TrackPlayData {
-	title: Option<String>,
-	artist: Option<String>,
-	source_url: Option<String>,
-	duration_sec: Option<i64>,
-	thumbnail_url: Option<String>,
-	requested_by: DBUserID,
+	optional_data: Option<OptionalTrackData>,
+	requested_by: UserId,
 	requested_channel: GenericChannelId,
 	request_message_id: MessageId,
 	uuid: Uuid,
@@ -1180,7 +1098,9 @@ async fn insert_guild_play(
 	queue_data: &QueueData,
 	guild_id: i64,
 	conn: &Pool<Postgres>,
+	author_id: i64,
 ) -> Result<PgQueryResult, Error> {
+	let optional_data = queue_data.track_data.optional_data.as_ref().unwrap();
 	query!(
 		r#"
     	WITH ensured_track AS (
@@ -1194,34 +1114,15 @@ async fn insert_guild_play(
     	"#,
 		queue_data.track_data.uuid,
 		guild_id,
-		queue_data.track_data.requested_by,
-		queue_data.track_data.title,
-		queue_data.track_data.artist,
-		queue_data.track_data.source_url,
-		queue_data.track_data.duration_sec,
-		queue_data.track_data.thumbnail_url
+		author_id,
+		optional_data.title,
+		optional_data.artist,
+		optional_data.source_url,
+		optional_data.duration_sec,
+		optional_data.thumbnail_url
 	)
 	.execute(conn)
 	.await
-}
-
-type DBUserID = i64;
-
-#[async_trait]
-trait DBUserIDExt {
-	async fn get_author_name(&self, http: &Http, users: &UsersMap) -> String;
-}
-
-#[async_trait]
-impl DBUserIDExt for DBUserID {
-	async fn get_author_name(&self, http: &Http, users: &UsersMap) -> String {
-		get_user(http, users, UserId::new(self.cast_unsigned()))
-			.await
-			.map_or_else(
-				|_| "Unknown".to_owned(),
-				|user| user.display_name().to_owned(),
-			)
-	}
 }
 
 async fn get_matching_guild_plays(
@@ -1248,8 +1149,8 @@ async fn get_matching_guild_plays(
 
 struct ChannelPlayHistory {
 	played_at: OffsetDateTime,
-	requested_by: DBUserID,
-	title: Option<String>,
+	requested_by: i64,
+	title: String,
 }
 
 async fn get_queue_history(
@@ -1301,52 +1202,70 @@ pub async fn setup_lavalink(host: String, password: String, bot_id: LavaUserId) 
 	.await
 }
 
+pub enum ContextType<'a> {
+	Poise(SContext<'a>),
+	Serenity(&'a SerenityContext),
+}
+
 pub async fn lavalink_try_join(
-	ctx: &SerenityContext,
+	ctx: ContextType<'_>,
 	guild_id: GuildId,
 	author_id: UserId,
-	poise_ctx: Option<SContext<'_>>,
 ) -> AResult<(Option<Typing>, PlayerContext)> {
-	let bot_data: Arc<Data> = ctx.data();
-	let typing = if let Some(poise_ctx) = poise_ctx {
+	let bot_data: Arc<Data> = match ctx {
+		ContextType::Poise(ctx) => ctx.data(),
+		ContextType::Serenity(ctx) => ctx.data(),
+	};
+	let typing = if let ContextType::Poise(poise_ctx) = ctx {
 		poise_ctx.defer_or_broadcast().await?
 	} else {
 		None
 	};
-	let guild_cache = guild_cache(
-		bot_data.clone(),
-		guild_id,
-		author_id.get().cast_signed(),
-		ctx,
-	)
-	.await?;
+	let guild_cache = match ctx {
+		ContextType::Poise(ctx) => {
+			guild_cache(
+				&bot_data,
+				guild_id,
+				Some(author_id.get().cast_signed()),
+				ctx.serenity_context(),
+			)
+			.await?
+		}
+		ContextType::Serenity(ctx) => {
+			guild_cache(
+				&bot_data,
+				guild_id,
+				Some(author_id.get().cast_signed()),
+				ctx,
+			)
+			.await?
+		}
+	};
+
 	let player_context = if let Some(context) =
 		bot_data.lavalink_client.get_player_context(guild_id)
 		&& guild_cache.music_data.is_lavalink_connected()
 	{
 		context
 	} else {
-		let channel_id = if let Some(poise_ctx) = poise_ctx {
-			voice_channel_id(poise_ctx).await?
-		} else {
-			let voice_state = guild_id.get_user_voice_state(&ctx.http, author_id).await?;
-			if let Some(channel_id) = voice_state.channel_id {
-				channel_id
-			} else {
-				bail!("Unknown voice channel");
+		let channel_id = match ctx {
+			ContextType::Poise(ctx) => voice_channel_id(ctx).await?,
+			ContextType::Serenity(ctx) => {
+				let voice_state = guild_id.get_user_voice_state(&ctx.http, author_id).await?;
+				voice_state.channel_id.unwrap()
 			}
 		};
 		if bot_data.music_manager.get(guild_id).is_some() {
-			remove_handler(ctx, guild_id).await?;
+			remove_handler(guild_id).await?;
 			sleep(Duration::from_secs(5)).await;
-		} else if let Some(poise_ctx) = poise_ctx {
+		} else if let ContextType::Poise(poise_ctx) = ctx {
 			join_container(&poise_ctx).await?;
 		}
 		let (connection_info, handler_lock) = bot_data
 			.music_manager
 			.join_gateway(guild_id, channel_id)
 			.await?;
-		configure_handler(handler_lock).await;
+		configure_handler(&handler_lock).await;
 		guild_cache
 			.music_data
 			.connected(ConnectionStatus::LavalinkConnected);
@@ -1364,7 +1283,7 @@ pub async fn lavalink_play(
 	guild_id: GuildId,
 	msg_id: MessageId,
 	channel_id: GenericChannelId,
-	author_id: i64,
+	author_id: UserId,
 	input: &str,
 	player: PlayerContext,
 	pool: &Pool<Postgres>,
@@ -1386,12 +1305,12 @@ pub async fn lavalink_play(
 	let mut tracks: Vec<TrackInQueue> = match loaded_tracks.data {
 		Some(TrackLoadData::Track(track)) => vec![TrackInQueue::from(track)],
 		Some(TrackLoadData::Search(search)) => {
-			vec![TrackInQueue::from(search.first().unwrap().clone())]
+			vec![TrackInQueue::from(search.into_iter().next().unwrap())]
 		}
 		Some(TrackLoadData::Playlist(playlist)) => playlist
 			.tracks
-			.iter()
-			.map(|track| TrackInQueue::from(track.clone()))
+			.into_iter()
+			.map(TrackInQueue::from)
 			.collect(),
 		Some(TrackLoadData::Error(err)) => {
 			bail!("{}:{}:{}", err.severity, err.message, err.cause);
@@ -1405,13 +1324,22 @@ pub async fn lavalink_play(
 		let track_info = track.track.info.clone();
 		let duration = Duration::from_millis(track_info.length);
 		let uuid = track_uuid(track_info.uri.as_ref());
+		let optional_data = if let Some(source_url) = track_info.uri
+			&& let Some(thumbnail_url) = track_info.artwork_url
+		{
+			Some(OptionalTrackData {
+				title: track_info.title,
+				artist: track_info.author,
+				source_url,
+				duration_sec: duration.as_secs().cast_signed(),
+				thumbnail_url,
+			})
+		} else {
+			None
+		};
 		let queue_data = QueueData {
 			track_data: TrackPlayData {
-				title: Some(track_info.title),
-				artist: Some(track_info.author),
-				source_url: track_info.uri,
-				duration_sec: Some(duration.as_secs().cast_signed()),
-				thumbnail_url: track_info.artwork_url,
+				optional_data,
 				requested_by: author_id,
 				requested_channel: channel_id,
 				request_message_id: msg_id,
@@ -1421,7 +1349,13 @@ pub async fn lavalink_play(
 			first_error: AtomicBool::new(true),
 			payload_type: PayloadType::Lavalink,
 		};
-		insert_guild_play(&queue_data, guild_id.get().cast_signed(), pool).await?;
+		insert_guild_play(
+			&queue_data,
+			guild_id.get().cast_signed(),
+			pool,
+			i64::from(author_id),
+		)
+		.await?;
 		let json = to_value(queue_data)?;
 		track.track.user_data = Some(json);
 	}
@@ -1441,8 +1375,8 @@ pub async fn lavalink_play(
 
 #[hook]
 async fn track_start(_client: LavalinkClient, _session_id: String, event: &events::TrackStart) {
-	let bot_data: Arc<Data> = bot_context().data();
-	let guild_cache = bot_data
+	let guild_cache = bot_context()
+		.data
 		.guilds
 		.get(&GuildId::from(event.guild_id.0))
 		.unwrap();
@@ -1458,8 +1392,8 @@ async fn track_start(_client: LavalinkClient, _session_id: String, event: &event
 	}
 }
 
-fn notify_end(bot_data: Arc<Data>, guild_id: GuildId) {
-	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
+fn notify_end(guild_id: GuildId) {
+	let guild_cache = bot_context().data.guilds.get(&guild_id).unwrap();
 	if !guild_cache.music_data.has_track_exception()
 		&& let Err(err) = guild_cache
 			.music_data
@@ -1472,8 +1406,7 @@ fn notify_end(bot_data: Arc<Data>, guild_id: GuildId) {
 
 #[hook]
 async fn track_end(_client: LavalinkClient, _session_id: String, event: &events::TrackEnd) {
-	let bot_data: Arc<Data> = bot_context().data();
-	notify_end(bot_data, GuildId::from(event.guild_id.0));
+	notify_end(GuildId::from(event.guild_id.0));
 }
 
 #[hook]
@@ -1490,7 +1423,7 @@ async fn track_exception(
 			"{}:{}:{}",
 			event.exception.severity, event.exception.message, event.exception.cause
 		);
-		track_error(bot_context(), &error, GuildId::from(event.guild_id.0)).await;
+		track_error(&error, GuildId::from(event.guild_id.0)).await;
 	}
 }
 
@@ -1500,7 +1433,7 @@ async fn websocket_closed(
 	_session_id: String,
 	event: &events::WebSocketClosed,
 ) {
-	let bot_data: Arc<Data> = bot_context().data();
+	let bot_data = &bot_context().data;
 	let guild_id = GuildId::from(event.guild_id.0);
 	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
 	if let Err(err) = client.delete_player(event.guild_id).await {
@@ -1516,34 +1449,39 @@ async fn websocket_closed(
 
 async fn global_queue(
 	guild_id: GuildId,
-	ctx: &SContext<'_>,
 	compressed: Compressed,
 	mut queue_data: QueueData,
 ) -> AResult<()> {
-	let guild_cache = ctx.data().guilds.get(&guild_id).unwrap();
-	if guild_cache.music_data.global.load(Ordering::Relaxed) {
-		let guild_global_playback: Vec<GuildId> = ctx
-			.data()
+	let ctx = bot_context();
+	if ctx
+		.data
+		.guilds
+		.get(&guild_id)
+		.unwrap()
+		.music_data
+		.global
+		.load(Ordering::Relaxed)
+	{
+		for global_guild in ctx
+			.data
 			.guilds
 			.iter()
 			.filter(|t| t.music_data.global.load(Ordering::Relaxed) && *t.key() != guild_id)
 			.map(|t| *t.key())
-			.collect();
-
-		for global_guild in guild_global_playback {
-			let Some(global_handler_lock) = ctx.data().music_manager.get(global_guild) else {
+		{
+			let Some(global_handler_lock) = ctx.data.music_manager.get(global_guild) else {
 				continue;
 			};
 			let Some(channel_id) = global_handler_lock.lock().await.current_channel() else {
 				continue;
 			};
 			if let Ok(channel) = ctx
-				.http()
+				.http
 				.get_channel(GenericChannelId::new(channel_id.get()))
 				.await && let Some(guild_channel) = channel.guild()
 			{
 				let mut msg = guild_channel
-					.send_message(ctx.http(), CreateMessage::default().content(QUEUEING_MSG))
+					.send_message(&ctx.http, CreateMessage::new().content(QUEUEING_MSG))
 					.await?;
 				let input = Input::from(compressed.new_handle());
 				queue_data.track_data.requested_channel = msg.channel_id;
@@ -1551,14 +1489,14 @@ async fn global_queue(
 				if let Err(err) = enqueue(
 					queue_data.clone(),
 					input,
-					global_handler_lock,
+					&global_handler_lock,
 					global_guild.get().cast_signed(),
-					Some(&ctx.data().db),
+					None,
 				)
 				.await
 				{
 					warn!("Failed to queue global song: {err}");
-					msg.edit(ctx.http(), EditMessage::new().content(FAILED_SONG_FETCH))
+					msg.edit(&ctx.http, EditMessage::new().content(FAILED_SONG_FETCH))
 						.await?;
 				}
 			}
@@ -1570,13 +1508,12 @@ async fn global_queue(
 
 pub async fn add_youtube_song(
 	url: String,
-	handler_lock: Arc<Mutex<Call>>,
+	handler_lock: &Mutex<Call>,
 	guild_id: GuildId,
 	msg_id: MessageId,
 	channel_id: GenericChannelId,
-	author_id: i64,
+	author_id: UserId,
 	conn: &Pool<Postgres>,
-	ctx: Option<&SContext<'_>>,
 ) -> AResult<()> {
 	let mut src = if youtube_source(&url) {
 		YoutubeDl::new(HTTP_CLIENT.clone(), url)
@@ -1591,13 +1528,26 @@ pub async fn add_youtube_song(
 
 	let uuid = track_uuid(metadata.source_url.as_ref());
 
+	let optional_data = if let Some(title) = metadata.title
+		&& let Some(artist) = metadata.artist
+		&& let Some(source_url) = metadata.source_url
+		&& let Some(duration) = metadata.duration
+		&& let Some(thumbnail_url) = metadata.thumbnail
+	{
+		Some(OptionalTrackData {
+			title,
+			artist,
+			source_url,
+			duration_sec: duration.as_secs().cast_signed(),
+			thumbnail_url,
+		})
+	} else {
+		None
+	};
+
 	let queue_data = QueueData {
 		track_data: TrackPlayData {
-			title: metadata.title,
-			artist: metadata.artist,
-			source_url: metadata.source_url,
-			duration_sec: metadata.duration.map(|d| d.as_secs().cast_signed()),
-			thumbnail_url: metadata.thumbnail,
+			optional_data,
 			requested_by: author_id,
 			requested_channel: channel_id,
 			request_message_id: msg_id,
@@ -1613,21 +1563,23 @@ pub async fn add_youtube_song(
 		new_input,
 		handler_lock,
 		i64::from(guild_id),
-		Some(conn),
+		queue_data
+			.track_data
+			.optional_data
+			.as_ref()
+			.map(|_| (conn, i64::from(author_id))),
 	)
 	.await?;
 
-	if let Some(ctx) = ctx {
-		global_queue(guild_id, ctx, compressed, queue_data).await?;
-	}
+	global_queue(guild_id, compressed, queue_data).await?;
 
 	Ok(())
 }
 
 pub async fn music_task(
 	mut rx: mpsc::Receiver<MusicQueueData>,
-	ctx: SerenityContext,
 	guild_id: GuildId,
+	ctx: SerenityContext,
 ) {
 	let bot_data: Arc<Data> = ctx.data();
 	let guild_cache = bot_data.guilds.get(&guild_id).unwrap();
@@ -1637,11 +1589,11 @@ pub async fn music_task(
 		track_watch.mark_unchanged();
 		connection_watch.mark_unchanged();
 		if let Err(err) = update_info(
-			data,
+			&data,
 			track_watch.clone(),
 			connection_watch.clone(),
-			ctx.clone(),
 			guild_id,
+			&ctx,
 		)
 		.await
 		{

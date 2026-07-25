@@ -5,11 +5,13 @@ use fabsebot_db::guild::delete_guild;
 use metrics::counter;
 use poise::{ApplicationContext, Context, FrameworkError, PartialContext, PrefixContext};
 use serenity::all::{Context as SContext, EventHandler as SEventHandler, FullEvent};
-use sqlx::query_scalar;
 use tracing::warn;
 
 use crate::{
-	config::types::{Data, Error},
+	config::{
+		constants::DEFAULT_PREFIX,
+		types::{Data, Error},
+	},
 	events::{
 		bot_ready::handle_ready,
 		interaction::{
@@ -21,6 +23,7 @@ use crate::{
 	},
 	log_error,
 	stats::counters::METRICS,
+	utils::helpers::guild_cache,
 };
 
 pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
@@ -28,16 +31,16 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 		FrameworkError::Command { error, ctx, .. } => {
 			let output = format!("# Error in command '{}'\n{error}", ctx.command().name);
 			counter!(
-				METRICS.command_errors.clone(),
+				METRICS.command_errors.as_str(),
 				"command" => ctx.command().name.clone(),
 			)
 			.increment(1);
-			log_error(output, ctx.serenity_context()).await;
+			log_error(output).await;
 		}
-		FrameworkError::DynamicPrefix { error, ctx, .. } => {
+		FrameworkError::DynamicPrefix { error, .. } => {
 			let output = format!("# Error in dynamic prefix\n{error}");
-			counter!(METRICS.prefix_errors.clone()).increment(1);
-			log_error(output, ctx.framework.serenity_context).await;
+			counter!(METRICS.prefix_errors.as_str()).increment(1);
+			log_error(output).await;
 		}
 		FrameworkError::MissingBotPermissions {
 			missing_permissions,
@@ -51,8 +54,8 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 			if let Err(err) = ctx.say(&output).await {
 				warn!("Failed to notify user about missing bot permissions: {err}");
 			}
-			counter!(METRICS.bot_permissions_errors.clone()).increment(1);
-			log_error(output, ctx.serenity_context()).await;
+			counter!(METRICS.bot_permissions_errors.as_str()).increment(1);
+			log_error(output).await;
 		}
 		FrameworkError::MissingUserPermissions {
 			missing_permissions: Some(missing_permissions),
@@ -66,8 +69,8 @@ pub async fn on_error(error: FrameworkError<'_, Data, Error>) {
 			if let Err(err) = ctx.say(&output).await {
 				warn!("Failed to notify user about missing user permissions: {err}");
 			}
-			counter!(METRICS.user_permissions_errors.clone()).increment(1);
-			log_error(output, ctx.serenity_context()).await;
+			counter!(METRICS.user_permissions_errors.as_str()).increment(1);
+			log_error(output).await;
 		}
 		_ => {}
 	}
@@ -79,7 +82,7 @@ pub async fn on_command(context: Context<'_, Data, Error>) {
 		Context::Prefix(PrefixContext { command, .. }) => (command.name.clone(), "prefix"),
 	};
 	counter!(
-		METRICS.commands.clone(),
+		METRICS.commands.as_str(),
 		"command" => command_name,
 		"type" => command_type
 	)
@@ -91,19 +94,13 @@ pub async fn dynamic_prefix(
 ) -> AResult<Option<Cow<'static, str>>> {
 	let bot_data: Arc<Data> = ctx.framework.serenity_context.data();
 	let prefix = if let Some(guild_id) = ctx.guild_id
-		&& let Some(Some(prefix)) = query_scalar!(
-			r#"
-			SELECT prefix FROM guild_settings
-			WHERE guild_id = $1
-			"#,
-			i64::from(guild_id)
-		)
-		.fetch_optional(&bot_data.db)
-		.await?
+		&& let Ok(guild_cache) =
+			guild_cache(&bot_data, guild_id, None, ctx.framework.serenity_context).await
+		&& let Ok(prefix) = guild_cache.prefix.read()
 	{
-		Cow::Owned(prefix)
+		prefix.clone()
 	} else {
-		Cow::Borrowed("!")
+		Cow::Borrowed(DEFAULT_PREFIX)
 	};
 	Ok(Some(prefix))
 }
@@ -116,11 +113,7 @@ impl SEventHandler for EventHandler {
 		let bot_data: Arc<Data> = ctx.data();
 		match event {
 			FullEvent::Ready { data_about_bot, .. } => {
-				if let Err(error) = handle_ready(ctx, data_about_bot).await {
-					let output = format!("# Error handling connection to Discord\n{error}");
-					counter!(METRICS.ready_errors.clone()).increment(1);
-					log_error(output, ctx).await;
-				}
+				handle_ready(ctx, data_about_bot).await;
 			}
 			FullEvent::Message { new_message, .. } => {
 				if !new_message.author.bot()
@@ -128,8 +121,8 @@ impl SEventHandler for EventHandler {
 					&& let Err(error) = Box::pin(handle_message(ctx, new_message, guild_id)).await
 				{
 					let output = format!("# Error handling sent message\n{error}");
-					counter!(METRICS.message_errors.clone()).increment(1);
-					log_error(output, ctx).await;
+					counter!(METRICS.message_errors.as_str()).increment(1);
+					log_error(output).await;
 				}
 			}
 			FullEvent::GuildDelete { incomplete, .. } => {
@@ -137,8 +130,8 @@ impl SEventHandler for EventHandler {
 					&& let Err(error) = delete_guild(i64::from(incomplete.id), &bot_data.db).await
 				{
 					let output = format!("# Error handling deleted guild\n{error}");
-					counter!(METRICS.deleted_guild_errors.clone()).increment(1);
-					log_error(output, ctx).await;
+					counter!(METRICS.deleted_guild_errors.as_str()).increment(1);
+					log_error(output).await;
 				}
 			}
 
@@ -159,8 +152,8 @@ impl SEventHandler for EventHandler {
 							.await
 				{
 					let output = format!("# Error handling deleted message\n{error}");
-					counter!(METRICS.messages_deleted_errors.clone()).increment(1);
-					log_error(output, ctx).await;
+					counter!(METRICS.messages_deleted_errors.as_str()).increment(1);
+					log_error(output).await;
 				}
 			}
 			FullEvent::InteractionCreate { interaction, .. } => {
@@ -170,18 +163,18 @@ impl SEventHandler for EventHandler {
 						handle_feedback_modal_button(ctx, component_interaction).await
 				{
 					let output = format!("# Error handling feedback modal\n{error}");
-					counter!(METRICS.feedback_modal_errors.clone()).increment(1);
-					log_error(output, ctx).await;
+					counter!(METRICS.feedback_modal_errors.as_str()).increment(1);
+					log_error(output).await;
 				}
 				if let Some(modal_interaction) = interaction.as_modal_submit()
 					&& modal_interaction.data.custom_id == FEEDBACK_MODAL_CUSTOM_ID
 					&& let Some(guild_id) = interaction.guild_id()
 					&& let Err(error) =
-						handle_feedback_modal_reply(ctx, modal_interaction, guild_id).await
+						handle_feedback_modal_reply(&ctx.http, modal_interaction, guild_id).await
 				{
 					let output = format!("# Error handling feedback reply\n{error}");
-					counter!(METRICS.feedback_reply_errors.clone()).increment(1);
-					log_error(output, ctx).await;
+					counter!(METRICS.feedback_reply_errors.as_str()).increment(1);
+					log_error(output).await;
 				}
 			}
 			_ => {}

@@ -1,10 +1,16 @@
-use std::string::ToString;
+use std::fmt::Write as _;
 
 use fabsebot_core::{
-	config::types::{Error, SContext},
-	utils::helpers::{member_pfp, reply_container, separator, text_display, thumbnail_section},
+	config::{
+		constants::MESSAGE_LIMIT,
+		types::{Error, SContext},
+	},
+	utils::helpers::{member_pfp, reply_container, thumbnail_section},
 };
-use serenity::all::{Colour, CreateContainer, Member, PremiumType};
+use serenity::{
+	all::{Colour, CreateContainer, Member, PremiumType},
+	builder::{CreateComponent, CreateContainerComponent, CreateSection},
+};
 
 /// Get server information
 #[poise::command(
@@ -14,71 +20,64 @@ use serenity::all::{Colour, CreateContainer, Member, PremiumType};
 	required_bot_permissions = "VIEW_CHANNEL | SEND_MESSAGES | SEND_MESSAGES_IN_THREADS"
 )]
 pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
-	let (
-		guild_id,
-		guild_name,
-		thumbnail,
-		guild_description,
-		guild_member_count,
-		guild_max_size,
-		guild_boosters,
-		guild_owner_id,
-		guild_created_at,
-		guild_size,
-		guild_emojis,
-		guild_stickers,
-		guild_roles,
-		guild_channels,
-	) = {
+	let mut output = String::with_capacity(512);
+
+	let thumbnail = {
 		let guild = ctx.guild().unwrap();
-		let id = guild.id;
-		(
-			id,
-			format!("# {}", guild.name),
-			guild
-				.banner
-				.as_ref()
-				.map(ToString::to_string)
-				.or_else(|| {
-					guild
-						.icon
-						.as_ref()
-						.map(|i| format!("https://cdn.discordapp.com/icons/{id}/{i}.png"))
-				})
-				.unwrap_or_else(|| "https://...".to_owned()),
-			guild
-				.description
-				.as_ref()
-				.map_or_else(|| "Unknown description".to_owned(), ToString::to_string),
-			guild.member_count,
-			guild.max_members.unwrap_or_default(),
-			guild.premium_subscription_count.unwrap_or_default(),
-			guild.owner_id,
-			id.created_at(),
-			if guild.large() { "Large" } else { "Not large" }.to_owned(),
+
+		writeln!(
+			output,
+			"# {}\n**Creation date:** {}\n**Emoji count:** {}\n**Stickers count:** {}\n**Members \
+			 count:** {}\n**Role count:** {}\n**Channels:** {}\n**Server size:** {}\n**Guild \
+			 ID:** {}\n**Owner:** <@{}>",
+			guild.name,
+			guild.id.created_at(),
 			guild.emojis.len(),
 			guild.stickers.len(),
+			guild.member_count,
 			guild.roles.len(),
 			guild.channels.len(),
-		)
+			if guild.large() { "Large" } else { "Not large" },
+			guild.id,
+			guild.owner_id
+		)?;
+
+		if let Some(description) = guild.description.as_ref() {
+			writeln!(output, "**Guild description:** {description}")?;
+		}
+
+		if let Some(boosters) = guild.premium_subscription_count {
+			write!(output, "**Guild boosters:** {boosters}")?;
+		}
+
+		guild
+			.banner_url()
+			.map(Cow::Owned)
+			.or_else(|| {
+				guild.icon.as_ref().map(|i| {
+					Cow::Owned(format!(
+						"https://cdn.discordapp.com/icons/{}/{i}.png",
+						guild.id
+					))
+				})
+			})
+			.unwrap_or(Cow::Borrowed(
+				"https://c.tenor.com/MZa0P_HjQOIAAAAC/tenor.gif",
+			))
 	};
+	output.truncate(MESSAGE_LIMIT);
 
-	let thumbnail_section = [thumbnail_section(&guild_name, &thumbnail)];
+	let (text, thumbnail) = thumbnail_section(&output, thumbnail);
+	let text_array = [text];
+	let thumbnail_display = [CreateContainerComponent::Section(CreateSection::new(
+		&text_array,
+		thumbnail,
+	))];
 
-	let guild_info = format!(
-		"**Guild description:** {guild_description}\n**Guild ID:** {guild_id}\n**Owner id:** \
-		 {guild_owner_id}\n**Guild boosters:** {guild_boosters}\n**Creation date:** \
-		 {guild_created_at}\n**Emoji count:** {guild_emojis}\n**Sticker count:** \
-		 {guild_stickers}\n**Members count:** {guild_member_count}/{guild_max_size}\n**Role \
-		 count:** {guild_roles}\n**Channels:** {guild_channels}\n**Server size:** {guild_size}",
-	);
+	let container = CreateContainer::new(&thumbnail_display).accent_colour(Colour::DARK_BLUE);
+	let component = [CreateComponent::Container(container)];
 
-	let container = CreateContainer::new(&thumbnail_section)
-		.add_component(separator())
-		.add_component(text_display(&guild_info))
-		.accent_colour(Colour::DARK_BLUE);
-
-	ctx.send(reply_container(container)).await?;
+	ctx.send(reply_container(&component)).await?;
 
 	Ok(())
 }
@@ -95,16 +94,14 @@ pub async fn user_info(
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
 	let avatar_url = member_pfp(&member);
-	let username = if let Some(nick) = member.nick.as_ref() {
-		format!(
-			"# {nick} (aká {})\n**ID:** {}",
-			member.user.name, member.user.id
-		)
-	} else {
-		format!("# {}\n ID: {}", member.display_name(), member.user.id)
-	};
 
-	let thumbnail_section = [thumbnail_section(&username, &avatar_url)];
+	let mut output = String::with_capacity(512);
+
+	if let Some(nick) = member.nick.as_ref() {
+		writeln!(output, "# {nick} (aká {})", member.user.name)?;
+	} else {
+		writeln!(output, "# {}", member.display_name())?;
+	}
 
 	let premium_type = match member.user.premium_type {
 		PremiumType::NitroBasic => "Basic nitro",
@@ -113,33 +110,46 @@ pub async fn user_info(
 		_ => "Broke",
 	};
 
-	let roles = member
-		.roles(ctx.cache())
-		.map(|r| {
-			r.iter()
-				.map(|role| format!("<@&{}>", role.id))
-				.collect::<Vec<String>>()
-				.join(" ")
-		})
-		.unwrap_or_default();
+	writeln!(
+		output,
+		"**ID:** {}\n**Creation date:** {}\n**Nitro tier:** {premium_type}",
+		member.user.id,
+		member.user.id.created_at()
+	)?;
 
-	let user_info = format!(
-		"**Creation date:** {}\n**Joined date:** {}\n**Roles:** {}\n**Verified:** {}\n**Last time \
-		 boosting server:** {}\n**Nitro tier: {}**",
-		member.user.id.created_at(),
-		member.joined_at.unwrap_or_default(),
-		roles,
-		member.user.verified().unwrap_or_default(),
-		member.premium_since.unwrap_or_default(),
-		premium_type
-	);
+	if let Some(joined_at) = member.joined_at {
+		writeln!(output, "**Joined date:** {joined_at}")?;
+	}
 
-	let container = CreateContainer::new(&thumbnail_section)
-		.add_component(separator())
-		.add_component(text_display(&user_info))
+	if let Some(verified_user) = member.user.verified() {
+		writeln!(output, "**Verified:** {verified_user}")?;
+	}
+
+	if let Some(premium_since) = member.premium_since {
+		writeln!(output, "**Last time boosting server:** {premium_since}")?;
+	}
+
+	if let Some(roles) = member.roles(ctx.cache())
+		&& !roles.is_empty()
+	{
+		output.push_str("**Roles:** ");
+		for role in &roles {
+			write!(output, "<@&{}>,", role.id)?;
+		}
+	}
+
+	let (text, thumbnail) = thumbnail_section(output, &avatar_url);
+	let text_array = [text];
+	let thumbnail_display = [CreateContainerComponent::Section(CreateSection::new(
+		&text_array,
+		thumbnail,
+	))];
+
+	let container = CreateContainer::new(&thumbnail_display)
 		.accent_colour(member.user.accent_colour.unwrap_or_default());
+	let component = [CreateComponent::Container(container)];
 
-	ctx.send(reply_container(container)).await?;
+	ctx.send(reply_container(&component)).await?;
 
 	Ok(())
 }

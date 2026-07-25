@@ -59,9 +59,7 @@ async fn setup_tracing(log_config: &LogConfig, service_name: &str) -> AResult<()
 
 	PrometheusBuilder::default()
 		.install()
-		.context("Failed to install Prometheus recorder")?;
-
-	Ok(())
+		.context("Failed to install Prometheus recorder")
 }
 
 #[expect(clippy::expect_used)]
@@ -125,7 +123,5 @@ async fn main() -> AResult<()> {
 		error!("UTILS_CONFIG already initialized");
 	}
 
-	bot_start(bot_config, postgres_pool.pool, commands()).await?;
-
-	Ok(())
+	bot_start(bot_config, postgres_pool.pool, commands()).await
 }

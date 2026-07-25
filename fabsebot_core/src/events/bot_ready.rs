@@ -1,20 +1,26 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use anyhow::Result as AResult;
 use serenity::all::{Context as SContext, Ready};
 use tokio::spawn;
 use tracing::{error, info};
 
 use crate::{
-	config::types::{BOT_CONTEXT, Data},
+	config::types::{BOT_CONTEXT, BotContext, Data},
 	periodic_task,
 };
 
-pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()> {
+pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) {
 	let bot_data: Arc<Data> = ctx.data();
 
 	if bot_data.state_tracker.swap(false, Ordering::Relaxed) {
-		if BOT_CONTEXT.set(ctx.clone()).is_err() {
+		if BOT_CONTEXT
+			.set(BotContext {
+				data: bot_data.clone(),
+				http: ctx.http.clone(),
+				cache: ctx.cache.clone(),
+			})
+			.is_err()
+		{
 			error!("BOT_CONTEXT already initialized");
 		}
 
@@ -34,6 +40,4 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) -> AResult<()>
 		data_about_bot.user.name,
 		data_about_bot.guilds.len(),
 	);
-
-	Ok(())
 }

@@ -1,5 +1,6 @@
 use std::{
-	sync::{Arc, LazyLock, OnceLock, atomic::AtomicBool},
+	borrow::Cow,
+	sync::{Arc, LazyLock, OnceLock, RwLock, atomic::AtomicBool},
 	time::Duration,
 };
 
@@ -12,9 +13,10 @@ use reqwest::Client;
 use serde::Serialize;
 use serenity::{
 	all::{
-		Context, Emoji, EmojiId, GenericChannelId, GuildId, ShardId, ShardRunnerMetadata, Webhook,
+		Cache as SerenityCache, Emoji, EmojiId, GenericChannelId, GuildId, ShardId,
+		ShardRunnerMetadata, Webhook,
 	},
-	model::{id::UserId, user::User},
+	http::Http,
 };
 use songbird::Songbird;
 use sqlx::PgPool;
@@ -78,9 +80,10 @@ impl MusicData {
 pub struct GuildCache {
 	pub ai_queue: AIQueue,
 	pub music_data: MusicData,
+	pub prefix: RwLock<Cow<'static, str>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
 enum AIRole {
 	System,
@@ -89,13 +92,20 @@ enum AIRole {
 	Tool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
+#[serde(untagged)]
+pub enum ChatContent {
+	Text(Cow<'static, str>),
+	Parts(Vec<ContentPart>),
+}
+
+#[derive(Serialize, Clone)]
 pub struct AIChatMessage {
 	role: AIRole,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	content: Option<Vec<ContentPart>>,
+	content: Option<ChatContent>,
 	#[serde(skip_serializing_if = "Option::is_none")]
-	tool_call_id: Option<String>,
+	tool_call_id: Option<Cow<'static, str>>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	tool_calls: Option<Vec<ToolCall>>,
 }
@@ -104,8 +114,8 @@ impl AIChatMessage {
 	#[must_use]
 	const fn new(
 		role: AIRole,
-		content: Option<Vec<ContentPart>>,
-		tool_call_id: Option<String>,
+		content: Option<ChatContent>,
+		tool_call_id: Option<Cow<'static, str>>,
 		tool_calls: Option<Vec<ToolCall>>,
 	) -> Self {
 		Self {
@@ -117,25 +127,25 @@ impl AIChatMessage {
 	}
 
 	#[must_use]
-	pub fn system(content: String) -> Self {
-		Self::new(
-			AIRole::System,
-			Some(vec![ContentPart::Text { text: content }]),
-			None,
-			None,
-		)
+	pub const fn system(content: Cow<'static, str>) -> Self {
+		Self::new(AIRole::System, Some(ChatContent::Text(content)), None, None)
 	}
 
 	#[must_use]
-	pub const fn user(content: Vec<ContentPart>) -> Self {
-		Self::new(AIRole::User, Some(content), None, None)
+	pub const fn user_text(content: Cow<'static, str>) -> Self {
+		Self::new(AIRole::User, Some(ChatContent::Text(content)), None, None)
 	}
 
 	#[must_use]
-	pub fn assistant(content: String) -> Self {
+	pub const fn user_parts(parts: Vec<ContentPart>) -> Self {
+		Self::new(AIRole::User, Some(ChatContent::Parts(parts)), None, None)
+	}
+
+	#[must_use]
+	pub const fn assistant(content: Cow<'static, str>) -> Self {
 		Self::new(
 			AIRole::Assistant,
-			Some(vec![ContentPart::Text { text: content }]),
+			Some(ChatContent::Text(content)),
 			None,
 			None,
 		)
@@ -143,20 +153,34 @@ impl AIChatMessage {
 
 	#[must_use]
 	pub const fn assistant_with_tools(
-		content: Option<Vec<ContentPart>>,
+		content: Option<ChatContent>,
 		tool_calls: Vec<ToolCall>,
 	) -> Self {
 		Self::new(AIRole::Assistant, content, None, Some(tool_calls))
 	}
 
 	#[must_use]
-	pub const fn tool(content: Vec<ContentPart>, call_id: String) -> Self {
-		Self::new(AIRole::Tool, Some(content), Some(call_id), None)
+	pub const fn tool_text(content: Cow<'static, str>, call_id: Cow<'static, str>) -> Self {
+		Self::new(
+			AIRole::Tool,
+			Some(ChatContent::Text(content)),
+			Some(call_id),
+			None,
+		)
+	}
+
+	#[must_use]
+	pub const fn tool_parts(content: Vec<ContentPart>, call_id: Cow<'static, str>) -> Self {
+		Self::new(
+			AIRole::Tool,
+			Some(ChatContent::Parts(content)),
+			Some(call_id),
+			None,
+		)
 	}
 }
 
-pub type WebhookMap = Cache<GenericChannelId, Webhook>;
-pub type UsersMap = Cache<UserId, Arc<User>>;
+pub type WebhookMap = Cache<GenericChannelId, Arc<Webhook>>;
 pub type EmojisMap = Cache<EmojiId, Arc<Emoji>>;
 
 pub struct Data {
@@ -167,7 +191,6 @@ pub struct Data {
 	pub app_emojis: EmojisMap,
 	pub state_tracker: AtomicBool,
 	pub lavalink_client: LavalinkClient,
-	pub users: UsersMap,
 	pub guild_cache_lock: Arc<Mutex<()>>,
 }
 
@@ -189,8 +212,7 @@ pub struct UtilsConfig {
 pub static UTILS_CONFIG: OnceLock<UtilsConfig> = OnceLock::new();
 
 pub fn utils_config() -> &'static UtilsConfig {
-	#[expect(clippy::expect_used)]
-	UTILS_CONFIG.get().expect("UTILS_CONFIG not initialized!")
+	UTILS_CONFIG.get().unwrap()
 }
 
 pub static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
@@ -217,13 +239,17 @@ pub struct ClientData {
 }
 
 pub fn client_data() -> &'static ClientData {
-	#[expect(clippy::expect_used)]
-	CLIENT_DATA.get().expect("CLIENT_DATA not initialized!")
+	CLIENT_DATA.get().unwrap()
 }
 
-pub static BOT_CONTEXT: OnceLock<Context> = OnceLock::new();
+pub static BOT_CONTEXT: OnceLock<BotContext> = OnceLock::new();
 
-pub fn bot_context() -> &'static Context {
-	#[expect(clippy::expect_used)]
-	BOT_CONTEXT.get().expect("BOT_CONTEXT not initialized!")
+pub struct BotContext {
+	pub data: Arc<Data>,
+	pub http: Arc<Http>,
+	pub cache: Arc<SerenityCache>,
+}
+
+pub fn bot_context() -> &'static BotContext {
+	BOT_CONTEXT.get().unwrap()
 }

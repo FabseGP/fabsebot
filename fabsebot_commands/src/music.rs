@@ -8,8 +8,8 @@ use fabsebot_core::{
 		ai::ai_voice,
 		helpers::url_bytes,
 		voice::{
-			PayloadType, add_payload, add_youtube_song, check_in_channel, lavalink_play,
-			lavalink_try_join, remove_handler, try_voice,
+			ContextType, PayloadType, add_payload, add_youtube_song, check_in_channel,
+			lavalink_play, lavalink_try_join, remove_handler, try_voice,
 		},
 	},
 };
@@ -48,7 +48,7 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 	};
 	add_payload(
 		&ctx,
-		handler_lock,
+		&handler_lock,
 		bytes,
 		PayloadType::TextToVoice,
 		guild_id,
@@ -90,7 +90,7 @@ pub async fn join_voice_old(
 )]
 pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
-	if let Err(err) = remove_handler(ctx.serenity_context(), guild_id).await {
+	if let Err(err) = remove_handler(guild_id).await {
 		ctx.reply(
 			"Bruh, I'm not even in a voice channel!\nUse join_voice-command in a voice channel \
 			 first",
@@ -103,6 +103,7 @@ pub async fn leave_voice(ctx: SContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 
+#[expect(clippy::doc_markdown)]
 /// Old implementation, prone to blocking from YouTube
 #[poise::command(
 	prefix_command,
@@ -122,13 +123,12 @@ pub async fn play_song_old(
 	let msg = reply.message().await?;
 	if let Err(err) = add_youtube_song(
 		url,
-		handler_lock,
+		&handler_lock,
 		guild_id,
 		msg.id,
 		msg.channel_id,
-		i64::from(ctx.author().id),
+		ctx.author().id,
 		&ctx.data().db,
-		Some(&ctx),
 	)
 	.await
 	{
@@ -154,7 +154,7 @@ pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
 		return Ok(());
 	};
 	let (_typing, _player_context) =
-		lavalink_try_join(ctx.serenity_context(), guild_id, ctx.author().id, Some(ctx)).await?;
+		lavalink_try_join(ContextType::Poise(ctx), guild_id, ctx.author().id).await?;
 
 	Ok(())
 }
@@ -175,7 +175,7 @@ pub async fn play_song(
 ) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
 	let (_typing, player_context) =
-		lavalink_try_join(ctx.serenity_context(), guild_id, ctx.author().id, Some(ctx)).await?;
+		lavalink_try_join(ContextType::Poise(ctx), guild_id, ctx.author().id).await?;
 	let reply = ctx.reply(QUEUEING_MSG).await?;
 	let msg = reply.message().await?;
 	if let Err(err) = lavalink_play(
@@ -183,7 +183,7 @@ pub async fn play_song(
 		guild_id,
 		msg.id,
 		msg.channel_id,
-		i64::from(ctx.author().id),
+		ctx.author().id,
 		&url,
 		player_context,
 		&ctx.data().db,
@@ -211,7 +211,7 @@ pub async fn play_file(ctx: SContext<'_>, attachment: Attachment) -> Result<(), 
 	{
 		let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
 		if let Ok(bytes) = url_bytes(&attachment.url).await {
-			add_payload(&ctx, handler_lock, bytes, PayloadType::Custom, guild_id).await?;
+			add_payload(&ctx, &handler_lock, bytes, PayloadType::Custom, guild_id).await?;
 		} else {
 			ctx.reply("Failed to fetch attachment :/").await?;
 		}

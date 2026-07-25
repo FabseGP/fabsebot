@@ -1,13 +1,10 @@
-use anyhow::{Result as AResult, anyhow};
-use serenity::{
-	all::{
-		Context as SContext, CreateMessage, GenericChannelId, GuildId, MessageId,
-		audit_log::{Action::Message, MessageAction::Delete},
-	},
-	builder::CreateAllowedMentions,
+use anyhow::Result as AResult;
+use serenity::all::{
+	Context as SContext, CreateMessage, GenericChannelId, GuildId, MessageId,
+	audit_log::{Action::Message, MessageAction::Delete},
 };
 
-use crate::errors::commands::GuildError;
+use crate::{errors::commands::GuildError, utils::helpers::silent_message};
 
 pub async fn handle_message_delete(
 	ctx: &SContext,
@@ -26,47 +23,38 @@ pub async fn handle_message_delete(
 			.message(channel_id, deleted_message_id)
 			.map(|msg| (msg.content.clone(), msg.components.first().cloned()));
 		if let Some((content, component_opt)) = deleted_content {
-			let (guild_owner_id, evil_person_id, evil_person_name, neccessary_perms) = {
-				if let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
-					&& let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
-					&& let Some(guild_channel) = channel.guild()
-					&& let Ok(member) = guild.member(&ctx.http, user_id).await
+			if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
+				&& let Some(guild_channel) = channel.guild()
+				&& let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
+				&& let Ok(member) = guild.member(&ctx.http, user_id).await
+			{
+				let user_perms = guild.user_permissions_in(&guild_channel, &member);
+				if member.user.id == guild.owner_id
+					|| (user_perms.administrator() || user_perms.moderate_members())
 				{
-					let user_perms = guild.user_permissions_in(&guild_channel, &member);
-					(
-						guild.owner_id,
-						member.user.id,
-						member.display_name().to_owned(),
-						user_perms.administrator() || user_perms.moderate_members(),
-					)
-				} else {
-					return Err(GuildError::FailedFetch.into());
+					return Ok(());
 				}
-			};
-			if evil_person_id != guild_owner_id && !neccessary_perms {
-				channel_id
-					.send_message(
-						&ctx.http,
-						CreateMessage::default().content(format!(
-							"**Bruh, {evil_person_name} deleted my message while not being an \
-							 admin or a mod!**\nSending it again",
-						)),
-					)
-					.await?;
-				let message = if component_opt.is_some() {
-					"Discord didn't allow me to resend my message smh"
-				} else {
-					content.as_str()
-				};
-				let message = CreateMessage::default()
-					.content(message)
-					.allowed_mentions(CreateAllowedMentions::default().replied_user(false));
-
-				channel_id.send_message(&ctx.http, message).await?;
+			} else {
+				return Err(GuildError::FailedFetch.into());
 			}
+			channel_id
+				.send_message(
+					&ctx.http,
+					CreateMessage::new().content(format!(
+						"**Bruh, <@{user_id}> deleted my message while not being an admin or a \
+						 mod!**\nSending it again",
+					)),
+				)
+				.await?;
+			let message = if component_opt.is_some() {
+				"Discord didn't allow me to resend my message smh"
+			} else {
+				content.as_str()
+			};
+			channel_id
+				.send_message(&ctx.http, silent_message(message))
+				.await?;
 		}
-	} else {
-		return Err(anyhow!("Failed to access audit"));
 	}
 	Ok(())
 }

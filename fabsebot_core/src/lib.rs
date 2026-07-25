@@ -21,8 +21,8 @@ use poise::{Command, Framework, FrameworkOptions, Prefix, PrefixFrameworkOptions
 use serenity::{
 	Client,
 	all::{
-		ActivityData, Context as SContext, CreateAllowedMentions, GatewayIntents, GenericChannelId,
-		OnlineStatus, Settings, Token, TransportCompression,
+		ActivityData, GatewayIntents, GenericChannelId, OnlineStatus, Settings, Token,
+		TransportCompression,
 	},
 };
 use songbird::{Config, Songbird, driver::DecodeMode};
@@ -34,7 +34,7 @@ use tokio::{
 	sync::Mutex,
 	time::interval,
 };
-use tracing::{error, warn};
+use tracing::error;
 
 use crate::{
 	config::{
@@ -45,7 +45,7 @@ use crate::{
 	handlers::{EventHandler, dynamic_prefix, on_command, on_error},
 	stats::counters::METRICS,
 	utils::{
-		helpers::{get_gif, get_waifu},
+		helpers::{default_mentions, get_gif, get_waifu},
 		voice::setup_lavalink,
 		webhook::error_hook,
 	},
@@ -55,10 +55,10 @@ const PING_INTERVAL_SEC: u64 = 60;
 const CACHE_CAPACITY: u64 = 1000;
 const CACHE_TIME_TO_IDLE_HOURS: u64 = 24;
 
-pub async fn log_error(mut output: String, ctx: &SContext) {
+pub async fn log_error(mut output: String) {
 	error!("{output}");
 	output.truncate(MESSAGE_LIMIT);
-	if let Err(err) = error_hook(ctx, &output).await {
+	if let Err(err) = error_hook(&output).await {
 		error!("Failed to send error to webhook: {err}");
 	}
 }
@@ -78,11 +78,7 @@ where
 		v = s3.recv() => v.unwrap(),
 	);
 
-	if shutdown_trigger() {
-		warn!("Successfully triggered shutdown for all shards");
-	} else {
-		warn!("Failed to trigger shutdown, shards may have already stopped");
-	}
+	shutdown_trigger();
 }
 
 async fn periodic_ping(url: &str, token: &str) -> ! {
@@ -97,18 +93,14 @@ async fn periodic_ping(url: &str, token: &str) -> ! {
 
 pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
 	let mut interval = interval(Duration::from_hours(1));
-	let bot_context = bot_context();
+	let http = bot_context().http.clone();
 	loop {
 		interval.tick().await;
-		let system_time = match SystemTime::now()
+		let Ok(system_time) = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
 			.map(|t| t.as_secs())
-		{
-			Ok(time) => time,
-			Err(err) => {
-				error!("Failed to get system time: {err}");
-				continue;
-			}
+		else {
+			continue;
 		};
 		let now_timestamp = system_time.cast_signed();
 
@@ -137,9 +129,9 @@ pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
 				&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
 				&& let Some(waifu_channel) = guild.waifu_channel
 			{
-				counter!(METRICS.periodic_waifu.clone()).increment(1);
+				counter!(METRICS.periodic_waifu.as_str()).increment(1);
 				if let Err(err) = GenericChannelId::new(waifu_channel.cast_unsigned())
-					.say(&bot_context.http, get_waifu(bot_context).await)
+					.say(&http, get_waifu().await)
 					.await
 				{
 					error!("Failed to send waifu: {:?}", &err);
@@ -163,10 +155,10 @@ pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
 				&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
 				&& let Some(dead_chat_channel) = guild.dead_chat_channel
 			{
-				counter!(METRICS.periodic_dead_chat.clone()).increment(1);
-				let gif = get_gif(bot_context, "dead chat").await;
+				counter!(METRICS.periodic_dead_chat.as_str()).increment(1);
+				let gif = get_gif("dead chat").await;
 				if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
-					.say(&bot_context.http, gif)
+					.say(&http, gif)
 					.await
 				{
 					error!("Failed to send dead chat gif: {:?}", &err);
@@ -227,10 +219,6 @@ pub async fn bot_start(
 			.build(),
 		state_tracker: AtomicBool::new(true),
 		lavalink_client,
-		users: Cache::builder()
-			.max_capacity(CACHE_CAPACITY)
-			.time_to_idle(Duration::from_hours(CACHE_TIME_TO_IDLE_HOURS))
-			.build(),
 		guild_cache_lock: Arc::new(Mutex::new(())),
 	});
 	let additional_prefix: &'static str =
@@ -243,7 +231,7 @@ pub async fn bot_start(
 				additional_prefixes: vec![Prefix::Literal(additional_prefix)],
 				..Default::default()
 			},
-			allowed_mentions: Some(CreateAllowedMentions::default().replied_user(false)),
+			allowed_mentions: Some(default_mentions()),
 			on_error: |error| Box::pin(on_error(error)),
 			pre_command: |context| Box::pin(on_command(context)),
 			..Default::default()

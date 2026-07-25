@@ -1,4 +1,6 @@
-use sqlx::{Error, Pool, Postgres, Transaction, postgres::PgQueryResult, query, query_as};
+use sqlx::{
+	Error, Pool, Postgres, Transaction, postgres::PgQueryResult, query, query_as, query_scalar,
+};
 
 pub struct GuildSettings {
 	pub spoiler_channel: Option<i64>,
@@ -116,6 +118,21 @@ pub async fn delete_guild(guild_id: i64, conn: &Pool<Postgres>) -> Result<PgQuer
 		guild_id
 	)
 	.execute(conn)
+	.await
+}
+
+pub async fn fetch_guild_prefix(
+	guild_id: i64,
+	conn: &Pool<Postgres>,
+) -> Result<Option<String>, Error> {
+	query_scalar!(
+		r#"
+		SELECT prefix FROM guild_settings
+		WHERE guild_id = $1
+		"#,
+		i64::from(guild_id)
+	)
+	.fetch_one(conn)
 	.await
 }
 

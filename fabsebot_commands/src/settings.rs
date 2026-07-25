@@ -1,14 +1,14 @@
 use std::{
+	borrow::Cow,
 	sync::Arc,
 	time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context as _, Result as AResult};
-use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::types::{Error, HTTP_CLIENT, SContext},
 	utils::helpers::{
-		correct_permissions, get_gif, get_waifu, reply_container, separator, text_display,
+		correct_permissions, get_gif, get_waifu, guild_cache, image_uri, reply_container,
 		thumbnail_section, user_pfp,
 	},
 };
@@ -21,6 +21,7 @@ use serenity::{
 		CreateActionRow, CreateButton, CreateComponent, CreateContainer, CreateInteractionResponse,
 		CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption, GuildId,
 	},
+	builder::{CreateContainerComponent, CreateSection},
 	futures::StreamExt as _,
 	model::Permissions,
 };
@@ -28,10 +29,7 @@ use sqlx::{Pool, Postgres, query};
 use tracing::warn;
 use url::Url;
 
-async fn validate_media(ctx: &SContext<'_>, media: Option<&String>) -> AResult<bool> {
-	let Some(user_media) = media else {
-		return Ok(true);
-	};
+async fn validate_media(ctx: &SContext<'_>, user_media: &str) -> AResult<bool> {
 	if Url::parse(user_media).is_ok() {
 		ctx.defer().await?;
 		Ok(HTTP_CLIENT
@@ -175,8 +173,8 @@ enum SelectionState {
 }
 
 impl SelectionState {
-	fn label(&self) -> String {
-		match self {
+	const fn label(&self) -> Cow<'static, str> {
+		let name = match self {
 			Self::MainMenu => "main",
 			Self::SelectingMusicChannel => "music",
 			Self::SelectingSpoilerChannel => "spoiler",
@@ -184,12 +182,12 @@ impl SelectionState {
 			Self::SelectingChatbotChannel => "chatbot",
 			Self::SelectingWaifuChannel => "waifu",
 			Self::ConfiguringDeadChatGifs => "dead gifs",
-		}
-		.to_owned()
+		};
+		Cow::Borrowed(name)
 	}
 
-	fn description(&self) -> String {
-		match self {
+	const fn description(&self) -> Cow<'static, str> {
+		let name = match self {
 			Self::MainMenu => "Time to configure me",
 			Self::SelectingMusicChannel => "Select a channel to listen for music requests",
 			Self::SelectingSpoilerChannel => "Select a channel to spoiler attachments",
@@ -197,8 +195,8 @@ impl SelectionState {
 			Self::SelectingChatbotChannel => "Select a channel to respond to users as a chatbot",
 			Self::SelectingWaifuChannel => "Select a channel to send waifus to every day",
 			Self::ConfiguringDeadChatGifs => "Select a channel to send dead gifs to every day",
-		}
-		.to_owned()
+		};
+		Cow::Borrowed(name)
 	}
 }
 
@@ -214,7 +212,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let mut current_state = SelectionState::MainMenu;
 
-	let settings_options = vec![
+	let settings_options = [
 		CreateSelectMenuOption::new("Chatbot channel", "ch_chan"),
 		CreateSelectMenuOption::new("Music channel", "mu_chan"),
 		CreateSelectMenuOption::new("Quote channel", "qu_chan"),
@@ -224,9 +222,9 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	];
 
 	let settings_menu = CreateSelectMenu::new(
-		format!("{}_settings_menu", ctx.id()),
+		"settings_menu",
 		CreateSelectMenuKind::String {
-			options: Cow::from(settings_options),
+			options: Cow::Borrowed(&settings_options),
 		},
 	)
 	.placeholder("Select server setting to configure")
@@ -235,21 +233,21 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let settings_component = [
 		CreateComponent::ActionRow(CreateActionRow::SelectMenu(settings_menu)),
-		CreateComponent::ActionRow(CreateActionRow::Buttons(Cow::from(vec![
-			CreateButton::new(format!("{}_c", ctx.id()))
+		CreateComponent::ActionRow(CreateActionRow::Buttons(Cow::Borrowed(&[
+			CreateButton::new("confirm")
 				.label("Confirm changes")
 				.style(ButtonStyle::Success),
-			CreateButton::new(format!("{}_d", ctx.id()))
+			CreateButton::new("cancel")
 				.label("Cancel")
 				.style(ButtonStyle::Danger),
-			CreateButton::new(format!("{}_r", ctx.id()))
+			CreateButton::new("reset")
 				.label("Reset")
 				.style(ButtonStyle::Danger),
 		]))),
 	];
 
 	let channel_menu = CreateSelectMenu::new(
-		format!("{}_channels_menu", ctx.id()),
+		"channels_menu",
 		CreateSelectMenuKind::Channel {
 			channel_types: None,
 			default_channels: None,
@@ -261,8 +259,8 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let channels_component = [
 		CreateComponent::ActionRow(CreateActionRow::SelectMenu(channel_menu)),
-		CreateComponent::ActionRow(CreateActionRow::Buttons(Cow::from(vec![
-			CreateButton::new(format!("{}_d", ctx.id()))
+		CreateComponent::ActionRow(CreateActionRow::Buttons(Cow::Borrowed(&[
+			CreateButton::new("cancel")
 				.label("Back")
 				.style(ButtonStyle::Secondary),
 		]))),
@@ -270,13 +268,11 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let message = ctx
 		.send(
-			CreateReply::default()
+			CreateReply::new()
 				.content(current_state.description())
 				.components(&settings_component),
 		)
 		.await?;
-
-	let ctx_id_copy = ctx.id();
 
 	let mut music_channel_opt = None;
 	let mut spoiler_channel_opt = None;
@@ -287,12 +283,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let mut collector_stream = ComponentInteractionCollector::new(ctx.serenity_context())
 		.timeout(Duration::from_mins(10))
-		.filter(move |interaction| {
-			interaction
-				.data
-				.custom_id
-				.starts_with(ctx_id_copy.to_string().as_str())
-		})
+		.message_id(message.message().await?.id)
 		.stream();
 
 	let mut too_slow = true;
@@ -303,7 +294,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 			.await?;
 
-		if interaction.data.custom_id.ends_with('c') {
+		if interaction.data.custom_id == "confirm" {
 			configure_channels(
 				music_channel_opt,
 				spoiler_channel_opt,
@@ -318,11 +309,11 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 			too_slow = false;
 			response = "Server settings set... probably";
 			break;
-		} else if interaction.data.custom_id.ends_with('d') {
+		} else if interaction.data.custom_id == "cancel" {
 			response = "Server settings not changed... coward";
 			too_slow = false;
 			break;
-		} else if interaction.data.custom_id.ends_with('r') {
+		} else if interaction.data.custom_id == "reset" {
 			reset_server_settings(ctx, guild_id).await?;
 			response = "Server settings reset... probably";
 			too_slow = false;
@@ -331,9 +322,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 
 		match &interaction.data.kind {
 			ComponentInteractionDataKind::StringSelect { values } => {
-				let Some(menu_choice) = values.first() else {
-					continue;
-				};
+				let menu_choice = values.first().unwrap();
 				current_state = if menu_choice == "mu_chan" {
 					SelectionState::SelectingMusicChannel
 				} else if menu_choice == "sp_chan" {
@@ -344,30 +333,26 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 					SelectionState::SelectingChatbotChannel
 				} else if menu_choice == "wu_chan" {
 					SelectionState::SelectingWaifuChannel
-				} else if menu_choice == "dc_gifs" {
-					SelectionState::ConfiguringDeadChatGifs
 				} else {
-					continue;
+					SelectionState::ConfiguringDeadChatGifs
 				};
 				message
 					.edit(
 						ctx,
-						CreateReply::default()
+						CreateReply::new()
 							.content(current_state.description())
 							.components(&channels_component),
 					)
 					.await?;
 			}
 			ComponentInteractionDataKind::ChannelSelect { values } => {
-				let Some(channel_id) = values.first() else {
-					continue;
-				};
+				let channel_id = values.first().unwrap();
+				let text = {
+					let channel = channel_id
+						.widen()
+						.to_channel(ctx.http(), ctx.guild_id())
+						.await?;
 
-				let channel_name = if let Ok(channel) = channel_id
-					.widen()
-					.to_channel(ctx.http(), ctx.guild_id())
-					.await
-				{
 					match current_state {
 						SelectionState::SelectingMusicChannel => {
 							music_channel_opt = Some(channel.clone());
@@ -392,22 +377,25 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 						}
 					}
 					if let Some(guild_channel) = channel.guild() {
-						guild_channel.base.name.into_string()
+						format!(
+							"\"{}\" chosen as {} channel",
+							guild_channel.base.name,
+							current_state.label()
+						)
 					} else {
-						channel_id.to_string()
+						format!(
+							"\"{}\" chosen as {} channel",
+							channel_id,
+							current_state.label()
+						)
 					}
-				} else {
-					channel_id.to_string()
 				};
 
 				message
 					.edit(
 						ctx,
-						CreateReply::default()
-							.content(format!(
-								"\"{channel_name}\" chosen as {} channel",
-								current_state.label()
-							))
+						CreateReply::new()
+							.content(text)
 							.components(&settings_component),
 					)
 					.await?;
@@ -423,7 +411,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	message
 		.edit(
 			ctx,
-			CreateReply::default()
+			CreateReply::new()
 				.content(response)
 				.reply(true)
 				.components(&[]),
@@ -442,7 +430,7 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 pub async fn reset_user_settings(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
 	ctx.send(
-		CreateReply::default()
+		CreateReply::new()
 			.content("User settings resetted... probably")
 			.ephemeral(true),
 	)
@@ -493,21 +481,22 @@ pub async fn set_afk(
 	let embed_reason = reason
 		.as_deref()
 		.unwrap_or("Didn't renew life subscription");
-	let user_name = ctx.author().display_name();
 
-	let title = format!("# {user_name} killed!");
-	let thumbnail_section = [thumbnail_section(&title, &avatar_url)];
+	let title = format!(
+		"# <@{}> killed!\n**Reason:** {embed_reason}",
+		ctx.author().id
+	);
+	let (text, thumbnail) = thumbnail_section(&title, &avatar_url);
+	let text_array = [text];
+	let thumbnail_display = [CreateContainerComponent::Section(CreateSection::new(
+		&text_array,
+		thumbnail,
+	))];
 
-	let text = format!("**Reason:** {embed_reason}");
+	let container = CreateContainer::new(&thumbnail_display).accent_colour(Colour::RED);
+	let component = [CreateComponent::Container(container)];
 
-	let text_display = text_display(&text);
-
-	let container = CreateContainer::new(&thumbnail_section)
-		.add_component(separator())
-		.add_component(text_display)
-		.accent_colour(Colour::RED);
-
-	ctx.send(reply_container(container)).await?;
+	ctx.send(reply_container(&component)).await?;
 
 	Ok(())
 }
@@ -555,7 +544,6 @@ pub async fn set_chatbot_options(
 	>,
 ) -> Result<(), Error> {
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
-	let final_role = role.map(|role| format!("The current user wants you to act as: {role}"));
 	query!(
 		r#"
 		UPDATE guild_settings
@@ -563,12 +551,12 @@ pub async fn set_chatbot_options(
         WHERE guild_id = $1
         "#,
 		guild_id_i64,
-		final_role,
+		role,
 	)
 	.execute(&ctx.data().db)
 	.await?;
 	ctx.send(
-		CreateReply::default()
+		CreateReply::new()
 			.content(
 				"Options for chatbot set... probably\nThe new role will not take effect until the \
 				 chat history is cleared using \"clear\" in the chat channel",
@@ -604,7 +592,7 @@ async fn set_dead_chat(
 	)
 	.execute(conn)
 	.await?;
-	let gif = get_gif(ctx.serenity_context(), "dead chat").await;
+	let gif = get_gif("dead chat").await;
 	channel.id().say(ctx.http(), gif).await?;
 	Ok(())
 }
@@ -626,26 +614,38 @@ pub async fn set_prefix(
 	ctx: SContext<'_>,
 	#[description = "Character(s) to use as prefix for commands"] characters: String,
 ) -> Result<(), Error> {
-	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
+	let guild_id = ctx.guild_id().unwrap();
+
 	query!(
 		r#"
 		UPDATE guild_settings
         SET prefix = $2
         WHERE guild_id = $1
         "#,
-		guild_id_i64,
+		i64::from(guild_id),
 		characters,
 	)
 	.execute(&ctx.data().db)
 	.await?;
+
 	ctx.send(
-		CreateReply::default()
+		CreateReply::new()
 			.content(format!(
-				"{characters} set as the prefix for commands... probably"
+				"{characters} set as the prefix for commands... probably",
 			))
 			.ephemeral(true),
 	)
 	.await?;
+
+	let guild_cache = guild_cache(
+		&ctx.data(),
+		guild_id,
+		Some(ctx.author().id.get().cast_signed()),
+		ctx.serenity_context(),
+	)
+	.await?;
+
+	*guild_cache.prefix.write().unwrap() = Cow::Owned(characters);
 
 	Ok(())
 }
@@ -692,8 +692,7 @@ pub async fn set_user_ping(
 	                 query"]
 	media: Option<String>,
 ) -> Result<(), Error> {
-	let valid = validate_media(&ctx, media.as_ref()).await?;
-	let response = if valid {
+	let response = if media.is_none() || validate_media(&ctx, media.as_ref().unwrap()).await? {
 		let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 		let user_id_i64 = i64::from(ctx.author().id);
 		query!(
@@ -715,7 +714,7 @@ pub async fn set_user_ping(
 		"Invalid media given... really bro?"
 	};
 
-	ctx.send(CreateReply::default().content(response).ephemeral(true))
+	ctx.send(CreateReply::new().content(response).ephemeral(true))
 		.await?;
 
 	Ok(())
@@ -745,10 +744,7 @@ async fn set_waifu_channel(
 	)
 	.execute(conn)
 	.await?;
-	channel
-		.id()
-		.say(ctx.http(), get_waifu(ctx.serenity_context()).await)
-		.await?;
+	channel.id().say(ctx.http(), get_waifu().await).await?;
 	Ok(())
 }
 
@@ -771,7 +767,6 @@ pub async fn set_word_react(
 ) -> Result<(), Error> {
 	let mut emoji_id = None;
 	let mut guild_emoji = false;
-	let valid_media = validate_media(&ctx, media.as_ref()).await?;
 	let valid_emoji = if let Some(emoji_name) = emoji_name {
 		if let Some(guild) = ctx.guild()
 			&& guild.emojis.iter().any(|emoji| emoji.name == emoji_name)
@@ -790,8 +785,7 @@ pub async fn set_word_react(
 				.unwrap_or("image/png");
 			if content_type.starts_with("image/") || content_type == "application/gif" {
 				let image_bytes = HTTP_CLIENT.get(&emoji_media).send().await?.bytes().await?;
-				let base64_str = general_purpose::STANDARD.encode(&image_bytes);
-				let image_data = format!("data:{content_type};base64,{base64_str}");
+				let image_data = image_uri(&image_bytes, Some(content_type))?;
 				let params = CreateApplicationEmoji {
 					name: &emoji_name,
 					image: &image_data,
@@ -819,7 +813,7 @@ pub async fn set_word_react(
 	} else {
 		false
 	};
-	if valid_media && valid_emoji {
+	if (media.is_none() || validate_media(&ctx, media.as_ref().unwrap()).await?) && valid_emoji {
 		let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 		query!(
 			r#"
@@ -841,14 +835,14 @@ pub async fn set_word_react(
 		.execute(&ctx.data().db)
 		.await?;
 		ctx.send(
-			CreateReply::default()
+			CreateReply::new()
 				.content(format!("{word} will be reacted to from now on... probably"))
 				.ephemeral(true),
 		)
 		.await?;
 	} else {
 		ctx.send(
-			CreateReply::default()
+			CreateReply::new()
 				.content("Invalid media given... really bro?")
 				.ephemeral(true),
 		)
@@ -881,7 +875,7 @@ pub async fn set_word_track(
 	.execute(&ctx.data().db)
 	.await?;
 	ctx.send(
-		CreateReply::default()
+		CreateReply::new()
 			.content(format!("The count of {word} will be tracked... probably"))
 			.ephemeral(true),
 	)

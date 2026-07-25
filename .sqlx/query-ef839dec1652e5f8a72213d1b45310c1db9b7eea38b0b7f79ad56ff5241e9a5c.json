@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\t\tSELECT prefix FROM guild_settings\n\t\t\tWHERE guild_id = $1\n\t\t\t",
+  "query": "\n\t\tSELECT prefix FROM guild_settings\n\t\tWHERE guild_id = $1\n\t\t",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       true
     ]
   },
-  "hash": "48bb828055a03b33e5255164e918c53b9ac2fe6009efb51c61abe5dfca34d75e"
+  "hash": "ef839dec1652e5f8a72213d1b45310c1db9b7eea38b0b7f79ad56ff5241e9a5c"
 }

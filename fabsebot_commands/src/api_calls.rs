@@ -1,20 +1,19 @@
-use core::fmt::{Display, Formatter, Result as FmtResult};
-use std::time::Duration;
+use std::{borrow::Cow, fmt::Write as _, time::Duration};
 
 use anyhow::Result as AResult;
 use base64::{Engine as _, engine::general_purpose};
 use fabsebot_core::{
 	config::{
 		constants::MESSAGE_LIMIT,
-		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, UtilsConfig, utils_config},
+		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, utils_config},
 	},
 	errors::commands::{AIError, Base64Error, InteractionError},
 	utils::{
-		ai::{ContentPart, ai_response, image_content, uri_content, user_roles_pfp},
+		ai::{ContentPart, ai_response, ai_response_with_tools, image_content, uri_content},
 		helpers::{
-			fetch_and_parse, get_gifs, get_waifu, media_gallery, member_pfp, non_empty_string,
-			non_empty_vec, paginate_container, reply_container, text_display, thumbnail_section,
-			true_bool, url_bytes, user_banner, user_pfp, visit_page_button,
+			banner_vec, fetch_and_parse, get_gifs, get_waifu, media_gallery, member_pfp,
+			non_empty_string, non_empty_vec, paginate_container, reply_container, text_display,
+			thumbnail_section, true_bool, url_bytes, user_pfp, visit_page_button,
 		},
 	},
 };
@@ -23,8 +22,12 @@ use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 use serenity::{
 	all::{Attachment, Colour, CreateAttachment, CreateContainer, Member, MessageId, User},
-	builder::{CreateActionRow, CreateContainerComponent},
+	builder::{
+		CreateActionRow, CreateComponent, CreateContainerComponent, CreateMediaGallery,
+		CreateSection,
+	},
 	futures::StreamExt as _,
+	model::id::UserId,
 };
 use sqlx::query_scalar;
 use url::form_urlencoded::byte_serialize;
@@ -43,7 +46,9 @@ struct AIResponseImage {
 	image: String,
 }
 
-async fn fetch_and_decode_image(utils_config: &UtilsConfig, prompt: String) -> AResult<Vec<u8>> {
+async fn fetch_and_decode_image(prompt: String) -> AResult<Vec<u8>> {
+	let utils_config = utils_config();
+
 	let form = Form::new()
 		.text("prompt", prompt)
 		.text("steps", "25")
@@ -81,12 +86,11 @@ pub async fn ai_image(
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
 	let _typing = ctx.defer_or_broadcast().await;
-	let utils_config = utils_config();
 
-	match fetch_and_decode_image(utils_config, prompt.clone()).await {
+	match fetch_and_decode_image(prompt.clone()).await {
 		Ok(bytes) => {
 			ctx.send(
-				CreateReply::default()
+				CreateReply::new()
 					.reply(true)
 					.attachment(CreateAttachment::bytes(bytes, "output.png")),
 			)
@@ -116,32 +120,36 @@ pub async fn ai_text(
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
 	ctx.defer().await?;
-	let guild_id = ctx.guild_id().unwrap();
 
-	let mut chat_vec = Vec::with_capacity(1);
-	if let Some(attachment) = attachment
+	let user_message = if let Some(attachment) = attachment
 		&& let Some(content_type) = attachment.content_type.as_deref()
 		&& content_type.starts_with("image")
 		&& let Ok(bytes) = url_bytes(&attachment.url).await
-		&& let Err(err) = image_content(&mut chat_vec, &bytes)
 	{
-		ctx.reply("Why you give me an invalid image format >:(")
-			.await?;
-		return Err(err);
-	}
+		let mut chat_vec = Vec::with_capacity(2);
+		match image_content(&mut chat_vec, &bytes) {
+			Ok(()) => {
+				chat_vec.push(ContentPart::Text {
+					text: Cow::Owned(prompt.clone()),
+				});
+				AIChatMessage::user_parts(chat_vec)
+			}
+			Err(err) => {
+				ctx.reply("Why you give me an invalid image format >:(")
+					.await?;
+				return Err(err);
+			}
+		}
+	} else {
+		AIChatMessage::user_text(Cow::Owned(prompt.clone()))
+	};
 
-	chat_vec.push(ContentPart::Text {
-		text: prompt.clone(),
-	});
+	let mut messages = vec![AIChatMessage::system(Cow::Owned(role)), user_message];
 
-	let mut messages = vec![AIChatMessage::system(role), AIChatMessage::user(chat_vec)];
-
-	let resp = match ai_response(
+	let resp = match ai_response_with_tools(
 		&mut messages,
-		ctx.serenity_context(),
-		guild_id,
+		ctx.guild_id().unwrap(),
 		None,
-		true,
 		&utils_config().fabseserver.text_model_large,
 	)
 	.await
@@ -159,8 +167,9 @@ pub async fn ai_text(
 
 	let text_display = [text_display(&text)];
 	let container = CreateContainer::new(&text_display).accent_colour(Colour::RED);
+	let component = [CreateComponent::Container(container)];
 
-	ctx.send(reply_container(container)).await?;
+	ctx.send(reply_container(&component)).await?;
 
 	Ok(())
 }
@@ -176,14 +185,15 @@ struct AniMangaResponse<T> {
 struct AniManga<T> {
 	url: String,
 	images: AniMangaImageTypes,
-	titles: Vec<AniMangaTitleTypes>,
+	title: String,
 	#[serde(rename = "type")]
-	anime_type: String,
+	media_type: String,
 	status: String,
 	score: Option<f32>,
 	popularity: Option<i32>,
 	favorites: Option<i32>,
 	synopsis: Option<String>,
+	#[serde(deserialize_with = "non_empty_vec")]
 	genres: Vec<AniMangaGenres>,
 	#[serde(flatten)]
 	specific: T,
@@ -214,13 +224,6 @@ struct AniMangaImageWebp {
 }
 
 #[derive(Deserialize)]
-struct AniMangaTitleTypes {
-	#[serde(rename = "type")]
-	title_type: String,
-	title: String,
-}
-
-#[derive(Deserialize)]
 struct AniMangaAired {
 	#[serde(rename = "string")]
 	aired_string: Option<String>,
@@ -232,35 +235,38 @@ struct AniMangaGenres {
 }
 
 impl<T> AniManga<T> {
-	fn description(&self) -> String {
-		let japanese_title = self
-			.titles
-			.iter()
-			.find(|t| t.title_type == "Japanese")
-			.map_or("No japanese title available", |t| t.title.as_str());
-		let description = self
-			.synopsis
-			.as_ref()
-			.map_or("No description", |synopsis| synopsis);
-		let english_title = self
-			.titles
-			.iter()
-			.find(|t| t.title_type == "English")
-			.map_or("No english title", |t| t.title.as_str());
-		let score = self.score.unwrap_or(0.0);
-		let popularity = self.popularity.unwrap_or(0);
-		let favorites = self.favorites.unwrap_or(0);
-		let genres = self
+	fn description(&self, output: &mut String) {
+		write!(
+			output,
+			"# {}\n**Format:** {}\n**Status:** {}\n**Genres:** ",
+			self.title, self.media_type, self.status
+		)
+		.unwrap();
+
+		for genre in self
 			.genres
 			.iter()
-			.map(|genre| genre.name.as_str())
+			.map(|g| g.name.as_str())
 			.intersperse(" - ")
-			.collect::<String>();
-		format!(
-			"# {japanese_title}\n**Description:**\n{description}\n**English \
-			 title:**\n{english_title}\n**Score:**\n{score}\n**Popularity:**\n{popularity}\n**\
-			 Favorites:**\n{favorites}\n**Genres:**\n{genres}\n"
-		)
+		{
+			output.push_str(genre);
+		}
+
+		if let Some(description) = &self.synopsis {
+			write!(output, "\n**Description:**\n{description}\n").unwrap();
+		}
+
+		if let Some(score) = self.score {
+			write!(output, "\n**Score:** {score}").unwrap();
+		}
+
+		if let Some(popularity) = self.popularity {
+			write!(output, "\n**Popularity:** {popularity}").unwrap();
+		}
+
+		if let Some(favorites) = self.favorites {
+			write!(output, "\n**Favorites:** {favorites}").unwrap();
+		}
 	}
 }
 
@@ -302,28 +308,25 @@ pub async fn anime(
 		&json.data,
 		Duration::from_mins(1),
 		|entry, _idx, _len| async move {
-			let description = entry.description();
-			let episodes = entry.specific.episodes.unwrap_or(0);
-			let duration = entry
-				.specific
-				.duration
-				.as_ref()
-				.map_or("No duration", |duration| duration);
-			let aired = entry
-				.specific
-				.aired
-				.aired_string
-				.as_ref()
-				.map_or("No date for release", |aired| aired);
-			let mut text = format!(
-				"{description}**Format:**\n{}\n**Status:**\n{}\n**Episodes:**\n{episodes}\n**\
-				 Duration:**\n{duration}\n**Aired:**\n{aired}",
-				entry.anime_type, entry.status
-			);
+			let mut text = String::with_capacity(512);
+			entry.description(&mut text);
+			if let Some(episodes) = entry.specific.episodes {
+				writeln!(text, "**Episodes:** {episodes}").unwrap();
+			}
+			if let Some(duration) = &entry.specific.duration {
+				writeln!(text, "**Duration:** {duration}").unwrap();
+			}
+			if let Some(aired) = &entry.specific.aired.aired_string {
+				writeln!(text, "**Aired:** {aired}").unwrap();
+			}
 			text.truncate(MESSAGE_LIMIT);
-			let thumbnail_section = vec![thumbnail_section(text, &entry.images.webp.image_url)];
+			let (text, thumbnail) = thumbnail_section(text, &entry.images.webp.image_url);
+			let text_array = vec![text];
+			let thumbnail_display = vec![CreateContainerComponent::Section(CreateSection::new(
+				text_array, thumbnail,
+			))];
 			let button = visit_page_button(&entry.url);
-			CreateContainer::new(thumbnail_section)
+			CreateContainer::new(thumbnail_display)
 				.add_component(CreateContainerComponent::ActionRow(
 					CreateActionRow::Buttons(Cow::Owned(vec![button])),
 				))
@@ -358,15 +361,6 @@ struct Anilist {
 #[derive(Deserialize)]
 struct AnimeTitle {
 	english: Option<String>,
-}
-
-impl Display for AnimeTitle {
-	fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-		match &self.english {
-			Some(english_title) => write!(f, "{english_title}"),
-			None => write!(f, "Unknown Title"),
-		}
-	}
 }
 
 /// What anime was that scene from?
@@ -416,13 +410,16 @@ pub async fn anime_scene(
 	);
 
 	let text_display = [text_display(&text)];
-	let media = media_gallery(&first_result.video);
+	let media = [media_gallery(&first_result.video)];
 
 	let container = CreateContainer::new(&text_display)
-		.add_component(media)
+		.add_component(CreateContainerComponent::MediaGallery(
+			CreateMediaGallery::new(&media),
+		))
 		.accent_colour(Colour::BLUE);
+	let component = [CreateComponent::Container(container)];
 
-	ctx.send(reply_container(container)).await?;
+	ctx.send(reply_container(&component)).await?;
 
 	Ok(())
 }
@@ -469,8 +466,9 @@ pub async fn eightball(
 	let text_display = [text_display(&text)];
 
 	let container = CreateContainer::new(&text_display).accent_colour(Colour::ORANGE);
+	let component = [CreateComponent::Container(container)];
 
-	ctx.send(reply_container(container)).await?;
+	ctx.send(reply_container(&component)).await?;
 
 	Ok(())
 }
@@ -490,7 +488,7 @@ pub async fn gif(
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
 	let typing = ctx.defer_or_broadcast().await;
-	let gifs = get_gifs(ctx.serenity_context(), &input).await;
+	let gifs = get_gifs(&input).await;
 
 	drop(typing);
 
@@ -501,9 +499,11 @@ pub async fn gif(
 		|entry, _idx, _len| async move {
 			let text = format!("# {}", entry.1);
 			let display = vec![text_display(text)];
-			let image = media_gallery(&entry.0);
+			let image = vec![media_gallery(&*entry.0)];
 			CreateContainer::new(display)
-				.add_component(image)
+				.add_component(CreateContainerComponent::MediaGallery(
+					CreateMediaGallery::new(image),
+				))
 				.accent_colour(Colour::ORANGE)
 		},
 	)
@@ -592,24 +592,25 @@ pub async fn manga(
 		&json.data,
 		Duration::from_mins(1),
 		|entry, _idx, _len| async move {
-			let description = entry.description();
-			let chapters = entry.specific.chapters.unwrap_or(0);
-			let volumes = entry.specific.volumes.unwrap_or(0);
-			let published = entry
-				.specific
-				.published
-				.aired_string
-				.as_ref()
-				.map_or("No date for release", |published| published);
-			let mut text = format!(
-				"{description}**Format:**\n{}\n**Status:**\n{}\n**Chapters:**\n{chapters}\n**\
-				 Volumes:**\n{volumes}\n**Published:**\n{published}",
-				entry.anime_type, entry.status
-			);
+			let mut text = String::with_capacity(512);
+			entry.description(&mut text);
+			if let Some(chapters) = entry.specific.chapters {
+				writeln!(text, "**Chapters:** {chapters}").unwrap();
+			}
+			if let Some(volumes) = &entry.specific.volumes {
+				writeln!(text, "**Volumes:** {volumes}").unwrap();
+			}
+			if let Some(published) = &entry.specific.published.aired_string {
+				writeln!(text, "**Published:** {published}").unwrap();
+			}
 			text.truncate(MESSAGE_LIMIT);
-			let thumbnail_section = vec![thumbnail_section(text, &entry.images.webp.image_url)];
+			let (text, thumbnail) = thumbnail_section(text, &entry.images.webp.image_url);
+			let text_array = vec![text];
+			let thumbnail_display = vec![CreateContainerComponent::Section(CreateSection::new(
+				text_array, thumbnail,
+			))];
 			let button = visit_page_button(&entry.url);
-			CreateContainer::new(thumbnail_section)
+			CreateContainer::new(thumbnail_display)
 				.add_component(CreateContainerComponent::ActionRow(
 					CreateActionRow::Buttons(Cow::Owned(vec![button])),
 				))
@@ -648,41 +649,33 @@ pub async fn memegen(
 async fn roast_internal(
 	ctx: &SContext<'_>,
 	user_message: AIChatMessage,
-	name: &str,
+	id: UserId,
 ) -> AResult<()> {
-	let role = "you're an evil ai assistant that excels at roasting ppl, especially weebs. no \
-	            mercy shown. the prompt will contain information of your target"
-		.to_owned();
+	let role = Cow::Borrowed(
+		"you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy \
+		 shown. the prompt will contain information of your target",
+	);
 
-	let guild_id = ctx.guild_id().unwrap();
-	let mut messages = vec![AIChatMessage::system(role), user_message];
+	let messages = [AIChatMessage::system(role), user_message];
 
-	let resp = match ai_response(
-		&mut messages,
-		ctx.serenity_context(),
-		guild_id,
-		None,
-		false,
-		&utils_config().fabseserver.text_model_small,
-	)
-	.await
-	{
+	let resp = match ai_response(&messages, &utils_config().fabseserver.text_model_small).await {
 		Ok(resp) => resp,
 		Err(err) => {
-			ctx.reply(format!("{name}'s life is already roasted"))
+			ctx.reply(format!("<@{id}>'s life is already roasted"))
 				.await?;
 			return Err(AIError::UnexpectedResponse(err).into());
 		}
 	};
 
-	let mut text = format!("# Roasting {name}\n{resp}");
+	let mut text = format!("# Roasting <@{id}>\n{resp}");
 	text.truncate(MESSAGE_LIMIT);
 
 	let text_display = [text_display(&text)];
 
 	let container = CreateContainer::new(&text_display).accent_colour(Colour::RED);
+	let component = [CreateComponent::Container(container)];
 
-	ctx.send(reply_container(container)).await?;
+	ctx.send(reply_container(&component)).await?;
 
 	Ok(())
 }
@@ -699,22 +692,19 @@ pub async fn roast_user(
 ) -> Result<(), Error> {
 	let _typing = ctx.defer_or_broadcast().await;
 
-	let mut chat_vec = Vec::with_capacity(3);
-
+	let mut chat_vec = banner_vec(&ctx, user.id).await?;
 	uri_content(&user_pfp(&user), &mut chat_vec).await?;
 
-	if let Some(banner) = &user_banner(ctx.http(), &ctx.data().users, user.id).await {
-		uri_content(banner, &mut chat_vec).await?;
-	}
-
-	let name = user.display_name();
+	let name = &user.name;
 	let account_date = user.id.created_at();
 
 	let description = format!("name:{name},acc_create:{account_date}");
 
-	chat_vec.push(ContentPart::Text { text: description });
+	chat_vec.push(ContentPart::Text {
+		text: Cow::Owned(description),
+	});
 
-	roast_internal(&ctx, AIChatMessage::user(chat_vec), name).await?;
+	roast_internal(&ctx, AIChatMessage::user_parts(chat_vec), user.id).await?;
 
 	Ok(())
 }
@@ -734,22 +724,6 @@ pub async fn roast(
 	let avatar_url = member_pfp(&member);
 	let _typing = ctx.defer_or_broadcast().await;
 
-	let mut chat_vec = Vec::with_capacity(3);
-
-	let roles = user_roles_pfp(
-		&member.roles(ctx.cache()).unwrap_or_default(),
-		&avatar_url,
-		&mut chat_vec,
-	)
-	.await?;
-	if let Some(banner) = &user_banner(ctx.http(), &ctx.data().users, member.user.id).await {
-		uri_content(banner, &mut chat_vec).await?;
-	}
-
-	let name = member.display_name();
-	let account_date = member.user.id.created_at();
-	let join_date = member.joined_at.unwrap_or_default();
-
 	let message_count = query_scalar!(
 		r#"
 		SELECT message_count
@@ -763,46 +737,56 @@ pub async fn roast(
 	.fetch_one(&ctx.data().db)
 	.await?;
 
+	let mut chat_vec = banner_vec(&ctx, member.user.id).await?;
+	uri_content(&avatar_url, &mut chat_vec).await?;
+
+	let mut description = String::with_capacity(2048);
+
+	let name = member.display_name();
+
+	write!(
+		description,
+		"name:{name},msg_count:{message_count},acc_create:{},last_msgs:",
+		member.user.id.created_at()
+	)?;
+
 	let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
 
-	let messages_string = {
-		let mut result = String::with_capacity(1024);
-		let mut result_count: u32 = 0;
-		let mut missing_match_count: u32 = 0;
+	let mut result_count: u32 = 0;
+	let mut missing_match_count: u32 = 0;
 
-		while let Some(message_result) = messages.next().await {
-			if let Ok(message) = message_result {
-				if message.author.id == member.user.id {
-					let index = result_count.saturating_add(1);
-					if result_count > 0 {
-						result.push(',');
-					}
-					result.push_str(&index.to_string());
-					result.push(':');
-					result.push_str(&message.content);
-					result_count = result_count.saturating_add(1);
-				} else {
-					missing_match_count = missing_match_count.saturating_add(1);
-				}
+	while let Some(message_result) = messages.next().await {
+		if let Ok(message) = message_result {
+			if message.author.id == member.user.id {
+				write!(description, "{result_count}:{},", message.content)?;
+				result_count = result_count.saturating_add(1);
 			} else {
-				break;
+				missing_match_count = missing_match_count.saturating_add(1);
 			}
-			if result_count >= 25 || missing_match_count >= 100 {
-				break;
-			}
+		} else {
+			break;
 		}
+		if result_count >= 25 || missing_match_count >= 100 {
+			break;
+		}
+	}
 
-		result
-	};
+	if let Some(joined_at) = member.joined_at {
+		write!(description, "joined_svr:{joined_at},")?;
+	}
 
-	let description = format!(
-		"name:{name},roles:{roles},acc_create:{account_date},joined_svr:{join_date},msg_count:\
-		 {message_count},last_msgs:{messages_string}"
-	);
+	if let Some(roles) = member.roles(ctx.cache()) {
+		description.push_str("roles:");
+		for role in roles.iter().map(|r| r.name.as_str()).intersperse(", ") {
+			description.push_str(role);
+		}
+	}
 
-	chat_vec.push(ContentPart::Text { text: description });
+	chat_vec.push(ContentPart::Text {
+		text: Cow::Owned(description),
+	});
 
-	roast_internal(&ctx, AIChatMessage::user(chat_vec), name).await?;
+	roast_internal(&ctx, AIChatMessage::user_parts(chat_vec), member.user.id).await?;
 
 	Ok(())
 }
@@ -865,13 +849,11 @@ pub async fn translate(
 		ctx.reply("Bruh, give me smth to translate").await?;
 		return Err(InteractionError::EmptyMessage.into());
 	};
-	let target_lang = target.map_or_else(
-		|| "en".to_owned(),
-		|mut lang| {
-			lang.make_ascii_lowercase();
-			lang
-		},
-	);
+
+	let target_lang = target.map_or(Cow::Borrowed("en"), |mut lang| {
+		lang.make_ascii_lowercase();
+		Cow::Owned(lang)
+	});
 	let request = TranslateRequest {
 		q: &content,
 		source: "auto",
@@ -997,7 +979,7 @@ pub async fn urban(
 pub async fn waifu(ctx: SContext<'_>) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
 	let _typing = ctx.defer_or_broadcast().await;
-	ctx.reply(get_waifu(ctx.serenity_context()).await).await?;
+	ctx.reply(get_waifu().await).await?;
 
 	Ok(())
 }
@@ -1057,16 +1039,23 @@ pub async fn wiki(
 
 	let button = [visit_page_button(&data.content_urls.desktop.page)];
 	let text = format!("# {}\n{}", data.title, data.extract);
-	let image = data.originalimage.map_or_else(|| "https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Wikipedia-logo-v2.svg/3840px-Wikipedia-logo-v2.svg.png".to_owned(), |i| i.source);
-	let thumbnail_section = [thumbnail_section(&text, &image)];
+	let image = data.originalimage.as_ref().map_or_else(|| "https://upload.wikimedia.org/wikipedia/en/thumb/8/80/Wikipedia-logo-v2.svg/3840px-Wikipedia-logo-v2.svg.png", |i| i.source.as_str());
 
-	let container = CreateContainer::new(&thumbnail_section)
+	let (text, thumbnail) = thumbnail_section(text, image);
+	let text_array = [text];
+	let thumbnail_display = [CreateContainerComponent::Section(CreateSection::new(
+		&text_array,
+		thumbnail,
+	))];
+
+	let container = CreateContainer::new(&thumbnail_display)
 		.add_component(CreateContainerComponent::ActionRow(
 			CreateActionRow::Buttons(Cow::Borrowed(&button)),
 		))
 		.accent_colour(Colour::DARK_GOLD);
+	let component = [CreateComponent::Container(container)];
 
-	ctx.send(reply_container(container)).await?;
+	ctx.send(reply_container(&component)).await?;
 
 	Ok(())
 }
