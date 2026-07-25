@@ -129,14 +129,17 @@ pub async fn user_info(
 		writeln!(output, "**Last time boosting server:** {premium_since}")?;
 	}
 
-	if let Some(roles) = member.roles(ctx.cache())
+	let output = if let Some(roles) = member.roles(ctx.cache())
 		&& !roles.is_empty()
 	{
 		output.push_str("**Roles:** ");
 		for role in &roles {
 			write!(output, "<@&{}>,", role.id)?;
 		}
-	}
+		output.strip_suffix(',').unwrap()
+	} else {
+		output.as_str()
+	};
 
 	let (text, thumbnail) = thumbnail_section(output, &avatar_url);
 	let text_array = [text];

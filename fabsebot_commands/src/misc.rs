@@ -199,13 +199,13 @@ pub async fn bot_personalize(
 pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	let mut text = String::with_capacity(256);
 
-	text.push_str("# Debug");
+	text.push_str("# Debug\n");
 
 	let value = ctx.serenity_context().runner_info.read().latency;
 	if let Some(latency) = value.map(|l| l.as_millis()) {
-		write!(
+		writeln!(
 			text,
-			"\n**Shard ping:** {latency}\n**Shard id:** {}",
+			"**Shard ping:** {latency}\n**Shard id:** {}",
 			ctx.serenity_context().shard_id
 		)?;
 	}
@@ -216,21 +216,21 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	if let Ok(aggregate) = aggregate
 		&& let Ok(load) = aggregate.done()
 	{
-		write!(text, "\n**System load:** {}", load.system)?;
+		writeln!(text, "**System load:** {}", load.system)?;
 	}
 
 	if let Ok(average_load) = SYSTEM_STATS.load_average() {
-		write!(
+		writeln!(
 			text,
-			"**\nAverage system load (15m):** {}",
+			"**Average system load (15m):** {}",
 			average_load.fifteen
 		)?;
 	}
 
 	if let Ok((mem, swap)) = SYSTEM_STATS.memory_and_swap() {
-		write!(
+		writeln!(
 			text,
-			"\nSystem memory:** {}/{} used\n**System swap:** {}/{} used",
+			"**System memory:** {}/{} used\n**System swap:** {}/{} used",
 			saturating_sub_bytes(mem.total, mem.free),
 			mem.total,
 			saturating_sub_bytes(swap.total, swap.free),
@@ -239,11 +239,11 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	}
 
 	if let Ok(cpu_temp) = SYSTEM_STATS.cpu_temp() {
-		write!(text, "\n**System temperature:** {cpu_temp}")?;
+		writeln!(text, "**System temperature:** {cpu_temp}°")?;
 	}
 
 	if let Ok(system_uptime) = SYSTEM_STATS.uptime() {
-		write!(text, "\n**System uptime:** {}", system_uptime.as_secs())?;
+		write!(text, "**System uptime:** {}", system_uptime.as_secs())?;
 	}
 
 	let text_display = [text_display(&text)];

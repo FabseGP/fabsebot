@@ -252,20 +252,22 @@ impl<T> AniManga<T> {
 			output.push_str(genre);
 		}
 
+		output.push('\n');
+
 		if let Some(description) = &self.synopsis {
-			write!(output, "\n**Description:**\n{description}\n").unwrap();
+			writeln!(output, "**Description:**\n{description}").unwrap();
 		}
 
 		if let Some(score) = self.score {
-			write!(output, "\n**Score:** {score}").unwrap();
+			writeln!(output, "**Score:** {score}").unwrap();
 		}
 
 		if let Some(popularity) = self.popularity {
-			write!(output, "\n**Popularity:** {popularity}").unwrap();
+			writeln!(output, "**Popularity:** {popularity}").unwrap();
 		}
 
 		if let Some(favorites) = self.favorites {
-			write!(output, "\n**Favorites:** {favorites}").unwrap();
+			writeln!(output, "**Favorites:** {favorites}").unwrap();
 		}
 	}
 }
