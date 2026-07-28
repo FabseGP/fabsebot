@@ -221,6 +221,7 @@ All notable changes to this project will be documented in this file.
 - Bye jikan api + stricter track and connection signals handling
 - Don't store receiver
 - Use typed ids
+- Command cleanups
 
 ### 💼 Other
 
@@ -333,6 +334,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Use passed client
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
