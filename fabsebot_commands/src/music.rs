@@ -1,15 +1,15 @@
 use fabsebot_core::{
 	config::{
 		constants::{FAILED_SONG_FETCH, MISSING_REPLY_MSG, QUEUEING_MSG},
-		types::{Error, SContext},
+		types::{ContextType, Error, SContext},
 	},
-	errors::commands::{AIError, InteractionError},
+	errors::commands::AIError,
 	utils::{
 		ai::ai_voice,
 		helpers::url_bytes,
 		voice::{
-			ContextType, PayloadType, add_payload, add_youtube_song, check_in_channel,
-			lavalink_play, lavalink_try_join, remove_handler, try_voice,
+			ALREADY_IN_VOICE_CHAN_MSG, PayloadType, add_payload, add_youtube_song,
+			check_in_channel, lavalink_play, lavalink_try_join, remove_handler, try_voice,
 		},
 	},
 };
@@ -36,9 +36,11 @@ pub async fn text_to_voice(ctx: SContext<'_>, input: Option<String>) -> Result<(
 		reply.content.into_string()
 	} else {
 		ctx.reply(MISSING_REPLY_MSG).await?;
-		return Err(InteractionError::EmptyMessage.into());
+		return Ok(());
 	};
-	let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
+	let Some((_typing, guild_id, handler_lock)) = try_voice(ctx, false).await? else {
+		return Ok(());
+	};
 	let bytes = match ai_voice(&payload).await {
 		Ok(resp) => resp,
 		Err(err) => {
@@ -72,11 +74,11 @@ pub async fn join_voice_old(
 	#[flag]
 	global: bool,
 ) -> Result<(), Error> {
-	if check_in_channel(ctx, false).await.is_err() {
+	if check_in_channel(ctx, false).is_none() {
+		ctx.reply(ALREADY_IN_VOICE_CHAN_MSG).await?;
 		return Ok(());
 	}
-	let (_typing, _guild_id, _handler_lock) = try_voice(ctx, global).await?;
-
+	try_voice(ctx, global).await?;
 	Ok(())
 }
 
@@ -118,7 +120,9 @@ pub async fn play_song_old(
 	#[rest]
 	url: String,
 ) -> Result<(), Error> {
-	let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
+	let Some((_typing, guild_id, handler_lock)) = try_voice(ctx, false).await? else {
+		return Ok(());
+	};
 	let reply = ctx.reply(QUEUEING_MSG).await?;
 	let msg = reply.message().await?;
 	if let Err(err) = add_youtube_song(
@@ -150,12 +154,11 @@ pub async fn play_song_old(
 	                            CONNECT"
 )]
 pub async fn join_voice(ctx: SContext<'_>) -> Result<(), Error> {
-	let Ok(guild_id) = check_in_channel(ctx, true).await else {
+	let Some(guild_id) = check_in_channel(ctx, true) else {
+		ctx.reply(ALREADY_IN_VOICE_CHAN_MSG).await?;
 		return Ok(());
 	};
-	let (_typing, _player_context) =
-		lavalink_try_join(ContextType::Poise(ctx), guild_id, ctx.author().id).await?;
-
+	lavalink_try_join(ContextType::Poise(ctx), guild_id, ctx.author().id).await?;
 	Ok(())
 }
 
@@ -174,8 +177,11 @@ pub async fn play_song(
 	url: String,
 ) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
-	let (_typing, player_context) =
-		lavalink_try_join(ContextType::Poise(ctx), guild_id, ctx.author().id).await?;
+	let Some((_typing, player_context)) =
+		lavalink_try_join(ContextType::Poise(ctx), guild_id, ctx.author().id).await?
+	else {
+		return Ok(());
+	};
 	let reply = ctx.reply(QUEUEING_MSG).await?;
 	let msg = reply.message().await?;
 	if let Err(err) = lavalink_play(
@@ -209,7 +215,9 @@ pub async fn play_file(ctx: SContext<'_>, attachment: Attachment) -> Result<(), 
 	if let Some(content_type) = attachment.content_type.as_deref()
 		&& content_type.starts_with("audio")
 	{
-		let (_typing, guild_id, handler_lock) = try_voice(ctx, false).await?;
+		let Some((_typing, guild_id, handler_lock)) = try_voice(ctx, false).await? else {
+			return Ok(());
+		};
 		if let Ok(bytes) = url_bytes(&attachment.url).await {
 			add_payload(&ctx, &handler_lock, bytes, PayloadType::Custom, guild_id).await?;
 		} else {

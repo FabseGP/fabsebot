@@ -88,7 +88,13 @@ pub async fn user_misuse(
 	)
 	.await
 	{
-		Ok(webhook) => webhook,
+		Ok(webhook) => {
+			if let Some(webhook) = webhook {
+				webhook
+			} else {
+				return Ok(());
+			}
+		}
 		Err(err) => {
 			ctx.send(
 				CreateReply::new()

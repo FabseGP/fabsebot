@@ -58,10 +58,10 @@ use uuid::Uuid;
 
 use crate::{
 	config::{
-		constants::{EMPTY_VOICE_CHAN_MSG, FAILED_SONG_FETCH, MESSAGE_LIMIT, QUEUEING_MSG},
+		constants::{FAILED_SONG_FETCH, MESSAGE_LIMIT, QUEUEING_MSG},
 		types::{
-			Data, GuildCache, HTTP_CLIENT, MusicQueue, MusicQueueData, SContext, bot_context,
-			utils_config,
+			ContextType, Data, GuildCache, HTTP_CLIENT, MusicQueue, MusicQueueData, SContext,
+			bot_context, utils_config,
 		},
 	},
 	events::interaction::FEEDBACK_BUTTON_CUSTOM_ID,
@@ -73,7 +73,8 @@ use crate::{
 	},
 };
 
-const ALREADY_IN_VOICE_CHAN_MSG: &str =
+const EMPTY_VOICE_CHAN_MSG: &str = "No voice channel with at least 1 user found :/";
+pub const ALREADY_IN_VOICE_CHAN_MSG: &str =
 	"Bruh I'm already in a voice channel!\nUse leave_voice-command if I should leave the channel";
 
 #[derive(Clone)]
@@ -102,7 +103,6 @@ impl VoiceEventHandler for DriverDisconnectHandler {
 				error!("Failed to remove call (songbird): {err}");
 			}
 		}
-
 		None
 	}
 }
@@ -461,7 +461,8 @@ async fn handle_interaction<'a>(
 				*history_shown = false;
 				if lyrics_container.is_none() {
 					let lyrics = get_lyrics(&optional_data.title, &optional_data.artist).await;
-					let mut text = format!("# Lyrics\n{lyrics}");
+					let mut text = String::with_capacity(lyrics.len().saturating_add(16));
+					write!(text, "# Lyrics\n{lyrics}")?;
 					text.truncate(MESSAGE_LIMIT);
 					let text_display = vec![text_display(text)];
 					let container = CreateContainer::new(text_display)
@@ -491,10 +492,10 @@ async fn handle_interaction<'a>(
 					for track in queue_history {
 						writeln!(
 							history_string,
-							"**{}:** *<@{}> - {}*",
+							"**{}:** *<@{}> - <t:{}:F>*",
 							track.title,
 							track.requested_by,
-							track.played_at.to_utc().truncate_to_second()
+							track.played_at.unix_timestamp()
 						)?;
 					}
 					history_string.truncate(MESSAGE_LIMIT);
@@ -942,65 +943,52 @@ async fn join_handler(
 	music_manager: &Songbird,
 	guild_id: GuildId,
 	channel_id: ChannelId,
-) -> AResult<Arc<Mutex<Call>>> {
+) -> Option<Arc<Mutex<Call>>> {
 	let handler_lock = match music_manager.join(guild_id, channel_id).await {
 		Ok(lock) => lock,
 		Err(err) => {
-			return Err(err.into());
+			warn!("Failed to join voice channel: {err}");
+			return None;
 		}
 	};
 	configure_handler(&handler_lock).await;
-
-	Ok(handler_lock)
+	Some(handler_lock)
 }
 
-async fn voice_channel_id(ctx: SContext<'_>) -> AResult<ChannelId> {
-	let Some(channel_id) = ctx.guild().and_then(|guild| {
-		guild
-			.voice_states
-			.get(&ctx.author().id)
-			.and_then(|voice_state| voice_state.channel_id)
-	}) else {
-		ctx.reply(EMPTY_VOICE_CHAN_MSG).await?;
-		bail!(EMPTY_VOICE_CHAN_MSG);
-	};
-
-	Ok(channel_id)
+fn voice_channel_id(ctx: SContext<'_>) -> Option<ChannelId> {
+	let guild = ctx.guild()?;
+	guild
+		.voice_states
+		.get(&ctx.author().id)
+		.and_then(|voice_state| voice_state.channel_id)
 }
 
-async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> AResult<Arc<Mutex<Call>>> {
-	let channel_id = voice_channel_id(ctx).await?;
-	let handler_lock = match join_handler(&ctx.data().music_manager, guild_id, channel_id).await {
-		Ok(lock) => lock,
-		Err(err) => {
-			ctx.reply("I don't wanna join").await?;
-			return Err(err);
-		}
-	};
-	Ok(handler_lock)
+async fn voice_channel(ctx: SContext<'_>, guild_id: GuildId) -> Option<Arc<Mutex<Call>>> {
+	let channel_id = voice_channel_id(ctx)?;
+	let handler_lock = join_handler(&ctx.data().music_manager, guild_id, channel_id).await?;
+	Some(handler_lock)
 }
 
-pub async fn check_in_channel(ctx: SContext<'_>, lavalink: bool) -> AResult<GuildId> {
-	let guild_id = ctx.guild_id().unwrap();
-	let lavalink_context = if lavalink {
-		ctx.data()
-			.lavalink_client
-			.get_player_context(guild_id)
-			.is_some()
-	} else {
-		true
-	};
-	if ctx.data().music_manager.get(guild_id).is_some() && lavalink_context {
-		ctx.reply(ALREADY_IN_VOICE_CHAN_MSG).await?;
-		bail!("");
+#[must_use]
+pub fn check_in_channel(ctx: SContext<'_>, lavalink: bool) -> Option<GuildId> {
+	let guild_id = ctx.guild_id()?;
+	if ctx.data().music_manager.get(guild_id).is_some()
+		&& (!lavalink
+			|| ctx
+				.data()
+				.lavalink_client
+				.get_player_context(guild_id)
+				.is_some())
+	{
+		return None;
 	}
-	Ok(guild_id)
+	Some(guild_id)
 }
 
 pub async fn try_voice(
 	ctx: SContext<'_>,
 	global: bool,
-) -> AResult<(Option<Typing>, GuildId, Arc<Mutex<Call>>)> {
+) -> AResult<Option<(Option<Typing>, GuildId, Arc<Mutex<Call>>)>> {
 	let typing = ctx.defer_or_broadcast().await?;
 	let guild_id = ctx.guild_id().unwrap();
 	let guild_cache = guild_cache(
@@ -1023,7 +1011,10 @@ pub async fn try_voice(
 		guild_cache
 			.music_data
 			.connected(ConnectionStatus::SongbirdConnected);
-		let handler_lock = voice_channel(ctx, guild_id).await?;
+		let Some(handler_lock) = voice_channel(ctx, guild_id).await else {
+			ctx.reply(EMPTY_VOICE_CHAN_MSG).await?;
+			return Ok(None);
+		};
 		add_voice_events(
 			ctx.serenity_context(),
 			guild_id,
@@ -1048,7 +1039,7 @@ pub async fn try_voice(
 		handler_lock
 	};
 
-	Ok((typing, guild_id, handler_lock))
+	Ok(Some((typing, guild_id, handler_lock)))
 }
 
 pub async fn remove_handler(guild_id: GuildId) -> AResult<()> {
@@ -1202,43 +1193,36 @@ pub async fn setup_lavalink(host: String, password: String, bot_id: LavaUserId) 
 	.await
 }
 
-pub enum ContextType<'a> {
-	Poise(SContext<'a>),
-	Serenity(&'a SerenityContext),
-}
-
 pub async fn lavalink_try_join(
 	ctx: ContextType<'_>,
 	guild_id: GuildId,
 	author_id: UserId,
-) -> AResult<(Option<Typing>, PlayerContext)> {
-	let bot_data: Arc<Data> = match ctx {
-		ContextType::Poise(ctx) => ctx.data(),
-		ContextType::Serenity(ctx) => ctx.data(),
-	};
-	let typing = if let ContextType::Poise(poise_ctx) = ctx {
-		poise_ctx.defer_or_broadcast().await?
-	} else {
-		None
-	};
-	let guild_cache = match ctx {
-		ContextType::Poise(ctx) => {
-			guild_cache(
-				&bot_data,
-				guild_id,
-				Some(author_id.get().cast_signed()),
-				ctx.serenity_context(),
-			)
-			.await?
-		}
-		ContextType::Serenity(ctx) => {
-			guild_cache(
-				&bot_data,
-				guild_id,
-				Some(author_id.get().cast_signed()),
-				ctx,
-			)
-			.await?
+) -> AResult<Option<(Option<Typing>, PlayerContext)>> {
+	let (typing, bot_data, guild_cache) = {
+		let author_id_i64 = author_id.get().cast_signed();
+		match ctx {
+			ContextType::Poise(ctx) => {
+				let bot_data = ctx.data();
+				(
+					ctx.defer_or_broadcast().await?,
+					bot_data.clone(),
+					guild_cache(
+						&bot_data,
+						guild_id,
+						Some(author_id_i64),
+						ctx.serenity_context(),
+					)
+					.await?,
+				)
+			}
+			ContextType::Serenity(ctx) => {
+				let bot_data: Arc<Data> = ctx.data();
+				(
+					None,
+					bot_data.clone(),
+					guild_cache(&bot_data, guild_id, Some(author_id_i64), ctx).await?,
+				)
+			}
 		}
 	};
 
@@ -1249,7 +1233,13 @@ pub async fn lavalink_try_join(
 		context
 	} else {
 		let channel_id = match ctx {
-			ContextType::Poise(ctx) => voice_channel_id(ctx).await?,
+			ContextType::Poise(ctx) => {
+				let Some(channel_id) = voice_channel_id(ctx) else {
+					ctx.reply(EMPTY_VOICE_CHAN_MSG).await?;
+					return Ok(None);
+				};
+				channel_id
+			}
 			ContextType::Serenity(ctx) => {
 				let voice_state = guild_id.get_user_voice_state(&ctx.http, author_id).await?;
 				voice_state.channel_id.unwrap()
@@ -1275,7 +1265,7 @@ pub async fn lavalink_try_join(
 			.await?
 	};
 
-	Ok((typing, player_context))
+	Ok(Some((typing, player_context)))
 }
 
 pub async fn lavalink_play(

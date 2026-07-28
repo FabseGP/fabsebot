@@ -5,20 +5,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum GuildError {
-	#[error("Command executed not in a guild")]
-	NotInGuild,
 	#[error("Failed to fetch guild data")]
 	FailedFetch,
-}
-
-#[derive(Error, Debug)]
-pub enum InteractionError {
-	#[error("Author choose a bot")]
-	NotHuman,
-	#[error("Empty message")]
-	EmptyMessage,
-	#[error("Missing reply")]
-	MissingReply,
 }
 
 #[derive(Error, Debug)]

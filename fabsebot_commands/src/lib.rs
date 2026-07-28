@@ -3,11 +3,10 @@
 use anyhow::Result as AResult;
 use fabsebot_core::{
 	config::types::{Data, Error, SContext},
-	errors::commands::InteractionError,
 	utils::helpers::correct_permissions,
 };
 use poise::Command;
-use serenity::all::{Permissions, User};
+use serenity::all::Permissions;
 
 mod api_calls;
 mod funny;
@@ -82,12 +81,4 @@ pub fn commands() -> Vec<Command<Data, Error>> {
 		settings::set_word_react(),
 		settings::set_word_track(),
 	]
-}
-
-pub async fn require_human(ctx: SContext<'_>, user: &User) -> AResult<()> {
-	if user.bot() {
-		ctx.reply("**Invalid target, get some friends**").await?;
-		return Err(InteractionError::NotHuman.into());
-	}
-	Ok(())
 }

@@ -50,7 +50,9 @@ pub async fn error_hook(output: &str) -> AResult<()> {
 
 pub async fn spoiler_message(ctx: &SContext, message: &Message, data: &WebhookMap) -> AResult<()> {
 	channel_counter("spoiler");
-	let webhook = webhook_find(ctx, message.guild_id, message.channel_id, data).await?;
+	let Some(webhook) = webhook_find(ctx, message.guild_id, message.channel_id, data).await? else {
+		return Ok(());
+	};
 	let avatar_url = user_pfp(&message.author);
 	let username = &message.author.name;
 	let mut webhook_execute = ExecuteWebhook::new()
@@ -84,27 +86,22 @@ pub async fn webhook_find(
 	guild_id: Option<GuildId>,
 	channel_id: GenericChannelId,
 	cached_webhooks: &WebhookMap,
-) -> AResult<Arc<Webhook>> {
+) -> AResult<Option<Arc<Webhook>>> {
 	if let Some(webhook) = cached_webhooks.get(&channel_id) {
-		return Ok(webhook);
+		return Ok(Some(webhook));
 	}
 	let guild_channel = match channel_id
 		.to_channel(&ctx.http, guild_id)
 		.await
 		.map(Channel::guild)
 	{
-		Ok(channel_opt) => {
-			if let Some(channel) = channel_opt {
-				channel
-			} else {
-				bail!("Not in a guild channel");
-			}
-		}
+		Ok(Some(channel)) => channel.id,
+		Ok(None) => return Ok(None),
 		Err(err) => {
 			bail!("Failed to fetch guild channel: {err}");
 		}
 	};
-	let existing_webhooks = match guild_channel.id.webhooks(&ctx.http).await {
+	let existing_webhooks = match guild_channel.webhooks(&ctx.http).await {
 		Ok(webhooks) => webhooks,
 		Err(err) => {
 			bail!("Failed to fetch existing webhooks: {err}");
@@ -121,14 +118,14 @@ pub async fn webhook_find(
 		avatar: FABSEBOT_WEBHOOK_PFP,
 	};
 	ctx.http
-		.create_webhook(guild_channel.id, &webhook_info, None)
+		.create_webhook(guild_channel, &webhook_info, None)
 		.await
 		.map_or_else(
 			|err| bail!("Failed to create webhook: {err}"),
 			|webhook| {
 				let webhook_arc = Arc::new(webhook);
 				cached_webhooks.insert(channel_id, webhook_arc.clone());
-				Ok(webhook_arc)
+				Ok(Some(webhook_arc))
 			},
 		)
 }

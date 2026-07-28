@@ -13,8 +13,6 @@ use serenity::{
 	builder::CreateComponent,
 };
 
-use crate::require_human;
-
 #[derive(PartialEq, Eq, ChoiceParameter)]
 enum RpsChoice {
 	#[name = "🪨 Rock"]
@@ -74,7 +72,10 @@ pub async fn rps(
 	#[description = "Target"] user: User,
 	#[description = "Your choice: rock, paper, or scissors"] choice: RpsChoice,
 ) -> Result<(), Error> {
-	require_human(ctx, &user).await?;
+	if user.bot() {
+		ctx.reply("**Invalid target, get some friends**").await?;
+		return Ok(());
+	}
 
 	let buttons = [
 		CreateButton::new(RpsChoice::Rock.button_id())

@@ -7,7 +7,7 @@ use fabsebot_core::{
 		constants::MESSAGE_LIMIT,
 		types::{AIChatMessage, Error, HTTP_CLIENT, SContext, utils_config},
 	},
-	errors::commands::{AIError, Base64Error, InteractionError},
+	errors::commands::{AIError, Base64Error},
 	utils::{
 		ai::{ContentPart, ai_response, ai_response_with_tools, image_content, uri_content},
 		helpers::{
@@ -162,7 +162,8 @@ pub async fn ai_text(
 		}
 	};
 
-	let mut text = format!("# {prompt}\n{resp}");
+	let mut text = String::with_capacity(prompt.len().saturating_add(resp.len()).saturating_add(8));
+	write!(text, "# {prompt}\n{resp}")?;
 	text.truncate(MESSAGE_LIMIT);
 
 	let text_display = [text_display(&text)];
@@ -669,7 +670,8 @@ async fn roast_internal(
 		}
 	};
 
-	let mut text = format!("# Roasting <@{id}>\n{resp}");
+	let mut text = String::with_capacity(resp.len().saturating_add(64));
+	write!(text, "# Roasting <@{id}>\n{resp}")?;
 	text.truncate(MESSAGE_LIMIT);
 
 	let text_display = [text_display(&text)];
@@ -731,7 +733,7 @@ pub async fn roast(
 		SELECT message_count
 		FROM user_settings
 		WHERE guild_id = $1
-		AND user_id = $2
+			AND user_id = $2
 		"#,
 		i64::from(ctx.guild_id().unwrap()),
 		i64::from(ctx.author().id)
@@ -845,11 +847,11 @@ pub async fn translate(
 			ref_msg.content.into_string()
 		} else {
 			ctx.reply("Bruh, give me smth to translate").await?;
-			return Err(InteractionError::EmptyMessage.into());
+			return Ok(());
 		}
 	} else {
 		ctx.reply("Bruh, give me smth to translate").await?;
-		return Err(InteractionError::EmptyMessage.into());
+		return Ok(());
 	};
 
 	let target_lang = target.map_or(Cow::Borrowed("en"), |mut lang| {
@@ -885,15 +887,26 @@ pub async fn translate(
 		&data.alternatives,
 		Duration::from_mins(1),
 		|entry, idx, _len| async move {
-			let mut text = format!(
+			let translation = if idx == 0 { translation_clone } else { entry };
+			let mut text = String::with_capacity(
+				translation
+					.len()
+					.saturating_add(content_clone.len())
+					.saturating_add(target_lang_clone.len())
+					.saturating_add(language_clone.len())
+					.saturating_add(64),
+			);
+			write!(
+				text,
 				"# Translation from {} to {} with {}% \
 				 confidence\n**Original:**\n{}\n**Translation:**\n{}",
 				target_lang_clone,
 				language_clone,
 				data.detected_language.confidence,
 				content_clone,
-				if idx == 0 { translation_clone } else { entry }
-			);
+				translation
+			)
+			.unwrap();
 			text.truncate(MESSAGE_LIMIT);
 			let display = vec![text_display(text)];
 			CreateContainer::new(display).accent_colour(Colour::DARK_GREEN)
@@ -955,12 +968,24 @@ pub async fn urban(
 		&data.list,
 		Duration::from_mins(5),
 		|entry, _idx, _len| async move {
-			let mut text = format!(
+			let definition_clean = entry.definition.replace(['[', ']'], "");
+			let example_clean = entry.example.replace(['[', ']'], "");
+			let mut text = String::with_capacity(
+				entry
+					.word
+					.len()
+					.saturating_add(definition_clean.len())
+					.saturating_add(example_clean.len())
+					.saturating_add(32),
+			);
+			write!(
+				text,
 				"# {}\n**Definition:**\n{}\n\n**Example:**\n{}",
 				entry.word,
 				entry.definition.replace(['[', ']'], ""),
 				entry.example.replace(['[', ']'], "")
-			);
+			)
+			.unwrap();
 			text.truncate(MESSAGE_LIMIT);
 			let display = vec![text_display(text)];
 			CreateContainer::new(display).accent_colour(Colour::ROHRKATZE_BLUE)

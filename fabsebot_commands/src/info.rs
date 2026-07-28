@@ -27,11 +27,11 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 
 		writeln!(
 			output,
-			"# {}\n**Creation date:** {}\n**Emoji count:** {}\n**Stickers count:** {}\n**Members \
-			 count:** {}\n**Role count:** {}\n**Channels:** {}\n**Server size:** {}\n**Guild \
-			 ID:** {}\n**Owner:** <@{}>",
+			"# {}\n**Creation date:** <t:{}:F>\n**Emoji count:** {}\n**Stickers count:** \
+			 {}\n**Members count:** {}\n**Role count:** {}\n**Channels:** {}\n**Server size:** \
+			 {}\n**Guild ID:** {}\n**Owner:** <@{}>",
 			guild.name,
-			guild.id.created_at(),
+			guild.id.created_at().timestamp(),
 			guild.emojis.len(),
 			guild.stickers.len(),
 			guild.member_count,
@@ -53,14 +53,7 @@ pub async fn server_info(ctx: SContext<'_>) -> Result<(), Error> {
 		guild
 			.banner_url()
 			.map(Cow::Owned)
-			.or_else(|| {
-				guild.icon.as_ref().map(|i| {
-					Cow::Owned(format!(
-						"https://cdn.discordapp.com/icons/{}/{i}.png",
-						guild.id
-					))
-				})
-			})
+			.or_else(|| guild.icon_url().map(Cow::Owned))
 			.unwrap_or(Cow::Borrowed(
 				"https://c.tenor.com/MZa0P_HjQOIAAAAC/tenor.gif",
 			))
@@ -97,11 +90,7 @@ pub async fn user_info(
 
 	let mut output = String::with_capacity(512);
 
-	if let Some(nick) = member.nick.as_ref() {
-		writeln!(output, "# {nick} (aká {})", member.user.name)?;
-	} else {
-		writeln!(output, "# {}", member.display_name())?;
-	}
+	writeln!(output, "# <@{}> (aká {})", member.user.id, member.user.name)?;
 
 	let premium_type = match member.user.premium_type {
 		PremiumType::NitroBasic => "Basic nitro",
@@ -112,13 +101,13 @@ pub async fn user_info(
 
 	writeln!(
 		output,
-		"**ID:** {}\n**Creation date:** {}\n**Nitro tier:** {premium_type}",
+		"**ID:** {}\n**Creation date:** <t:{}:F>\n**Nitro tier:** {premium_type}",
 		member.user.id,
-		member.user.id.created_at()
+		member.user.id.created_at().timestamp()
 	)?;
 
 	if let Some(joined_at) = member.joined_at {
-		writeln!(output, "**Joined date:** {joined_at}")?;
+		writeln!(output, "**Joined date:** <t:{}:F>", joined_at.timestamp())?;
 	}
 
 	if let Some(verified_user) = member.user.verified() {

@@ -86,32 +86,37 @@ async fn periodic_ping(url: &str, token: &str) -> ! {
 	loop {
 		interval.tick().await;
 		if let Err(err) = HTTP_CLIENT.post(url).bearer_auth(token).send().await {
-			error!("Failed to report uptime: {:?}", &err);
+			error!("Failed to report uptime: {err}");
 		}
 	}
 }
 
-pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
+pub async fn periodic_task() -> ! {
 	let mut interval = interval(Duration::from_hours(1));
 	let http = bot_context().http.clone();
+	let bot_data = bot_context().data.clone();
 	loop {
 		interval.tick().await;
 		let Ok(system_time) = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
-			.map(|t| t.as_secs())
+			.map(|t| t.as_secs().cast_signed())
 		else {
 			continue;
 		};
-		let now_timestamp = system_time.cast_signed();
-
 		let guilds = match query!(
 			r#"
-			SELECT guild_id, last_waifu, waifu_rate, waifu_channel,
-			last_dead_chat, dead_chat_rate, dead_chat_channel
+			SELECT guild_id, waifu_channel, dead_chat_channel
 			FROM guild_settings
-			WHERE waifu_channel IS NOT NULL
-				OR dead_chat_channel IS NOT NULL
-			"#
+			WHERE (
+    			waifu_channel IS NOT NULL
+    			AND $1 - last_waifu >= waifu_rate
+			)
+			OR (
+    			dead_chat_channel IS NOT NULL
+    			AND $1 - last_dead_chat >= dead_chat_rate
+			)
+			"#,
+			system_time
 		)
 		.fetch_all(&bot_data.db)
 		.await
@@ -122,59 +127,52 @@ pub async fn periodic_task(bot_data: Arc<Data>) -> ! {
 				continue;
 			}
 		};
-
 		for guild in guilds {
-			if let Some(last_waifu) = guild.last_waifu
-				&& let Some(waifu_rate) = guild.waifu_rate
-				&& now_timestamp.saturating_sub(last_waifu) >= waifu_rate
-				&& let Some(waifu_channel) = guild.waifu_channel
-			{
+			if let Some(waifu_channel) = guild.waifu_channel {
 				counter!(METRICS.periodic_waifu.as_str()).increment(1);
 				if let Err(err) = GenericChannelId::new(waifu_channel.cast_unsigned())
 					.say(&http, get_waifu().await)
 					.await
 				{
-					error!("Failed to send waifu: {:?}", &err);
-				} else if let Err(err) = query!(
+					error!("Failed to send waifu: {err}");
+				}
+				if let Err(err) = query!(
 					r#"
 					UPDATE guild_settings
 					SET last_waifu = $2
 					WHERE guild_id = $1
                     "#,
 					guild.guild_id,
-					now_timestamp
+					system_time
 				)
 				.execute(&bot_data.db)
 				.await
 				{
-					error!("Failed to update last_waifu in db: {:?}", &err);
+					error!("Failed to update last_waifu in db: {err}");
 				}
 			}
-			if let Some(last_dead_chat) = guild.last_dead_chat
-				&& let Some(dead_chat_rate) = guild.dead_chat_rate
-				&& now_timestamp.saturating_sub(last_dead_chat) >= dead_chat_rate
-				&& let Some(dead_chat_channel) = guild.dead_chat_channel
-			{
+			if let Some(dead_chat_channel) = guild.dead_chat_channel {
 				counter!(METRICS.periodic_dead_chat.as_str()).increment(1);
 				let gif = get_gif("dead chat").await;
 				if let Err(err) = GenericChannelId::new(dead_chat_channel.cast_unsigned())
 					.say(&http, gif)
 					.await
 				{
-					error!("Failed to send dead chat gif: {:?}", &err);
-				} else if let Err(err) = query!(
+					error!("Failed to send dead chat gif: {err}");
+				}
+				if let Err(err) = query!(
 					r#"
 					UPDATE guild_settings
 					SET last_dead_chat = $2
 					WHERE guild_id = $1
             		"#,
 					guild.guild_id,
-					now_timestamp
+					system_time
 				)
 				.execute(&bot_data.db)
 				.await
 				{
-					error!("Failed to update last_dead_chat in db: {:?}", &err);
+					error!("Failed to update last_dead_chat in db: {err}");
 				}
 			}
 		}

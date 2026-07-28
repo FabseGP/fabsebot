@@ -195,28 +195,25 @@ async fn ai_chatbot(
 		)?;
 	}
 	if let Ok(link) = discord_message_link.parse_next(&mut message.content.as_str()) {
-		let guild_id = GuildId::new(link.guild);
-		if let Ok(ref_channel) = GenericChannelId::new(link.channel)
-			.to_channel(&ctx.http, Some(guild_id))
-			.await
+		let (channel_id, guild_id) = (
+			GenericChannelId::new(link.channel),
+			GuildId::new(link.guild),
+		);
+		if let Ok(linked_message) = channel_id
+			.message(&ctx.http, MessageId::new(link.message))
+			.await && let Some(guild_name) = guild_id.name(&ctx.cache)
 		{
-			if let Ok(linked_message) = ref_channel
-				.id()
-				.message(&ctx.http, MessageId::new(link.message))
-				.await && let Some(guild_name) = guild_id.name(&ctx.cache)
-			{
-				writeln!(
-					user_text,
-					"{author_name} linked to a message sent in: {guild_name}, sent by: {} and had \
-					 this content: {}",
-					linked_message.author.name, linked_message.content
-				)?;
-			} else {
-				writeln!(
-					user_text,
-					"{author_name} linked to a message in non-accessible guild"
-				)?;
-			}
+			writeln!(
+				user_text,
+				"{author_name} linked to a message sent in: {guild_name}, sent by: {} and had \
+				 this content: {}",
+				linked_message.author.name, linked_message.content
+			)?;
+		} else {
+			writeln!(
+				user_text,
+				"{author_name} linked to a message in non-accessible guild"
+			)?;
 		}
 	}
 
@@ -251,11 +248,7 @@ async fn ai_chatbot(
 	let image_attachments: Vec<_> = message
 		.attachments
 		.iter()
-		.filter(|a| {
-			a.content_type
-				.as_deref()
-				.is_some_and(|ct| ct.starts_with("image"))
-		})
+		.filter(|a| a.dimensions().is_some())
 		.collect();
 
 	if image_attachments.is_empty() {

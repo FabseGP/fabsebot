@@ -10,7 +10,7 @@ use fabsebot_core::{
 		},
 		types::{AIChatMessage, Error, SContext, SYSTEM_STATS, utils_config},
 	},
-	errors::commands::{AIError, GuildError, InteractionError},
+	errors::commands::AIError,
 	utils::{
 		ai::ai_response,
 		helpers::{
@@ -243,7 +243,7 @@ pub async fn debug(ctx: SContext<'_>) -> Result<(), Error> {
 	}
 
 	if let Ok(system_uptime) = SYSTEM_STATS.uptime() {
-		write!(text, "**System uptime:** {}", system_uptime.as_secs())?;
+		write!(text, "**System uptime:** {}s", system_uptime.as_secs())?;
 	}
 
 	let text_display = [text_display(&text)];
@@ -308,13 +308,12 @@ pub async fn global_chat_start(ctx: SContext<'_>) -> Result<(), Error> {
 				r#"
 				SELECT EXISTS(SELECT 1 FROM guild_settings
 				WHERE guild_id != $1
-					AND global_chat IS TRUE)
+					AND global_chat IS TRUE) AS "exists!"
 				"#,
 				guild_id_i64
 			)
 			.fetch_one(&ctx.data().db)
-			.await?
-			.unwrap_or(false);
+			.await?;
 			if has_other_calls {
 				return Ok::<_, Error>(true);
 			}
@@ -436,8 +435,9 @@ struct UserCount {
 )]
 pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 	let guild_id = ctx.guild_id().unwrap();
-	let thumbnail = match ctx.guild() {
-		Some(guild) => guild.banner_url().map_or_else(
+	let thumbnail = {
+		let guild = ctx.guild().unwrap();
+		guild.banner_url().map_or_else(
 			|| {
 				guild.icon_url().map_or_else(
 					|| Cow::Borrowed("https://c.tenor.com/SgNWLvwATMkAAAAC/bruh.gif"),
@@ -445,10 +445,7 @@ pub async fn leaderboard(ctx: SContext<'_>) -> Result<(), Error> {
 				)
 			},
 			Cow::Owned,
-		),
-		None => {
-			return Err(GuildError::NotInGuild.into());
-		}
+		)
 	};
 	let _typing = ctx.defer_or_broadcast().await;
 
@@ -612,12 +609,8 @@ impl ImageInfo {
 			});
 			let (result, text_layout, image, buffer) =
 				rx.await.context("Rayon task for quote image panicked")?;
-			match result {
-				Ok(()) => (text_layout, image, buffer),
-				Err(err) => {
-					return Err(err);
-				}
-			}
+			result?;
+			(text_layout, image, buffer)
 		};
 
 		let filename = if is_animated {
@@ -742,14 +735,10 @@ impl ImageInfo {
 
 		let (result, text_layout, output) =
 			rx.await.context("Rayon task for quote image panicked")?;
-		match result {
-			Ok(()) => {
-				self.text_layout = text_layout;
-				self.buffer = output;
-				Ok(())
-			}
-			Err(err) => Err(err),
-		}
+		result?;
+		self.text_layout = text_layout;
+		self.buffer = output;
+		Ok(())
 	}
 }
 
@@ -844,11 +833,15 @@ async fn quote_internal(
 	let message_handle = if let Some((reply, guild_id_i64)) = reply.map(|r| (r.0, i64::from(r.1))) {
 		let message_url = reply.link().to_string();
 
-		let quote_channel_opt: Option<i64> = query_scalar!(
-			"SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
+		let quote_channel_opt = query_scalar!(
+			r#"
+			SELECT quotes_channel AS "quotes_channel!"
+			FROM guild_settings
+			WHERE guild_id = $1
+				AND quotes_channel IS NOT NULL"#,
 			guild_id_i64
 		)
-		.fetch_one(&ctx.data().db)
+		.fetch_optional(&ctx.data().db)
 		.await?;
 
 		if let Some(channel) = quote_channel_opt {
@@ -928,7 +921,7 @@ async fn quote_internal(
 			image_handle.toggle_reverse().await?;
 		} else if interaction.data.custom_id == "gradient" {
 			image_handle.toggle_gradient().await?;
-		} else if interaction.data.custom_id == "random" {
+		} else {
 			image_handle.random_theme().await?;
 		}
 		let mut msg = interaction.message;
@@ -979,7 +972,7 @@ pub async fn quote_menu(
 ) -> Result<(), Error> {
 	if msg.content.is_empty() {
 		ctx.reply(EMPTY_REPLY_MSG).await?;
-		return Err(InteractionError::EmptyMessage.into());
+		return Ok(());
 	}
 	quote_internal(ctx, &msg, None).await?;
 	Ok(())
@@ -1000,12 +993,12 @@ pub async fn quote(ctx: SContext<'_>) -> Result<(), Error> {
 
 	let Some(ref reply) = msg.referenced_message else {
 		ctx.reply(MISSING_REPLY_MSG).await?;
-		return Err(InteractionError::MissingReply.into());
+		return Ok(());
 	};
 
 	if reply.content.is_empty() {
 		ctx.reply(EMPTY_REPLY_MSG).await?;
-		return Err(InteractionError::EmptyMessage.into());
+		return Ok(());
 	}
 
 	quote_internal(ctx, &msg, Some((reply, guild_id))).await?;
@@ -1035,7 +1028,7 @@ pub async fn respond(
 ) -> Result<(), Error> {
 	if message.content.is_empty() {
 		ctx.reply(EMPTY_REPLY_MSG).await?;
-		return Err(InteractionError::EmptyMessage.into());
+		return Ok(());
 	}
 	ctx.defer().await?;
 	let messages = [

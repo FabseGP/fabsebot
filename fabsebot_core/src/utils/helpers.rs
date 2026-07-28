@@ -1,5 +1,6 @@
 use std::{
 	borrow::Cow,
+	fmt::Write as _,
 	io::Cursor,
 	sync::{Arc, RwLock, atomic::AtomicBool},
 	time::Duration,
@@ -337,7 +338,7 @@ pub async fn get_lyrics(track_name: &str, artist_name: &str) -> Cow<'static, str
 			let output = format!("# Failed to fetch lyrics\n{error}");
 			counter!(METRICS.lyrics_errors.as_str()).increment(1);
 			log_error(output).await;
-			Cow::Borrowed("Not fount :(")
+			Cow::Borrowed("Not found :(")
 		}
 	}
 }
@@ -463,7 +464,12 @@ pub fn image_uri(content: &[u8], format: Option<&str>) -> AResult<String> {
 	};
 	let base64_image = BASE64.encode(content);
 
-	let data_uri = format!("data:{mime_type};base64,{base64_image}");
+	let mut data_uri = String::with_capacity(
+		mime_type
+			.len()
+			.saturating_add(base64_image.len().saturating_add(32)),
+	);
+	write!(data_uri, "data:{mime_type};base64,{base64_image}")?;
 
 	Ok(data_uri)
 }
@@ -481,14 +487,9 @@ pub async fn fetch_and_parse<T>(
 where
 	T: DeserializeOwned,
 {
-	let response = match request.await {
-		Ok(resp) => match resp.error_for_status() {
-			Ok(data) => data,
-			Err(err) => {
-				return Err(HTTPError::Request(err).into());
-			}
-		},
-		Err(err) => {
+	let response = match request.await.map(Response::error_for_status) {
+		Ok(Ok(resp)) => resp,
+		Ok(Err(err)) | Err(err) => {
 			return Err(HTTPError::Request(err).into());
 		}
 	};
@@ -564,12 +565,10 @@ where
 			.create_response(ctx.http(), CreateInteractionResponse::Acknowledge)
 			.await?;
 
-		if interaction.data.custom_id == "next" && index < len.saturating_sub(1) {
+		if interaction.data.custom_id == "next" {
 			index = index.saturating_add(1);
-		} else if interaction.data.custom_id == "prev" && index > 0 {
-			index = index.saturating_sub(1);
 		} else {
-			continue;
+			index = index.saturating_sub(1);
 		}
 
 		let item = items.get(index).unwrap();

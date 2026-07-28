@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT quotes_channel FROM guild_settings WHERE guild_id = $1",
+  "query": "\n\t\t\tSELECT quotes_channel AS \"quotes_channel!\"\n\t\t\tFROM guild_settings\n\t\t\tWHERE guild_id = $1\n\t\t\t\tAND quotes_channel IS NOT NULL",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "quotes_channel",
+        "name": "quotes_channel!",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -24,5 +24,5 @@
       true
     ]
   },
-  "hash": "6e2fef24234e41076e5bce904370a9c5262d341e01ad4983c7c35d4f6f834e81"
+  "hash": "598df043ce50182f03d74544f28f54e84ab2d525a895665deb3ad9ba14dd6b6a"
 }

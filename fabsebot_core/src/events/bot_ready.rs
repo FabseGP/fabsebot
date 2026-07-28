@@ -23,10 +23,7 @@ pub async fn handle_ready(ctx: &SContext, data_about_bot: &Ready) {
 		{
 			error!("BOT_CONTEXT already initialized");
 		}
-
-		let bot_data_clone = bot_data.clone();
-
-		spawn(async move { periodic_task(bot_data_clone).await });
+		spawn(async move { periodic_task().await });
 	}
 
 	let user_count = ctx

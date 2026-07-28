@@ -6,7 +6,10 @@ use std::{
 
 use anyhow::{Context as _, Result as AResult};
 use fabsebot_core::{
-	config::types::{Error, HTTP_CLIENT, SContext},
+	config::{
+		constants::DEFAULT_AFK_REASON,
+		types::{Error, HTTP_CLIENT, SContext},
+	},
 	utils::helpers::{
 		correct_permissions, get_gif, get_waifu, guild_cache, image_uri, reply_container,
 		thumbnail_section, user_pfp,
@@ -17,13 +20,13 @@ use poise::CreateReply;
 use serde::Serialize;
 use serenity::{
 	all::{
-		ButtonStyle, Channel, Colour, ComponentInteractionCollector, ComponentInteractionDataKind,
+		ButtonStyle, Colour, ComponentInteractionCollector, ComponentInteractionDataKind,
 		CreateActionRow, CreateButton, CreateComponent, CreateContainer, CreateInteractionResponse,
 		CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption, GuildId,
 	},
 	builder::{CreateContainerComponent, CreateSection},
 	futures::StreamExt as _,
-	model::Permissions,
+	model::{Permissions, id::GenericChannelId},
 };
 use sqlx::{Pool, Postgres, query};
 use tracing::warn;
@@ -69,12 +72,12 @@ async fn reset_server_settings(ctx: SContext<'_>, guild_id: GuildId) -> Result<(
 }
 
 async fn configure_channels(
-	music_channel_opt: Option<Channel>,
-	spoiler_channel_opt: Option<Channel>,
-	quote_channel_opt: Option<Channel>,
-	chatbot_channel_opt: Option<Channel>,
-	waifu_channel_opt: Option<(Channel, i64)>,
-	dead_chat_gifs_opt: Option<(Channel, i64)>,
+	music_channel_opt: Option<GenericChannelId>,
+	spoiler_channel_opt: Option<GenericChannelId>,
+	quote_channel_opt: Option<GenericChannelId>,
+	chatbot_channel_opt: Option<GenericChannelId>,
+	waifu_channel_opt: Option<(GenericChannelId, i64)>,
+	dead_chat_gifs_opt: Option<(GenericChannelId, i64)>,
 	ctx: SContext<'_>,
 	guild_id: GuildId,
 ) -> Result<(), Error> {
@@ -84,12 +87,11 @@ async fn configure_channels(
 		.map(|t| t.as_secs().cast_signed())?;
 
 	if let Some(music_channel) = music_channel_opt {
-		let music_channel_id_i64 = i64::from(music_channel.id());
+		let music_channel_id_i64 = i64::from(music_channel);
 		set_music_channel(guild_id_i64, music_channel_id_i64, &ctx.data().db).await?;
 		let permissions = Permissions::CONNECT | Permissions::SPEAK;
 		correct_permissions(&ctx, guild_id, permissions).await?;
 		music_channel
-			.id()
 			.say(
 				ctx.http(),
 				"I'll start listen to your song requests!\nMessages prefixed with # will be \
@@ -98,12 +100,11 @@ async fn configure_channels(
 			.await?;
 	}
 	if let Some(spoiler_channel) = spoiler_channel_opt {
-		let spoiler_channel_id_i64 = i64::from(spoiler_channel.id());
+		let spoiler_channel_id_i64 = i64::from(spoiler_channel);
 		set_spoiler_channel(guild_id_i64, spoiler_channel_id_i64, &ctx.data().db).await?;
 		let permissions = Permissions::MANAGE_WEBHOOKS | Permissions::MANAGE_MESSAGES;
 		correct_permissions(&ctx, guild_id, permissions).await?;
 		spoiler_channel
-			.id()
 			.say(
 				ctx.http(),
 				"Every attachment sent here will now be spoilered",
@@ -111,34 +112,16 @@ async fn configure_channels(
 			.await?;
 	}
 	if let Some(quote_channel) = quote_channel_opt {
-		let quote_channel_id_i64 = i64::from(quote_channel.id());
-		set_quote_channel(
-			ctx,
-			quote_channel,
-			guild_id_i64,
-			quote_channel_id_i64,
-			&ctx.data().db,
-		)
-		.await?;
+		set_quote_channel(ctx, quote_channel, guild_id_i64, &ctx.data().db).await?;
 	}
 	if let Some(chatbot_channel) = chatbot_channel_opt {
-		let chatbot_channel_id_i64 = i64::from(chatbot_channel.id());
-		set_chatbot_channel(
-			ctx,
-			chatbot_channel,
-			guild_id_i64,
-			chatbot_channel_id_i64,
-			&ctx.data().db,
-		)
-		.await?;
+		set_chatbot_channel(ctx, chatbot_channel, guild_id_i64, &ctx.data().db).await?;
 	}
 	if let Some((waifu_channel, waifu_occurrence)) = waifu_channel_opt {
-		let waifu_channel_id_i64 = i64::from(waifu_channel.id());
 		set_waifu_channel(
 			ctx,
 			waifu_channel,
 			guild_id_i64,
-			waifu_channel_id_i64,
 			waifu_occurrence,
 			system_time,
 			&ctx.data().db,
@@ -146,12 +129,10 @@ async fn configure_channels(
 		.await?;
 	}
 	if let Some((dead_chat_channel, dead_chat_occurrence)) = dead_chat_gifs_opt {
-		let dead_chat_channel_id_i64 = i64::from(dead_chat_channel.id());
 		set_dead_chat(
 			ctx,
 			dead_chat_channel,
 			guild_id_i64,
-			dead_chat_channel_id_i64,
 			dead_chat_occurrence,
 			system_time,
 			&ctx.data().db,
@@ -346,49 +327,35 @@ pub async fn configure_server_settings(ctx: SContext<'_>) -> Result<(), Error> {
 					.await?;
 			}
 			ComponentInteractionDataKind::ChannelSelect { values } => {
-				let channel_id = values.first().unwrap();
+				let channel_id = values.first().unwrap().widen();
 				let text = {
-					let channel = channel_id
-						.widen()
-						.to_channel(ctx.http(), ctx.guild_id())
-						.await?;
-
 					match current_state {
 						SelectionState::SelectingMusicChannel => {
-							music_channel_opt = Some(channel.clone());
+							music_channel_opt = Some(channel_id);
 						}
 						SelectionState::SelectingSpoilerChannel => {
-							spoiler_channel_opt = Some(channel.clone());
+							spoiler_channel_opt = Some(channel_id);
 						}
 						SelectionState::SelectingQuoteChannel => {
-							quote_channel_opt = Some(channel.clone());
+							quote_channel_opt = Some(channel_id);
 						}
 						SelectionState::SelectingChatbotChannel => {
-							chatbot_channel_opt = Some(channel.clone());
+							chatbot_channel_opt = Some(channel_id);
 						}
 						SelectionState::SelectingWaifuChannel => {
-							waifu_channel_opt = Some((channel.clone(), 3600 * 24));
+							waifu_channel_opt = Some((channel_id, 3600 * 24));
 						}
 						SelectionState::ConfiguringDeadChatGifs => {
-							dead_chat_gifs_opt = Some((channel.clone(), 3600 * 24));
+							dead_chat_gifs_opt = Some((channel_id, 3600 * 24));
 						}
 						SelectionState::MainMenu => {
 							continue;
 						}
 					}
-					if let Some(guild_channel) = channel.guild() {
-						format!(
-							"\"{}\" chosen as {} channel",
-							guild_channel.base.name,
-							current_state.label()
-						)
-					} else {
-						format!(
-							"\"{}\" chosen as {} channel",
-							channel_id,
-							current_state.label()
-						)
-					}
+					format!(
+						"\"<#{channel_id}>\" chosen as {} channel",
+						current_state.label()
+					)
 				};
 
 				message
@@ -478,9 +445,7 @@ pub async fn set_afk(
 	)
 	.execute(&ctx.data().db)
 	.await?;
-	let embed_reason = reason
-		.as_deref()
-		.unwrap_or("Didn't renew life subscription");
+	let embed_reason = reason.as_deref().unwrap_or(DEFAULT_AFK_REASON);
 
 	let title = format!(
 		"# <@{}> killed!\n**Reason:** {embed_reason}",
@@ -503,9 +468,8 @@ pub async fn set_afk(
 
 async fn set_chatbot_channel(
 	ctx: SContext<'_>,
-	channel: Channel,
+	channel_id: GenericChannelId,
 	guild_id_i64: i64,
-	channel_id_i64: i64,
 	conn: &Pool<Postgres>,
 ) -> Result<(), Error> {
 	query!(
@@ -515,12 +479,11 @@ async fn set_chatbot_channel(
         WHERE guild_id = $1
         "#,
 		guild_id_i64,
-		channel_id_i64,
+		i64::from(channel_id),
 	)
 	.execute(conn)
 	.await?;
-	channel
-		.id()
+	channel_id
 		.say(
 			ctx.http(),
 			"Roses are red, violets are blue, I'm a human behind a screen",
@@ -570,9 +533,8 @@ pub async fn set_chatbot_options(
 
 async fn set_dead_chat(
 	ctx: SContext<'_>,
-	channel: Channel,
+	channel_id: GenericChannelId,
 	guild_id_i64: i64,
-	channel_id_i64: i64,
 	occurrence: i64,
 	system_time: i64,
 	conn: &Pool<Postgres>,
@@ -587,13 +549,13 @@ async fn set_dead_chat(
         "#,
 		guild_id_i64,
 		occurrence,
-		channel_id_i64,
+		i64::from(channel_id),
 		system_time
 	)
 	.execute(conn)
 	.await?;
 	let gif = get_gif("dead chat").await;
-	channel.id().say(ctx.http(), gif).await?;
+	channel_id.say(ctx.http(), gif).await?;
 	Ok(())
 }
 
@@ -652,9 +614,8 @@ pub async fn set_prefix(
 
 async fn set_quote_channel(
 	ctx: SContext<'_>,
-	channel: Channel,
+	channel_id: GenericChannelId,
 	guild_id_i64: i64,
-	channel_id_i64: i64,
 	conn: &Pool<Postgres>,
 ) -> Result<(), Error> {
 	query!(
@@ -664,12 +625,11 @@ async fn set_quote_channel(
         WHERE guild_id = $1
         "#,
 		guild_id_i64,
-		channel_id_i64,
+		i64::from(channel_id),
 	)
 	.execute(conn)
 	.await?;
-	channel
-		.id()
+	channel_id
 		.say(
 			ctx.http(),
 			"Every quoted message will be redirected here too",
@@ -700,7 +660,8 @@ pub async fn set_user_ping(
 			UPDATE user_settings
         	SET ping_content = $3, 
             	ping_media = $4
-    		WHERE guild_id = $1 AND user_id = $2
+    		WHERE guild_id = $1
+    			AND user_id = $2
             "#,
 			guild_id_i64,
 			user_id_i64,
@@ -722,9 +683,8 @@ pub async fn set_user_ping(
 
 async fn set_waifu_channel(
 	ctx: SContext<'_>,
-	channel: Channel,
+	channel_id: GenericChannelId,
 	guild_id_i64: i64,
-	channel_id_i64: i64,
 	occurrence: i64,
 	system_time: i64,
 	conn: &Pool<Postgres>,
@@ -738,13 +698,13 @@ async fn set_waifu_channel(
         WHERE guild_id = $1
         "#,
 		guild_id_i64,
-		channel_id_i64,
+		i64::from(channel_id),
 		occurrence,
 		system_time
 	)
 	.execute(conn)
 	.await?;
-	channel.id().say(ctx.http(), get_waifu().await).await?;
+	channel_id.say(ctx.http(), get_waifu().await).await?;
 	Ok(())
 }
 

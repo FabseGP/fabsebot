@@ -118,7 +118,7 @@ impl SEventHandler for EventHandler {
 			FullEvent::Message { new_message, .. } => {
 				if !new_message.author.bot()
 					&& let Some(guild_id) = new_message.guild_id
-					&& let Err(error) = Box::pin(handle_message(ctx, new_message, guild_id)).await
+					&& let Err(error) = handle_message(ctx, new_message, guild_id).await
 				{
 					let output = format!("# Error handling sent message\n{error}");
 					counter!(METRICS.message_errors.as_str()).increment(1);

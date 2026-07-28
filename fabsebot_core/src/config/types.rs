@@ -13,8 +13,8 @@ use reqwest::Client;
 use serde::Serialize;
 use serenity::{
 	all::{
-		Cache as SerenityCache, Emoji, EmojiId, GenericChannelId, GuildId, ShardId,
-		ShardRunnerMetadata, Webhook,
+		Cache as SerenityCache, Context as SerenityContext, Emoji, EmojiId, GenericChannelId,
+		GuildId, ShardId, ShardRunnerMetadata, Webhook,
 	},
 	http::Http,
 };
@@ -196,6 +196,11 @@ pub struct Data {
 
 pub type Error = AError;
 pub type SContext<'a> = PContext<'a, Data, Error>;
+
+pub enum ContextType<'a> {
+	Poise(SContext<'a>),
+	Serenity(&'a SerenityContext),
+}
 
 pub struct UtilsConfig {
 	pub owner_id: u64,

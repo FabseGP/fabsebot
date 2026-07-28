@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use anyhow::Result as AResult;
 use serenity::all::{
 	Context as SContext, CreateMessage, GenericChannelId, GuildId, MessageId,
@@ -18,43 +20,43 @@ pub async fn handle_message_delete(
 	if let Some(entry) = audit.entries.first()
 		&& let Some(user_id) = entry.user_id
 	{
-		let deleted_content = ctx
+		if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
+			&& let Some(guild_channel) = channel.guild()
+			&& let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
+			&& let Ok(member) = guild.member(&ctx.http, user_id).await
+		{
+			let user_perms = guild.user_permissions_in(&guild_channel, &member);
+			if member.user.id == guild.owner_id
+				|| (user_perms.administrator() || user_perms.moderate_members())
+			{
+				return Ok(());
+			}
+		} else {
+			return Err(GuildError::FailedFetch.into());
+		}
+		let Some(content_opt) = ctx
 			.cache
 			.message(channel_id, deleted_message_id)
-			.map(|msg| (msg.content.clone(), msg.components.first().cloned()));
-		if let Some((content, component_opt)) = deleted_content {
-			if let Ok(channel) = channel_id.to_channel(&ctx.http, Some(guild_id)).await
-				&& let Some(guild_channel) = channel.guild()
-				&& let Some(guild) = ctx.cache.guild(guild_id).map(|g| g.clone())
-				&& let Ok(member) = guild.member(&ctx.http, user_id).await
-			{
-				let user_perms = guild.user_permissions_in(&guild_channel, &member);
-				if member.user.id == guild.owner_id
-					|| (user_perms.administrator() || user_perms.moderate_members())
-				{
-					return Ok(());
-				}
-			} else {
-				return Err(GuildError::FailedFetch.into());
-			}
-			channel_id
-				.send_message(
-					&ctx.http,
-					CreateMessage::new().content(format!(
-						"**Bruh, <@{user_id}> deleted my message while not being an admin or a \
-						 mod!**\nSending it again",
-					)),
-				)
-				.await?;
-			let message = if component_opt.is_some() {
-				"Discord didn't allow me to resend my message smh"
-			} else {
-				content.as_str()
-			};
-			channel_id
-				.send_message(&ctx.http, silent_message(message))
-				.await?;
-		}
+			.map(|msg| (!msg.components.is_empty()).then(|| msg.content.to_string()))
+		else {
+			return Ok(());
+		};
+		channel_id
+			.send_message(
+				&ctx.http,
+				CreateMessage::new().content(format!(
+					"**Bruh, <@{user_id}> deleted my message while not being an admin or a \
+					 mod!**\nSending it again",
+				)),
+			)
+			.await?;
+		let message = content_opt.map_or(
+			Cow::Borrowed("Discord didn't allow me to resend my message smh"),
+			Cow::Owned,
+		);
+		channel_id
+			.send_message(&ctx.http, silent_message(&message))
+			.await?;
 	}
 	Ok(())
 }

@@ -12,9 +12,9 @@ pub const DEFAULT_PREFIX: &str = "!";
 
 pub const MISSING_REPLY_MSG: &str = "Bruh, reply to a message";
 pub const EMPTY_REPLY_MSG: &str = "Bruh, this message is empty";
-pub const EMPTY_VOICE_CHAN_MSG: &str = "No voice channel with at least 1 user found :/";
 pub const QUEUEING_MSG: &str = "Adding song to queue";
 pub const FAILED_SONG_FETCH: &str = "Failed to fetch song from YouTube :/";
+pub const DEFAULT_AFK_REASON: &str = "Didn't renew life subscription";
 
 pub const CONTENT_FONT: &str = "NotoSansJP-Regular";
 pub const AUTHOR_FONT: &str = "Satoshi-LightItalic";

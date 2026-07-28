@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\tSELECT spoiler_channel, ai_chat_channel, global_chat_channel,\n\t\t\tmusic_channel, chatbot_role, global_chat\n\t\tFROM guild_settings\n\t\tWHERE guild_id = $1\n\t\t\tAND (spoiler_channel IS NOT NULL\n\t\t\tOR ai_chat_channel IS NOT NULL\n\t\t\tOR global_chat_channel IS NOT NULL\n\t\t\tOR music_channel IS NOT NULL\n\t\t\tOR global_chat IS TRUE)\n\t\t",
+  "query": "\n\t\tSELECT spoiler_channel, ai_chat_channel, global_chat_channel,\n\t\t\tmusic_channel, chatbot_role\n\t\tFROM guild_settings\n\t\tWHERE guild_id = $1\n\t\t\tAND (spoiler_channel = $2\n\t\t\tOR ai_chat_channel = $2\n\t\t\tOR music_channel = $2\n\t\t\tOR (global_chat_channel = $2\n\t\t\t\tAND global_chat IS TRUE\n\t\t\t\tAND EXISTS (\n\t\t\t\t\tSELECT 1\n\t\t\t\t\tFROM guild_settings gs2\n\t\t\t\t\tWHERE gs2.guild_id != $1\n\t\t\t\t\t\tAND gs2.global_chat IS TRUE\n\t\t\t\t\t\tAND gs2.global_chat_channel IS NOT NULL\n\t\t\t\t)\n\t\t\t))\n\t\t",
   "describe": {
     "columns": [
       {
@@ -57,21 +57,11 @@
             "name": "chatbot_role"
           }
         }
-      },
-      {
-        "ordinal": 5,
-        "name": "global_chat",
-        "type_info": "Bool",
-        "origin": {
-          "Table": {
-            "table": "guild_settings",
-            "name": "global_chat"
-          }
-        }
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8"
       ]
     },
@@ -80,9 +70,8 @@
       true,
       true,
       true,
-      true,
-      false
+      true
     ]
   },
-  "hash": "a9812ff3559e7f3e6bc6167042030d8480812f0338cf58d3b4594b8e69799e3c"
+  "hash": "f6ff4e8197c10d4ec21d7a4c0dfe54e2b93409adae053d8f94b0177673ea102c"
 }

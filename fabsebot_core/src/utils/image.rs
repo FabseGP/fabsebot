@@ -85,7 +85,6 @@ fn truncate_text(text: &str, metrics: &FontMetrics, font: &FontArc) -> String {
 	let mut end = text.len();
 	while end > ELLIPSIS.len() {
 		end = text.floor_char_boundary(end.saturating_sub(1));
-
 		if text_size(metrics.scale, font, &text[..end]).0 <= target_width {
 			break;
 		}

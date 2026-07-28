@@ -33,7 +33,7 @@ pub async fn fetch_user_settings(
     		UPDATE user_settings
     		SET message_count = message_count + 1
     		WHERE guild_id = $1
-    		AND user_id = $2
+    			AND user_id = $2
     		RETURNING afk_reason, pinged_links, afk
 		)
 		SELECT afk_reason,

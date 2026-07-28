@@ -6,7 +6,6 @@ pub struct GuildSettings {
 	pub spoiler_channel: Option<i64>,
 	pub ai_chat_channel: Option<i64>,
 	pub global_chat_channel: Option<i64>,
-	pub global_chat: bool,
 	pub music_channel: Option<i64>,
 	pub chatbot_role: Option<String>,
 }
@@ -127,33 +126,44 @@ pub async fn fetch_guild_prefix(
 ) -> Result<Option<String>, Error> {
 	query_scalar!(
 		r#"
-		SELECT prefix FROM guild_settings
+		SELECT prefix AS "prefix!" FROM guild_settings
 		WHERE guild_id = $1
+			AND prefix IS NOT NULL
 		"#,
 		i64::from(guild_id)
 	)
-	.fetch_one(conn)
+	.fetch_optional(conn)
 	.await
 }
 
 pub async fn fetch_guild_settings(
 	guild_id: i64,
+	channel_id: i64,
 	conn: &Pool<Postgres>,
 ) -> Result<Option<GuildSettings>, Error> {
 	query_as!(
 		GuildSettings,
 		r#"
 		SELECT spoiler_channel, ai_chat_channel, global_chat_channel,
-			music_channel, chatbot_role, global_chat
+			music_channel, chatbot_role
 		FROM guild_settings
 		WHERE guild_id = $1
-			AND (spoiler_channel IS NOT NULL
-			OR ai_chat_channel IS NOT NULL
-			OR global_chat_channel IS NOT NULL
-			OR music_channel IS NOT NULL
-			OR global_chat IS TRUE)
+			AND (spoiler_channel = $2
+			OR ai_chat_channel = $2
+			OR music_channel = $2
+			OR (global_chat_channel = $2
+				AND global_chat IS TRUE
+				AND EXISTS (
+					SELECT 1
+					FROM guild_settings gs2
+					WHERE gs2.guild_id != $1
+						AND gs2.global_chat IS TRUE
+						AND gs2.global_chat_channel IS NOT NULL
+				)
+			))
 		"#,
-		guild_id
+		guild_id,
+		channel_id
 	)
 	.fetch_optional(conn)
 	.await

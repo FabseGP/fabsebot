@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n\t\tSELECT guild_id, global_chat_channel\n\t\tFROM guild_settings\n\t\tWHERE global_chat IS TRUE\n\t\t\tAND guild_id != $1\n\t\tLIMIT 10\n\t\t",
+  "query": "\n\t\tSELECT guild_id, global_chat_channel as \"global_chat_channel!\"\n\t\tFROM guild_settings\n\t\tWHERE global_chat IS TRUE\n\t\t\tAND global_chat_channel IS NOT NULL\n\t\t\tAND guild_id != $1\n\t\tLIMIT 10\n\t\t",
   "describe": {
     "columns": [
       {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "global_chat_channel",
+        "name": "global_chat_channel!",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -36,5 +36,5 @@
       true
     ]
   },
-  "hash": "f8af6450f2602a5a8463c6e96ae61db50f5787aa6438efbeb616c45ca39e206e"
+  "hash": "434e764975a87e5b22dea08d7fcf5d75d1f49670fdcf0e5616b674906308d51e"
 }
