@@ -408,6 +408,10 @@ async fn user_queries(
 		.fetch_all(conn)
 		.await?;
 
+		if mentioned_settings.is_empty() {
+			return Ok(());
+		}
+
 		let new_message_link = new_message.link().to_string();
 
 		let (entries, user_ids): (Vec<Value>, Vec<i64>) = mentioned_settings
@@ -614,25 +618,28 @@ pub async fn handle_message(
 
 	let guild_id_i64 = i64::from(guild_id);
 	let user_id_i64 = i64::from(new_message.author.id);
+	let channel_id_i64 = i64::from(new_message.channel_id);
 
-	let guild_settings_opt = fetch_guild_settings(
-		guild_id_i64,
-		i64::from(new_message.channel_id),
-		&bot_data.db,
-	)
-	.await?;
+	let guild_settings_opt =
+		fetch_guild_settings(guild_id_i64, channel_id_i64, &bot_data.db).await?;
 
 	if let Some(guild_settings) = guild_settings_opt {
-		if guild_settings.spoiler_channel.is_some() {
+		if let Some(spoiler_channel) = guild_settings.spoiler_channel
+			&& spoiler_channel == channel_id_i64
+		{
 			spoiler_message(ctx, new_message, &bot_data.channel_webhooks).await?;
 		}
 
-		if guild_settings.global_chat_channel.is_some() {
+		if let Some(global_chat_channel) = guild_settings.global_chat_channel
+			&& global_chat_channel == channel_id_i64
+		{
 			global_chats(ctx, new_message, guild_id_i64).await?;
 		}
 
 		if !new_message.content.starts_with('#') {
-			if guild_settings.ai_chat_channel.is_some() {
+			if let Some(ai_chat_channel) = guild_settings.ai_chat_channel
+				&& ai_chat_channel == channel_id_i64
+			{
 				let guild_cache = guild_cache(&bot_data, guild_id, Some(user_id_i64), ctx).await?;
 				ai_chats(
 					new_message.clone(),
@@ -641,7 +648,9 @@ pub async fn handle_message(
 				)
 				.await?;
 			}
-			if guild_settings.music_channel.is_some() {
+			if let Some(music_channel) = guild_settings.music_channel
+				&& music_channel == channel_id_i64
+			{
 				queue_track(ctx, new_message, &bot_data.db, guild_id).await?;
 			}
 		}

@@ -581,8 +581,12 @@ async fn update_info(
 	let mut lyrics_container: Option<CreateContainer> = None;
 	let mut history_embed: Option<CreateContainer> = None;
 
+	let interaction_timeout = track_data.optional_data.as_ref().map_or(3600 * 2, |o| {
+		o.duration_sec.cast_unsigned().saturating_add(300)
+	});
+
 	let mut collector_stream = ComponentInteractionCollector::new(serenity_context)
-		.timeout(Duration::from_hours(2))
+		.timeout(Duration::from_secs(interaction_timeout))
 		.message_id(track_data.request_message_id)
 		.stream();
 

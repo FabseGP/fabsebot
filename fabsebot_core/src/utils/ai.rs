@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use serenity::{
 	all::{GenericChannelId, GuildId, Http, Message, MessageId},
-	nonmax::NonMaxU16,
+	model::id::UserId,
 };
 use songbird::input::Input;
 use tokio::sync::mpsc;
@@ -150,6 +150,7 @@ pub async fn ai_task(mut rx: mpsc::Receiver<AIQueuePayload>) {
 			{
 				error!("Failed to send message: {err}");
 			}
+			conversations.clear();
 		}
 	}
 }
@@ -179,11 +180,14 @@ async fn ai_chatbot(
 		.as_ref()
 		.map_or(0, |r| usize::from(r.content.len()));
 
+	let mentions_len = usize::try_from(message.mentions.len().saturating_mul(64))?;
+
 	let mut user_text = String::with_capacity(
 		content_safe
 			.len()
 			.saturating_add(reply_len)
-			.saturating_add(512),
+			.saturating_add(mentions_len)
+			.saturating_add(256),
 	);
 	user_text.push_str("[Context: ");
 
@@ -218,13 +222,11 @@ async fn ai_chatbot(
 	}
 
 	for target in &message.mentions {
-		if let Ok(member) = guild_id.member(&ctx.http, target.id).await {
-			let username = member.display_name();
-			writeln!(
-				user_text,
-				"Mentioned user: {username}. Call UserInfo(query=\"{username}\") for details"
-			)?;
-		}
+		let user_id = target.id;
+		writeln!(
+			user_text,
+			"Mentioned user with id {user_id}. Call UserInfo(query=\"{user_id}\") for details"
+		)?;
 	}
 
 	write!(
@@ -271,60 +273,53 @@ async fn ai_chatbot(
 		conversations.push(AIChatMessage::user_parts(chat_vec));
 	}
 
-	match ai_response_with_tools(
+	let response = ai_response_with_tools(
 		conversations,
 		guild_id,
 		Some(message),
 		&utils_config().fabseserver.text_model_large,
 	)
-	.await
-	{
-		Ok(response) => {
-			if response.len() >= CONTENT_LIMIT {
-				let mut start = 0;
-				while start < response.len() {
-					let end = response[start..]
-						.char_indices()
-						.take_while(|(i, _)| *i < 2000)
-						.last()
-						.map_or(response.len(), |(i, c)| {
-							start.saturating_add(i).saturating_add(c.len_utf8())
-						});
-					message.reply(&ctx.http, &response[start..end]).await?;
-					start = end;
-				}
-			} else {
-				message.reply(&ctx.http, response.as_str()).await?;
-			}
-			if let Some(handler_lock) = ctx.data.music_manager.get(guild_id)
-				&& ctx
-					.data
-					.guilds
-					.get(&guild_id)
-					.unwrap()
-					.music_data
-					.is_songbird_connected()
-			{
-				match ai_voice(&response).await {
-					Ok(bytes) => {
-						handler_lock
-							.lock()
-							.await
-							.enqueue_input(Input::from(bytes))
-							.await;
-					}
-					Err(err) => {
-						warn!("Failed to transcribe text: {err}");
-					}
-				}
-			}
-			conversations.push(AIChatMessage::assistant(Cow::Owned(response)));
+	.await?;
+
+	if response.len() >= CONTENT_LIMIT {
+		let mut start = 0;
+		while start < response.len() {
+			let end = response[start..]
+				.char_indices()
+				.take_while(|(i, _)| *i < 2000)
+				.last()
+				.map_or(response.len(), |(i, c)| {
+					start.saturating_add(i).saturating_add(c.len_utf8())
+				});
+			message.reply(&ctx.http, &response[start..end]).await?;
+			start = end;
 		}
-		Err(err) => {
-			conversations.clear();
-			return Err(err);
+	} else {
+		message.reply(&ctx.http, response.as_str()).await?;
+	}
+	if let Some(handler_lock) = ctx.data.music_manager.get(guild_id)
+		&& ctx
+			.data
+			.guilds
+			.get(&guild_id)
+			.unwrap()
+			.music_data
+			.is_songbird_connected()
+	{
+		match ai_voice(&response).await {
+			Ok(bytes) => {
+				handler_lock
+					.lock()
+					.await
+					.enqueue_input(Input::from(bytes))
+					.await;
+			}
+			Err(err) => {
+				warn!("Failed to transcribe text: {err}");
+			}
 		}
 	}
+	conversations.push(AIChatMessage::assistant(Cow::Owned(response)));
 
 	Ok(())
 }
@@ -410,15 +405,18 @@ async fn tool_calling(
 				}
 			}
 			ToolCalls::UserInfo => {
-				if let Ok(members) = guild_id
-					.search_members(&ctx.http, &args.query, NonMaxU16::new(1))
-					.await && let Some(member) = members.first()
+				if let Ok(user_id) = args.query.parse::<u64>()
+					&& let Ok(member) = guild_id.member(&ctx.http, UserId::from(user_id)).await
 					&& let Some(roles) = member.roles(&ctx.cache)
 				{
-					let avatar = member_pfp(member);
+					let avatar = member_pfp(&member);
 					uri_content(&avatar, chat_vec.as_mut().unwrap()).await?;
 					let mut text = String::with_capacity(512);
-					write!(text, "{} has the following roles: ", member.display_name())?;
+					write!(
+						text,
+						"User with this id {user_id} is named {} and has the following roles: ",
+						member.display_name()
+					)?;
 					for role in roles.iter().map(|r| r.name.as_str()).intersperse(", ") {
 						text.push_str(role);
 					}
@@ -671,7 +669,7 @@ const fn get_available_tools() -> [AITools<'static>; 6] {
 					properties: &AIToolsProperties {
 						query: Some(&AIToolsQuery {
 							query_type: "string",
-							description: "The exact username or display name of the mentioned user",
+							description: "The userid of the mentioned user",
 						}),
 					},
 					required: &["query"],
