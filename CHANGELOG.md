@@ -223,6 +223,7 @@ All notable changes to this project will be documented in this file.
 - Don't store receiver
 - Use typed ids
 - Command cleanups
+- Chceck channel ids post-query
 
 ### 💼 Other
 
@@ -335,6 +336,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Use passed client
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
