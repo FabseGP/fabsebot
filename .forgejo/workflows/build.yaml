@@ -8,6 +8,8 @@ jobs:
   build:
     name: Build binary
     runs-on: ${{ matrix.runner }}
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
     strategy:
       fail-fast: true
       matrix:
