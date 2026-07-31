@@ -74,6 +74,7 @@ All notable changes to this project will be documented in this file.
 - Forward track exceptions
 - Added back track history for new impl
 - Why many commits when one BIG work
+- Conditional sql-queries & fewer http-calls
 
 ### 🐛 Bug Fixes
 
@@ -334,6 +335,7 @@ All notable changes to this project will be documented in this file.
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - Use passed client
+- *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
 - *(chore)* Update changelog
