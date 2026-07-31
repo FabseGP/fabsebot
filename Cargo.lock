@@ -1400,7 +1400,7 @@ dependencies = [
  "tokio-metrics",
  "toml",
  "tracing",
- "tracing-loki-but-better",
+ "tracing-loki",
  "tracing-subscriber",
  "url",
 ]
@@ -6184,19 +6184,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-loki-but-better"
-version = "0.1.4"
-source = "git+https://codeberg.org/tazz4843/tracing-loki?branch=main#72586bf9cb544f40ac7832fc70cc6831f46cb31a"
+name = "tracing-loki"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8d1ad78bf74c1790b0825ddc35ad1bb9498736c51c8437796b81cadf4916cd8"
 dependencies = [
  "loki-api",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "small-fixed-array",
  "snap",
  "tokio",
  "tracing",
  "tracing-core",
+ "tracing-log",
  "tracing-serde",
  "tracing-subscriber",
  "url",

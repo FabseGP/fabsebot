@@ -108,7 +108,7 @@ toml = "1.1.2"
 tracing.workspace = true
 tracing-subscriber = "0.3.23"
 fastrand.workspace = true
-tracing-loki-but-better = { git = "https://codeberg.org/tazz4843/tracing-loki", branch = "main", features = ["rustls"] } 
+tracing-loki = { version = "0.2.7", default-features = false, features = ["compat-0-2-1", "rustls"] } 
 url.workspace = true
 rustls = { version = "0.23.40", default-features = false }
 

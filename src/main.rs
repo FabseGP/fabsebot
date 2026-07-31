@@ -1,4 +1,4 @@
-use std::{fs::read_to_string, time::Duration};
+use std::fs::read_to_string;
 
 use anyhow::{Context as _, Result as AResult};
 use fabsebot_commands::commands;
@@ -13,10 +13,10 @@ use fabsebot_db::{PostgresConfig, PostgresConn};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use mimalloc::MiMalloc;
 use rustls::crypto::aws_lc_rs;
-use tokio::{spawn, time::MissedTickBehavior};
+use tokio::spawn;
 use toml::{Table, Value};
 use tracing::{Level, error};
-use tracing_loki_but_better::LokiBuilder;
+use tracing_loki::builder;
 use tracing_subscriber::{
 	Layer as _, Registry, filter::LevelFilter, fmt, layer::SubscriberExt as _,
 	util::SubscriberInitExt as _,
@@ -26,7 +26,7 @@ use url::Url;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-async fn setup_tracing(log_config: &LogConfig, service_name: &str) -> AResult<()> {
+fn setup_tracing(log_config: &LogConfig, service_name: &str) -> AResult<()> {
 	let log_level = match log_config.log_level.as_str() {
 		"trace" => Level::TRACE,
 		"debug" => Level::DEBUG,
@@ -39,23 +39,18 @@ async fn setup_tracing(log_config: &LogConfig, service_name: &str) -> AResult<()
 
 	let env_layer = fmt::layer().with_filter(level_filter);
 
-	let builder = LokiBuilder::new()
-		.batch_send_interval(Duration::from_secs(1))
-		.missed_tick_behavior(MissedTickBehavior::Burst)
+	let (loki_layer, loki_task) = builder()
 		.label("service_name", service_name)?
 		.label("env", &log_config.env)?
-		.add_vl_compat(true);
-
-	let (loki_layer, task) = builder
-		.build_without_strip(&Url::parse(&log_config.host)?)
-		.await?;
+		.http_header("VL-Msg-Field", "message")?
+		.build_url(Url::parse(&log_config.host)?)?;
 
 	Registry::default()
 		.with(loki_layer.with_filter(level_filter))
 		.with(env_layer)
 		.init();
 
-	spawn(task);
+	spawn(loki_task);
 
 	PrometheusBuilder::default()
 		.install()
@@ -102,7 +97,7 @@ async fn main() -> AResult<()> {
 			.clone(),
 	)?;
 
-	setup_tracing(&log_config, &bot_config.username).await?;
+	setup_tracing(&log_config, &bot_config.username)?;
 
 	let postgres_pool = PostgresConn::new(postgres_config).await?;
 
