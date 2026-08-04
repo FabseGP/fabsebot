@@ -11,9 +11,9 @@ use fabsebot_core::{
 	utils::{
 		ai::{ContentPart, ai_response, ai_response_with_tools, image_content, uri_content},
 		helpers::{
-			banner_vec, fetch_and_parse, get_gifs, get_waifu, media_gallery, member_pfp,
+			UserType, banner_vec, fetch_and_parse, get_gifs, get_waifu, media_gallery,
 			non_empty_string, non_empty_vec, paginate_container, reply_container, text_display,
-			thumbnail_section, true_bool, url_bytes, user_pfp, visit_page_button,
+			thumbnail_section, true_bool, url_bytes, visit_page_button,
 		},
 	},
 };
@@ -655,8 +655,8 @@ async fn roast_internal(
 	id: UserId,
 ) -> AResult<()> {
 	let role = Cow::Borrowed(
-		"you're an evil ai assistant that excels at roasting ppl, especially weebs. no mercy \
-		 shown. the prompt will contain information of your target",
+		"you're an evil ai assistant that excels at roasting ppl. no mercy shown. the prompt will \
+		 contain information of your target",
 	);
 
 	let messages = [AIChatMessage::system(role), user_message];
@@ -696,8 +696,8 @@ pub async fn roast_user(
 ) -> Result<(), Error> {
 	let _typing = ctx.defer_or_broadcast().await;
 
-	let mut chat_vec = banner_vec(&ctx, user.id).await?;
-	uri_content(&user_pfp(&user), &mut chat_vec).await?;
+	let mut chat_vec = banner_vec(&ctx, UserType::User(&user)).await?;
+	uri_content(&user.face(), &mut chat_vec).await?;
 
 	let name = &user.name;
 	let account_date = user.id.created_at();
@@ -725,7 +725,7 @@ pub async fn roast(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
-	let avatar_url = member_pfp(&member);
+	let avatar_url = member.face();
 	let _typing = ctx.defer_or_broadcast().await;
 
 	let message_count = query_scalar!(
@@ -741,17 +741,24 @@ pub async fn roast(
 	.fetch_one(&ctx.data().db)
 	.await?;
 
-	let mut chat_vec = banner_vec(&ctx, member.user.id).await?;
+	let mut chat_vec = banner_vec(&ctx, UserType::Member(&member)).await?;
 	uri_content(&avatar_url, &mut chat_vec).await?;
 
 	let mut description = String::with_capacity(2048);
 
 	let name = member.display_name();
 
+	let is_owner = if ctx.guild().unwrap().owner_id == member.user.id {
+		""
+	} else {
+		"not "
+	};
+
 	write!(
 		description,
-		"name:{name},msg_count:{message_count},acc_create:{},last_msgs:",
-		member.user.id.created_at()
+		"name:{name}({}owner of this server),msg_count:{message_count},acc_create:{},last_msgs:",
+		is_owner,
+		member.user.id.created_at(),
 	)?;
 
 	let mut messages = ctx.channel_id().messages_iter(&ctx).boxed();
@@ -770,7 +777,7 @@ pub async fn roast(
 		} else {
 			break;
 		}
-		if result_count >= 25 || missing_match_count >= 100 {
+		if result_count >= 100 || missing_match_count >= 100 {
 			break;
 		}
 	}

@@ -8,11 +8,11 @@ use anyhow::{Context as _, Result as AResult};
 use fabsebot_core::{
 	config::{
 		constants::DEFAULT_AFK_REASON,
-		types::{Error, HTTP_CLIENT, SContext},
+		types::{EmojiData, Error, HTTP_CLIENT, SContext},
 	},
 	utils::helpers::{
 		correct_permissions, get_gif, get_waifu, guild_cache, image_uri, reply_container,
-		thumbnail_section, user_pfp,
+		thumbnail_section,
 	},
 };
 use fabsebot_db::guild::{reset_guild, set_music_channel, set_spoiler_channel};
@@ -429,7 +429,7 @@ pub async fn set_afk(
 	ctx: SContext<'_>,
 	#[description = "Reason for afk"] reason: Option<String>,
 ) -> Result<(), Error> {
-	let avatar_url = user_pfp(ctx.author());
+	let avatar_url = ctx.author().face();
 	let guild_id_i64 = i64::from(ctx.guild_id().unwrap());
 	let user_id_i64 = i64::from(ctx.author().id);
 	query!(
@@ -753,9 +753,13 @@ pub async fn set_word_react(
 				match ctx.http().create_application_emoji(&params).await {
 					Ok(http_emoji) => {
 						emoji_id = Some(http_emoji.id.get().cast_signed());
+						let emoji_data = EmojiData {
+							is_animated: http_emoji.animated(),
+							name: http_emoji.name,
+						};
 						ctx.data()
 							.app_emojis
-							.insert(http_emoji.id, Arc::new(http_emoji));
+							.insert(http_emoji.id, Arc::new(emoji_data));
 
 						true
 					}

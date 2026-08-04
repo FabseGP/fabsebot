@@ -26,7 +26,7 @@ use crate::{
 	stats::counters::METRICS,
 	utils::helpers::{
 		discord_message_link, encode_image, fetch_and_parse, get_gif, get_waifu, image_uri,
-		member_pfp, non_empty_vec, url_bytes,
+		non_empty_vec, url_bytes,
 	},
 };
 
@@ -409,8 +409,7 @@ async fn tool_calling(
 					&& let Ok(member) = guild_id.member(&ctx.http, UserId::from(user_id)).await
 					&& let Some(roles) = member.roles(&ctx.cache)
 				{
-					let avatar = member_pfp(&member);
-					uri_content(&avatar, chat_vec.as_mut().unwrap()).await?;
+					uri_content(&member.face(), chat_vec.as_mut().unwrap()).await?;
 					let mut text = String::with_capacity(512);
 					write!(
 						text,

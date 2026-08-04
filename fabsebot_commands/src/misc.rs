@@ -14,8 +14,8 @@ use fabsebot_core::{
 	utils::{
 		ai::ai_response,
 		helpers::{
-			default_mentions, image_uri, media_gallery, member_pfp, reply_container, text_display,
-			thumbnail_section, url_bytes, user_pfp,
+			default_mentions, image_uri, media_gallery, reply_container, text_display,
+			thumbnail_section, url_bytes,
 		},
 		image::{
 			ImageType, QuoteImageConfig, TextLayout, avatar_position, get_theme, quote_image,
@@ -62,7 +62,7 @@ pub async fn birthday(
 	#[description = "User to congratulate"] user: User,
 ) -> Result<(), Error> {
 	command_permissions(&ctx).await?;
-	let avatar_url = user_pfp(&user);
+	let avatar_url = user.face();
 
 	let title = format!("# HAPPY BIRTHDAY <@{}>!", user.id);
 
@@ -756,18 +756,15 @@ async fn quote_internal(
 	let mut image_handle = {
 		let (avatar_url, author_name, text) = if let Some((reply, guild_id)) = reply {
 			let (url, name) = if reply.webhook_id.is_some() {
-				let avatar = user_pfp(&reply.author);
-				(avatar, reply.author.name.clone())
+				(reply.author.face(), reply.author.name.clone())
 			} else {
 				let member = guild_id.member(&ctx.http(), reply.author.id).await?;
-				let avatar = member_pfp(&member);
-				(avatar, member.user.name)
+				(member.face(), member.user.name)
 			};
 			(url, format!("- {name}"), reply.content.to_string())
 		} else {
-			let avatar = user_pfp(&msg.author);
 			(
-				avatar,
+				msg.author.face(),
 				format!("- {}", msg.author.name),
 				msg.content.to_string(),
 			)

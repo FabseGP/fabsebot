@@ -5,7 +5,7 @@ use fabsebot_core::{
 		constants::MESSAGE_LIMIT,
 		types::{Error, SContext},
 	},
-	utils::helpers::{member_pfp, reply_container, thumbnail_section},
+	utils::helpers::{reply_container, thumbnail_section},
 };
 use serenity::{
 	all::{Colour, CreateContainer, Member, PremiumType},
@@ -86,7 +86,7 @@ pub async fn user_info(
 	ctx: SContext<'_>,
 	#[description = "Target"] member: Member,
 ) -> Result<(), Error> {
-	let avatar_url = member_pfp(&member);
+	let avatar_url = member.face();
 
 	let mut output = String::with_capacity(512);
 

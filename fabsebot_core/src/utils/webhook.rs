@@ -13,7 +13,7 @@ use serenity::{
 
 use crate::{
 	config::types::{WebhookMap, bot_context, utils_config},
-	utils::helpers::{channel_counter, text_display, url_bytes, user_pfp},
+	utils::helpers::{channel_counter, text_display, url_bytes},
 };
 
 const FABSEBOT_WEBHOOK_NAME: &str = "fabsebot";
@@ -53,11 +53,10 @@ pub async fn spoiler_message(ctx: &SContext, message: &Message, data: &WebhookMa
 	let Some(webhook) = webhook_find(ctx, message.guild_id, message.channel_id, data).await? else {
 		return Ok(());
 	};
-	let avatar_url = user_pfp(&message.author);
 	let username = &message.author.name;
 	let mut webhook_execute = ExecuteWebhook::new()
 		.username(username)
-		.avatar_url(avatar_url.as_str());
+		.avatar_url(message.author.face());
 	if !message.content.is_empty() {
 		webhook_execute = webhook_execute.content(message.content.as_str());
 	}

@@ -33,7 +33,7 @@ use crate::{
 		helpers::{
 			channel_counter, discord_message_link, get_emoji, get_gif, get_waifu, guild_cache,
 			media_gallery, message_container, separator, silent_message, text_display,
-			thumbnail_section, user_pfp,
+			thumbnail_section,
 		},
 		voice::{lavalink_play, lavalink_try_join},
 		webhook::{spoiler_message, webhook_find},
@@ -194,7 +194,7 @@ async fn global_chats(ctx: &SContext, new_message: &Message, guild_id: i64) -> A
 			new_message.timestamp.timestamp()
 		)?;
 		text.truncate(MESSAGE_LIMIT);
-		let avatar = user_pfp(&replied_message.author);
+		let avatar = replied_message.author.face();
 		let (text, thumbnail) = thumbnail_section(text, avatar);
 		container =
 			container
@@ -215,7 +215,7 @@ async fn global_chats(ctx: &SContext, new_message: &Message, guild_id: i64) -> A
 		}
 	}
 	let component = [CreateComponent::Container(container)];
-	let avatar = user_pfp(&new_message.author);
+	let avatar = new_message.author.face();
 	let message = ExecuteWebhook::new()
 		.with_components(true)
 		.flags(MessageFlags::IS_COMPONENTS_V2)
@@ -280,7 +280,7 @@ async fn message_preview(ctx: &SContext, new_message: &Message) -> AResult<()> {
 		let ref_msg = channel_id.message(&ctx.http, message_id).await?;
 		if ref_msg.poll.is_none() {
 			counter!(METRICS.message_previews.as_str()).increment(1);
-			let avatar = user_pfp(&ref_msg.author);
+			let avatar = ref_msg.author.face();
 			let mut text = String::with_capacity(usize::from(
 				u16::from(ref_msg.author.name.len())
 					.saturating_add(ref_msg.content.len())
@@ -530,18 +530,18 @@ async fn guild_queries(
 				.await?;
 		} else if let Some(emoji_id) = &record.emoji_id {
 			let emoji_id_typed = EmojiId::new(emoji_id.cast_unsigned());
-			let (is_animated, emoji_id, emoji_name) = if record.guild_emoji
+			let (is_animated, emoji_name) = if record.guild_emoji
 				&& let Ok(guild_emoji) = guild_id.emoji(&ctx.http, emoji_id_typed).await
 			{
-				(guild_emoji.animated(), guild_emoji.id, guild_emoji.name)
+				(guild_emoji.animated(), guild_emoji.name)
 			} else if let Some(emoji) = get_emoji(ctx, &bot_data.app_emojis, emoji_id_typed).await {
-				(emoji.animated(), emoji.id, emoji.name.clone())
+				(emoji.is_animated, emoji.name.clone())
 			} else {
 				continue;
 			};
 			let reaction = ReactionType::Custom {
 				animated: is_animated,
-				id: emoji_id,
+				id: emoji_id_typed,
 				name: Some(emoji_name),
 			};
 			new_message.react(&ctx.http, reaction).await?;

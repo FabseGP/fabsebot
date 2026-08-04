@@ -1,6 +1,6 @@
 use fabsebot_core::{
 	config::types::{Error, SContext},
-	utils::{helpers::member_pfp, webhook::webhook_find},
+	utils::webhook::webhook_find,
 };
 use poise::CreateReply;
 use serenity::all::{CreateMessage, ExecuteWebhook, Member, User};
@@ -79,7 +79,7 @@ pub async fn user_misuse(
 	#[max_length = 2000]
 	message: String,
 ) -> Result<(), Error> {
-	let avatar_url = member_pfp(&member);
+	let avatar_url = member.face();
 	let webhook = match webhook_find(
 		ctx.serenity_context(),
 		ctx.guild_id(),

@@ -13,10 +13,11 @@ use reqwest::Client;
 use serde::Serialize;
 use serenity::{
 	all::{
-		Cache as SerenityCache, Context as SerenityContext, Emoji, EmojiId, GenericChannelId,
-		GuildId, ShardId, ShardRunnerMetadata, Webhook,
+		Cache as SerenityCache, Context as SerenityContext, EmojiId, GenericChannelId, GuildId,
+		ShardId, ShardRunnerMetadata, Webhook,
 	},
 	http::Http,
+	small_fixed_array::FixedString,
 };
 use songbird::Songbird;
 use sqlx::PgPool;
@@ -180,8 +181,13 @@ impl AIChatMessage {
 	}
 }
 
+pub struct EmojiData {
+	pub is_animated: bool,
+	pub name: FixedString<u8>,
+}
+
 pub type WebhookMap = Cache<GenericChannelId, Arc<Webhook>>;
-pub type EmojisMap = Cache<EmojiId, Arc<Emoji>>;
+pub type EmojisMap = Cache<EmojiId, Arc<EmojiData>>;
 
 pub struct Data {
 	pub db: PgPool,

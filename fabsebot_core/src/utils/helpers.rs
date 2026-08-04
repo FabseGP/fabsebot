@@ -26,8 +26,7 @@ use serenity::{
 		Context, CreateActionRow, CreateAllowedMentions, CreateButton, CreateComponent,
 		CreateContainer, CreateContainerComponent, CreateMediaGalleryItem, CreateMessage,
 		CreateSectionAccessory, CreateSectionComponent, CreateSeparator, CreateTextDisplay,
-		CreateThumbnail, CreateUnfurledMediaItem, GuildId, Member, MessageFlags, Permissions,
-		ReactionType, User, UserId,
+		CreateThumbnail, CreateUnfurledMediaItem, GuildId, MessageFlags, Permissions, ReactionType,
 	},
 	builder::{CreateInteractionResponse, EditMessage},
 	collector::ComponentInteractionCollector,
@@ -35,8 +34,9 @@ use serenity::{
 	gateway::ShardRunnerMessage,
 	model::{
 		application::ButtonStyle,
-		guild::Emoji,
+		guild::Member,
 		id::{EmojiId, ShardId},
+		user::User,
 	},
 	small_fixed_array::FixedString,
 };
@@ -56,8 +56,8 @@ use crate::{
 	config::{
 		constants::DEFAULT_PREFIX,
 		types::{
-			Data, EmojisMap, Error, GuildCache, HTTP_CLIENT, MusicData, SContext, client_data,
-			utils_config,
+			Data, EmojiData, EmojisMap, Error, GuildCache, HTTP_CLIENT, MusicData, SContext,
+			client_data, utils_config,
 		},
 	},
 	errors::commands::HTTPError,
@@ -408,29 +408,21 @@ pub fn discord_message_link(input: &mut &str) -> ModalResult<DiscordMessageLink>
 	})
 }
 
-#[must_use]
-pub fn member_pfp(member: &Member) -> String {
-	member.avatar_url().unwrap_or_else(|| {
-		member
-			.user
-			.avatar_url()
-			.unwrap_or_else(|| member.user.default_avatar_url())
-	})
-}
-
-#[must_use]
-pub fn user_pfp(user: &User) -> String {
-	user.avatar_url()
-		.unwrap_or_else(|| user.default_avatar_url())
-}
-
-pub async fn get_emoji(ctx: &Context, emojis: &EmojisMap, emoji_id: EmojiId) -> Option<Arc<Emoji>> {
+pub async fn get_emoji(
+	ctx: &Context,
+	emojis: &EmojisMap,
+	emoji_id: EmojiId,
+) -> Option<Arc<EmojiData>> {
 	let emoji = if let Some(emoji) = emojis.get(&emoji_id) {
 		emoji
 	} else {
 		match ctx.get_application_emoji(emoji_id).await {
 			Ok(emoji) => {
-				let arc_emoji = Arc::new(emoji);
+				let emoji_data = EmojiData {
+					is_animated: emoji.animated(),
+					name: emoji.name,
+				};
+				let arc_emoji = Arc::new(emoji_data);
 				emojis.insert(emoji_id, arc_emoji.clone());
 				arc_emoji
 			}
@@ -443,10 +435,30 @@ pub async fn get_emoji(ctx: &Context, emojis: &EmojisMap, emoji_id: EmojiId) -> 
 	Some(emoji)
 }
 
-pub async fn banner_vec(ctx: &SContext<'_>, user_id: UserId) -> AResult<Vec<ContentPart>> {
-	let chat_vec = if let Ok(user) = ctx.http().get_user(user_id).await
-		&& let Some(banner) = user.banner_url()
-	{
+pub enum UserType<'a> {
+	User(&'a User),
+	Member(&'a Member),
+}
+
+pub async fn banner_vec(ctx: &SContext<'_>, user_type: UserType<'_>) -> AResult<Vec<ContentPart>> {
+	let banner_opt = match user_type {
+		UserType::User(user) => ctx
+			.http()
+			.get_user(user.id)
+			.await
+			.map_or(None, |user| user.banner_url()),
+		UserType::Member(member) => {
+			if member.banner_url().is_some() {
+				member.banner_url()
+			} else {
+				ctx.http()
+					.get_user(member.user.id)
+					.await
+					.map_or(None, |user| user.banner_url())
+			}
+		}
+	};
+	let chat_vec = if let Some(banner) = banner_opt {
 		let mut vec = Vec::with_capacity(3);
 		uri_content(&banner, &mut vec).await?;
 		vec
