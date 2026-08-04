@@ -38,7 +38,7 @@ jobs:
       - name: Build
         run: cargo build --release --features ${{ matrix.features }}
       - name: Upload artifact
-        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v5
         with:
           name: fabsebot-${{ matrix.runner }}
           path: target/release/fabsebot
