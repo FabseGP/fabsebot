@@ -5,6 +5,7 @@
     ":semanticCommits",
     ":semanticCommitScope(deps)"
   ],
+  "osvVulnerabilityAlerts": true,
   "configMigration": true,
   "env": {
     "IGNORED_TOOLS": "rust"
@@ -14,12 +15,5 @@
   ],
   "labels": [
     "renovate"
-  ],
-  "cargo": {
-    "vulnerabilityAlerts": {
-      "addLabels": [
-        "security"
-      ]
-    }
-  }
+  ]
 }
